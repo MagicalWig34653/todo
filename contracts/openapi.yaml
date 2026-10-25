@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: Todo API
+  version: 0.1.0
+paths:
+  /health/live:
+    get:
+      summary: Liveness – process is up
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+  /health/ready:
+    get:
+      summary: Readiness – database reachable
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { description: Database unavailable }
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }

@@ -1,0 +1,70 @@
+# Local development stack. Secrets come from .env (see .env.example), never from git.
+name: todo-dev
+
+services:
+  db:
+    image: mariadb:12.3
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-dev-root-only}
+      MARIADB_DATABASE: ${DB_NAME:-todo}
+      MARIADB_USER: ${DB_USER:-todo}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-dev-only}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - todo-dev-db:/var/lib/mysql
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-23306}:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # S3-compatible storage for attachments (Adobe S3Mock, test/dev only).
+  s3:
+    image: adobe/s3mock:5.2.3
+    restart: unless-stopped
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: todo-attachments
+    ports:
+      - "127.0.0.1:${S3_HOST_PORT:-29090}:9090"
+
+  # One-shot migration, deliberately separate from replica start (see docs/ARCHITEKTUR.md).
+  migrate:
+    profiles: ["app"]
+    build: .
+    image: todo-dev-backend:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &backend-env
+      DATABASE_DRIVER: mariadb
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-todo}
+      DB_USER: ${DB_USER:-todo}
+      DB_PASSWORD: ${DB_PASSWORD:-dev-only}
+      RP_ID: ${RP_ID:-localhost}
+      RP_NAME: Todo
+      RP_ORIGIN: ${RP_ORIGIN:-http://localhost:25173}
+      PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-dev-bootstrap-only}
+    command: ["migrate", "--yes"]
+
+  backend:
+    profiles: ["app"]
+    build: .
+    image: todo-dev-backend:local
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend-env
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-28080}:8080"
+
+volumes:
+  todo-dev-db:
