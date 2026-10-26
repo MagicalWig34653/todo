@@ -17,6 +17,7 @@ public func routes(_ app: Application) throws {
 
     try app.register(collection: DiscoveryController())
     try app.register(collection: SharingController())
+    try app.register(collection: DirectoryController())
     try app.register(collection: AgentController())
     try app.register(collection: AttachmentController())
     // Liveness: process is up. No dependencies checked.

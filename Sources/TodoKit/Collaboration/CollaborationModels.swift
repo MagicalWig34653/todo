@@ -58,6 +58,7 @@ struct CommentDTO: Content {
     let id: UUID
     let taskID: UUID
     let authorID: UUID
+    var authorName: String?
     let body: String
     let version: Int
     init(_ c: TaskComment) throws {
@@ -82,6 +83,7 @@ struct ActivityDTO: Content {
     let sequence: Int
     let actorType: ActivityActorType
     let actorID: UUID
+    var actorName: String?
     let kind: String
     let subjectID: UUID?
     let createdAt: Date?

@@ -61,13 +61,18 @@ struct CollaborationController: RouteCollection {
         guard let c = try await AcceptanceCriterion.find(parameter(req, "resourceID"), on: db), c.taskID == taskID else { throw Abort(.notFound) }
         return c
     }
+    /// Resolves author display names. Authors are visible to everyone who can read the task's comments.
+    private func named(_ comments: [CommentDTO], on db: any Database) async throws -> [CommentDTO] {
+        let names = try await displayNames(comments.map(\.authorID), on: db)
+        return comments.map { var c = $0; c.authorName = names[c.authorID]; return c }
+    }
     @Sendable func comments(_ req: Request) async throws -> [CommentDTO] {
         let taskID = try await authorized(req)
-        return try await TaskComment.query(on: req.db).filter(\.$taskID == taskID).sort(\.$id).all().map(CommentDTO.init)
+        return try await named(TaskComment.query(on: req.db).filter(\.$taskID == taskID).sort(\.$id).all().map(CommentDTO.init), on: req.db)
     }
     @Sendable func comment(_ req: Request) async throws -> CommentDTO {
         let taskID = try await authorized(req)
-        return try await CommentDTO(loadComment(req, taskID: taskID, on: req.db))
+        return try await named([CommentDTO(loadComment(req, taskID: taskID, on: req.db))], on: req.db)[0]
     }
     @Sendable func createComment(_ req: Request) async throws -> Response {
         _ = try await authorized(req, role: .comment)
@@ -82,7 +87,7 @@ struct CollaborationController: RouteCollection {
             }
         }
         let hash = key.map { SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined() }
-        let dto = try await mutate(req, role: .comment) { db, taskID, userID in
+        let created = try await mutate(req, role: .comment) { db, taskID, userID in
             if let hash, let saved = try await CommentIdempotency.query(on: db)
                 .filter(\.$taskID == taskID).filter(\.$userID == userID).filter(\.$keyHash == hash).first() {
                 guard saved.requestBody == body else { throw Abort(.conflict, reason: "idempotency_conflict") }
@@ -99,12 +104,12 @@ struct CollaborationController: RouteCollection {
             try await appendActivity(taskID: taskID, actorType: .person, actorID: userID, kind: "comment.created", subjectID: c.id, on: db)
             return try CommentDTO(c)
         }
-        return try await dto.encodeResponse(status: .created, for: req)
+        return try await named([created], on: req.db)[0].encodeResponse(status: .created, for: req)
     }
     @Sendable func editComment(_ req: Request) async throws -> CommentDTO {
         _ = try await authorized(req, role: .comment)
         let input = try req.content.decode(CommentInput.self)
-        return try await mutate(req, role: .comment) { db, taskID, userID in
+        let updated = try await mutate(req, role: .comment) { db, taskID, userID in
             let c = try await loadComment(req, taskID: taskID, on: db)
             guard c.authorID == userID else { throw Abort(.forbidden, reason: "not_comment_author") }
             try checkVersion(c.version, input.version)
@@ -113,6 +118,7 @@ struct CollaborationController: RouteCollection {
             try await appendActivity(taskID: taskID, actorType: .person, actorID: userID, kind: "comment.updated", subjectID: c.id, on: db)
             return try CommentDTO(c)
         }
+        return try await named([updated], on: req.db)[0]
     }
     @Sendable func deleteComment(_ req: Request) async throws -> HTTPStatus {
         _ = try await authorized(req, role: .comment)
@@ -193,6 +199,12 @@ struct CollaborationController: RouteCollection {
         let rows = try await ActivityEvent.query(on: req.db).filter(\.$taskID == taskID)
             .filter(\.$sequence > after).sort(\.$sequence).limit(limit + 1).all()
         let page = Array(rows.prefix(limit))
-        return try ActivityPage(items: page.map(ActivityDTO.init), nextCursor: rows.count > limit ? "\(taskID):\(page.last!.sequence)" : nil)
+        let names = try await displayNames(page.filter { $0.actorType == .person }.map(\.actorID), on: req.db)
+        let items = try page.map { event -> ActivityDTO in
+            var dto = try ActivityDTO(event)
+            if event.actorType == .person { dto.actorName = names[event.actorID] }
+            return dto
+        }
+        return ActivityPage(items: items, nextCursor: rows.count > limit ? "\(taskID):\(page.last!.sequence)" : nil)
     }
 }

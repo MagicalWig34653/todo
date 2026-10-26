@@ -66,6 +66,45 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TeamInput'
+  /v1/users/search:
+    get:
+      summary: Personen für Einladungen und Freigaben suchen (eingeschränkt)
+      operationId: searchUsers
+      description: >-
+        Es gibt kein globales Nutzerverzeichnis. Gefunden werden nur Personen, zu denen bereits eine
+        Beziehung besteht - Mitglieder eigener (angenommener) Teams, von Team-Admins eingeladene Personen,
+        Eigentümer sichtbarer Projekte und, wenn die Person ein Projekt verwalten darf, dessen
+        Personen-Freigaben. Alle anderen werden ausschließlich über ihre Konto-ID eingeladen. Treffer sind
+        Teilstring-Treffer im Anzeigenamen ohne Beachtung der Groß-/Kleinschreibung, nach Name sortiert,
+        ohne die eigene Person. Ohne Beziehungen ist die Liste leer.
+      parameters:
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 100
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 20
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DirectoryUser'
+        '400':
+          description: Suchtext kürzer als 2 oder länger als 100 Zeichen, oder ungültiges Limit
+        '401':
+          description: Keine gültige Sitzung
   /v1/team-invitations:
     get:
       summary: Eigene offene Teameinladungen auflisten
@@ -442,12 +481,28 @@ components:
           type: boolean
         accepted:
           type: boolean
+        teamName:
+          type: [string, "null"]
+          description: Nur in GET /v1/team-invitations gesetzt, damit Eingeladene das Team erkennen.
+        displayName:
+          type: [string, "null"]
+          description: Nur in GET /v1/teams/{teamID}/members gesetzt; Anzeigename des Mitglieds.
       required:
       - id
       - teamID
       - userID
       - isAdmin
       - accepted
+    DirectoryUser:
+      type: object
+      description: Bewusst nur ID und Anzeigename; keine Kontaktdaten oder Benutzernamen.
+      properties:
+        id: *id001
+        displayName:
+          type: string
+      required:
+      - id
+      - displayName
     GrantInput:
       type: object
       properties:

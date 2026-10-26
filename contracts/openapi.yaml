@@ -857,7 +857,32 @@ components:
             - done
         version:
           type: integer
+        planning:
+          $ref: '#/components/schemas/TaskPlanningSummary'
       description: New tasks start at version 1, status open and description empty unless supplied.
+        The planning summary is present only in GET /v1/tasks.
+    TaskPlanningSummary:
+      type: object
+      description: Kompakte Planungsdaten für Listen; Aufgaben ohne Planung liefern Standardwerte
+        (Priorität 0, Position 0, keine Termine). Vollständige Daten und Erinnerungen über /v1/planning/tasks/{id}.
+      required: [priority, position, hasRecurrence, reminderCount]
+      properties:
+        dueAt:
+          type: [string, "null"]
+          format: date-time
+        plannedAt:
+          type: [string, "null"]
+          format: date-time
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        position:
+          type: integer
+        hasRecurrence:
+          type: boolean
+        reminderCount:
+          type: integer
     CreateTaskRequest:
       type: object
       required:

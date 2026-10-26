@@ -115,6 +115,7 @@ struct AgentService {
             job.state = "claimed"
             try await job.save(on: db)
             try await event(job, run: run, kind: "claimed", on: db)
+            try await appendLockedActivity(taskID: job.taskID, actorType: .run, actorID: run.requireID(), kind: "agent.claimed", subjectID: job.id, on: db)
             return try await AgentRunDTO(run, job: job, on: db)
         }
     }
@@ -201,6 +202,10 @@ struct AgentService {
             // Heartbeats and replaceable progress do not create a permanent log stream.
             if !["heartbeat", "progress"].contains(action) {
                 try await event(job, run: run, kind: action, detail: body.observation ?? "", on: db)
+                // Task timeline: only milestones a person cares about, not checkpoints or reconciliation.
+                if ["question", "resume", "submit", "stop", "fail"].contains(action) {
+                    try await appendLockedActivity(taskID: job.taskID, actorType: .run, actorID: run.requireID(), kind: "agent.\(action)", subjectID: job.id, on: db)
+                }
             }
             return try await AgentRunDTO(run, job: job, on: db)
         }
@@ -254,6 +259,7 @@ extension AgentService {
                 throw Abort(.conflict, reason: "release_id_conflict")
             }
             try await AgentService.event(job, kind: "released", on: db)
+            try await appendLockedActivity(taskID: job.taskID, actorType: .person, actorID: user.requireID(), kind: "agent.released", subjectID: job.id, on: db)
             return try AgentJobDTO(job)
         }
     }
@@ -279,6 +285,7 @@ extension AgentService {
             }
             try await job.save(on: db)
             try await AgentService.event(job, kind: decision, detail: try user.requireID().uuidString, on: db)
+            try await appendLockedActivity(taskID: job.taskID, actorType: .person, actorID: user.requireID(), kind: "agent.\(decision)", subjectID: job.id, on: db)
             return try AgentJobDTO(job)
         }
     }
@@ -297,6 +304,7 @@ extension AgentService {
                 if !question.options.isEmpty, !question.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
                 try await AgentAnswer(questionID: questionID, authorID: user.requireID(), value: AgentService.text(value)).save(on: db)
                 try await AgentService.event(job, kind: "answered", detail: questionID.uuidString, on: db)
+                try await appendLockedActivity(taskID: job.taskID, actorType: .person, actorID: user.requireID(), kind: "agent.answered", subjectID: questionID, on: db)
             }
             return try await AgentDetail(job, on: db)
         }

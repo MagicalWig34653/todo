@@ -35,6 +35,8 @@ struct TaskDTO: Content {
     let description: String
     let status: String
     let version: Int
+    /// Only set by the task list (`GET /v1/tasks`); omitted from all other responses.
+    var planning: TaskPlanningSummary?
 
     init(_ t: TodoTask) throws {
         id = try t.requireID()
@@ -43,6 +45,19 @@ struct TaskDTO: Content {
         description = t.details
         status = t.status
         version = t.version
+    }
+}
+
+struct TaskPlanningSummary: Content {
+    let dueAt: Date?
+    let plannedAt: Date?
+    let priority: Int
+    let position: Int
+    let hasRecurrence: Bool
+    let reminderCount: Int
+    init(_ p: TaskPlanning?) {
+        dueAt = p?.dueAt; plannedAt = p?.plannedAt; priority = p?.priority ?? 0; position = p?.position ?? 0
+        hasRecurrence = p?.recurrence != nil; reminderCount = p?.reminders.count ?? 0
     }
 }
 
@@ -222,7 +237,15 @@ struct PlanningController: RouteCollection {
             query = query.filter(\.$projectID == projectID)
         }
         guard !visibleIDs.isEmpty else { return [] }
-        return try await query.sort(\.$createdAt).sort(\.$id).all().map(TaskDTO.init)
+        let tasks = try await query.sort(\.$createdAt).sort(\.$id).all()
+        guard !tasks.isEmpty else { return [] }
+        let planning = Dictionary(uniqueKeysWithValues: try await TaskPlanning.query(on: req.db)
+            .filter(\.$id ~~ tasks.map { try $0.requireID() }).all().map { (try $0.requireID(), $0) })
+        return try tasks.map { task in
+            var dto = try TaskDTO(task)
+            dto.planning = TaskPlanningSummary(planning[dto.id])
+            return dto
+        }
     }
 
     @Sendable func createTask(_ req: Request) async throws -> Response {
@@ -235,6 +258,7 @@ struct PlanningController: RouteCollection {
                 ownerID: try user.requireID(), projectID: body.projectID,
                 title: try cleanName(body.title, reason: "invalid_title"), details: body.description ?? "")
             try await task.save(on: db)
+            try await appendActivity(taskID: task.requireID(), actorType: .person, actorID: user.requireID(), kind: "task.created", subjectID: nil, on: db)
             return task
         }
         return try await TaskDTO(task).encodeResponse(status: .created, for: req)
@@ -250,6 +274,7 @@ struct PlanningController: RouteCollection {
             try await lockRow(table: TodoTask.schema, id: taskID, on: db)
             let task = try await access.task(taskID, role: .edit)
             guard task.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
+            let before = TaskSnapshot(task)
             if let title = body.title { task.title = try cleanName(title, reason: "invalid_title") }
             if let description = body.description { task.details = description }
             if let status = body.status {
@@ -262,6 +287,7 @@ struct PlanningController: RouteCollection {
             }
             task.version += 1
             try await task.save(on: db)
+            try await appendTaskChangeActivity(task, from: before, actorID: user.requireID(), on: db)
             return try TaskDTO(task)
         }
     }
