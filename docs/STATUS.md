@@ -38,3 +38,20 @@ Implementiert in `Sources/TodoKit`: Modelle/Migration (`users`, `passkey_credent
 Tests: 12 Tests grün auf SQLite; mit `scripts/test-mariadb.sh` (TODO_TEST_MARIADB=1) laufen alle 12 inklusive Challenge über zweites Replikat, 8 parallele Updates mit gleicher Version (genau ein Gewinner) und Bootstrap-Race (genau ein Admin) gegen echte MariaDB 12.3. Die Passkey-Tests nutzen einen virtuellen ES256-Authenticator (`Tests/TodoKitTests/VirtualAuthenticator.swift`), nicht echte Browser/Geräte.
 `swift test` scheitert im Ordner unter ~/Documents am Codesigning (FinderInfo/fileprovider-xattrs); Workaround: `--scratch-path <Ordner außerhalb von Documents>`.
 Offen: Rate-Limits, Passkey-Verwaltung (weitere Passkeys, Widerruf), Recovery, Session-Liste, Idempotenzschlüssel für Anlage, OpenAPI für Auth/Projekte/Aufgaben, PWA-Login/-Listen, Apple-Client-Funktionen, echte Browser-/Geräteprüfung.
+
+## Planung
+
+Arbeitsstand 26.10.2026, Branch `worktree-agent-afc57f3c09fb01438`. Auftrag: getrennte Fälligkeit/Bearbeitung, Priorität, Boardpositionen, Wiederholungen, Erinnerungsdaten, Meilensteine und Abhängigkeiten, ohne Änderung der bestehenden Aufgabentabelle. Ausschließlich Backend-Hauptrepository betroffen; kein Push oder Deployment.
+
+Implementierter Teilschritt: `Sources/TodoKit/PlanningExt` enthält eigene Modelle, Migration, Planungsdienst und Routen. Architekturentscheidung und genaue Semantik stehen in `Sources/TodoKit/PlanningExt/ADR.md`, der API-Vertrag in `contracts/planning-ext.yaml`. Bestehende Aufgaben-PATCH-Aufrufe laufen über eine registrierte Middleware transaktional durch die Wiederholungserzeugung. Zugriffsprüfung über `ProjectAccess`; unsichtbare Abhängigkeitsziele werden nicht ausgegeben. Erinnerungen haben keine Zustellung.
+
+Aktiver Arbeitsplan für diesen begrenzten Auftrag (der globale ARBEITSPLAN bleibt außerhalb der erlaubten Änderungen):
+- [x] Bestehenden Code, Rechte, Produktplanung und Migrationen prüfen.
+- [x] Erweiterungstabellen und ausführbare API einschließlich Abschlussintegration implementieren.
+- [x] Tests für Datumsansichten, Rechte, Zyklen, Board, Meilensteine und Wiederholungen anlegen.
+- [ ] Build und Tests abschließen, insbesondere MariaDB-Konkurrenz auf eigener Datenbank über `TODO_TEST_DB`.
+- [ ] Abschließenden Checkpoint und Commit erstellen.
+
+Prüfstand: Standardaufruf `swift test --scratch-path /private/tmp/planning-ext-scratch` zunächst durch gesperrten Compiler-Cache verhindert. Danach GitHub-DNS nicht erreichbar; vorhandene lokale Dependency-Checkouts nach `/private/tmp` kopiert. Build läuft mit beschreibbaren temporären Verzeichnissen, explizitem Modulcache, `--disable-sandbox` und `--build-system native`. Docker-Socketzugriff verweigert, direkte MariaDB-Verbindung auf Port 23306 bisher nicht möglich. Keine erfolgreiche MariaDB-Prüfung behauptet. Prozessliste durch Sandbox gesperrt. Eigene Buildprozesse werden vor Übergabe beendet bzw. abgeschlossen.
+
+Migration: fünf neue Tabellen, Fremdschlüssel mit Löschregeln; keine Änderung von `tasks`. Vor Einsatz einmalig `App migrate --yes`. Nächster konkreter Schritt: Compilerfehler beheben, lokale Tests ausführen und anschließend MariaDB-Paralleltests mit eigener Datenbank durchführen. Linux-/Containerprüfung und echte Mehrreplikat-Infrastruktur stehen aus.
