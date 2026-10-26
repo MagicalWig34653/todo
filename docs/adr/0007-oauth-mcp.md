@@ -29,4 +29,4 @@ Die aktuelle Spezifikation wurde vor Umsetzung per Websuche und anhand der Prim�
 
 ## Prüfstand
 
-Implementierung und Prüfungen laufen. Der erste Swift-Aufruf scheiterte an der nicht beschreibbaren globalen Clang-Modulcache; erneuter Aufruf mit Cache unter /private/tmp und deaktivierter SwiftPM-Unterprozess-Sandbox. Testausgang und reale CLI-Prüfung werden vor Commit ergänzt. Protokolltests belegen allein keine reale Clientkompatibilität.
+Testnachweise und die reale Claude-Code-Prüfung stehen in docs/STATUS.md (Abschnitt OAuth/MCP). Ergänzungen zur Umsetzung: Consent-Seite bei `Accept: text/html` (CSP per Skript-Hash), `iss` im Callback (RFC 9207), fehlendes `resource` wird auf die einzige Resource gesetzt, fehlendes `scope` auf alle unterstützten; `WWW-Authenticate` nennt `scope`. Rechte: Lesen braucht Rolle read, Schreiben edit, live aus den effektiven Freigaben. Protokolltests belegen allein keine reale Clientkompatibilität; der CLI-eigene Browser-Flow ist ungeprüft.
