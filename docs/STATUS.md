@@ -41,20 +41,13 @@ Offen: Rate-Limits, Passkey-Verwaltung (weitere Passkeys, Widerruf), Recovery, S
 
 ## Planung
 
-Arbeitsstand 26.10.2026, Branch `worktree-agent-afc57f3c09fb01438`. Auftrag: getrennte Fälligkeit/Bearbeitung, Priorität, Boardpositionen, Wiederholungen, Erinnerungsdaten, Meilensteine und Abhängigkeiten, ohne Änderung der bestehenden Aufgabentabelle. Ausschließlich Backend-Hauptrepository betroffen; kein Push oder Deployment.
+Stand 26.10.2026, Branch `worktree-agent-afc57f3c09fb01438` (main inkl. Teams, Agenten, Anhänge eingemerged). Umgesetzt: `Sources/TodoKit/PlanningExt/` mit eigenen Tabellen (Migration `CreatePlanningExtension`, `tasks` unverändert), Vertrag `contracts/planning-ext.yaml`, Entscheidungen in `PlanningExt/ADR.md`. Funktionen: getrennte Fälligkeit/geplante Bearbeitung, Priorität 0-3, Board-Reihenfolge mit Reorder-API (volle Spalte, sonst 409), Wiederholungen (täglich/wöchentlich/monatlich, Beleg pro Quellaufgabe, transaktional über PATCH-Middleware, idempotent), Erinnerungen nur als Daten, Meilensteine, Abhängigkeiten mit Zyklenschutz, Routen Heute/Demnächst/Als Nächstes.
 
-Implementierter Teilschritt: `Sources/TodoKit/PlanningExt` enthält eigene Modelle, Migration, Planungsdienst und Routen. Architekturentscheidung und genaue Semantik stehen in `Sources/TodoKit/PlanningExt/ADR.md`, der API-Vertrag in `contracts/planning-ext.yaml`. Bestehende Aufgaben-PATCH-Aufrufe laufen über eine registrierte Middleware transaktional durch die Wiederholungserzeugung. Zugriffsprüfung über `ProjectAccess`; unsichtbare Abhängigkeitsziele werden nicht ausgegeben. Erinnerungen haben keine Zustellung.
+Rechte: alles läuft über `ProjectAccess` (effektive Rechte inkl. Teams/Vererbung). Lesen = read, Schreiben (Planung, Abhängigkeit, Reorder, Meilenstein) = edit; Fremdes/Unsichtbares = 404, zu geringe Rolle = 403. Listen enthalten nur lesbare Aufgaben. Schreibpfade nutzen `lockSharingGraph`. Dateien wurden zu `PlanningExt*.swift` umbenannt (Namenskollision mit Attachments/Migration.swift).
 
-Aktiver Arbeitsplan für diesen begrenzten Auftrag (der globale ARBEITSPLAN bleibt außerhalb der erlaubten Änderungen):
-- [x] Bestehenden Code, Rechte, Produktplanung und Migrationen prüfen.
-- [x] Erweiterungstabellen und ausführbare API einschließlich Abschlussintegration implementieren.
-- [x] Tests für Datumsansichten, Rechte, Zyklen, Board, Meilensteine und Wiederholungen anlegen.
-- [ ] Build und Tests abschließen, insbesondere MariaDB-Konkurrenz auf eigener Datenbank über `TODO_TEST_DB`.
-- [ ] Abschließenden Checkpoint und Commit erstellen.
+Prüfung: `swift test` (SQLite) 47 Tests, 9 übersprungen (MariaDB-spezifisch), 0 Fehler. `TODO_TEST_DB=todo_test_planext scripts/test-mariadb.sh`: 47 Tests, 2 übersprungen, 0 Fehler, inkl. paralleler Wiederholung über Replikate und gegenläufiger Abhängigkeiten. Neuer Test für Team-/Freigaberechte.
 
-Prüfstand: Standardaufruf `swift test --scratch-path /private/tmp/planning-ext-scratch` zunächst durch gesperrten Compiler-Cache verhindert. Danach GitHub-DNS nicht erreichbar; vorhandene lokale Dependency-Checkouts nach `/private/tmp` kopiert. Build läuft mit beschreibbaren temporären Verzeichnissen, explizitem Modulcache, `--disable-sandbox` und `--build-system native`. Docker-Socketzugriff verweigert, direkte MariaDB-Verbindung auf Port 23306 bisher nicht möglich. Keine erfolgreiche MariaDB-Prüfung behauptet. Prozessliste durch Sandbox gesperrt. Eigene Buildprozesse werden vor Übergabe beendet bzw. abgeschlossen.
-
-Migration: fünf neue Tabellen, Fremdschlüssel mit Löschregeln; keine Änderung von `tasks`. Vor Einsatz einmalig `App migrate --yes`. Nächster konkreter Schritt: Compilerfehler beheben, lokale Tests ausführen und anschließend MariaDB-Paralleltests mit eigener Datenbank durchführen. Linux-/Containerprüfung und echte Mehrreplikat-Infrastruktur stehen aus.
+Offen/nicht geprüft: Linux-Build, Listen nicht paginiert (alle sichtbaren Aufgaben werden geladen, bei großen Beständen ineffizient), keine Erinnerungszustellung, keine RRULE, keine Nachholung verpasster Wiederholungen, keine Clientanbindung, OpenAPI-Validator nicht gelaufen. Vor Einsatz `App migrate --yes`. Nächster Schritt: Pagination/Abfrageoptimierung, PWA-Ansichten Heute/Board.
 
 ## Vertrag Etappe 1
 
