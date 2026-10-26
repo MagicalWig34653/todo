@@ -1,0 +1,531 @@
+openapi: 3.1.0
+info:
+  title: Todo – Teams und Projektfreigaben
+  version: 1.0.0
+  description: 'Ergänzung zum bestehenden API-Vertrag. Rollen und Vererbung: ADR 0005.
+    Eine Einschränkung blockiert Grants der Vorfahren; direkte Grants des eingeschränkten
+    Projekts gelten weiter für dessen erbende Nachkommen. Eigentum vererbt nicht.
+    Einladungen benötigen existierende Konto-UUIDs und eigene Annahme. Nach abgeschlossenem
+    Entzug gelten neue Zugriffe sofort ohne Cache. Projektlisten redigieren unsichtbare
+    Eltern-IDs; Aufgabenlisten filtern nach aktuellen Projektrechten. Keine Zähler-/Suchrouten
+    vorhanden. Alle unsicheren Cookie-Anfragen benötigen application/json und einen
+    erlaubten Origin, falls angegeben. Grant-PUT ist pro Prinzipal idempotent; zuletzt
+    serialisierte Rolle gewinnt. Eigentum/Vererbung erhöhen die Projektversion. Teamziele
+    müssen eigene aktive Teams sein; Übertragung an Teams benötigt zusätzlich Teamadministration.
+    Keine Teamlöschung oder hypothetische Sichtbarkeitsvorschau.'
+security:
+- bearerSession: []
+- cookieSession: []
+paths:
+  /v1/teams:
+    get:
+      summary: Aktive Teams auflisten
+      operationId: getTeams
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+    post:
+      summary: Team mit aktiver Gründungsadministration anlegen
+      operationId: postTeams
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamInput'
+  /v1/team-invitations:
+    get:
+      summary: Eigene offene Teameinladungen auflisten
+      operationId: getTeam-Invitations
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMembership'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+  /v1/teams/{teamID}/members:
+    get:
+      summary: Mitglieder und offene Einladungen des eigenen Teams lesen
+      operationId: getTeamsTeamidMembers
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMembership'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: teamID
+        in: path
+        required: true
+        schema: &id001
+          type: string
+          format: uuid
+    put:
+      summary: Konto einladen oder Administratorrolle ändern; Teamadministration erforderlich
+      operationId: putTeamsTeamidMembers
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMembership'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: teamID
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberInput'
+  /v1/teams/{teamID}/accept:
+    post:
+      summary: Eigene Teameinladung annehmen
+      operationId: postTeamsTeamidAccept
+      responses:
+        '204':
+          description: Erfolgreich
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: teamID
+        in: path
+        required: true
+        schema: *id001
+  /v1/teams/{teamID}/members/{userID}:
+    delete:
+      summary: Mitgliedschaft oder Einladung widerrufen; Teamadministration erforderlich
+      operationId: deleteTeamsTeamidMembersUserid
+      responses:
+        '204':
+          description: Erfolgreich
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: teamID
+        in: path
+        required: true
+        schema: *id001
+      - name: userID
+        in: path
+        required: true
+        schema: *id001
+  /v1/projects/{id}/grants:
+    get:
+      summary: Direkte Grants lesen; Manage erforderlich
+      operationId: getProjectsIdGrants
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectGrant'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+    put:
+      summary: Grant pro Prinzipal anlegen oder ersetzen; Manage erforderlich
+      operationId: putProjectsIdGrants
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectGrant'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantInput'
+  /v1/projects/{id}/grants/{grantID}:
+    delete:
+      summary: Direkten Grant widerrufen; Manage erforderlich
+      operationId: deleteProjectsIdGrantsGrantid
+      responses:
+        '204':
+          description: Erfolgreich
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      - name: grantID
+        in: path
+        required: true
+        schema: *id001
+  /v1/projects/{id}/inheritance:
+    put:
+      summary: Vererbung mit erwarteter Projektversion ändern; Manage erforderlich
+      operationId: putProjectsIdInheritance
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveVisibility'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InheritanceInput'
+  /v1/projects/{id}/owner:
+    put:
+      summary: Eigentum mit erwarteter Projektversion übertragen; separate Eigentümerfähigkeit
+        erforderlich
+      operationId: putProjectsIdOwner
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveVisibility'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerInput'
+  /v1/projects/{id}/visibility:
+    get:
+      summary: Wirksame Rolle und separate Fähigkeiten anzeigen; fremdes Zielkonto
+        erfordert Manage
+      operationId: getProjectsIdVisibility
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveVisibility'
+        '401':
+          description: Keine gültige Sitzung
+        '403':
+          description: Sichtbar, aber erforderliche Fähigkeit fehlt
+        '404':
+          description: Unbekannt oder unsichtbar
+        '400':
+          description: Ungültige Eingabe
+        '409':
+          description: Versionskonflikt oder geschützte Gründungsadministration
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      - name: userID
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+components:
+  securitySchemes:
+    bearerSession:
+      type: http
+      scheme: bearer
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: todo_session
+  schemas:
+    Role:
+      type: string
+      enum:
+      - read
+      - comment
+      - edit
+      - manage
+    PrincipalType:
+      type: string
+      enum:
+      - person
+      - team
+    TeamInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+      required:
+      - name
+    Team:
+      type: object
+      properties:
+        id: *id001
+        name:
+          type: string
+        founderID: *id001
+      required:
+      - id
+      - name
+      - founderID
+    MemberInput:
+      type: object
+      properties:
+        userID: *id001
+        isAdmin:
+          type: boolean
+      required:
+      - userID
+      - isAdmin
+    TeamMembership:
+      type: object
+      properties:
+        id: *id001
+        teamID: *id001
+        userID: *id001
+        isAdmin:
+          type: boolean
+        accepted:
+          type: boolean
+      required:
+      - id
+      - teamID
+      - userID
+      - isAdmin
+      - accepted
+    GrantInput:
+      type: object
+      properties:
+        principalType:
+          $ref: '#/components/schemas/PrincipalType'
+        principalID: *id001
+        role:
+          $ref: '#/components/schemas/Role'
+      required:
+      - principalType
+      - principalID
+      - role
+    ProjectGrant:
+      type: object
+      properties:
+        id: *id001
+        projectID: *id001
+        principalType:
+          $ref: '#/components/schemas/PrincipalType'
+        principalID: *id001
+        role:
+          $ref: '#/components/schemas/Role'
+      required:
+      - id
+      - projectID
+      - principalType
+      - principalID
+      - role
+    InheritanceInput:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        inherits:
+          type: boolean
+      required:
+      - version
+      - inherits
+    OwnerInput:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        ownerType:
+          $ref: '#/components/schemas/PrincipalType'
+        ownerID: *id001
+      required:
+      - version
+      - ownerType
+      - ownerID
+    EffectiveVisibility:
+      type: object
+      properties:
+        projectID: *id001
+        role:
+          $ref: '#/components/schemas/Role'
+        canTransferOwnership:
+          type: boolean
+        canDelete:
+          type: boolean
+        canManageTeam:
+          type: boolean
+        canStartAgent:
+          type: boolean
+        inherits:
+          type: boolean
+        userID:
+          type: string
+          format: uuid
+      required:
+      - projectID
+      - canTransferOwnership
+      - canDelete
+      - canManageTeam
+      - canStartAgent
+      - inherits
+      - userID
+      description: Nach Eigentumsübertragung kann die eigene Rolle entfallen. Agentenstart
+        ist in diesem Schnitt immer false.
