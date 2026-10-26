@@ -20,6 +20,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: DirectoryController())
     try app.register(collection: AgentController())
     try app.register(collection: AttachmentController())
+    try app.register(collection: SyncController())
     // Liveness: process is up. No dependencies checked.
     app.get("health", "live") { _ in HealthResponse(status: "ok") }
 

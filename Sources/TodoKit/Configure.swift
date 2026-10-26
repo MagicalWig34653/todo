@@ -48,6 +48,9 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
                 database: settings.name, tlsConfiguration: nil
             ), as: .mysql)
     }
+    // Change log hooks apply to every save/delete of projects and tasks, whichever route performs it.
+    app.databases.middleware.use(SyncProjectMiddleware())
+    app.databases.middleware.use(SyncTaskMiddleware())
 }
 
 /// Migrations are registered but never run on `serve`; run `App migrate --yes` once per deployment.
@@ -64,6 +67,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)
     configureMaintenance(app)
+    app.migrations.add(CreateSyncSchema())
 }
 
 public func configureContent() {

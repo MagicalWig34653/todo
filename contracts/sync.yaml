@@ -1,0 +1,199 @@
+openapi: 3.0.3
+info:
+  title: Todo Sync
+  version: 1.0.0
+  description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
+    ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz
+    im Änderungsprotokoll bezeichnet. Cursor "c0" liefert den vollständigen sichtbaren Stand. Jede Änderung wird nach
+    denselben Rechten wie die REST-Lesepfade gefiltert (ProjectAccess/SharingAccess); Nicht-Sichtbares fehlt
+    ohne Fehler. Löschungen erscheinen als Tombstones, aber nur für Konten, die das Objekt zum Löschzeitpunkt lesen
+    konnten. Mutationen verwenden dieselben Operationen und Rechteprüfungen wie die REST-Routen (Fremdes 404, zu
+    geringe Rolle 403, Versionskonflikt 409). Migration: CreateSyncSchema (legt Protokolltabellen an und füllt
+    bestehende Projekte/Aufgaben als Upserts nach); explizit vor Serverstart ausführen.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/sync/changes:
+    get:
+      operationId: listSyncChanges
+      summary: Änderungen seit einem Cursor
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          default: c0
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+      responses:
+        '200':
+          description: Seite von Änderungen; der neue Cursor ist beim nächsten Aufruf zu verwenden, solange hasMore wahr ist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncChanges'
+        '400':
+          description: Ungültiger Cursor (invalid_cursor)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cursor liegt hinter dem Protokollende (cursor_ahead, z. B. nach Wiederherstellung); Client startet bei c0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/sync/mutations:
+    post:
+      operationId: applySyncMutation
+      summary: Client-Mutation idempotent anwenden
+      description: 'Der Schlüssel (Konto, mutationID) macht Wiederholungen sicher: gleiche Anfrage liefert den gespeicherten
+        Status und Body erneut (Header Idempotent-Replay: true), gleiche mutationID mit anderem Inhalt ergibt 409
+        mutation_id_reused. Fehlgeschlagene Mutationen werden nicht gespeichert. Neue IDs wählt der Client; bereits
+        vergebene oder gelöschte IDs ergeben 409 (id_exists, id_deleted).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncMutationRequest'
+      responses:
+        '200':
+          description: Aktualisiert oder gelöscht
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncMutationResult'
+        '201':
+          description: Angelegt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncMutationResult'
+        '400':
+          description: Ungültige Eingabe, unbekannter Typ oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Sichtbar, aber Rolle reicht nicht
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Objekt fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict, mutation_id_reused, id_exists, id_deleted, project_cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: todo_session
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: boolean
+        reason:
+          type: string
+    Project:
+      type: object
+      required: [id, name, version]
+      properties:
+        id: {type: string, format: uuid}
+        parentID: {type: string, format: uuid, nullable: true}
+        name: {type: string}
+        version: {type: integer}
+    Task:
+      type: object
+      required: [id, projectID, title, description, status, version]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: string}
+        status: {type: string, enum: [open, in_progress, in_review, done]}
+        version: {type: integer}
+    SyncChange:
+      type: object
+      required: [seq, entityType, entityID, kind]
+      properties:
+        seq: {type: integer}
+        entityType: {type: string, enum: [project, task]}
+        entityID: {type: string, format: uuid}
+        kind: {type: string, enum: [upsert, delete]}
+        project: {$ref: '#/components/schemas/Project'}
+        task: {$ref: '#/components/schemas/Task'}
+    SyncChanges:
+      type: object
+      required: [changes, cursor, hasMore]
+      properties:
+        changes:
+          type: array
+          items: {$ref: '#/components/schemas/SyncChange'}
+        cursor: {type: string}
+        hasMore: {type: boolean}
+    SyncMutationRequest:
+      type: object
+      required: [mutationID, type, id]
+      properties:
+        mutationID: {type: string, format: uuid}
+        type:
+          type: string
+          enum: [project.create, project.update, project.delete, task.create, task.update, task.delete]
+        id: {type: string, format: uuid}
+        version: {type: integer, description: 'Pflicht bei update, optional bei delete (dann Versionsprüfung)'}
+        name: {type: string}
+        parentID: {type: string, format: uuid}
+        moveToRoot: {type: boolean}
+        projectID: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: string}
+        status: {type: string}
+    SyncMutationResult:
+      type: object
+      required: [mutationID, type, id, deleted, cursor]
+      properties:
+        mutationID: {type: string, format: uuid}
+        type: {type: string}
+        id: {type: string, format: uuid}
+        deleted: {type: boolean}
+        project: {$ref: '#/components/schemas/Project'}
+        task: {$ref: '#/components/schemas/Task'}
+        cursor: {type: string}

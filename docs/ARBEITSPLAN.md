@@ -46,3 +46,8 @@ Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell be
 ## Checkpoint 26.10.2026 (Backend-Lücken PWA Etappe 2)
 - [x] activity_events aus Task-/Planungs-/Agentenrouten; Kommentar-/Aktivitätsnamen; eingeschränkte Nutzersuche; Teamname in Einladungen; Planungsdaten in `GET /v1/tasks` (Details in STATUS). SQLite + MariaDB grün.
 - [ ] PWA auf neue Felder umstellen; Projekt-/Freigabe-Ereignisse (eigenes Modell) konzipieren; UI zum Ausstellen von Recovery-Codes.
+
+## Sync-Strang (26.10.2026)
+- [x] Backend: Änderungsfeed mit Cursor, Tombstones, idempotente Mutationen mit 409 (ADR 0009, `contracts/sync.yaml`); SQLite und MariaDB grün (88 Tests).
+- [ ] Zugriffsänderungen (Freigabe/Entzug/Verschieben) als Feedereignisse; Aufbewahrung/Kompaktierung.
+- [ ] PWA-Offline-Cache und Apple-Client an Sync anbinden; Merge des Branches in `main`.
