@@ -1,0 +1,177 @@
+openapi: 3.0.3
+info:
+  title: Todo attachment REST API
+  version: 1.0.0
+  description: |
+    Backend upload capability, valid for 15 minutes and one successful PUT.
+    Maximum file size is 10485760 bytes. Attachments remain invisible until complete.
+    All session routes apply current task and project authorization; foreign objects return 404.
+    Downloads are private and must not be cached. Preview returns the original image, not a thumbnail.
+servers:
+  - url: /
+security:
+  - session: []
+paths:
+  /v1/attachments/begin:
+    post:
+      operationId: beginAttachment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeginAttachment'
+      responses:
+        '200':
+          description: Upload capability; keep token private and send only as PUT Bearer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadCapability'
+        '400': { description: Invalid filename, role, size, checksum or media type }
+        '401': { description: Session required }
+        '404': { description: Missing or inaccessible task or project }
+        '503': { description: Storage configuration unavailable }
+  /v1/attachments/{id}/upload:
+    parameters:
+      - $ref: '#/components/parameters/AttachmentID'
+    put:
+      operationId: uploadAttachment
+      security:
+        - uploadCapability: []
+      description: |
+        Uses capability Bearer, not the session token. Current creator project access is checked.
+        Validates actual size, magic bytes and SHA-256 before writing to S3.
+        A successful PUT cannot be replayed; after an uncertain response try complete.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '204': { description: Stored; not yet visible }
+        '404': { description: Invalid, expired or already used capability, or revoked access }
+        '413': { description: Request body exceeds limit }
+        '415': { description: Magic bytes do not match declared media type }
+        '422': { description: Size or checksum mismatch }
+        '502': { description: Storage failed; upload can be retried }
+  /v1/attachments/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/AttachmentID'
+    post:
+      operationId: completeAttachment
+      description: Revalidates stored bytes and publishes metadata; idempotent after success.
+      responses:
+        '200':
+          description: Complete attachment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Attachment' }
+        '401': { description: Session required }
+        '404': { description: Missing or inaccessible attachment }
+        '409': { description: Upload has not succeeded or has expired }
+        '415': { description: Stored media mismatch }
+        '422': { description: Stored size or checksum mismatch }
+        '502': { description: Storage failed }
+  /v1/attachments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AttachmentID'
+    delete:
+      operationId: abortAttachment
+      description: Deletes pending object and metadata; completed attachments cannot be aborted.
+      responses:
+        '204': { description: Aborted }
+        '401': { description: Session required }
+        '404': { description: Missing or inaccessible attachment }
+        '409': { description: Attachment is already complete }
+        '502': { description: Storage failed; retry is safe }
+  /v1/tasks/{taskID}/attachments:
+    parameters:
+      - name: taskID
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listTaskAttachments
+      responses:
+        '200':
+          description: Completed attachments only, ordered by ID
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Attachment' }
+        '401': { description: Session required }
+        '404': { description: Missing or inaccessible task or project }
+  /v1/attachments/{id}/download:
+    parameters:
+      - $ref: '#/components/parameters/AttachmentID'
+    get:
+      operationId: downloadAttachment
+      responses:
+        '200':
+          description: Verified original with attachment disposition and private no-store caching
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { description: Session required }
+        '404': { description: Missing, pending or inaccessible attachment }
+        '502': { description: Storage failed }
+  /v1/attachments/{id}/preview:
+    parameters:
+      - $ref: '#/components/parameters/AttachmentID'
+    get:
+      operationId: previewAttachment
+      responses:
+        '200':
+          description: Verified original image with inline disposition and private no-store caching
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        '401': { description: Session required }
+        '404': { description: Missing, pending or inaccessible attachment }
+        '415': { description: PDF has no inline preview }
+        '502': { description: Storage failed }
+components:
+  securitySchemes:
+    session: { type: http, scheme: bearer }
+    uploadCapability: { type: http, scheme: bearer }
+  parameters:
+    AttachmentID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    BeginAttachment:
+      type: object
+      required: [taskID, filename, role, mediaType, size, checksum]
+      properties:
+        taskID: { type: string, format: uuid }
+        filename:
+          type: string
+          description: 1 to 200 UTF-8 bytes, no control characters or path separators
+        role: { type: string, enum: [reference, progress, result] }
+        mediaType: { type: string, enum: [image/png, image/jpeg, image/webp, application/pdf] }
+        size: { type: integer, minimum: 1, maximum: 10485760 }
+        checksum: { type: string, pattern: '^[0-9a-f]{64}$', description: Lowercase SHA-256 hex }
+    UploadCapability:
+      type: object
+      required: [attachmentID, uploadURL, token, expiresAt]
+      properties:
+        attachmentID: { type: string, format: uuid }
+        uploadURL: { type: string, description: Relative backend PUT path }
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+    Attachment:
+      allOf:
+        - $ref: '#/components/schemas/BeginAttachment'
+        - type: object
+          required: [id, status]
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [complete] }
