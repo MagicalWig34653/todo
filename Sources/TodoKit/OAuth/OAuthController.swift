@@ -107,8 +107,10 @@ struct OAuthController: RouteCollection {
     @Sendable func consent(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
         let b = try req.content.decode(Consent.self)
+        // Look the row up before the transaction: MariaDB's snapshot isolation fails a locking read that follows
+        // a plain read in the same transaction when the row changed in between ("Record has changed since last read").
+        guard let found = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(b.consent_token)).first() else { throw Abort(.badRequest) }
         return try await req.db.transaction { db in
-            guard let found = try await OAuthSecret.query(on: db).filter(\.$hash == AuthSupport.hash(b.consent_token)).first() else { throw Abort(.badRequest) }
             try await lockRow(table: OAuthSecret.schema, id: found.requireID(), on: db)
             guard let s = try await OAuthSecret.find(found.id, on: db), s.kind == "consent", !s.consumed, s.expiresAt > Date() else { throw Abort(.badRequest) }
             let pending = try JSONDecoder().decode(Pending.self, from: Data(s.payload.utf8))
@@ -144,9 +146,10 @@ struct OAuthController: RouteCollection {
         guard ["authorization_code", "refresh_token"].contains(b.grant_type), b.resource == Self.resource,
               let raw = b.grant_type == "authorization_code" ? b.code : b.refresh_token else { return try await tokenError(req) }
         // Return errors after committing: throwing inside this transaction would undo reuse revocation.
+        // Plain lookup first, then lock before the transaction's first read (see consent()).
+        guard let found = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(raw)).first(),
+              let gid = found.grantID else { return try await tokenError(req) }
         let result: JSONValue? = try await req.db.transaction { db in
-            guard let found = try await OAuthSecret.query(on: db).filter(\.$hash == AuthSupport.hash(raw)).first(),
-                  let gid = found.grantID else { return nil }
             try await lockRow(table: OAuthGrant.schema, id: gid, on: db)
             guard let s = try await OAuthSecret.find(found.id, on: db),
                   let g = try await OAuthGrant.find(gid, on: db), !g.revoked,
