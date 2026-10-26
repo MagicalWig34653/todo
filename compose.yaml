@@ -51,6 +51,11 @@ services:
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:25173}
       PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-dev-bootstrap-only}
+      S3_ENDPOINT: http://s3:9090
+      S3_BUCKET: todo-attachments
+      S3_ACCESS_KEY: dev-only
+      S3_SECRET_KEY: dev-only
+      S3_REGION: us-east-1
     command: ["migrate", "--yes"]
 
   backend:

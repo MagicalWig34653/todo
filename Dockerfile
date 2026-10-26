@@ -7,7 +7,7 @@ COPY Tests Tests
 RUN swift build -c release --product App --static-swift-stdlib
 
 FROM ubuntu:noble
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libjemalloc2 && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libjemalloc2 libcurl4t64 libxml2 && rm -rf /var/lib/apt/lists/* \
  && useradd --system --create-home todo
 COPY --from=build /src/.build/release/App /usr/local/bin/todo-app
 USER todo
