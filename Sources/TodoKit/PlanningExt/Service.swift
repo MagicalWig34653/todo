@@ -38,20 +38,19 @@ struct PlanningService: Sendable {
     let db: any Database
     var access: ProjectAccess { ProjectAccess(user: user, db: db) }
 
-    func task(_ id: UUID) async throws -> TodoTask {
-        let task = try await access.task(id)
-        _ = try await access.project(task.projectID)
-        return task
+    /// Effective rights (own, shared, team, inherited) decide; hidden or missing tasks are 404.
+    func task(_ id: UUID, role: ProjectRole = .read) async throws -> TodoTask {
+        try await access.task(id, role: role)
     }
 
-    /// Serializes graph and board mutations for this actor across replicas, including cross-project edges.
-    func lock() async throws { try await lockRow(table: User.schema, id: user.requireID(), on: db) }
+    /// Serializes graph, ACL and board mutations across replicas using the shared sharing-graph lock.
+    func lock() async throws { try await lockSharingGraph(on: db) }
 
     func put(_ id: UUID, data: PlanningData) async throws -> PlanningTaskDTO {
         try data.validate()
         try await lock()
         try await lockRow(table: TodoTask.schema, id: id, on: db)
-        let t = try await task(id)
+        let t = try await task(id, role: .edit)
         let p = try await TaskPlanning.find(id, on: db) ?? TaskPlanning(taskID: id)
         p.dueAt = data.dueAt; p.plannedAt = data.plannedAt; p.priority = data.priority
         p.recurrence = data.recurrence; p.reminders = data.reminders
@@ -63,7 +62,7 @@ struct PlanningService: Sendable {
 
     func addDependency(_ id: UUID, prerequisite: UUID) async throws {
         try await lock()
-        _ = try await task(id); _ = try await task(prerequisite)
+        _ = try await task(id, role: .edit); _ = try await task(prerequisite)
         guard id != prerequisite else { throw Abort(.unprocessableEntity, reason: "dependency_cycle") }
         let edges = try await PlanningDependency.query(on: db).all()
         var stack = [prerequisite], visited = Set<UUID>()
@@ -89,7 +88,7 @@ struct PlanningService: Sendable {
     func update(_ id: UUID, body: UpdateTaskRequest) async throws -> TaskDTO {
         try await lock()
         try await lockRow(table: TodoTask.schema, id: id, on: db)
-        let t = try await task(id)
+        let t = try await task(id, role: .edit)
         guard t.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
         if let title = body.title {
             let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -102,7 +101,7 @@ struct PlanningService: Sendable {
             t.status = status
         }
         if let project = body.projectID {
-            _ = try await access.project(project)
+            _ = try await access.project(project, role: .edit)
             // Existing dependency/milestone links must not escape their authorized project scope on move.
             if project != t.projectID {
                 try await PlanningDependency.query(on: db).group(.or) {
@@ -139,13 +138,11 @@ struct PlanningService: Sendable {
         try await PlanningOccurrence(source: id, next: next.requireID()).save(on: db)
     }
 
+    /// All tasks in projects the actor may read (effective rights including teams).
     func visibleTasks() async throws -> [TodoTask] {
-        var result: [TodoTask] = []
-        for t in try await TodoTask.query(on: db).sort(\.$id).all() {
-            do { result.append(try await task(t.requireID())) }
-            catch let error as AbortError where error.status == .notFound { continue }
-        }
-        return result
+        let ids = try await access.visibleProjects().map { try $0.requireID() }
+        guard !ids.isEmpty else { return [] }
+        return try await TodoTask.query(on: db).filter(\.$projectID ~~ ids).sort(\.$id).all()
     }
 }
 

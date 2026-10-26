@@ -167,6 +167,48 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertNotNil(receipt); XCTAssertNil(receipt?.nextTaskID)
     }
 
+    func testSharedAndTeamRightsGovernPlanningViewsAndWrites() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let guest = User(displayName: "Guest", isAdmin: false)
+        try await guest.save(on: f.t.app.db)
+        let gtoken = AuthSupport.randomToken()
+        try await UserSession(userID: guest.requireID(), tokenHash: AuthSupport.hash(gtoken),
+            expiresAt: Date().addingTimeInterval(3600)).save(on: f.t.app.db)
+        let gid = try guest.requireID().uuidString
+        let now = ISO8601DateFormatter().string(from: Date())
+        _ = try await put(f, f.tasks[0], ["dueAt": now, "priority": 2, "reminders": []])
+        // Without any grant the owner's tasks are invisible and absent from lists.
+        let none = try await f.t.json(.GET, "/v1/planning/up-next", token: gtoken)
+        XCTAssertEqual(none.list?.count, 0)
+        let hidden = try await f.t.json(.PUT, "/v1/planning/tasks/\(f.tasks[0])/dependencies", ["prerequisiteID": f.tasks[1]], token: gtoken)
+        XCTAssertEqual(hidden.status, .notFound)
+        // Team membership grants read access through the team principal.
+        let team = try await f.t.json(.POST, "/v1/teams", ["name": "T"], token: f.token)
+        let tid = try XCTUnwrap(team.body?["id"] as? String)
+        _ = try await f.t.json(.PUT, "/v1/teams/\(tid)/members", ["userID": gid, "isAdmin": false], token: f.token)
+        _ = try await f.t.json(.POST, "/v1/teams/\(tid)/accept", token: gtoken)
+        let grant = try await f.t.json(.PUT, "/v1/projects/\(f.project)/grants",
+            ["principalType": "team", "principalID": tid, "role": "read"], token: f.token)
+        XCTAssertEqual(grant.status, .ok)
+        let today = try await f.t.json(.GET, "/v1/planning/today", token: gtoken)
+        XCTAssertEqual(today.list?.count, 1)
+        let next = try await f.t.json(.GET, "/v1/planning/up-next", token: gtoken)
+        XCTAssertEqual(next.list?.count, 3)
+        let write = try await f.t.json(.PUT, "/v1/planning/tasks/\(f.tasks[0])", ["priority": 3, "reminders": []], token: gtoken)
+        XCTAssertEqual(write.status, .forbidden)
+        let reorder = try await f.t.json(.PUT, "/v1/planning/board/reorder",
+            ["projectID": f.project, "status": "open", "taskIDs": f.tasks], token: gtoken)
+        XCTAssertEqual(reorder.status, .forbidden)
+        // Upgrading to edit allows writes.
+        _ = try await f.t.json(.PUT, "/v1/projects/\(f.project)/grants",
+            ["principalType": "team", "principalID": tid, "role": "edit"], token: f.token)
+        let ok = try await f.t.json(.PUT, "/v1/planning/tasks/\(f.tasks[0])", ["priority": 3, "reminders": []], token: gtoken)
+        XCTAssertEqual(ok.status, .ok)
+        // A dependency onto a task the guest cannot see is a 404 and never leaks.
+        let leak = try await f.t.json(.PUT, "/v1/planning/tasks/\(f.tasks[0])/dependencies", ["prerequisiteID": f.foreignTask], token: gtoken)
+        XCTAssertEqual(leak.status, .notFound)
+    }
+
     func testMariaDBParallelCompletionAcrossReplicas() async throws {
         try XCTSkipUnless(TestApp.useMariaDB, "Requires MariaDB and TODO_TEST_DB")
         let f = try await fixture(), replica = try await f.t.replica()
