@@ -10,7 +10,7 @@ struct AttachmentController: RouteCollection {
         v1.delete("attachments", ":id", use: abort)
         v1.get("attachments", ":id", "download", use: download)
         v1.get("attachments", ":id", "preview", use: preview)
-        v1.get("tasks", ":taskID", "attachments", use: list)
+        v1.get("tasks", ":id", "attachments", use: list)
     }
     private func id(_ req: Request) throws -> UUID {
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
@@ -37,7 +37,7 @@ struct AttachmentController: RouteCollection {
     }
     @Sendable func list(_ req: Request) async throws -> [AttachmentDTO] {
         let user = try await req.requireUser()
-        guard let taskID = req.parameters.get("taskID", as: UUID.self) else { throw Abort(.badRequest) }
+        guard let taskID = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
         let access = ProjectAccess(user: user, db: req.db)
         let task = try await access.task(taskID)
         _ = try await access.project(task.projectID)
