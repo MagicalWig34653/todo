@@ -32,6 +32,147 @@ export interface Task {
 	version: number;
 }
 
+export type Role = 'read' | 'comment' | 'edit' | 'manage';
+export type PrincipalType = 'person' | 'team';
+export interface Team {
+	id: string;
+	name: string;
+	founderID: string;
+}
+export interface TeamMembership {
+	id: string;
+	teamID: string;
+	userID: string;
+	isAdmin: boolean;
+	accepted: boolean;
+}
+export interface ProjectGrant {
+	id: string;
+	projectID: string;
+	principalType: PrincipalType;
+	principalID: string;
+	role: Role;
+}
+export interface EffectiveVisibility {
+	projectID: string;
+	role?: Role;
+	canTransferOwnership: boolean;
+	canDelete: boolean;
+	canManageTeam: boolean;
+	canStartAgent: boolean;
+	inherits: boolean;
+	userID: string;
+}
+
+export interface Recurrence {
+	frequency: 'daily' | 'weekly' | 'monthly';
+	interval: number;
+	timeZone: string;
+	until?: string | null;
+}
+export interface PlanningData {
+	dueAt?: string | null;
+	plannedAt?: string | null;
+	priority: number;
+	recurrence?: Recurrence | null;
+	reminders: string[];
+}
+export interface PlanningTask extends PlanningData {
+	task: Task;
+	position: number;
+}
+
+export interface Label {
+	id: string;
+	name: string;
+	version: number;
+}
+export interface Criteria {
+	q?: string;
+	projectID?: string;
+	labelID?: string;
+	status?: TaskStatus;
+}
+export interface SavedFilter {
+	id: string;
+	name: string;
+	criteria: Criteria;
+	version: number;
+}
+export interface SearchHit {
+	kind: 'project' | 'task';
+	id: string;
+	project: Project;
+	task?: Task;
+}
+export interface Page<T> {
+	items: T[];
+	nextCursor?: string | null;
+}
+
+export interface Comment {
+	id: string;
+	taskID: string;
+	authorID: string;
+	body: string;
+	version: number;
+}
+export interface Criterion {
+	id: string;
+	taskID: string;
+	text: string;
+	completed: boolean;
+	version: number;
+}
+export interface Activity {
+	id: string;
+	sequence: number;
+	actorType: 'Person' | 'Integration' | 'Run';
+	actorID: string;
+	kind: string;
+	subjectID?: string | null;
+	createdAt?: string | null;
+}
+
+export type AttachmentRole = 'reference' | 'progress' | 'result';
+export interface Attachment {
+	id: string;
+	taskID: string;
+	filename: string;
+	role: AttachmentRole;
+	mediaType: string;
+	size: number;
+	checksum: string;
+	status: 'complete';
+}
+export interface UploadCapability {
+	attachmentID: string;
+	uploadURL: string;
+	token: string;
+	expiresAt: string;
+}
+
+export interface Passkey {
+	id: string;
+	name: string;
+	createdAt?: string;
+	revokedAt?: string;
+}
+export interface SessionInfo {
+	id: string;
+	createdAt?: string;
+	expiresAt: string;
+	current: boolean;
+}
+export interface RecoveryToken {
+	token: string;
+	expiresAt: string;
+}
+export interface RegistrationBegin {
+	challengeID: string;
+	options: CreationOptionsJSON;
+}
+
 /** Error from the backend; `reason` is the machine-readable code (e.g. `version_conflict`). */
 export class ApiError extends Error {
 	constructor(
@@ -48,17 +189,30 @@ export class ApiError extends Error {
 	}
 }
 
+/** Builds `?a=b&...` from defined, non-empty values only; returns '' when nothing is set. */
+export function query(params: Record<string, string | number | null | undefined>): string {
+	const parts = Object.entries(params)
+		.filter(([, v]) => v !== undefined && v !== null && v !== '')
+		.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`);
+	return parts.length ? `?${parts.join('&')}` : '';
+}
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base = '/v1') {
-	async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+	/** `bearer` replaces the cookie session (recovery token); cookies are then not sent at all. */
+	async function request<T>(method: string, path: string, body?: unknown, bearer?: string): Promise<T> {
 		let response: Response;
 		try {
 			response = await fetchFn(base + path, {
 				method,
-				credentials: 'same-origin',
+				credentials: bearer ? 'omit' : 'same-origin',
 				// The backend requires JSON for cookie-authenticated writes (CSRF protection).
-				headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'application/json',
+					...(bearer ? { Authorization: `Bearer ${bearer}` } : {})
+				},
 				body: body === undefined ? undefined : JSON.stringify(body)
 			});
 		} catch {
@@ -114,7 +268,122 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			t: Task,
 			changes: Partial<Pick<Task, 'title' | 'description' | 'status'>>
 		) => request<Task>('PATCH', `/tasks/${t.id}`, { version: t.version, ...changes }),
-		deleteTask: (id: string) => request<void>('DELETE', `/tasks/${id}`)
+		deleteTask: (id: string) => request<void>('DELETE', `/tasks/${id}`),
+
+		// Planning (contracts/planning-ext.yaml)
+		getPlanning: (taskID: string) => request<PlanningTask>('GET', `/planning/tasks/${taskID}`),
+		putPlanning: (taskID: string, data: PlanningData) =>
+			request<PlanningTask>('PUT', `/planning/tasks/${taskID}`, data),
+		board: (projectID: string, status: TaskStatus) =>
+			request<PlanningTask[]>('GET', `/planning/board${query({ projectID, status })}`),
+		reorderBoard: (projectID: string, status: TaskStatus, taskIDs: string[]) =>
+			request<void>('PUT', '/planning/board/reorder', { projectID, status, taskIDs }),
+		today: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/today${query({ timeZone })}`),
+		upcoming: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/upcoming${query({ timeZone })}`),
+		upNext: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/up-next${query({ timeZone })}`),
+
+		// Discovery (contracts/discovery.yaml)
+		search: (criteria: Criteria, cursor?: string | null) =>
+			request<Page<SearchHit>>('GET', `/search${query({ ...criteria, cursor })}`),
+		listLabels: (cursor?: string | null) => request<Page<Label>>('GET', `/labels${query({ cursor, limit: 100 })}`),
+		createLabel: (name: string) => request<Label>('POST', '/labels', { name }),
+		renameLabel: (l: Label, name: string) => request<Label>('PATCH', `/labels/${l.id}`, { name, version: l.version }),
+		deleteLabel: (id: string) => request<void>('DELETE', `/labels/${id}`),
+		listFilters: (cursor?: string | null) =>
+			request<Page<SavedFilter>>('GET', `/filters${query({ cursor, limit: 100 })}`),
+		createFilter: (name: string, criteria: Criteria) => request<SavedFilter>('POST', '/filters', { name, criteria }),
+		deleteFilter: (id: string) => request<void>('DELETE', `/filters/${id}`),
+		filterResults: (id: string, cursor?: string | null) =>
+			request<Page<SearchHit>>('GET', `/filters/${id}/results${query({ cursor })}`),
+		taskLabels: (taskID: string) => request<Page<Label>>('GET', `/tasks/${taskID}/labels${query({ limit: 100 })}`),
+		addTaskLabel: (taskID: string, labelID: string) => request<void>('PUT', `/tasks/${taskID}/labels/${labelID}`),
+		removeTaskLabel: (taskID: string, labelID: string) =>
+			request<void>('DELETE', `/tasks/${taskID}/labels/${labelID}`),
+
+		// Collaboration (contracts/collaboration.yaml)
+		listComments: (taskID: string) => request<Comment[]>('GET', `/tasks/${taskID}/comments`),
+		createComment: (taskID: string, body: string) => request<Comment>('POST', `/tasks/${taskID}/comments`, { body }),
+		updateComment: (c: Comment, body: string) =>
+			request<Comment>('PATCH', `/tasks/${c.taskID}/comments/${c.id}`, { body, version: c.version }),
+		deleteComment: (c: Comment) =>
+			request<void>('DELETE', `/tasks/${c.taskID}/comments/${c.id}`, { version: c.version }),
+		listCriteria: (taskID: string) => request<Criterion[]>('GET', `/tasks/${taskID}/acceptance-criteria`),
+		createCriterion: (taskID: string, text: string) =>
+			request<Criterion>('POST', `/tasks/${taskID}/acceptance-criteria`, { text }),
+		updateCriterion: (c: Criterion, changes: { text?: string; completed?: boolean }) =>
+			request<Criterion>('PATCH', `/tasks/${c.taskID}/acceptance-criteria/${c.id}`, {
+				...changes,
+				version: c.version
+			}),
+		deleteCriterion: (c: Criterion) =>
+			request<void>('DELETE', `/tasks/${c.taskID}/acceptance-criteria/${c.id}`, { version: c.version }),
+		activity: (taskID: string, cursor?: string | null) =>
+			request<Page<Activity>>('GET', `/tasks/${taskID}/activity${query({ cursor, limit: 100 })}`),
+
+		// Sharing (contracts/sharing.yaml)
+		listTeams: () => request<Team[]>('GET', '/teams'),
+		createTeam: (name: string) => request<Team>('POST', '/teams', { name }),
+		teamInvitations: () => request<TeamMembership[]>('GET', '/team-invitations'),
+		teamMembers: (teamID: string) => request<TeamMembership[]>('GET', `/teams/${teamID}/members`),
+		putTeamMember: (teamID: string, userID: string, isAdmin: boolean) =>
+			request<TeamMembership>('PUT', `/teams/${teamID}/members`, { userID, isAdmin }),
+		removeTeamMember: (teamID: string, userID: string) =>
+			request<void>('DELETE', `/teams/${teamID}/members/${userID}`),
+		acceptTeam: (teamID: string) => request<void>('POST', `/teams/${teamID}/accept`, {}),
+		listGrants: (projectID: string) => request<ProjectGrant[]>('GET', `/projects/${projectID}/grants`),
+		putGrant: (projectID: string, principalType: PrincipalType, principalID: string, role: Role) =>
+			request<ProjectGrant>('PUT', `/projects/${projectID}/grants`, { principalType, principalID, role }),
+		deleteGrant: (projectID: string, grantID: string) =>
+			request<void>('DELETE', `/projects/${projectID}/grants/${grantID}`),
+		setInheritance: (p: Project, inherits: boolean) =>
+			request<EffectiveVisibility>('PUT', `/projects/${p.id}/inheritance`, { version: p.version, inherits }),
+		visibility: (projectID: string, userID?: string) =>
+			request<EffectiveVisibility>('GET', `/projects/${projectID}/visibility${query({ userID })}`),
+
+		// Attachments (contracts/attachments.yaml)
+		listAttachments: (taskID: string) => request<Attachment[]>('GET', `/tasks/${taskID}/attachments`),
+		beginAttachment: (input: Omit<Attachment, 'id' | 'status'>) =>
+			request<UploadCapability>('POST', '/attachments/begin', input),
+		/** The capability token replaces the session for this single PUT; cookies are not sent. */
+		async uploadAttachment(cap: UploadCapability, data: Blob): Promise<void> {
+			let response: Response;
+			try {
+				response = await fetchFn(cap.uploadURL, {
+					method: 'PUT',
+					credentials: 'omit',
+					headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${cap.token}` },
+					body: data
+				});
+			} catch {
+				throw new ApiError(0, 'network');
+			}
+			if (!response.ok) throw new ApiError(response.status, `upload_${response.status}`);
+		},
+		completeAttachment: (id: string) => request<Attachment>('POST', `/attachments/${id}/complete`, {}),
+		abortAttachment: (id: string) => request<void>('DELETE', `/attachments/${id}`),
+		attachmentPreviewURL: (id: string) => `${base}/attachments/${id}/preview`,
+		attachmentDownloadURL: (id: string) => `${base}/attachments/${id}/download`,
+
+		// Identity (contracts/identity.yaml)
+		listPasskeys: () => request<Passkey[]>('GET', '/me/passkeys'),
+		renamePasskey: (id: string, name: string) => request<void>('PATCH', `/me/passkeys/${id}`, { name }),
+		revokePasskey: (id: string) => request<void>('DELETE', `/me/passkeys/${id}`),
+		addPasskeyBegin: () => request<RegistrationBegin>('POST', '/me/passkeys/begin', {}),
+		addPasskeyFinish: (challengeID: string, credential: RegistrationPayload, passkeyName?: string) =>
+			request<void>('POST', '/me/passkeys/finish', { challengeID, credential, passkeyName }),
+		listSessions: () => request<SessionInfo[]>('GET', '/me/sessions'),
+		revokeSession: (id: string) => request<void>('DELETE', `/me/sessions/${id}`),
+		revokeOtherSessions: () => request<void>('POST', '/me/sessions/revoke-others', {}),
+		redeemRecovery: (code: string) => request<RecoveryToken>('POST', '/identity/recovery/redeem', { code }),
+		recoveryPasskeyBegin: (bearer: string) =>
+			request<RegistrationBegin>('POST', '/identity/recovery/passkeys/begin', {}, bearer),
+		recoveryPasskeyFinish: (bearer: string, challengeID: string, credential: RegistrationPayload, name?: string) =>
+			request<void>(
+				'POST',
+				'/identity/recovery/passkeys/finish',
+				{ challengeID, credential, passkeyName: name },
+				bearer
+			)
 	};
 }
 

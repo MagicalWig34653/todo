@@ -72,6 +72,7 @@
 		{#if caps?.bootstrapOpen}
 			<p>{t('login.bootstrapHint')}</p>
 		{/if}
+		<a class="underline" href="/recover">{t('login.recoveryLink')}</a>
 		<a class="underline" href="/setup">
 			{caps?.bootstrapOpen ? t('login.bootstrapLink') : t('login.inviteLink')}
 		</a>

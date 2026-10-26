@@ -2,13 +2,25 @@
 	import { onMount } from 'svelte';
 	import { api, type Project } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
-	import { t } from '#lib/i18n/index.js';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
 	import { buildTree } from '#lib/projectTree.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import ProjectItem from './ProjectItem.svelte';
 	import TaskPanel from './TaskPanel.svelte';
+	import BoardView from './BoardView.svelte';
+	import PlanningView from './PlanningView.svelte';
+	import SearchView from './SearchView.svelte';
+	import TeamsView from './TeamsView.svelte';
+	import SharingPanel from './SharingPanel.svelte';
+	import AccountView from './AccountView.svelte';
+
+	type View = 'project' | 'today' | 'upcoming' | 'upNext' | 'search' | 'teams' | 'account';
+	type Tab = 'list' | 'board' | 'sharing';
+	const VIEWS: View[] = ['today', 'upcoming', 'upNext', 'search', 'teams', 'account'];
+	let view = $state<View>('project');
+	let tab = $state<Tab>('list');
 
 	let projects = $state<Project[]>([]);
 	let selectedID = $state<string | null>(null);
@@ -83,6 +95,17 @@
 			class="flex flex-col gap-3 border-b p-3 md:w-72 md:shrink-0 md:border-r md:border-b-0 {navOpen ? '' : 'hidden md:flex'}"
 			aria-label={t('projects.title')}
 		>
+			<ul class="flex flex-col" aria-label={t('nav.views')}>
+				{#each VIEWS as v (v)}
+					<li>
+						<button
+							class={['min-h-9 w-full rounded-md px-2 text-left text-sm', view === v ? 'bg-muted font-medium' : 'hover:bg-muted/60']}
+							aria-current={view === v ? 'page' : undefined}
+							onclick={() => ((view = v), (navOpen = false))}>{t(`nav.${v}` as MessageKey)}</button
+						>
+					</li>
+				{/each}
+			</ul>
 			<h2 class="text-muted-foreground text-xs font-medium tracking-wide uppercase">{t('projects.title')}</h2>
 			<form class="flex gap-1" onsubmit={addRoot}>
 				<Input bind:value={newName} placeholder={t('projects.newPlaceholder')} aria-label={t('projects.newPlaceholder')} />
@@ -99,6 +122,7 @@
 						{selectedID}
 						onselect={(id) => {
 							selectedID = id;
+							view = 'project';
 							navOpen = false;
 						}}
 						onrename={rename}
@@ -111,8 +135,38 @@
 		</nav>
 
 		<main class="flex-1 p-4">
-			{#if selected}
-				<TaskPanel project={selected} />
+			{#if view === 'today' || view === 'upcoming' || view === 'upNext'}
+				<PlanningView mode={view} />
+			{:else if view === 'search'}
+				<SearchView
+					{projects}
+					onopen={(id) => {
+						selectedID = id;
+						view = 'project';
+						tab = 'list';
+					}}
+				/>
+			{:else if view === 'teams'}
+				<TeamsView />
+			{:else if view === 'account'}
+				<AccountView />
+			{:else if selected}
+				<div class="mb-3 flex gap-1" role="tablist">
+					{#each ['list', 'board', 'sharing'] as const as tb (tb)}
+						<Button size="sm" role="tab" aria-selected={tab === tb} variant={tab === tb ? 'default' : 'outline'} onclick={() => (tab = tb)}>
+							{t(`view.${tb}` as MessageKey)}
+						</Button>
+					{/each}
+				</div>
+				{#if tab === 'board'}
+					<h2 class="mb-3 text-xl font-semibold" data-testid="task-heading">{selected.name}</h2>
+					<BoardView project={selected} />
+				{:else if tab === 'sharing'}
+					<h2 class="mb-3 text-xl font-semibold" data-testid="task-heading">{selected.name}</h2>
+					<SharingPanel project={selected} onchanged={load} />
+				{:else}
+					<TaskPanel project={selected} />
+				{/if}
 			{:else}
 				<p class="text-muted-foreground text-sm">{t('tasks.selectProject')}</p>
 			{/if}

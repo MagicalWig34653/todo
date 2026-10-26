@@ -5,6 +5,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import TaskDetail from './TaskDetail.svelte';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	let { project }: { project: Project } = $props();
@@ -18,6 +19,7 @@
 	let draftTitle = $state('');
 	let draftDescription = $state('');
 	let deletingID = $state<string | null>(null);
+	let detailID = $state<string | null>(null);
 
 	async function load() {
 		tasks = await api.listTasks(project.id);
@@ -30,6 +32,7 @@
 		loaded = false;
 		editingID = null;
 		deletingID = null;
+		detailID = null;
 		attempt(load);
 	});
 
@@ -114,10 +117,20 @@
 							<option value={s}>{t(`status.${s}` as MessageKey)}</option>
 						{/each}
 					</select>
+					<Button
+						size="sm"
+						variant="ghost"
+						aria-expanded={detailID === task.id}
+						onclick={() => (detailID = detailID === task.id ? null : task.id)}>{t('task.details')}</Button
+					>
 					<Button size="sm" variant="ghost" onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
 						{t('tasks.edit')}
 					</Button>
 				</div>
+
+				{#if detailID === task.id}
+					<TaskDetail {task} />
+				{/if}
 
 				{#if editingID === task.id}
 					<div class="mt-2 flex flex-col gap-2">
