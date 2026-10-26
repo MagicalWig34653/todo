@@ -39,6 +39,19 @@ Tests: 12 Tests grün auf SQLite; mit `scripts/test-mariadb.sh` (TODO_TEST_MARIA
 `swift test` scheitert im Ordner unter ~/Documents am Codesigning (FinderInfo/fileprovider-xattrs); Workaround: `--scratch-path <Ordner außerhalb von Documents>`.
 Offen: Rate-Limits, Passkey-Verwaltung (weitere Passkeys, Widerruf), Recovery, Session-Liste, Idempotenzschlüssel für Anlage, OpenAPI für Auth/Projekte/Aufgaben, PWA-Login/-Listen, Apple-Client-Funktionen, echte Browser-/Geräteprüfung.
 
+## Identität
+Stand 26.10.2026, Branch `worktree-agent-a1347e64d40cad270` (nach Merge von `main`; nicht gepusht).
+Implementiert (`Sources/TodoKit/Identity`, Migration `IdentityMigration`: Tabellen `identity_recovery`, `identity_rate_limits`; Vertrag `contracts/identity.yaml`, Entscheidungen in `docs/adr/0010-recovery.md`):
+- Mehrere benannte Passkeys je Konto: `GET/POST /v1/me/passkeys[/begin|/finish]`, `PATCH/DELETE /v1/me/passkeys/:id`. Letzter aktiver Passkey nur widerrufbar, wenn gültige Recovery oder (bei aktivem `PASSWORD_LOGIN_ENABLED`) Passwort mit Benutzername existiert; Kontozeilensperre verhindert parallelen Widerruf der letzten beiden Schlüssel.
+- Sessions: `GET /v1/me/sessions`, `DELETE /v1/me/sessions/:id`, `POST /v1/me/sessions/revoke-others`.
+- Recovery getrennt vom Passwort: Admin stellt Einmalcode aus (`POST /v1/identity/accounts/:id/recovery`, nur Hash gespeichert, 1 h gültig, Neuausstellung ersetzt alte), Einlösung liefert 5-Minuten-Bearer, der nur Passkey-Registrierung erlaubt und danach alle normalen Sessions des Kontos beendet.
+- Rate-Limits in der DB (feste Zeitfenster, DB-Zeit, atomarer Upsert; Replik-übergreifend) für Login, Passwort-Login, Registrierung, Recovery; pro Peer-IP und zusätzlich pro Benutzername/Recovery-Code. Keine Forwarded-Header. Konfig: `IDENTITY_*_LIMIT`, `IDENTITY_RATE_WINDOW_SECONDS`, `IDENTITY_RECOVERY_SECONDS`.
+- Umschalten von `PASSWORD_LOGIN_ENABLED` getestet: Passwort-Hashes und Recovery bleiben erhalten, abgeschaltetes Passwort zählt nicht als Ersatz.
+- Backend-Befund PWA: Registrierungsoptionen (`/v1/auth/register/begin`, `/v1/me/passkeys/begin`, Recovery) enthalten jetzt `authenticatorSelection.residentKey = required` (`DiscoverableCreationOptions` in `Auth/AuthController.swift`; die Bibliothek erzeugt das Feld nicht). Test `testRegistrationOptionsRequireDiscoverableCredentials`. Die PWA setzt es bisher zusätzlich clientseitig; das kann entfallen.
+Prüfungen: `swift test` (SQLite) 45 Tests, 0 Fehler, 9 MariaDB-Tests übersprungen; `TODO_TEST_DB=todo_test_identity scripts/test-mariadb.sh` 45 Tests, 0 Fehler, 1 übersprungen (zweiter Lauf). Im ersten MariaDB-Lauf stürzte xctest einmal mit Signal 5 ab (MySQLNIO-Assertion "Statement not closed" beim Anlegen von `_fluent_migrations`, vermutlich Shutdown-Race der Test-Harness `defer { Task { shutdown } }`); wiederholter Lauf grün, Ursache nicht untersucht.
+Nicht geprüft: echte Browser/Authenticatoren (nur virtueller ES256-Authenticator), Linux-Build, Proxy-/Forwarded-IP-Betrieb (Limits nutzen die direkte Peer-IP; hinter Reverse Proxy zählt dann dessen IP, offen), Zustellkanal für Recovery-Codes, PWA-/Apple-Oberflächen für Passkey-/Session-Verwaltung und Recovery, Aufräumen alter `identity_rate_limits`-Zeilen (Ablaufspalte vorhanden, kein Job).
+Nächster Schritt: PWA-Einstellungsseite (Passkeys, Sessions, Recovery-Einlösung), Aufräumjob für Rate-Limit-Zeilen, Proxy-Grenze konfigurierbar machen.
+
 ## Vertrag Etappe 1
 
 Ziel und Umfang (25.10.2026): tatsächlichen Health-/Auth-/Planning-Stand als OpenAPI 3.1 unter `contracts/openapi.yaml` erfassen; andere Bereiche bleiben in ihren eigenen Verträgen. Nutzerauftrag beschränkt Änderungen auf Vertrag, Vertragstest und diesen Abschnitt; `ARBEITSPLAN.md` bleibt deshalb unverändert. Arbeitsplan dieses Auftrags: Code/Encodable-Formen prüfen → Vertrag und Router-Abgleich erstellen → Swift-Tests/Lint → Commit auf aktuellem Worktree-Branch, kein Push.

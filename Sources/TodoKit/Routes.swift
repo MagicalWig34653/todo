@@ -8,6 +8,7 @@ struct HealthResponse: Content {
 
 public func routes(_ app: Application) throws {
     try app.register(collection: AuthController())
+    try registerIdentity(app)
     try app.register(collection: PlanningController())
     try app.register(collection: SharingController())
     try app.register(collection: AgentController())

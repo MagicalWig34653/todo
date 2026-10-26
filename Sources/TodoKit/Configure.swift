@@ -51,6 +51,8 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
 /// Migrations are registered but never run on `serve`; run `App migrate --yes` once per deployment.
 public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateInitialSchema())
+    configureIdentity(app)
+
     app.migrations.add(CreateSharingSchema())
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)
