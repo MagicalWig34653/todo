@@ -1,0 +1,631 @@
+openapi: 3.0.3
+info:
+  title: Todo Zusammenarbeit
+  version: 1.0.0
+  description: 'Etappe 2: Kommentare, Verlauf und Abnahmekriterien. Alle Ressourcen werden über ProjectAccess geprüft;
+    Fremdes ist 404. Verschachtelte Ressourcen müssen zur Aufgabe gehören. Texte werden außen getrimmt und dürfen
+    danach 1–10000 Zeichen enthalten. Jede erfolgreiche Mutation erzeugt atomar ein Ereignis; Konflikte und Idempotenzwiederholungen
+    erzeugen keines. Fehlermeldungen sind technische Codes. Bestehende Aufgaben-/Projektcontroller erzeugen noch
+    keine Ereignisse. Migration: CreateCollaborationSchema (vier Tabellen, keine Datenübernahme); explizit vor Serverstart
+    ausführen.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/tasks/{taskID}/comments:
+    parameters:
+    - name: taskID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listComments
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: createComment
+      responses:
+        '201':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict oder idempotency_conflict; keine Änderung und kein Aktivitätsereignis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreate'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: ^[!-~]+$
+        description: 'Optional; bei wiederholbaren Schreibvorgängen mitsenden. Groß-/Kleinschreibung relevant. Gültig
+          pro Person und Aufgabe bis zur Aufgabenlöschung. Identischer normalisierter Text liefert dieselbe ursprüngliche
+          Antwort (201, Version 1), auch nach Bearbeitung/Löschung. Anderer Text mit gleichem Schlüssel: 409. Ohne
+          Schlüssel kann jede Anfrage einen Kommentar erzeugen.'
+  /v1/tasks/{taskID}/comments/{resourceID}:
+    parameters:
+    - name: taskID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: resourceID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: readComment
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateComment
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict oder idempotency_conflict; keine Änderung und kein Aktivitätsereignis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentUpdate'
+    delete:
+      operationId: deleteComment
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict oder idempotency_conflict; keine Änderung und kein Aktivitätsereignis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Version'
+  /v1/tasks/{taskID}/acceptance-criteria:
+    parameters:
+    - name: taskID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listCriterions
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Criterion'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: createCriterion
+      responses:
+        '201':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Criterion'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict oder idempotency_conflict; keine Änderung und kein Aktivitätsereignis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriterionCreate'
+  /v1/tasks/{taskID}/acceptance-criteria/{resourceID}:
+    parameters:
+    - name: taskID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: resourceID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: readCriterion
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Criterion'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateCriterion
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Criterion'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict oder idempotency_conflict; keine Änderung und kein Aktivitätsereignis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriterionUpdate'
+    delete:
+      operationId: deleteCriterion
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: version_conflict oder idempotency_conflict; keine Änderung und kein Aktivitätsereignis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Version'
+  /v1/tasks/{taskID}/activity:
+    parameters:
+    - name: taskID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listTaskActivity
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityPage'
+        '400':
+          description: Ungültige Eingabe oder fehlende Version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Anmeldung erforderlich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Aufgabe oder Ressource fehlt oder ist fremd
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Cursor aus der vorigen Antwort; an diese Aufgabe gebunden.
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      description: 'Aufsteigend nach unveränderlicher Sequenz je Aufgabe. Neue Ereignisse erscheinen hinter vorhandenen;
+        gleiche Zeitstempel beeinflussen die Reihenfolge nicht. Kein Snapshot: später hinzugefügte Ereignisse können
+        auf Folgeseiten erscheinen. Ereignisse haben keine Änderungs-/Löschroute.'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: todo_session
+      description: Schreibzugriffe benötigen JSON und einen erlaubten Origin, falls vorhanden.
+  schemas:
+    Comment:
+      type: object
+      required:
+      - id
+      - taskID
+      - authorID
+      - body
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskID:
+          type: string
+          format: uuid
+        authorID:
+          type: string
+          format: uuid
+        body:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+    CommentCreate:
+      type: object
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    CommentUpdate:
+      type: object
+      required:
+      - body
+      - version
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        version:
+          type: integer
+          minimum: 1
+    Version:
+      type: object
+      required:
+      - version
+      properties:
+        version:
+          type: integer
+          minimum: 1
+    Criterion:
+      type: object
+      required:
+      - id
+      - taskID
+      - text
+      - completed
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskID:
+          type: string
+          format: uuid
+        text:
+          type: string
+        completed:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+    CriterionCreate:
+      type: object
+      required:
+      - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        completed:
+          type: boolean
+          default: false
+    CriterionUpdate:
+      type: object
+      required:
+      - version
+      description: Mindestens text oder completed angeben. completed setzt den Zielzustand ausdrücklich; kein blindes
+        Umschalten bei Wiederholung.
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        completed:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+    Activity:
+      type: object
+      required:
+      - id
+      - sequence
+      - actorType
+      - actorID
+      - kind
+      properties:
+        id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+        actorType:
+          type: string
+          enum:
+          - Person
+          - Integration
+          - Run
+        actorID:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          description: comment.created/updated/deleted, criterion.created/updated/deleted; weitere Ereignisse über
+            recordActivity.
+        subjectID:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+    ActivityPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Activity'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Fehlt am Listenende. Aufgaben-ID und letzte Sequenz, für Clients als undurchsichtiger Cursor
+            zu behandeln.
+    Error:
+      type: object
+      properties:
+        error:
+          type: boolean
+        reason:
+          type: string

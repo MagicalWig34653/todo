@@ -44,7 +44,7 @@ struct TestApp {
             return DatabaseSettings(
                 driver: .mariadb, host: "127.0.0.1",
                 port: Int(ProcessInfo.processInfo.environment["DB_PORT"] ?? "") ?? 23306,
-                name: "todo_test", user: "root", password: "dev-root-only")
+                name: ProcessInfo.processInfo.environment["TODO_TEST_DB"] ?? "todo_test", user: "root", password: "dev-root-only")
         }
         return DatabaseSettings(driver: .sqlite, host: "", port: 0, name: sqliteFile, user: "", password: "")
     }
