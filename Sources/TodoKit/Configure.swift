@@ -54,6 +54,7 @@ public func configureMigrations(_ app: Application) {
     configureIdentity(app)
     app.migrations.add(CreatePlanningExtension())
 
+    app.migrations.add(CreateDiscoverySchema())
     app.migrations.add(CreateSharingSchema())
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)
