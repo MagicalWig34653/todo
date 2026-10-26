@@ -13,7 +13,7 @@ struct CreateOAuthSchema: AsyncMigration {
         try await db.schema("oauth_secrets").id().field("hash", .string, .required).unique(on: "hash")
             .field("kind", .string, .required)
             .field("grant_id", .uuid, .references("oauth_grants", "id", onDelete: .cascade))
-            .field("payload", .sql(.text), .required).field("expires_at", .datetime, .required)
+            .field("payload", .sql(raw: "TEXT"), .required).field("expires_at", .datetime, .required)
             .field("consumed", .bool, .required).create()
     }
     func revert(on db: any Database) async throws {
