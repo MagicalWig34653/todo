@@ -51,6 +51,15 @@ Implementiert (`Sources/TodoKit/Identity`, Migration `IdentityMigration`: Tabell
 Prüfungen: `swift test` (SQLite) 45 Tests, 0 Fehler, 9 MariaDB-Tests übersprungen; `TODO_TEST_DB=todo_test_identity scripts/test-mariadb.sh` 45 Tests, 0 Fehler, 1 übersprungen (zweiter Lauf). Im ersten MariaDB-Lauf stürzte xctest einmal mit Signal 5 ab (MySQLNIO-Assertion "Statement not closed" beim Anlegen von `_fluent_migrations`, vermutlich Shutdown-Race der Test-Harness `defer { Task { shutdown } }`); wiederholter Lauf grün, Ursache nicht untersucht.
 Nicht geprüft: echte Browser/Authenticatoren (nur virtueller ES256-Authenticator), Linux-Build, Proxy-/Forwarded-IP-Betrieb (Limits nutzen die direkte Peer-IP; hinter Reverse Proxy zählt dann dessen IP, offen), Zustellkanal für Recovery-Codes, PWA-/Apple-Oberflächen für Passkey-/Session-Verwaltung und Recovery, Aufräumen alter `identity_rate_limits`-Zeilen (Ablaufspalte vorhanden, kein Job).
 Nächster Schritt: PWA-Einstellungsseite (Passkeys, Sessions, Recovery-Einlösung), Aufräumjob für Rate-Limit-Zeilen, Proxy-Grenze konfigurierbar machen.
+## Planung
+
+Stand 26.10.2026, Branch `worktree-agent-afc57f3c09fb01438` (main inkl. Teams, Agenten, Anhänge eingemerged). Umgesetzt: `Sources/TodoKit/PlanningExt/` mit eigenen Tabellen (Migration `CreatePlanningExtension`, `tasks` unverändert), Vertrag `contracts/planning-ext.yaml`, Entscheidungen in `PlanningExt/ADR.md`. Funktionen: getrennte Fälligkeit/geplante Bearbeitung, Priorität 0-3, Board-Reihenfolge mit Reorder-API (volle Spalte, sonst 409), Wiederholungen (täglich/wöchentlich/monatlich, Beleg pro Quellaufgabe, transaktional über PATCH-Middleware, idempotent), Erinnerungen nur als Daten, Meilensteine, Abhängigkeiten mit Zyklenschutz, Routen Heute/Demnächst/Als Nächstes.
+
+Rechte: alles läuft über `ProjectAccess` (effektive Rechte inkl. Teams/Vererbung). Lesen = read, Schreiben (Planung, Abhängigkeit, Reorder, Meilenstein) = edit; Fremdes/Unsichtbares = 404, zu geringe Rolle = 403. Listen enthalten nur lesbare Aufgaben. Schreibpfade nutzen `lockSharingGraph`. Dateien wurden zu `PlanningExt*.swift` umbenannt (Namenskollision mit Attachments/Migration.swift).
+
+Prüfung: `swift test` (SQLite) 47 Tests, 9 übersprungen (MariaDB-spezifisch), 0 Fehler. `TODO_TEST_DB=todo_test_planext scripts/test-mariadb.sh`: 47 Tests, 2 übersprungen, 0 Fehler, inkl. paralleler Wiederholung über Replikate und gegenläufiger Abhängigkeiten. Neuer Test für Team-/Freigaberechte.
+
+Offen/nicht geprüft: Linux-Build, Listen nicht paginiert (alle sichtbaren Aufgaben werden geladen, bei großen Beständen ineffizient), keine Erinnerungszustellung, keine RRULE, keine Nachholung verpasster Wiederholungen, keine Clientanbindung, OpenAPI-Validator nicht gelaufen. Vor Einsatz `App migrate --yes`. Nächster Schritt: Pagination/Abfrageoptimierung, PWA-Ansichten Heute/Board.
 
 ## Vertrag Etappe 1
 

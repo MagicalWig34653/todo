@@ -10,6 +10,8 @@ public func routes(_ app: Application) throws {
     try app.register(collection: AuthController())
     try registerIdentity(app)
     try app.register(collection: PlanningController())
+    try app.register(collection: PlanningExtController())
+
     try app.register(collection: SharingController())
     try app.register(collection: AgentController())
     try app.register(collection: AttachmentController())
