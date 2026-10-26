@@ -55,6 +55,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateInitialSchema())
     app.migrations.add(CreateCollaborationSchema())
 
+    app.migrations.add(CreateOAuthSchema())
     configureIdentity(app)
     app.migrations.add(CreatePlanningExtension())
 

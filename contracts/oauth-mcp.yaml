@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: Todo OAuth und MCP
+  version: 1.0.0
+  description: >-
+    OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
+    MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
+    Konformität mit 2026-07-28. Reale Clientkompatibilität separat prüfen.
+servers:
+  - url: http://localhost:28080
+paths:
+  /.well-known/oauth-authorization-server:
+    get:
+      responses:
+        '200':
+          description: RFC-8414-Metadaten mit Registrierung, S256 und öffentlichen Clients.
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      responses:
+        '200':
+          description: RFC-9728-Metadaten; resource ist exakt OAUTH_ISSUER plus /mcp.
+  /.well-known/oauth-protected-resource:
+    get:
+      responses:
+        '200':
+          description: Alias der Resource-Metadaten.
+  /oauth/register:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [redirect_uris]
+              properties:
+                client_name: {type: string, maxLength: 200}
+                redirect_uris:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items: {type: string, format: uri}
+                token_endpoint_auth_method: {const: none}
+                grant_types:
+                  type: array
+                  items: {enum: [authorization_code, refresh_token]}
+                response_types:
+                  type: array
+                  items: {const: code}
+      responses:
+        '201':
+          description: RFC-7591-Client mit client_id, Name, Redirects und unterstützten Grant-Typen.
+        '400': {description: Ungültige Clientmetadaten.}
+  /oauth/authorize:
+    get:
+      security: [{userSession: []}]
+      parameters:
+        - {in: query, name: response_type, required: true, schema: {const: code}}
+        - {in: query, name: client_id, required: true, schema: {type: string, format: uuid}}
+        - {in: query, name: redirect_uri, required: true, schema: {type: string, format: uri}}
+        - {in: query, name: scope, required: true, schema: {type: string}}
+        - {in: query, name: state, schema: {type: string}}
+        - {in: query, name: resource, required: true, schema: {type: string, format: uri}}
+        - {in: query, name: code_challenge, required: true, schema: {type: string, minLength: 43, maxLength: 43}}
+        - {in: query, name: code_challenge_method, required: true, schema: {const: S256}}
+      responses:
+        '200':
+          description: >-
+            consent_token (5 Minuten, einmalig), client_name, client_id, redirect_uri,
+            scopes und projects als ProjectDTO-Liste. Consent-Client muss Aktionen und
+            Redirect-Ziel anzeigen und explizite Projektauswahl verlangen.
+        '400': {description: Ungültige Anfrage; keine Weiterleitung bei ungültigem Redirect.}
+        '401': {description: Bestehender Benutzerlogin erforderlich.}
+  /oauth/consent:
+    post:
+      security: [{userSession: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consent_token, project_ids, approve]
+              properties:
+                consent_token: {type: string}
+                approve: {type: boolean}
+                project_ids:
+                  type: array
+                  items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: >-
+            redirect_uri enthält code und unveränderten state oder error=access_denied.
+            Aufrufender Browserclient führt Navigation aus. Zustimmung benötigt mindestens
+            ein aktuell erlaubtes Projekt. Keine automatische Unterprojektfreigabe.
+        '400': {description: Abgelaufener oder bereits verbrauchter Consent; fehlende Auswahl.}
+        '404': {description: Fremdes Projekt oder fremder Consent.}
+  /oauth/token:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {$ref: '#/components/schemas/TokenRequest'}
+          application/json:
+            schema: {$ref: '#/components/schemas/TokenRequest'}
+      responses:
+        '200':
+          description: >-
+            access_token, refresh_token, token_type=Bearer, expires_in=900, scope.
+            Cache-Control no-store. Refresh rotiert mit neuer 30-Tage-Frist.
+        '400':
+          description: invalid_grant; Replay verbrauchter Codes/Refresh-Tokens widerruft den Grant.
+  /oauth/grants:
+    get:
+      security: [{userSession: []}]
+      responses:
+        '200':
+          description: Eigene Grants mit id, client_id, scopes, project_ids und revoked.
+  /oauth/grants/{id}:
+    delete:
+      security: [{userSession: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Grant und damit alle zugehörigen Tokens widerrufen.}
+        '404': {description: Fremder oder unbekannter Grant.}
+  /mcp:
+    post:
+      security: [{oauthBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: {const: '2.0'}
+                id: {type: [string, number]}
+                method: {type: string}
+                params: {type: object}
+      responses:
+        '200':
+          description: >-
+            JSON-RPC initialize, ping, tools/list oder tools/call. Tool-Ergebnisse als
+            Text-Content mit JSON; Fachfehler mit isError=true. Methodenfehler -32601,
+            ungültige Requests -32600, Parsefehler -32700, unbekannte Tools -32602.
+        '202': {description: Notification akzeptiert, leerer Body.}
+        '400': {description: Nicht unterstützter Versionsheader.}
+        '401': {description: Fehlendes oder ungültiges OAuth-Token; WWW-Authenticate enthält resource_metadata.}
+        '403': {description: Ungültiger Origin.}
+    get:
+      responses:
+        '405': {description: Kein SSE-Stream angeboten.}
+components:
+  securitySchemes:
+    userSession: {type: http, scheme: bearer, description: Bestehende Login-Session; alternativ SameSite-Sessioncookie mit JSON-/Origin-Prüfung.}
+    oauthBearer: {type: http, scheme: bearer, description: Ausschließlich an /mcp gebundenes OAuth-Access-Token.}
+  schemas:
+    TokenRequest:
+      type: object
+      required: [grant_type, client_id, resource]
+      properties:
+        grant_type: {enum: [authorization_code, refresh_token]}
+        client_id: {type: string, format: uuid}
+        resource: {type: string, format: uri}
+        code: {type: string}
+        redirect_uri: {type: string, format: uri}
+        code_verifier: {type: string, minLength: 43, maxLength: 128}
+        refresh_token: {type: string}
+        scope: {type: string, description: Beim Refresh nur unverändert zulässig.}
+x-mcp-tools:
+  list_projects: {scope: 'projects:read', arguments: {}, result: ProjectDTO-Liste explizit freigegebener Projekte}
+  list_tasks: {scope: 'tasks:read', required: [projectID], arguments: {projectID: UUID}, result: TaskDTO-Liste}
+  get_task: {scope: 'tasks:read', required: [id], arguments: {id: UUID}, result: TaskDTO}
+  create_task: {scope: 'tasks:write', required: [projectID, title], arguments: {projectID: UUID, title: string, description: string}, result: TaskDTO}
+  update_task: {scope: 'tasks:write', required: [id, version], arguments: {id: UUID, version: integer, title: string, description: string, status: 'open|in_progress|in_review|done', projectID: UUID}, result: TaskDTO}
