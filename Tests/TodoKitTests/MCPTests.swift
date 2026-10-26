@@ -11,7 +11,7 @@ final class MCPTests: XCTestCase {
             XCTAssertEqual((initResult.body?["result"] as? [String: Any])?["protocolVersion"] as? String, "2025-11-25")
             let listed = try await f.rpc("tools/list", access: tokens.access)
             let tools = (listed.body?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
-            XCTAssertEqual(Set(tools?.compactMap { $0["name"] as? String } ?? []), Set(["list_projects", "list_tasks", "get_task", "create_task", "update_task"]))
+            XCTAssertEqual(Set(tools?.compactMap { $0["name"] as? String } ?? []), Set(["list_projects", "list_tasks", "get_task", "create_task", "update_task", "list_comments"]))
             let created = try await f.rpc("tools/call", ["name": "create_task", "arguments": ["projectID": try f.project.requireID().uuidString, "title": "  MCP Task  "]], access: tokens.access)
             let t = try decodedTool(created.body)
             XCTAssertEqual(t["title"] as? String, "MCP Task")

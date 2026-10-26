@@ -189,3 +189,15 @@ Nicht geprüft: Firefox/Safari, echte Geräte, Mobil-Layout visuell, Drag-and-Dr
 ## Checkpoint 26.10.2026 (PWA Etappe 2 gemergt)
 PWA Etappe 2 auf `main` (Suche/Labels/Filter, Planung und Board, Details mit Kriterien/Kommentaren/Verlauf/Anhängen, Teams/Freigaben, Konto/Passkeys/Sessions/Recovery); E2E 6/6 grün gegen das Container-Backend. Behoben im Hauptrepo: Runtime-Image enthielt `libcurl4t64`/`libxml2` nicht (Container startete nicht), Compose setzt jetzt S3-Variablen für S3Mock. Verifiziert: `migrate` + `backend` healthy im frischen Compose-Projekt.
 Backend-Lücken laut PWA-Test: kein Nutzerverzeichnis (Einladung nur per Konto-ID), Teameinladungen ohne Teamnamen, Kommentarautoren anonym, Aufgabenliste ohne Planungsdaten, keine UI zum Ausstellen von Recovery-Codes.
+
+## MCP-Erweiterung und Cleanup (26.10.2026, Branch `worktree-agent-a2ff174f123de35e1`)
+
+Ziel: MCP um Kommentare, Fortschritt/Checkpoints (lesend) und Anhangsmetadaten erweitern, Cleanup-Kommando für abgelaufene Zeilen. Entscheidungen in ADR 0007 (Nachtrag).
+
+Implementiert: Scopes `comments:write`, `attachments:read`, `agents:read`; Werkzeuge `list_comments`, `add_comment`, `get_progress`, `list_attachments`, `get_attachment` (`Sources/TodoKit/MCP/MCPController.swift`). `CommentService` (neu, `Collaboration/CommentService.swift`) wird von REST-Route und MCP gemeinsam genutzt. Kommando `App cleanup-expired` (`Maintenance/CleanupExpired.swift`). Vertrag `contracts/oauth-mcp.yaml` aktualisiert.
+
+Geprüft: `swift test --scratch-path /private/tmp/claude-501/mcp-ext-build` (SQLite) 90 Tests, 15 übersprungen (MariaDB-only), 0 Fehler. MariaDB mit eigener Datenbank `TODO_TEST_DB=todo_test_mcpext TODO_TEST_MARIADB=1 swift test --no-parallel --scratch-path /private/tmp/claude-501/mcp-ext-build` gegen den laufenden Dev-DB-Container: 90 Tests, 2 übersprungen, 0 Fehler; Testdatenbank danach gelöscht. Neue Tests (`MCPExtensionTests`): Scope-abhängige Werkzeugliste, Kommentar-Idempotenz/-Konflikt, Übereinstimmung mit REST, Aktivität `Integration`, Scope-/Grant-/Live-Rollen-Schnitt (Entzug der Rolle, nicht freigegebenes Projekt), Anhangsmetadaten nur abgeschlossen, Fortschritt nur für Eigentümer, Cleanup (nur Abgelaufenes, Nachlauf, Batching, idempotent, Kommando ausgeführt) und paralleler Cleanup über zwei Replikate (MariaDB).
+
+Grenzen: `get_progress` nur lesend (Runner-API bleibt einziger Schreibweg); kein Upload und keine Dateiinhalte über MCP; keine Fortschrittsscopes pro Projekt. Cleanup-Zähler zählt je Lauf ausgewählte Zeilen (überlappende Läufe können doppelt zählen); abgelaufene Anhangs-Uploads bleiben bei `cleanup-uploads`; kein Scheduler. Reale Claude-Code-Prüfung der neuen Werkzeuge nicht durchgeführt.
+
+Nächster Schritt: Cleanup per Cron/Swarm-Job einplanen (BETRIEB), Consent-Oberfläche mit den neuen Scopes in der PWA, Browser-OAuth-Flow mit Claude Code abnehmen.

@@ -23,6 +23,7 @@ indirect enum JSONValue: Content, Equatable {
         }
     }
     subscript(_ key: String) -> JSONValue { if case .object(let o) = self { return o[key] ?? .null }; return .null }
+    var isNull: Bool { if case .null = self { return true }; return false }
     var string: String? { if case .string(let s) = self { return s }; return nil }
     static func strings(_ values: [String]) -> JSONValue { .array(values.map(Self.string)) }
     static func encoded<T: Encodable>(_ value: T) throws -> JSONValue { try JSONDecoder().decode(Self.self, from: JSONEncoder().encode(value)) }

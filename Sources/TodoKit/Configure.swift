@@ -63,6 +63,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateSharingSchema())
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)
+    configureMaintenance(app)
 }
 
 public func configureContent() {

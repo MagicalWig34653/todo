@@ -72,33 +72,10 @@ struct CollaborationController: RouteCollection {
     @Sendable func createComment(_ req: Request) async throws -> Response {
         _ = try await authorized(req, role: .comment)
         let input = try req.content.decode(CommentInput.self)
-        let body = try text(input.body)
         let keys = req.headers["Idempotency-Key"]
         guard keys.count <= 1 else { throw Abort(.badRequest, reason: "invalid_idempotency_key") }
-        let key = keys.first
-        if let key {
-            guard !key.isEmpty, key.utf8.count <= 200, key.utf8.allSatisfy({ $0 >= 33 && $0 <= 126 }) else {
-                throw Abort(.badRequest, reason: "invalid_idempotency_key")
-            }
-        }
-        let hash = key.map { SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined() }
-        let dto = try await mutate(req, role: .comment) { db, taskID, userID in
-            if let hash, let saved = try await CommentIdempotency.query(on: db)
-                .filter(\.$taskID == taskID).filter(\.$userID == userID).filter(\.$keyHash == hash).first() {
-                guard saved.requestBody == body else { throw Abort(.conflict, reason: "idempotency_conflict") }
-                return CommentDTO(saved)
-            }
-            let c = TaskComment(taskID: taskID, authorID: userID, body: body)
-            try await c.save(on: db)
-            if let hash {
-                let saved = CommentIdempotency()
-                saved.taskID = taskID; saved.userID = userID; saved.keyHash = hash
-                saved.requestBody = body; saved.commentID = try c.requireID()
-                try await saved.save(on: db)
-            }
-            try await appendActivity(taskID: taskID, actorType: .person, actorID: userID, kind: "comment.created", subjectID: c.id, on: db)
-            return try CommentDTO(c)
-        }
+        let dto = try await CommentService.create(taskID: parameter(req, "id"), user: req.requireUser(),
+            body: input.body, idempotencyKey: keys.first, on: req.db)
         return try await dto.encodeResponse(status: .created, for: req)
     }
     @Sendable func editComment(_ req: Request) async throws -> CommentDTO {

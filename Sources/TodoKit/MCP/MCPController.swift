@@ -76,8 +76,19 @@ struct MCPController: RouteCollection {
         Tool(name: "list_tasks", scope: "tasks:read", properties: ["projectID": string], required: ["projectID"]),
         Tool(name: "get_task", scope: "tasks:read", properties: ["id": string], required: ["id"]),
         Tool(name: "create_task", scope: "tasks:write", properties: ["projectID": string, "title": string, "description": string], required: ["projectID", "title"]),
-        Tool(name: "update_task", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "title": string, "description": string, "status": string, "projectID": string], required: ["id", "version"])
+        Tool(name: "update_task", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "title": string, "description": string, "status": string, "projectID": string], required: ["id", "version"]),
+        Tool(name: "list_comments", scope: "tasks:read", properties: ["taskID": string], required: ["taskID"]),
+        Tool(name: "add_comment", scope: "comments:write", properties: ["taskID": string, "body": string, "idempotencyKey": string], required: ["taskID", "body"]),
+        Tool(name: "get_progress", scope: "agents:read", properties: ["taskID": string], required: ["taskID"]),
+        Tool(name: "list_attachments", scope: "attachments:read", properties: ["taskID": string], required: ["taskID"]),
+        Tool(name: "get_attachment", scope: "attachments:read", properties: ["id": string], required: ["id"])
     ]
+    /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
+    func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
+        let task = try await ProjectAccess(user: user, db: db).task(id, role: role)
+        _ = try await project(task.projectID, user: user, grant: grant, db: db, role: role)
+        return task
+    }
     /// Effective rights = explicitly granted project IDs AND the user's current effective role (incl. teams).
     func project(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> Project {
         guard grant.projects.contains(id) else { throw Abort(.notFound) }
@@ -138,7 +149,49 @@ struct MCPController: RouteCollection {
                 if let s = b.status { guard TaskStatus.all.contains(s) else { throw Abort(.badRequest, reason: "invalid_status") }; t.status = s }
                 t.version += 1; try await t.save(on: db); return try .encoded(TaskDTO(t))
             }
+        case "list_comments":
+            let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)
+            let comments = try await TaskComment.query(on: db).filter(\.$taskID == task.requireID()).sort(\.$id).all()
+            return try .encoded(comments.map(CommentDTO.init))
+        case "add_comment":
+            guard let body = a["body"].string else { throw Abort(.badRequest, reason: "invalid_arguments") }
+            let taskID = try uuid(a["taskID"])
+            if !a["idempotencyKey"].isNull && a["idempotencyKey"].string == nil { throw Abort(.badRequest, reason: "invalid_idempotency_key") }
+            let projects = grant.projects, grantID = try grant.requireID()
+            // Same service as REST; the grant's project list is checked again on the locked task.
+            let dto = try await CommentService.create(taskID: taskID, user: user, body: body, idempotencyKey: a["idempotencyKey"].string,
+                actor: (.integration, grantID), scope: { t in guard projects.contains(t.projectID) else { throw Abort(.notFound) } }, on: db)
+            return try .encoded(dto)
+        case "get_progress":
+            let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)
+            // Agent jobs are visible to the project owner only, exactly like GET /v1/agents/jobs/:id.
+            _ = try await ProjectAccess(user: user, db: db).startAgent(in: task.projectID)
+            let taskID = try task.requireID()
+            var jobs: [JSONValue] = []
+            for job in try await AgentJob.query(on: db).filter(\.$taskID == taskID).filter(\.$projectID == task.projectID).sort(\.$id).all() {
+                var runs: [AgentRunDTO] = []
+                for run in try await AgentRun.query(on: db).filter(\.$jobID == job.requireID()).sort(\.$id).all() {
+                    runs.append(try await AgentRunDTO(run, job: job, on: db))
+                }
+                jobs.append(.object(["job": try .encoded(AgentJobDTO(job)), "runs": try .encoded(runs.map { RunProgress($0) })]))
+            }
+            return .array(jobs)
+        case "list_attachments":
+            let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)
+            let items = try await Attachment.query(on: db).filter(\.$taskID == task.requireID()).filter(\.$status == "complete").sort(\.$id).all()
+            return try .encoded(items.map(AttachmentDTO.init))
+        case "get_attachment":
+            // Metadata only: file content is never embedded; download stays a separate authenticated REST call.
+            guard let att = try await Attachment.find(uuid(a["id"]), on: db), att.status == "complete" else { throw Abort(.notFound) }
+            _ = try await task(att.taskID, user: user, grant: grant, db: db)
+            return try .encoded(AttachmentDTO(att))
         default: throw Abort(.badRequest)
         }
     }
+}
+
+/// Run view for MCP: lease state and the persisted checkpoint, without repeating the job.
+private struct RunProgress: Content {
+    let id: UUID; let generation: Int; let leaseUntil: Date; let endedAt: Date?; let checkpoint: AgentCheckpointInput?
+    init(_ r: AgentRunDTO) { id = r.id; generation = r.generation; leaseUntil = r.leaseUntil; endedAt = r.endedAt; checkpoint = r.checkpoint }
 }

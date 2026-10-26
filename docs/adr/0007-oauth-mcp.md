@@ -30,3 +30,11 @@ Die aktuelle Spezifikation wurde vor Umsetzung per Websuche und anhand der Prim�
 ## Prüfstand
 
 Testnachweise und die reale Claude-Code-Prüfung stehen in docs/STATUS.md (Abschnitt OAuth/MCP). Ergänzungen zur Umsetzung: Consent-Seite bei `Accept: text/html` (CSP per Skript-Hash), `iss` im Callback (RFC 9207), fehlendes `resource` wird auf die einzige Resource gesetzt, fehlendes `scope` auf alle unterstützten; `WWW-Authenticate` nennt `scope`. Rechte: Lesen braucht Rolle read, Schreiben edit, live aus den effektiven Freigaben. Protokolltests belegen allein keine reale Clientkompatibilität; der CLI-eigene Browser-Flow ist ungeprüft.
+
+## Nachtrag 26.10.2026 – Kommentare, Fortschritt, Anhangsmetadaten
+
+- Neue Scopes `comments:write`, `attachments:read`, `agents:read`; Werkzeuge `list_comments` (tasks:read), `add_comment`, `get_progress`, `list_attachments`, `get_attachment`. Alte Grants behalten ihre Scopes; neue Werkzeuge erscheinen nur bei passendem Scope. Ein Client ohne `scope`-Parameter erhält weiterhin alle unterstützten Scopes.
+- Gleiche Fachregeln wie REST: `add_comment` nutzt den aus der REST-Route extrahierten `CommentService` (Rolle comment nach Zeilensperre, Idempotenz-Schlüssel, Aktivität). Die Aktivität nennt `Integration` mit der Grant-ID als Handelnden. Alle Werkzeuge prüfen zusätzlich die Projektliste des Grants; fremde und nicht freigegebene Objekte sind `not_found`.
+- `get_progress` ist bewusst nur lesend und wie `GET /v1/agents/jobs/:id` dem Projekteigentümer vorbehalten (Agentenstart ist eine eigene Fähigkeit). Fortschritt und Checkpoints schreibt weiterhin ausschließlich der Runner mit Geräte-Token, Lease und Generationsprüfung; ein MCP-Schreibweg würde diese Absicherung umgehen.
+- Anhänge nur als Metadaten abgeschlossener Dateien; Inhalt bleibt beim authentifizierten REST-Download. Upload über MCP ist nicht umgesetzt.
+- Wartung: `App cleanup-expired [--grace-seconds N] [--batch-size N]` löscht abgelaufene Sitzungen, Challenges, Einladungen, Recovery-Grants, Rate-Limit-Fenster, OAuth-Secrets und Pairing-Codes (Standard: 24 h Nachlauf, damit verbrauchte Refresh-Tokens für die Replay-Erkennung noch kurz bleiben). Replikatsicher: idempotente Batches nach sortierter ID, keine langen Transaktionen, Rate-Limit-Zeit aus der Datenbankuhr. Ein Scheduler fehlt weiterhin (Aufruf per Cron/Swarm-Job).
