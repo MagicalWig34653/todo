@@ -489,6 +489,10 @@ components:
         authorID:
           type: string
           format: uuid
+        authorName:
+          type: string
+          nullable: true
+          description: Anzeigename des Autors; fehlt, wenn das Konto nicht mehr existiert.
         body:
           type: string
         version:
@@ -598,10 +602,20 @@ components:
         actorID:
           type: string
           format: uuid
+        actorName:
+          type: string
+          nullable: true
+          description: Anzeigename, nur für Akteure vom Typ Person und solange das Konto existiert.
         kind:
           type: string
-          description: comment.created/updated/deleted, criterion.created/updated/deleted; weitere Ereignisse über
-            recordActivity.
+          description: >-
+            comment.created/updated/deleted, criterion.created/updated/deleted;
+            task.created (subjectID = Quellaufgabe bei Wiederholung), task.updated (Titel/Beschreibung),
+            task.status_changed, task.moved (subjectID = neues Projekt), task.planning_updated;
+            agent.released, agent.claimed, agent.question, agent.answered, agent.resume, agent.submit,
+            agent.stop, agent.fail, agent.accept, agent.request_changes (subjectID = Job bzw. Frage;
+            Akteur Run für Runner-Schritte). Heartbeat, Fortschritt, Checkpoints und Abgleiche erzeugen
+            keine Ereignisse. Weitere Ereignisse über recordActivity.
         subjectID:
           type: string
           format: uuid

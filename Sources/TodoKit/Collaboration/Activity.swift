@@ -35,3 +35,31 @@ func appendActivity(taskID: UUID, actorType: ActivityActorType, actorID: UUID, k
     event.actorType = actorType; event.actorID = actorID; event.kind = kind; event.subjectID = subjectID
     try await event.save(on: db)
 }
+
+/// Snapshot of the task fields that produce timeline events when they change.
+struct TaskSnapshot {
+    let title: String, details: String, status: String, projectID: UUID
+    init(_ t: TodoTask) { title = t.title; details = t.details; status = t.status; projectID = t.projectID }
+}
+
+/// Appends one event per changed aspect (content, status, project). The caller holds the task row lock
+/// inside the mutation's transaction and has checked ProjectAccess.
+func appendTaskChangeActivity(_ task: TodoTask, from before: TaskSnapshot, actorID: UUID, on db: any Database) async throws {
+    let id = try task.requireID()
+    if task.title != before.title || task.details != before.details {
+        try await appendActivity(taskID: id, actorType: .person, actorID: actorID, kind: "task.updated", subjectID: nil, on: db)
+    }
+    if task.status != before.status {
+        try await appendActivity(taskID: id, actorType: .person, actorID: actorID, kind: "task.status_changed", subjectID: nil, on: db)
+    }
+    if task.projectID != before.projectID {
+        try await appendActivity(taskID: id, actorType: .person, actorID: actorID, kind: "task.moved", subjectID: task.projectID, on: db)
+    }
+}
+
+/// Takes the task row lock, then appends an event. For use inside an existing transaction whose
+/// authorization was already established by the caller (agent runner and review flows).
+func appendLockedActivity(taskID: UUID, actorType: ActivityActorType, actorID: UUID, kind: String, subjectID: UUID?, on db: any Database) async throws {
+    try await lockRow(table: TodoTask.schema, id: taskID, on: db)
+    try await appendActivity(taskID: taskID, actorType: actorType, actorID: actorID, kind: kind, subjectID: subjectID, on: db)
+}

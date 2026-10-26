@@ -7,6 +7,21 @@ struct GrantInput: Content { let principalType: String; let principalID: UUID; l
 struct InheritanceInput: Content { let version: Int; let inherits: Bool }
 struct OwnerInput: Content { let version: Int; let ownerType: String; let ownerID: UUID }
 
+/// Membership with optional resolved names; additive over the stored `TeamMembership` fields.
+struct TeamMembershipDTO: Content {
+    let id: UUID
+    let teamID: UUID
+    let userID: UUID
+    let isAdmin: Bool
+    let accepted: Bool
+    let teamName: String?
+    let displayName: String?
+    init(_ m: TeamMembership, teamName: String?, displayName: String?) throws {
+        id = try m.requireID(); teamID = m.teamID; userID = m.userID; isAdmin = m.isAdmin; accepted = m.accepted
+        self.teamName = teamName; self.displayName = displayName
+    }
+}
+
 struct SharingController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let v1 = routes.grouped("v1")
@@ -61,17 +76,23 @@ struct SharingController: RouteCollection {
         }
     }
 
-    @Sendable func listMembers(_ req: Request) async throws -> [TeamMembership] {
+    @Sendable func listMembers(_ req: Request) async throws -> [TeamMembershipDTO] {
         let access = SharingAccess(user: try await req.requireUser(), db: req.db)
         let tid = try id(req, "teamID")
         _ = try await access.requireTeam(tid)
-        return try await TeamMembership.query(on: req.db).filter(\.$teamID == tid).all()
+        let members = try await TeamMembership.query(on: req.db).filter(\.$teamID == tid).all()
+        let names = try await displayNames(members.map(\.userID), on: req.db)
+        return try members.map { try TeamMembershipDTO($0, teamName: nil, displayName: names[$0.userID]) }
     }
 
-    @Sendable func invitations(_ req: Request) async throws -> [TeamMembership] {
+    /// Pending invitations of the caller, including the team name so the invitee can decide knowingly.
+    @Sendable func invitations(_ req: Request) async throws -> [TeamMembershipDTO] {
         let user = try await req.requireUser()
-        return try await TeamMembership.query(on: req.db).filter(\.$userID == user.requireID())
+        let pending = try await TeamMembership.query(on: req.db).filter(\.$userID == user.requireID())
             .filter(\.$accepted == false).all()
+        let teams = pending.isEmpty ? [] : try await Team.query(on: req.db).filter(\.$id ~~ pending.map(\.teamID)).all()
+        let teamNames = Dictionary(uniqueKeysWithValues: try teams.map { (try $0.requireID(), $0.name) })
+        return try pending.map { try TeamMembershipDTO($0, teamName: teamNames[$0.teamID], displayName: nil) }
     }
 
     @Sendable func inviteMember(_ req: Request) async throws -> TeamMembership {

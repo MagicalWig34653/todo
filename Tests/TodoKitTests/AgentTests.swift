@@ -107,6 +107,14 @@ final class AgentTests: XCTestCase {
         let events = try await AgentEvent.query(on: f.app.app.db).filter(\.$jobID == UUID(uuidString: job)!).all()
         XCTAssertEqual(events.filter { $0.kind == "answered" }.count, 1)
         XCTAssertFalse(events.contains { ["heartbeat", "progress"].contains($0.kind) })
+        // The task timeline shows milestones only, with run and person actors.
+        let activity = try await f.app.json(.GET, "/v1/tasks/\(f.taskID)/activity", token: f.human)
+        let items = try XCTUnwrap(activity.body?["items"] as? [[String: Any]])
+        XCTAssertEqual(items.compactMap { $0["kind"] as? String }, [
+            "task.created", "agent.released", "agent.claimed", "agent.question", "agent.answered",
+            "agent.resume", "agent.submit", "agent.accept"])
+        XCTAssertEqual(items.first { $0["kind"] as? String == "agent.claimed" }?["actorType"] as? String, "Run")
+        XCTAssertEqual(items.first { $0["kind"] as? String == "agent.answered" }?["actorName"] as? String, "Owner")
     }
 
     func testExpiredLeaseBlocksClaimsAndAllStaleWritesUntilReconciliation() async throws {

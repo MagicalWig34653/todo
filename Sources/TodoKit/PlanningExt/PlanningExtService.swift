@@ -55,6 +55,7 @@ struct PlanningService: Sendable {
         p.dueAt = data.dueAt; p.plannedAt = data.plannedAt; p.priority = data.priority
         p.recurrence = data.recurrence; p.reminders = data.reminders
         try await p.save(on: db)
+        try await appendActivity(taskID: id, actorType: .person, actorID: user.requireID(), kind: "task.planning_updated", subjectID: nil, on: db)
         // Also reconcile already completed tasks, including completions before recurrence was configured.
         if t.status == "done" { try await spawnNext(t, planning: p) }
         return try PlanningTaskDTO(t, p)
@@ -90,6 +91,7 @@ struct PlanningService: Sendable {
         try await lockRow(table: TodoTask.schema, id: id, on: db)
         let t = try await task(id, role: .edit)
         guard t.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
+        let before = TaskSnapshot(t)
         if let title = body.title {
             let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest, reason: "invalid_title") }
@@ -114,6 +116,7 @@ struct PlanningService: Sendable {
         }
         t.version += 1
         try await t.save(on: db)
+        try await appendTaskChangeActivity(t, from: before, actorID: user.requireID(), on: db)
         if t.status == "done", let p = try await TaskPlanning.find(id, on: db) { try await spawnNext(t, planning: p) }
         return try TaskDTO(t)
     }
@@ -131,6 +134,7 @@ struct PlanningService: Sendable {
         }
         let next = TodoTask(ownerID: source.ownerID, projectID: source.projectID, title: source.title, details: source.details)
         try await next.save(on: db)
+        try await appendActivity(taskID: next.requireID(), actorType: .person, actorID: source.ownerID, kind: "task.created", subjectID: id, on: db)
         let p = TaskPlanning(taskID: try next.requireID())
         p.dueAt = due; p.plannedAt = planned; p.priority = planning.priority; p.recurrence = rule
         p.reminders = try planning.reminders.map(rule.next)
