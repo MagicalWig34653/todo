@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Todo – Projektplanung für Menschen und Agenten</title>
+<meta name="description" content="Todo: intuitive Todo- und Projektplanung mit verschachtelten Projekten, Teams, Passkeys, PWA, SwiftUI, MCP und lokalen Claude-Code-Runnern.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="in">
+<h1>Todo</h1>
+<p class="lead">Intuitive Todo- und Projektplanung mit frei verschachtelten Projekten, Teams und Freigaben. Aufgaben, Rückfragen, Fortschritt und Screenshots bleiben an einem Ort, auch wenn ein KI-Agent daran arbeitet.</p>
+</div></header>
+<main>
+<h2>Kernideen</h2>
+<div class="grid">
+<div class="card"><h3>Projekte beliebig tief</h3><p>Projekte und Unterprojekte gehören Personen oder Teams; Rechte werden vererbt und lassen sich je Projekt freigeben.</p></div>
+<div class="card"><h3>Passkey zuerst</h3><p>Anmeldung per WebAuthn, mehrere benannte Passkeys, Sessions einsehbar, getrennte Wiederherstellung.</p></div>
+<div class="card"><h3>PWA und SwiftUI</h3><p>Web-App (SvelteKit) und native Apps für iOS, macOS und watchOS teilen sich eine API und dieselben Fachregeln.</p></div>
+<div class="card"><h3>MCP und OAuth</h3><p>Externe Agenten sprechen über einen MCP-Endpunkt mit OAuth 2.1 (PKCE, Resource Indicators) mit der App.</p></div>
+<div class="card"><h3>Lokale Mac-Runner</h3><p>Ein Runner startet Claude Code im lokalen Projektordner. Aufträge und Checkpoints liegen in der App, nicht in einer Chat-Sitzung.</p></div>
+<div class="card"><h3>Rückfragen an der Aufgabe</h3><p>Fragen, Fortschritt, Abnahmekriterien und Anhänge hängen direkt an der Aufgabe.</p></div>
+</div>
+
+<h2>Architektur</h2>
+<pre>PWA / SwiftUI / MCP-Clients / Mac-Runner
+              | HTTPS
+      API-Replikate (Swift, Vapor)
+  gemeinsame Fachlogik und Rechteprüfung
+              |
+   MariaDB + S3-kompatibler Dateispeicher</pre>
+<p>Modularer Monolith in Swift (Vapor, Fluent), MariaDB, SvelteKit-PWA mit statischer Auslieferung. Deployment als Docker-Image, Betrieb im Swarm.</p>
+
+<h2>Status</h2>
+<p>In aktiver Entwicklung. Backend (Identität, Projekte, Aufgaben, Teams/Freigaben, Anhänge, Kommentare, Planung, OAuth/MCP, Agentenaufträge) und PWA-Oberflächen sind vorhanden und getestet; echte Geräte-, Browser- und Produktionsprüfungen stehen teilweise aus. Der genaue Stand steht im Repository unter <code>docs/STATUS.md</code>.</p>
+
+<h2>Entwicklung</h2>
+<table>
+<tr><th>Dienst</th><th>Port</th></tr>
+<tr><td>MariaDB (Entwicklung)</td><td>23306</td></tr>
+<tr><td>S3Mock (Anhänge)</td><td>29090</td></tr>
+<tr><td>Backend (Docker)</td><td>28080</td></tr>
+<tr><td>PWA (Vite-Dev-Server)</td><td>25173</td></tr>
+</table>
+<pre>docker compose up -d db s3
+swift run App serve --port 28081
+cd web &amp;&amp; npm install &amp;&amp; npm run dev -- --port 25173</pre>
+
+<h2>Dokumentation</h2>
+<p>Die Dokumentation liegt im Repository unter <code>docs/</code>: Produktkonzept, Architektur, Identität und Rechte, Agenten und MCP, Umsetzungsplan, Entscheidungen und ADRs. Die README im Repository verlinkt alle Dokumente.</p>
+</main>
+<footer>Todo – Projekt im Aufbau. Diese Seite enthält keine Zugangsdaten und keine Laufzeitdaten.</footer>
+</body>
+</html>
