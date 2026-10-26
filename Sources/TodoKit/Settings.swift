@@ -33,13 +33,15 @@ public struct AppSettings: Sendable {
         self.secureCookies = secureCookies
     }
 
-    public static func fromEnvironment() -> AppSettings {
+    public static func fromEnvironment(
+        get: (String) -> String? = { Environment.get($0) }
+    ) throws -> AppSettings {
         var s = AppSettings()
-        s.relyingPartyID = Environment.get("RP_ID") ?? s.relyingPartyID
-        s.relyingPartyName = Environment.get("RP_NAME") ?? s.relyingPartyName
-        s.relyingPartyOrigin = Environment.get("RP_ORIGIN") ?? s.relyingPartyOrigin
-        s.passwordLoginEnabled = (Environment.get("PASSWORD_LOGIN_ENABLED") ?? "false") == "true"
-        s.bootstrapToken = Environment.get("BOOTSTRAP_TOKEN").flatMap { $0.isEmpty ? nil : $0 }
+        s.relyingPartyID = try RuntimeEnvironment.value("RP_ID", get: get) ?? s.relyingPartyID
+        s.relyingPartyName = try RuntimeEnvironment.value("RP_NAME", get: get) ?? s.relyingPartyName
+        s.relyingPartyOrigin = try RuntimeEnvironment.value("RP_ORIGIN", get: get) ?? s.relyingPartyOrigin
+        s.passwordLoginEnabled = (try RuntimeEnvironment.value("PASSWORD_LOGIN_ENABLED", get: get) ?? "false") == "true"
+        s.bootstrapToken = try RuntimeEnvironment.value("BOOTSTRAP_TOKEN", get: get).flatMap { $0.isEmpty ? nil : $0 }
         s.secureCookies = s.relyingPartyOrigin.hasPrefix("https://")
         return s
     }
@@ -51,5 +53,19 @@ extension Application {
     public var settings: AppSettings {
         get { storage[SettingsKey.self] ?? AppSettings() }
         set { storage[SettingsKey.self] = newValue }
+    }
+}
+
+/// File values take precedence. Invalid files fail startup without exposing their contents.
+enum RuntimeEnvironment {
+    enum ReadError: Error { case unreadableSecret(String) }
+
+    static func value(_ name: String, get: (String) -> String?) throws -> String? {
+        guard let path = get(name + "_FILE") else { return get(name) }
+        guard !path.isEmpty, let value = try? String(contentsOfFile: path, encoding: .utf8) else {
+            throw ReadError.unreadableSecret(name)
+        }
+        // Strip line endings from secret files, preserving meaningful spaces.
+        return value.trimmingCharacters(in: .newlines)
     }
 }

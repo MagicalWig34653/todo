@@ -14,21 +14,23 @@ public struct DatabaseSettings: Sendable {
     public var user: String
     public var password: String
 
-    public static func fromEnvironment() -> DatabaseSettings {
+    public static func fromEnvironment(
+        get: (String) -> String? = { Environment.get($0) }
+    ) throws -> DatabaseSettings {
         DatabaseSettings(
-            driver: Driver(rawValue: Environment.get("DATABASE_DRIVER") ?? "mariadb") ?? .mariadb,
-            host: Environment.get("DB_HOST") ?? "127.0.0.1",
-            port: Environment.get("DB_PORT").flatMap(Int.init) ?? 23306,
-            name: Environment.get("DB_NAME") ?? "todo",
-            user: Environment.get("DB_USER") ?? "todo",
-            password: Environment.get("DB_PASSWORD") ?? ""
+            driver: Driver(rawValue: try RuntimeEnvironment.value("DATABASE_DRIVER", get: get) ?? "mariadb") ?? .mariadb,
+            host: try RuntimeEnvironment.value("DB_HOST", get: get) ?? "127.0.0.1",
+            port: try RuntimeEnvironment.value("DB_PORT", get: get).flatMap(Int.init) ?? 23306,
+            name: try RuntimeEnvironment.value("DB_NAME", get: get) ?? "todo",
+            user: try RuntimeEnvironment.value("DB_USER", get: get) ?? "todo",
+            password: try RuntimeEnvironment.value("DB_PASSWORD", get: get) ?? ""
         )
     }
 }
 
 public func configure(_ app: Application) async throws {
     configureContent()
-    app.settings = .fromEnvironment()
+    app.settings = try .fromEnvironment()
     try configureDatabase(app, settings: .fromEnvironment())
     configureMigrations(app)
     try routes(app)
@@ -52,6 +54,10 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
 public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateInitialSchema())
     app.migrations.add(CreateOAuthSchema())
+    configureIdentity(app)
+    app.migrations.add(CreatePlanningExtension())
+
+    app.migrations.add(CreateDiscoverySchema())
     app.migrations.add(CreateSharingSchema())
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)

@@ -1,0 +1,438 @@
+openapi: 3.1.0
+info:
+  title: Todo Identität
+  version: 1.0.0
+  description: 'Ergänzung zum bestehenden Auth-Vertrag. Normale Session: Bearer oder
+    todo_session-Cookie; Cookie-Schreibzugriffe benötigen application/json und passenden
+    Origin. Recovery akzeptiert ausschließlich den getrennten Bearer und erlaubt nur
+    Recovery-Passkey-Begin/Finish. Kein Cookie und keine normale Sitzung beim Recovery-Abschluss.
+    Zeitangaben ISO 8601. PASSWORD_LOGIN_ENABLED erhält Hashes und bestehende Sessions,
+    sperrt Passwortoperationen, lässt Recovery bestehen. Siehe ADR 0010 für Fensterbudgets
+    und Konfiguration.'
+paths:
+  /v1/me/passkeys/begin:
+    post:
+      summary: WebAuthn-Challenge an Konto und vorgelegte Sitzung binden
+      security:
+      - session: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationBegin'
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+  /v1/me/passkeys/finish:
+    post:
+      summary: Passkey nach WebAuthn-Prüfung hinzufügen; Recovery wird abschließend
+        verbraucht
+      security:
+      - session: []
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationFinish'
+  /v1/identity/recovery/passkeys/begin:
+    post:
+      summary: WebAuthn-Challenge an Konto und vorgelegte Sitzung binden
+      security:
+      - recovery: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationBegin'
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+  /v1/identity/recovery/passkeys/finish:
+    post:
+      summary: Passkey nach WebAuthn-Prüfung hinzufügen; Recovery wird abschließend
+        verbraucht
+      security:
+      - recovery: []
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationFinish'
+  /v1/me/passkeys:
+    get:
+      summary: Eigene Passkeys einschließlich widerrufener Schlüssel
+      security:
+      - session: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Passkey'
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+  /v1/me/passkeys/{id}:
+    patch:
+      summary: Eigenen Passkey umbenennen
+      security:
+      - session: []
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+    delete:
+      summary: Eigenen Passkey widerrufen; letzter aktiver Schlüssel benötigt gültige
+        Recovery oder aktivierten Passwortzugang
+      security:
+      - session: []
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/me/sessions:
+    get:
+      summary: Eigene nicht abgelaufene Sitzungen ohne Geheimnisse
+      security:
+      - session: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+  /v1/me/sessions/{id}:
+    delete:
+      summary: Eigene Sitzung sofort widerrufen, einschließlich der aktuellen
+      security:
+      - session: []
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/me/sessions/revoke-others:
+    post:
+      summary: Alle eigenen Sitzungen außer der vorgelegten abmelden
+      security:
+      - session: []
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+  /v1/identity/accounts/{id}/recovery:
+    post:
+      summary: 'Admin: einmaligen Recovery-Code ausstellen; ersetzt frühere Codes
+        und Recovery-Sitzungen'
+      security:
+      - session: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryToken'
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/identity/recovery/redeem:
+    post:
+      summary: Einmaligen Code gegen eingeschränkten Recovery-Bearer tauschen
+      security: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryToken'
+        '400':
+          description: Ungültige Eingabe oder Challenge
+        '401':
+          description: Fehlende, abgelaufene oder widerrufene Berechtigung
+        '403':
+          description: Nicht erlaubt
+        '404':
+          description: Konto oder eigenes Objekt nicht gefunden
+        '409':
+          description: Letzter Passkey ohne nutzbaren Ersatz
+        '429':
+          description: Zeitfenster-Budget erschöpft; Retry-After in Sekunden
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code:
+                  type: string
+components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      description: Normale Session; alternativ todo_session-Cookie mit CSRF-Regeln.
+    recovery:
+      type: http
+      scheme: bearer
+      description: Nur kurzlebiger Recovery-Token; niemals normale Session.
+  schemas:
+    RegistrationBegin:
+      type: object
+      required:
+      - challengeID
+      - options
+      properties:
+        challengeID:
+          type: string
+          format: uuid
+        options:
+          type: object
+          additionalProperties: true
+          description: WebAuthn PublicKeyCredentialCreationOptions; challenge und
+            user.id sind Base64url. authenticatorSelection.residentKey ist serverseitig "required"
+            (discoverable credential).
+    RegistrationFinish:
+      type: object
+      required:
+      - challengeID
+      - credential
+      properties:
+        challengeID:
+          type: string
+          format: uuid
+        credential:
+          type: object
+          additionalProperties: true
+          description: WebAuthn RegistrationCredential, identisches Format wie /v1/auth/register/finish.
+        passkeyName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          default: Passkey
+    Passkey:
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+    Session:
+      type: object
+      required:
+      - id
+      - expiresAt
+      - current
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+    RecoveryToken:
+      type: object
+      required:
+      - token
+      - expiresAt
+      properties:
+        token:
+          type: string
+          description: 'Nur einmal im Klartext ausgegeben. Ausstellung: Recovery-Code;
+            Einlösung: eingeschränkter Bearer.'
+        expiresAt:
+          type: string
+          format: date-time

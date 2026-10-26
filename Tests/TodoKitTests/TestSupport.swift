@@ -58,7 +58,7 @@ struct TestApp {
         return TestApp(app: other, settings: settings, databaseSettings: storedDatabaseSettings)
     }
 
-    static var useMariaDB: Bool { ProcessInfo.processInfo.environment["TODO_TEST_MARIADB"] == "1" }
+    static var useMariaDB: Bool { ProcessInfo.processInfo.environment["TODO_TEST_MARIADB"] == "1" || ProcessInfo.processInfo.environment["TODO_TEST_DB"] != nil }
 
     /// A fresh application gets its own file; replica() reuses the captured database settings.
     static var sqliteFile: String {

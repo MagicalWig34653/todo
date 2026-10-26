@@ -976,8 +976,9 @@ components:
         attestation:
           type: string
           const: none
-      description: 'Exact Encodable shape of webauthn-swift beginRegistration defaults: no authenticatorSelection,
-        excludeCredentials or extensions. user.id encodes the UTF-8 UUID string. Convert base64url fields
+      description: 'Shape of webauthn-swift beginRegistration defaults plus a server-added
+        authenticatorSelection {residentKey: required, requireResidentKey: true, userVerification: preferred}
+        (login runs without username, so credentials must be discoverable); no excludeCredentials or extensions. user.id encodes the UTF-8 UUID string. Convert base64url fields
         to bytes before passing to navigator.credentials.create.'
     RequestOptions:
       type: object
