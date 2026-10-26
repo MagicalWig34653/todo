@@ -29,6 +29,25 @@ final class IdentityTests: XCTestCase {
         return key
     }
 
+    func testRegistrationOptionsRequireDiscoverableCredentials() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        // Bootstrap registration (no session yet).
+        let boot = try await t.json(.POST, "/v1/auth/register/begin", ["token": "bootstrap-secret", "displayName": "Alice"])
+        XCTAssertEqual(boot.status, .ok)
+        func assertResident(_ body: [String: Any]?, _ label: String) {
+            let options = body?["options"] as? [String: Any]
+            let selection = options?["authenticatorSelection"] as? [String: Any]
+            XCTAssertEqual(selection?["residentKey"] as? String, "required", label)
+            XCTAssertEqual(selection?["requireResidentKey"] as? Bool, true, label)
+            XCTAssertNotNil(options?["challenge"], label)
+        }
+        assertResident(boot.body, "register")
+        let a = try await t.register(token: "bootstrap-secret", name: "Bob")
+        let more = try await t.json(.POST, "/v1/me/passkeys/begin", token: a.session)
+        assertResident(more.body, "add passkey")
+    }
+
     func testNamedKeysOwnershipAndLastKeyProtection() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
@@ -301,10 +320,10 @@ final class IdentityTests: XCTestCase {
         _ = try await addKey(a, token: user.session)
         let list = try await a.json(.GET, "/v1/me/passkeys", token: user.session).list!
         let ids = list.map { $0["id"] as! String }
+        let token = user.session
         let results = try await withThrowingTaskGroup(of: HTTPStatus.self) { group in
-            for (i, id) in ids.enumerated() {
-                let app = i == 0 ? a : b
-                group.addTask { try await app.rawStatus(.DELETE, "/v1/me/passkeys/\(id)", body: Data(), token: user.session) }
+            for (app, id) in zip([a, b], ids) {
+                group.addTask { try await app.rawStatus(.DELETE, "/v1/me/passkeys/\(id)", body: Data(), token: token) }
             }
             return try await group.reduce(into: [HTTPStatus]()) { $0.append($1) }
         }

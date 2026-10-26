@@ -1,0 +1,1199 @@
+openapi: 3.1.0
+info:
+  title: Todo Agentenaufträge und Runner-API
+  version: 1.0.0
+  description: Serververtrag gemäß ADR 0008. Menschliche Sitzungen und Geräte-Token
+    sind getrennt. Keine automatischen Wiederholungen lokaler Coding-Läufe. Listen
+    sind zunächst vollständig ohne Cursor; Skalierung und Aufbewahrung sind Folgearbeit.
+paths:
+  /v1/agents/devices:
+    post:
+      summary: Einmalcode zur Gerätekopplung erstellen
+      operationId: post_agents_devices
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pairing'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - label
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      description: Code ist zehn Minuten gültig und wird nur hier als Klarwert ausgegeben.
+        Auf vertrauenswürdigem Weg zum Mac übertragen.
+  /v1/agents/devices/{id}:
+    delete:
+      summary: Gerät widerrufen
+      operationId: delete_agents_devices_id
+      security:
+      - humanSession: []
+      responses:
+        '204':
+          description: Erfolg ohne Inhalt
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: &id001
+          type: string
+          format: uuid
+      description: Stoppt Zugriffe und ficht aktive Generationen an. Beendet keinen
+        lokalen Prozess. Repository-Plätze bleiben belegt; administrative Freigabe
+        nach geprüftem Stillstand ist noch offen.
+  /v1/runner/pair:
+    post:
+      summary: Einmalcode gegen Geräte-Token tauschen
+      operationId: post_runner_pair
+      security: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceToken'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code: &id002
+                  type: string
+      description: Klartext-Token wird einmal ausgegeben; Server speichert nur SHA-256.
+        Bei verlorener Antwort neue Kopplung beginnen.
+  /v1/agents/bindings:
+    post:
+      summary: Projekt mit gekoppeltem Gerät verbinden
+      operationId: post_agents_bindings
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Binding'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - projectID
+              - deviceID
+              - repositoryKey
+              - label
+              properties:
+                projectID: *id001
+                deviceID: *id001
+                repositoryKey: *id001
+                label: *id002
+      description: Nur Eigentümer von Projekt und Gerät. repositoryKey ist die vom
+        Runner konsistent gewählte lokale Repository-UUID; gleiche UUID für alle Aliase
+        desselben Repositorys auf demselben Gerät. Keine Pfade übertragen.
+  /v1/agents/jobs:
+    post:
+      summary: Aufgabe explizit zur Klärung oder Umsetzung freigeben
+      operationId: post_agents_jobs
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseJob'
+      description: Agentenstart ist eine eigenständige Fähigkeit, derzeit nur für
+        den Projekteigentümer. Aufgabenrevision muss aktuell sein. Aufgabenstatus
+        wird nicht geändert.
+  /v1/agents/jobs/{id}:
+    get:
+      summary: Auftrag mit Aufgabe, Fragen, Antworten und Verlauf lesen
+      operationId: get_agents_jobs_id
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+  /v1/agents/jobs/{id}/stop:
+    post:
+      summary: Auftrag abbrechen und aktuellen Runner sperren
+      operationId: post_agents_jobs_id_stop
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Aktiver Lauf behält seinen Repository-Platz, bis reconcile: stopped
+        seine lokale Beendigung bestätigt. Runner muss zuerst aktuelle Generation
+        über GET runs lesen.'
+  /v1/agents/jobs/{id}/review:
+    post:
+      summary: Ergebnis abnehmen oder Änderungen anfordern
+      operationId: post_agents_jobs_id_review
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - decision
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - accept
+                  - request_changes
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: Nur aus awaiting_review. accept führt zu succeeded, request_changes
+        zu failed und einem dauerhaften Ereignis. Ein Folgeauftrag benötigt eine neue
+        menschliche Freigabe; previousJobID erhält den Zusammenhang.
+  /v1/agents/questions/{id}/answer:
+    post:
+      summary: Strukturierte Frage beantworten
+      operationId: post_agents_questions_id_answer
+      security:
+      - humanSession: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '403':
+          description: Fähigkeit Agentenstart fehlt oder Cookie-Origin unzulässig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - value
+              properties:
+                value: *id002
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: Bei Auswahlfragen muss value eine angebotene Option sein. Identische
+        Wiederholung ist idempotent; Änderung einer bestehenden Antwort ergibt 409.
+        Antwort startet keinen lokalen Prozess und verlängert keine Lease.
+  /v1/runner/bindings:
+    get:
+      summary: Eigene gerätebezogene Bindings lesen
+      operationId: get_runner_bindings
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Binding'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+  /v1/runner/jobs:
+    get:
+      summary: Freigegebene wartende Aufträge des Geräts lesen
+      operationId: get_runner_jobs
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+  /v1/runner/jobs/{id}:
+    get:
+      summary: Aufgabenkontext und Antworten lesen
+      operationId: get_runner_jobs_id
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: Auch nach Lease-Ablauf lesbar für den Abgleich; Lesen überträgt
+        keine Schreibhoheit. Aktuelle Aufgabenrevision kann von der Freigaberevision
+        abweichen und muss lokal berücksichtigt werden.
+  /v1/runner/jobs/{id}/claim:
+    post:
+      summary: Auftrag atomar übernehmen
+      operationId: post_runner_jobs_id_claim
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Höchstens ein nicht abgeschlossener Lauf pro Gerät und Repository-UUID
+        über alle Bindings. Auch abgelaufene Leases blockieren neue Claims. Lease:
+        90 Sekunden, Generation beginnt bei 1. Bei verlorener Antwort GET runs abgleichen;
+        keinen zweiten Prozess starten.'
+  /v1/runner/runs:
+    get:
+      summary: Nicht abgeschlossene Läufe nach Neustart abgleichen
+      operationId: get_runner_runs
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      description: Enthält aktuelle Generation, Lease und Checkpoint, auch bei Lease-Ablauf
+        oder menschlichem Stop. Keine automatische Wiederholung. Zuerst lokale Prozesse
+        prüfen; bei unbekanntem Zustand bleibt der Platz belegt.
+  /v1/runner/runs/{id}/heartbeat:
+    post:
+      summary: 'Runner: heartbeat'
+      operationId: post_runner_runs_id_heartbeat
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Lease um 90 Sekunden verlängern. Auch während einer Fragenpause
+        erforderlich. Jeder Schreibzugriff prüft Geräte-/Projektgrenze und Generation
+        transaktional. Veraltete Generation: 409; verlorene Lease oder abgeschlossener
+        Lauf: 410 (ausgenommen Abgleich nach Ablauf).'
+  /v1/runner/runs/{id}/progress:
+    post:
+      summary: 'Runner: progress'
+      operationId: post_runner_runs_id_progress
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              - progress
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+                progress: *id002
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Fortschritt überschreiben; claimed/running wird running. Kein
+        dauerhaftes Rohlog-Ereignis. Jeder Schreibzugriff prüft Geräte-/Projektgrenze
+        und Generation transaktional. Veraltete Generation: 409; verlorene Lease oder
+        abgeschlossener Lauf: 410 (ausgenommen Abgleich nach Ablauf).'
+  /v1/runner/runs/{id}/checkpoint:
+    post:
+      summary: 'Runner: checkpoint'
+      operationId: post_runner_runs_id_checkpoint
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              - checkpoint
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+                checkpoint:
+                  $ref: '#/components/schemas/Checkpoint'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Checkpoint ersetzen. Kontextrevision darf weder unter Freigaberevision
+        noch unter bisherigen Checkpoint fallen. Keine Chats speichern. Jeder Schreibzugriff
+        prüft Geräte-/Projektgrenze und Generation transaktional. Veraltete Generation:
+        409; verlorene Lease oder abgeschlossener Lauf: 410 (ausgenommen Abgleich
+        nach Ablauf).'
+  /v1/runner/runs/{id}/question:
+    post:
+      summary: 'Runner: question'
+      operationId: post_runner_runs_id_question
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              - prompt
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+                prompt: *id002
+                options:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    maxLength: 500
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Aus claimed/running nach waiting_for_answer; leere Optionen erlauben
+        Freitext. Jeder Schreibzugriff prüft Geräte-/Projektgrenze und Generation
+        transaktional. Veraltete Generation: 409; verlorene Lease oder abgeschlossener
+        Lauf: 410 (ausgenommen Abgleich nach Ablauf).'
+  /v1/runner/runs/{id}/resume:
+    post:
+      summary: 'Runner: resume'
+      operationId: post_runner_runs_id_resume
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Nur aus waiting_for_answer und nach Beantwortung aller Fragen
+        nach running. Runner setzt lokal gezielt fort, gemäß ADR 0004. Jeder Schreibzugriff
+        prüft Geräte-/Projektgrenze und Generation transaktional. Veraltete Generation:
+        409; verlorene Lease oder abgeschlossener Lauf: 410 (ausgenommen Abgleich
+        nach Ablauf).'
+  /v1/runner/runs/{id}/submit:
+    post:
+      summary: 'Runner: submit'
+      operationId: post_runner_runs_id_submit
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              - result
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+                result:
+                  $ref: '#/components/schemas/Result'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Aus claimed/running nach awaiting_review. Bestätigt zugleich lokalen
+        Prozessstillstand und gibt den Repository-Platz frei. Jeder Schreibzugriff
+        prüft Geräte-/Projektgrenze und Generation transaktional. Veraltete Generation:
+        409; verlorene Lease oder abgeschlossener Lauf: 410 (ausgenommen Abgleich
+        nach Ablauf).'
+  /v1/runner/runs/{id}/stop:
+    post:
+      summary: 'Runner: stop'
+      operationId: post_runner_runs_id_stop
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Bestätigt lokalen Prozessstillstand und beendet den Auftrag als
+        cancelled. Jeder Schreibzugriff prüft Geräte-/Projektgrenze und Generation
+        transaktional. Veraltete Generation: 409; verlorene Lease oder abgeschlossener
+        Lauf: 410 (ausgenommen Abgleich nach Ablauf).'
+  /v1/runner/runs/{id}/fail:
+    post:
+      summary: 'Runner: fail'
+      operationId: post_runner_runs_id_fail
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Bestätigt lokalen Prozessstillstand und beendet den Auftrag als
+        failed. Jeder Schreibzugriff prüft Geräte-/Projektgrenze und Generation transaktional.
+        Veraltete Generation: 409; verlorene Lease oder abgeschlossener Lauf: 410
+        (ausgenommen Abgleich nach Ablauf).'
+  /v1/runner/runs/{id}/reconcile:
+    post:
+      summary: 'Runner: reconcile'
+      operationId: post_runner_runs_id_reconcile
+      security:
+      - runnerToken: []
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - generation
+              - observation
+              properties:
+                generation:
+                  type: integer
+                  minimum: 1
+                observation:
+                  type: string
+                  enum:
+                  - alive
+                  - paused
+                  - stopped
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      description: 'Einziger Schreibaufruf nach Lease-Ablauf. Erwartete Generation
+        muss weiterhin passen. alive übernimmt denselben nachweislich laufenden Prozess
+        mit neuer Generation und Lease; startet keinen Prozess. paused übernimmt ausschließlich
+        eine bestätigte beabsichtigte Fragenpause ohne lokalen Prozess und mit gespeichertem
+        Checkpoint; waiting_for_answer bleibt bestehen, neue Generation und Lease,
+        Fortsetzung erst nach Antwort. stopped bestätigt lokale Beendigung, erhöht
+        Generation und führt zu failed (cancelled bleibt cancelled). alive bei cancelled
+        ergibt 410. Unbekannter Prozesszustand erlaubt keine Wiederholung. Jeder Schreibzugriff
+        prüft Geräte-/Projektgrenze und Generation transaktional. Veraltete Generation:
+        409; verlorene Lease oder abgeschlossener Lauf: 410 (ausgenommen Abgleich
+        nach Ablauf).'
+components:
+  securitySchemes:
+    humanSession:
+      type: http
+      scheme: bearer
+      description: Menschliche Sitzung. Alternativ vorhandenes Session-Cookie mit
+        JSON-/Origin-Prüfung bei Schreibzugriffen.
+    runnerToken:
+      type: http
+      scheme: bearer
+      description: Gekoppeltes, einzeln widerrufbares Gerät; keine menschliche Sitzung
+        und kein MCP-OAuth-Token.
+  schemas:
+    JobState:
+      type: string
+      enum:
+      - queued
+      - claimed
+      - running
+      - waiting_for_answer
+      - awaiting_review
+      - succeeded
+      - failed
+      - cancelled
+    Pairing:
+      type: object
+      required:
+      - deviceID
+      - code
+      - expiresAt
+      properties:
+        deviceID: *id001
+        code: *id002
+        expiresAt: &id004
+          type: string
+          format: date-time
+    DeviceToken:
+      type: object
+      required:
+      - deviceID
+      - token
+      properties:
+        deviceID: *id001
+        token: *id002
+    Binding:
+      type: object
+      required:
+      - id
+      - projectID
+      - deviceID
+      - repositoryKey
+      - label
+      properties:
+        id: *id001
+        projectID: *id001
+        deviceID: *id001
+        repositoryKey: *id001
+        label:
+          type: string
+          maxLength: 100
+          description: Anzeigename, kein Dateisystempfad.
+    Checkpoint:
+      type: object
+      required:
+      - contextRevision
+      - sessionReference
+      - nextStep
+      properties:
+        contextRevision:
+          type: integer
+          minimum: 1
+        sessionReference:
+          type: string
+          maxLength: 200
+        nextStep:
+          type: string
+          maxLength: 4000
+    Result:
+      type: object
+      required:
+      - summary
+      - references
+      - checks
+      - limitations
+      properties:
+        summary: *id002
+        references:
+          type: array
+          items: *id002
+        checks:
+          type: array
+          items: *id002
+        limitations:
+          type: array
+          items: *id002
+      description: Checks sind Selbstauskünfte des Runners, keine unabhängigen Servernachweise.
+        Keine Chats oder Rohlogs.
+    Job:
+      type: object
+      required:
+      - id
+      - taskID
+      - projectID
+      - bindingID
+      - requestedBy
+      - taskRevision
+      - mode
+      - scope
+      - state
+      - progress
+      properties:
+        id: *id001
+        taskID: *id001
+        projectID: *id001
+        bindingID: *id001
+        requestedBy: *id001
+        previousJobID: *id001
+        taskRevision: &id003
+          type: integer
+        mode:
+          type: string
+          enum:
+          - clarify
+          - implement
+        scope: *id002
+        state:
+          $ref: '#/components/schemas/JobState'
+        progress: *id002
+        result:
+          $ref: '#/components/schemas/Result'
+    Run:
+      type: object
+      required:
+      - id
+      - job
+      - generation
+      - leaseUntil
+      properties:
+        id: *id001
+        job:
+          $ref: '#/components/schemas/Job'
+        generation: *id003
+        leaseUntil: *id004
+        endedAt: *id004
+        checkpoint:
+          $ref: '#/components/schemas/Checkpoint'
+    Question:
+      type: object
+      required:
+      - id
+      - taskID
+      - prompt
+      - options
+      properties:
+        id: *id001
+        taskID: *id001
+        prompt: *id002
+        options:
+          type: array
+          items: *id002
+        answer: *id002
+        authorID: *id001
+    Event:
+      type: object
+      required:
+      - id
+      - kind
+      - detail
+      - createdAt
+      properties:
+        id: *id001
+        runID: *id001
+        kind: *id002
+        detail: *id002
+        createdAt: *id004
+    Task:
+      type: object
+      required:
+      - id
+      - projectID
+      - title
+      - description
+      - status
+      - version
+      properties:
+        id: *id001
+        projectID: *id001
+        title: *id002
+        description: *id002
+        status:
+          type: string
+          enum:
+          - open
+          - in_progress
+          - in_review
+          - done
+        version: *id003
+    Detail:
+      type: object
+      required:
+      - job
+      - task
+      - questions
+      - events
+      properties:
+        job:
+          $ref: '#/components/schemas/Job'
+        task:
+          $ref: '#/components/schemas/Task'
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+    ReleaseJob:
+      type: object
+      required:
+      - id
+      - taskID
+      - bindingID
+      - taskRevision
+      - mode
+      - scope
+      properties:
+        id: *id001
+        taskID: *id001
+        bindingID: *id001
+        previousJobID: *id001
+        taskRevision: *id003
+        mode:
+          type: string
+          enum:
+          - clarify
+          - implement
+        scope:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      description: id ist der Idempotenzschlüssel. Identischer Aufruf liefert denselben
+        Auftrag; andere Nutzdaten unter derselben ID ergeben 409. previousJobID muss
+        einen abgeschlossenen Auftrag derselben Aufgabe bezeichnen.
+    Error:
+      type: object
+      required:
+      - error
+      - reason
+      properties:
+        error:
+          type: boolean
+        reason: *id002
+  responses:
+    Error400:
+      description: Ungültige Nutzdaten
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error401:
+      description: Fehlende, ungültige oder widerrufene Anmeldung
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error404:
+      description: Nicht vorhanden oder außerhalb des Kontos/Bindings
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error409:
+      description: Zustands-, Revisions-, Idempotenz- oder Generationskonflikt
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error410:
+      description: Lease verloren, Lauf beendet oder lokaler Stop erforderlich
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

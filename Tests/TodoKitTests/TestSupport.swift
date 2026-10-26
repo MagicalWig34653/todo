@@ -1,4 +1,6 @@
 import Fluent
+import FluentSQL
+import SQLKit
 import Foundation
 import Vapor
 import XCTVapor
@@ -7,6 +9,13 @@ import XCTVapor
 struct TestApp {
     let app: Application
     let settings: AppSettings
+    private let storedDatabaseSettings: DatabaseSettings
+
+    init(app: Application, settings: AppSettings, databaseSettings: DatabaseSettings? = nil) {
+        self.app = app
+        self.settings = settings
+        self.storedDatabaseSettings = databaseSettings ?? Self.databaseSettings
+    }
 
     static func make(password: Bool = false) async throws -> TestApp {
         let app = try await Application.make(.testing)
@@ -15,29 +24,46 @@ struct TestApp {
         settings.bootstrapToken = "bootstrap-secret"
         settings.passwordLoginEnabled = password
         app.settings = settings
-        try configureDatabase(app, settings: databaseSettings)
+        let database = databaseSettings
+        try configureDatabase(app, settings: database)
         configureMigrations(app)
         try routes(app)
         if useMariaDB {
             // Fresh schema per test; tests run serially against the dev database `todo_test`.
-            try await app.autoRevert()
+            try await resetMariaDB(app)
         }
         try await app.autoMigrate()
-        return TestApp(app: app, settings: settings)
+        return TestApp(app: app, settings: settings, databaseSettings: database)
+    }
+
+    /// Drops every table (and migration bookkeeping) so each test starts from an empty schema, independent of
+    /// the order in which modules registered their migrations.
+    static func resetMariaDB(_ app: Application) async throws {
+        guard let sql = app.db as? any SQLDatabase else { return }
+        _ = try await sql.raw("SET FOREIGN_KEY_CHECKS=0").run()
+        let rows = try await sql.raw("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE()").all()
+        for row in rows {
+            let name = try row.decode(column: "t", as: String.self)
+            _ = try await sql.raw("DROP TABLE IF EXISTS `\(unsafeRaw: name)`").run()
+        }
+        _ = try await sql.raw("SET FOREIGN_KEY_CHECKS=1").run()
     }
 
     /// Second application instance on the same database, like another swarm replica.
     func replica() async throws -> TestApp {
         let other = try await Application.make(.testing)
         other.settings = settings
-        try configureDatabase(other, settings: TestApp.databaseSettings)
+        try configureDatabase(other, settings: storedDatabaseSettings)
         try routes(other)
-        return TestApp(app: other, settings: settings)
+        return TestApp(app: other, settings: settings, databaseSettings: storedDatabaseSettings)
     }
 
     static var useMariaDB: Bool { ProcessInfo.processInfo.environment["TODO_TEST_MARIADB"] == "1" || ProcessInfo.processInfo.environment["TODO_TEST_DB"] != nil }
 
-    static let sqliteFile = FileManager.default.temporaryDirectory.appendingPathComponent("todo-\(UUID()).sqlite").path
+    /// A fresh application gets its own file; replica() reuses the captured database settings.
+    static var sqliteFile: String {
+        FileManager.default.temporaryDirectory.appendingPathComponent("todo-\(UUID()).sqlite").path
+    }
 
     static var databaseSettings: DatabaseSettings {
         if useMariaDB {
