@@ -41,13 +41,13 @@ Offen: Rate-Limits, Passkey-Verwaltung (weitere Passkeys, Widerruf), Recovery, S
 
 ## Kommentare/Aktivität
 
-Stand 26.10.2026, Branch `worktree-agent-aa22caad87e05b818` (main inkl. Teams/Freigaben, Agentenaufträge, Anhänge eingemergt): Kommentare, Aufgabenverlauf und Abnahmekriterien unter `Sources/TodoKit/Collaboration/`, Vertrag `contracts/collaboration.yaml`, Tests `CollaborationTests.swift`.
+Stand 26.10.2026, Branch `worktree-agent-aa22caad87e05b818` (main inkl. Teams/Freigaben, Agentenaufträge, Anhänge, Identität, Planung eingemergt): Kommentare, Aufgabenverlauf und Abnahmekriterien unter `Sources/TodoKit/Collaboration/`, Vertrag `contracts/collaboration.yaml`, Tests `CollaborationTests.swift`.
 
 Entscheidungen: Zugriff ausschließlich über `ProjectAccess` mit effektiven Rechten (inkl. Teams). Rollen: Lesen/Verlauf = read; Kommentare anlegen = comment; Kommentar ändern nur Autor, löschen Autor oder manage (sonst 403 `not_comment_author`); Abnahmekriterien anlegen/ändern/löschen = edit; zu geringe Rolle bei sichtbarer Aufgabe 403, unsichtbar/fremd/falsche Aufgabenbindung 404. Erwartete Version bei Ändern und Löschen (JSON-Body), Konflikt 409. Optionaler `Idempotency-Key` pro Person/Aufgabe (SHA-256-Hash, Unique-Constraint); gleicher Key mit anderem Text 409; Wiederholung liefert die ursprüngliche Antwort. Ereignisse (`activity_events`, Akteur Person/Integration/Lauf) werden transaktional mit der Mutation gespeichert, stabile Sequenz je Aufgabe, Cursor-Pagination; öffentliche `recordActivity(...)` prüft ProjectAccess (comment) für `authorizedUserID`. Bestehende Aufgaben-/Projektänderungen protokollieren noch nicht.
 
 Migration `CreateCollaborationSchema` (comments, activity_events, acceptance_criteria, comment_idempotency; Textspalten TEXT, vorher auf MariaDB als VARCHAR(255) angelegt). Vor Betrieb explizit migrieren. Route-Parameter heißt `:id` (Planning); `AttachmentController` wurde dafür von `:taskID` auf `:id` umgestellt (Routing-Kollision).
 
-Prüfstand: `swift test --scratch-path /private/tmp/claude-501/sb-collab2`: 47 Tests, 8 übersprungen (MariaDB-only), 0 Fehler. `TODO_TEST_DB=todo_test_collab scripts/test-mariadb.sh --scratch-path ...`: 47 Tests, 2 übersprungen, 0 Fehler. Neue Tests decken u.a. Rollenmatrix, Idempotenz/Versionskonflikte auch über zwei Replikate, Fremdes=404, Cursor, Rollback, 10000-Zeichen-Texte ab. Nicht geprüft: Linux-Build, Browser/Apple, OpenAPI-Lint von collaboration.yaml (nur YAML-Syntax), Protokollierung bestehender Aufgabenänderungen, Löschrechte für Teams jenseits ProjectAccess.
+Prüfstand: `swift test --scratch-path /private/tmp/claude-501/sb-collab2`: 75 Tests, 13 übersprungen (MariaDB-only), 0 Fehler. `TODO_TEST_DB=todo_test_collab scripts/test-mariadb.sh --scratch-path ...`: 75 Tests, 2 übersprungen, 0 Fehler. Neue Tests decken u.a. Rollenmatrix, Idempotenz/Versionskonflikte auch über zwei Replikate, Fremdes=404, Cursor, Rollback, 10000-Zeichen-Texte ab. Nicht geprüft: Linux-Build, Browser/Apple, OpenAPI-Lint von collaboration.yaml (nur YAML-Syntax), Protokollierung bestehender Aufgabenänderungen, Löschrechte für Teams jenseits ProjectAccess.
 
 Nächster Schritt: Aktivitätsereignisse aus Planning/Sharing/Agents über `recordActivity` erzeugen; PWA-Oberfläche.
 
@@ -69,7 +69,7 @@ Stand 26.10.2026, Branch `worktree-agent-afc57f3c09fb01438` (main inkl. Teams, A
 
 Rechte: alles läuft über `ProjectAccess` (effektive Rechte inkl. Teams/Vererbung). Lesen = read, Schreiben (Planung, Abhängigkeit, Reorder, Meilenstein) = edit; Fremdes/Unsichtbares = 404, zu geringe Rolle = 403. Listen enthalten nur lesbare Aufgaben. Schreibpfade nutzen `lockSharingGraph`. Dateien wurden zu `PlanningExt*.swift` umbenannt (Namenskollision mit Attachments/Migration.swift).
 
-Prüfung: `swift test` (SQLite) 47 Tests, 9 übersprungen (MariaDB-spezifisch), 0 Fehler. `TODO_TEST_DB=todo_test_planext scripts/test-mariadb.sh`: 47 Tests, 2 übersprungen, 0 Fehler, inkl. paralleler Wiederholung über Replikate und gegenläufiger Abhängigkeiten. Neuer Test für Team-/Freigaberechte.
+Prüfung: `swift test` (SQLite) 47 Tests, 9 übersprungen (MariaDB-spezifisch), 0 Fehler. `TODO_TEST_DB=todo_test_planext scripts/test-mariadb.sh`: 75 Tests, 2 übersprungen, 0 Fehler, inkl. paralleler Wiederholung über Replikate und gegenläufiger Abhängigkeiten. Neuer Test für Team-/Freigaberechte.
 
 Offen/nicht geprüft: Linux-Build, Listen nicht paginiert (alle sichtbaren Aufgaben werden geladen, bei großen Beständen ineffizient), keine Erinnerungszustellung, keine RRULE, keine Nachholung verpasster Wiederholungen, keine Clientanbindung, OpenAPI-Validator nicht gelaufen. Vor Einsatz `App migrate --yes`. Nächster Schritt: Pagination/Abfrageoptimierung, PWA-Ansichten Heute/Board.
 
