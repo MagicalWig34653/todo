@@ -9,6 +9,7 @@ struct HealthResponse: Content {
 public func routes(_ app: Application) throws {
     try app.register(collection: AuthController())
     try app.register(collection: PlanningController())
+    try app.register(collection: SharingController())
     // Liveness: process is up. No dependencies checked.
     app.get("health", "live") { _ in HealthResponse(status: "ok") }
 
