@@ -1,0 +1,636 @@
+openapi: 3.1.0
+info:
+  title: Todo – Planungserweiterung
+  version: 1.0.0
+  description: 'Erweiterung des bestehenden Vertrags. ISO-8601-Zeitpunkte; Priorität 0 (keine) bis 3 (hoch). PUT
+    ersetzt alle Planungsdaten. Wiederholungen benötigen dueAt oder plannedAt und erzeugen höchstens eine Folgeinstanz
+    je Ursprungsaufgabe, auch nach Wiederöffnung. Datum und Erinnerungen werden je Kalenderintervall verschoben;
+    until ist inklusive. Keine Pushzustellung. Beim Projektwechsel werden Abhängigkeiten und Meilensteinzuordnungen
+    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/planning/tasks/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Planungsdaten lesen
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningTask'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+    put:
+      summary: Planungsdaten vollständig ersetzen; fehlende optionale Felder löschen
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanningTask'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanningData'
+  /v1/planning/board:
+    get:
+      summary: Sichtbare Aufgaben einer Projekt-/Statusspalte in Boardreihenfolge
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanningTask'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      parameters:
+      - name: projectID
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: true
+        schema:
+          type: string
+  /v1/planning/board/reorder:
+    put:
+      summary: Vollständige sichtbare Spalte atomar sortieren
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Reorder'
+  /v1/planning/tasks/{id}/dependencies:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Nur sichtbare Voraussetzungen, ohne fremde Titel oder IDs
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+    put:
+      summary: Voraussetzung idempotent hinzufügen; Zyklen ergeben 422
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prerequisiteID:
+                  type: string
+                  format: uuid
+              required:
+              - prerequisiteID
+  /v1/planning/tasks/{id}/dependencies/{other}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: other
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      summary: Voraussetzung entfernen
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+  /v1/planning/milestones:
+    post:
+      summary: Meilenstein anlegen
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Milestone'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MilestoneInput'
+    get:
+      summary: Meilensteine mit sichtbaren Aufgaben aus dem Projekt und seinen Unterprojekten
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MilestoneWithTasks'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      parameters:
+      - name: projectID
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/planning/milestones/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      summary: Meilenstein löschen
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+  /v1/planning/milestones/{id}/tasks/{other}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: other
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    put:
+      summary: Sichtbare Aufgabe aus Projekt oder Unterprojekt idempotent zuordnen
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+    delete:
+      summary: Zuordnung entfernen
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+  /v1/tasks/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    patch:
+      summary: 'Bestehende Aufgaben-PATCH-Route: Abschluss und Folgeinstanz atomar'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version:
+                  type: integer
+                title:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum:
+                  - open
+                  - in_progress
+                  - in_review
+                  - done
+                projectID:
+                  type: string
+                  format: uuid
+              required:
+              - version
+  /v1/planning/today:
+    get:
+      summary: 'Heute: Fälligkeit im aktuellen Kalendertag'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanningTask'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      parameters:
+      - name: timeZone
+        in: query
+        required: false
+        schema:
+          type: string
+          default: UTC
+  /v1/planning/upcoming:
+    get:
+      summary: 'Demnächst: Fälligkeit ab dem nächsten Kalendertag'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanningTask'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      parameters:
+      - name: timeZone
+        in: query
+        required: false
+        schema:
+          type: string
+          default: UTC
+  /v1/planning/up-next:
+    get:
+      summary: 'Als Nächstes: unerledigt, nicht blockiert; Priorität absteigend, dann Fälligkeit'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanningTask'
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Objekt
+        '409':
+          description: Versionskonflikt oder geändertes Board
+        '422':
+          description: Zyklus oder ungültige Projektzuordnung
+      parameters:
+      - name: timeZone
+        in: query
+        required: false
+        schema:
+          type: string
+          default: UTC
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: todo_session
+      description: Schreibzugriffe benötigen application/json und einen erlaubten Origin, falls gesendet.
+  schemas:
+    PlanningData:
+      type: object
+      properties:
+        dueAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        plannedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        recurrence:
+          anyOf:
+          - $ref: '#/components/schemas/RecurrenceRule'
+          - type: 'null'
+        reminders:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: date-time
+      required:
+      - priority
+      - reminders
+    RecurrenceRule:
+      type: object
+      properties:
+        frequency:
+          type: string
+          enum:
+          - daily
+          - weekly
+          - monthly
+        interval:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        timeZone:
+          type: string
+          description: IANA-Zeitzone
+        until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - frequency
+      - interval
+      - timeZone
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectID:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+          - open
+          - in_progress
+          - in_review
+          - done
+        version:
+          type: integer
+      required:
+      - id
+      - projectID
+      - title
+      - description
+      - status
+      - version
+    PlanningTask:
+      allOf:
+      - $ref: '#/components/schemas/PlanningData'
+      - type: object
+        properties:
+          task:
+            $ref: '#/components/schemas/Task'
+          position:
+            type: integer
+        required:
+        - task
+        - position
+    Reorder:
+      type: object
+      properties:
+        projectID:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - open
+          - in_progress
+          - in_review
+          - done
+        taskIDs:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+      required:
+      - projectID
+      - status
+      - taskIDs
+    MilestoneInput:
+      type: object
+      properties:
+        projectID:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        dueAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - projectID
+      - title
+    Milestone:
+      allOf:
+      - $ref: '#/components/schemas/MilestoneInput'
+      - type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+        required:
+        - id
+    MilestoneWithTasks:
+      type: object
+      properties:
+        milestone:
+          $ref: '#/components/schemas/Milestone'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+      required:
+      - milestone
+      - tasks

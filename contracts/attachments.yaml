@@ -85,9 +85,9 @@ paths:
         '404': { description: Missing or inaccessible attachment }
         '409': { description: Attachment is already complete }
         '502': { description: Storage failed; retry is safe }
-  /v1/tasks/{taskID}/attachments:
+  /v1/tasks/{id}/attachments:
     parameters:
-      - name: taskID
+      - name: id
         in: path
         required: true
         schema: { type: string, format: uuid }

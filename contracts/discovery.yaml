@@ -1,0 +1,443 @@
+openapi: 3.1.0
+info:
+  title: Todo Discovery
+  version: 1.0.0
+  description: |
+    Persönliche Labels und gespeicherte Filter sowie autorisierte Teilstringsuche.
+    Alle Zugriffe erfordern eine aktuelle Sitzung. Fremde Ressourcen ergeben 404.
+    Aufgaben benötigen sowohl Aufgaben- als auch Projektzugriff gemäß ProjectAccess.
+    Labelnamen und Filter sind privat, doppelte Namen sind erlaubt.
+    Keine Trefferzähler oder Namen unberechtigter Objekte werden ausgegeben.
+    Cursor gelten für Nutzer, Listenart und identische Kriterien. Rechte werden pro
+    Anfrage neu geprüft. Reihenfolge der Suche ist Projekt vor Aufgabe, jeweils UUID
+    aufsteigend; Listen verwenden UUID aufsteigend. Keine Snapshot-Semantik:
+    Löschungen/Rechteentzug verschwinden sofort, neue kleinere UUIDs erst nach Neustart.
+    nextCursor fehlt am Listenende. Cursor sind opak und URL-sicher.
+    Cookie-Schreibzugriffe erfordern application/json und eine erlaubte Origin,
+    entsprechend der vorhandenen Sitzungsprüfung (auch bei PUT/DELETE ohne Nutzlast).
+security:
+  - bearerSession: []
+  - cookieSession: []
+paths:
+  /v1/search:
+    get:
+      summary: Suche nach Teilstring und optionalen Aufgabenfiltern
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/ProjectID'
+        - $ref: '#/components/parameters/LabelID'
+        - $ref: '#/components/parameters/Status'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/labels:
+    get:
+      summary: Eigene labels auflisten
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Label erstellen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelCreate'
+      responses:
+        '201':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/labels/{id}:
+    patch:
+      summary: Label mit erwarteter Version ersetzen
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelUpdate'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Label löschen
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/filters:
+    get:
+      summary: Eigene filters auflisten
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedFilterPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Filter erstellen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterCreate'
+      responses:
+        '201':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedFilter'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/filters/{id}:
+    patch:
+      summary: Filter mit erwarteter Version ersetzen
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterUpdate'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedFilter'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Filter löschen
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/tasks/{id}/labels:
+    get:
+      summary: Eigene Labels an erlaubter Aufgabe auflisten
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/tasks/{id}/labels/{labelID}:
+    put:
+      summary: Eigenes Label idempotent einer erlaubten Aufgabe zuordnen
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/LabelPathID'
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Eigene Zuordnung idempotent entfernen
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/LabelPathID'
+      responses:
+        '204':
+          description: Erfolgreich
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/filters/{id}/results:
+    get:
+      summary: Gespeicherte Kriterien mit aktuellen Rechten auswerten
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearerSession:
+      type: http
+      scheme: bearer
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: todo_session
+  responses:
+    Error:
+      description: Ungültige Anfrage (400), keine Sitzung (401), nicht vorhanden/erlaubt (404) oder Versionskonflikt (409).
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, reason]
+            properties:
+              error: {type: boolean}
+              reason: {type: string}
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    LabelPathID:
+      name: labelID
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string, maxLength: 4096}
+    Q:
+      name: q
+      in: query
+      required: false
+      schema: {type: string, maxLength: 500}
+    ProjectID:
+      name: projectID
+      in: query
+      required: false
+      schema: {type: string, format: uuid}
+    LabelID:
+      name: labelID
+      in: query
+      required: false
+      schema: {type: string, format: uuid}
+    Status:
+      name: status
+      in: query
+      required: false
+      schema: {type: string, enum: [open, in_progress, in_review, done]}
+  schemas:
+    Criteria:
+      type: object
+      description: |
+        Kriterien werden mit UND verknüpft. q ist ein literaler Teilstring (auch %, _
+        und !), gesucht per LIKE mit ESCAPE '!' in Titel ODER Beschreibung ODER
+        Projektname. Groß-/Kleinschreibung folgt der Datenbankkollation.
+        projectID ist exakt, keine implizite Unterprojektsuche.
+        labelID und status begrenzen auf Aufgaben; sonst auch Projekttreffer.
+        Leeres q entspricht allen Texten. Fehlende/entzogene projectID oder labelID
+        ergeben 404, auch bei gespeicherten Kriterien. Keine gespeicherten Treffer.
+      properties:
+        q: {type: string, maxLength: 500}
+        projectID: {type: string, format: uuid}
+        labelID: {type: string, format: uuid}
+        status: {type: string, enum: [open, in_progress, in_review, done]}
+    LabelCreate:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200, description: Wird vor der Prüfung getrimmt.}
+    LabelUpdate:
+      allOf:
+        - $ref: '#/components/schemas/LabelCreate'
+        - type: object
+          required: [version]
+          properties:
+            version: {type: integer, minimum: 1}
+    Label:
+      allOf:
+        - $ref: '#/components/schemas/LabelUpdate'
+        - type: object
+          required: [id]
+          properties:
+            id: {type: string, format: uuid}
+    FilterCreate:
+      type: object
+      required: [name, criteria]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        criteria:
+          $ref: '#/components/schemas/Criteria'
+    FilterUpdate:
+      allOf:
+        - $ref: '#/components/schemas/FilterCreate'
+        - type: object
+          required: [version]
+          properties:
+            version: {type: integer, minimum: 1}
+    SavedFilter:
+      allOf:
+        - $ref: '#/components/schemas/FilterUpdate'
+        - type: object
+          required: [id]
+          properties:
+            id: {type: string, format: uuid}
+    Project:
+      type: object
+      required: [id, name, version]
+      properties:
+        id: {type: string, format: uuid}
+        parentID: {type: string, format: uuid}
+        name: {type: string}
+        version: {type: integer}
+    Task:
+      type: object
+      required: [id, projectID, title, description, status, version]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: string}
+        status: {type: string, enum: [open, in_progress, in_review, done]}
+        version: {type: integer}
+    SearchHit:
+      type: object
+      required: [kind, id, project]
+      properties:
+        kind: {type: string, enum: [project, task]}
+        id: {type: string, format: uuid}
+        project:
+          $ref: '#/components/schemas/Project'
+        task:
+          $ref: '#/components/schemas/Task'
+    SearchPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+        nextCursor: {type: string}
+    LabelPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+        nextCursor: {type: string}
+    SavedFilterPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SavedFilter'
+        nextCursor: {type: string}

@@ -13,9 +13,37 @@ struct RegisterBeginRequest: Content {
     let displayName: String
 }
 
+/// Registration options as emitted by the WebAuthn library plus `authenticatorSelection`.
+/// Login runs without a username, so new credentials must be discoverable (resident).
+struct DiscoverableCreationOptions: Codable, Sendable {
+    let base: PublicKeyCredentialCreationOptions
+
+    private enum ExtraKeys: String, CodingKey { case authenticatorSelection }
+    private struct Selection: Codable {
+        let residentKey = "required"
+        let requireResidentKey = true
+        let userVerification = "preferred"
+        private enum CodingKeys: String, CodingKey { case residentKey, requireResidentKey, userVerification }
+        init() {}
+        init(from decoder: any Decoder) throws { self.init() }
+    }
+
+    init(_ base: PublicKeyCredentialCreationOptions) { self.base = base }
+    init(from decoder: any Decoder) throws { base = try PublicKeyCredentialCreationOptions(from: decoder) }
+    func encode(to encoder: any Encoder) throws {
+        try base.encode(to: encoder)
+        var extra = encoder.container(keyedBy: ExtraKeys.self)
+        try extra.encode(Selection(), forKey: .authenticatorSelection)
+    }
+}
+
 struct RegisterBeginResponse: Content {
     let challengeID: UUID
-    let options: PublicKeyCredentialCreationOptions
+    let options: DiscoverableCreationOptions
+    init(challengeID: UUID, options: PublicKeyCredentialCreationOptions) {
+        self.challengeID = challengeID
+        self.options = DiscoverableCreationOptions(options)
+    }
 }
 
 struct RegisterFinishRequest: Content {
