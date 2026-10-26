@@ -37,13 +37,13 @@ final class MCPTests: XCTestCase {
             let write = try await f.rpc("tools/call", ["name": "create_task", "arguments": ["projectID": try f.project.requireID().uuidString, "title": "Denied"]], access: readOnly.access)
             XCTAssertEqual((write.body?["result"] as? [String: Any])?["isError"] as? Bool, true)
             let full = try await f.tokens()
-            let foreignTask = TodoTask(ownerID: try f.user.requireID(), projectID: f.other.requireID(), title: "Excluded", details: "")
+            let foreignTask = TodoTask(ownerID: try f.user.requireID(), projectID: try f.other.requireID(), title: "Excluded", details: "")
             try await foreignTask.save(on: f.test.app.db)
             for args in [["id": try foreignTask.requireID().uuidString], ["id": UUID().uuidString]] {
                 let r = try await f.rpc("tools/call", ["name": "get_task", "arguments": args], access: full.access)
                 XCTAssertEqual(try toolText(r.body), "not_found")
             }
-            let t = TodoTask(ownerID: try f.user.requireID(), projectID: f.project.requireID(), title: "Allowed", details: "")
+            let t = TodoTask(ownerID: try f.user.requireID(), projectID: try f.project.requireID(), title: "Allowed", details: "")
             try await t.save(on: f.test.app.db)
             let move = try await f.rpc("tools/call", ["name": "update_task", "arguments": ["id": try t.requireID().uuidString, "version": 1, "projectID": try f.other.requireID().uuidString]], access: full.access)
             XCTAssertEqual(try toolText(move.body), "not_found")

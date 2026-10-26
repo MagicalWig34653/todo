@@ -27,7 +27,8 @@ struct OAuthController: RouteCollection {
          "token_endpoint": .string(Self.issuer + "/oauth/token"), "registration_endpoint": .string(Self.issuer + "/oauth/register"),
          "response_types_supported": .strings(["code"]), "grant_types_supported": .strings(["authorization_code", "refresh_token"]),
          "token_endpoint_auth_methods_supported": .strings(["none"]), "code_challenge_methods_supported": .strings(["S256"]),
-         "scopes_supported": .strings(Self.scopes)]
+         "scopes_supported": .strings(Self.scopes), "authorization_response_iss_parameter_supported": .bool(true),
+         "client_id_metadata_document_supported": .bool(false)]
     }
     @Sendable func resourceMetadata(_ req: Request) -> [String: JSONValue] {
         ["resource": .string(Self.resource), "authorization_servers": .strings([Self.issuer]),
@@ -62,27 +63,44 @@ struct OAuthController: RouteCollection {
         var response_type: String
         var client_id: UUID
         var redirect_uri: String
-        var scope: String
+        var scope: String?
         var state: String?
-        var resource: String
+        var resource: String?
         var code_challenge: String
         var code_challenge_method: String
     }
     struct Pending: Codable { var userID: UUID; var request: Authorization }
     static func pack<T: Encodable>(_ value: T) throws -> String { String(decoding: try JSONEncoder().encode(value), as: UTF8.self) }
-    @Sendable func authorize(_ req: Request) async throws -> JSONValue {
+    /// Browsers (Accept: text/html) get the consent page; it talks to the JSON contract below.
+    @Sendable func authorize(_ req: Request) async throws -> Response {
+        if req.headers.first(name: .accept)?.contains("text/html") == true {
+            let response = Response(status: .ok, body: .init(string: ConsentPage.html))
+            response.headers.contentType = .html
+            response.headers.replaceOrAdd(name: "Content-Security-Policy", value: ConsentPage.csp)
+            response.headers.replaceOrAdd(name: "Referrer-Policy", value: "no-referrer")
+            response.headers.replaceOrAdd(name: "X-Frame-Options", value: "DENY")
+            return response
+        }
+        return try await authorizeJSON(req).encodeResponse(for: req)
+    }
+    func authorizeJSON(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
-        let b = try req.query.decode(Authorization.self)
+        var b = try req.query.decode(Authorization.self)
+        // RFC 8707: clients should send `resource`; an absent value can only mean this server's single resource.
+        if b.resource == nil { b.resource = Self.resource }
+        // No scope requested: offer everything this server supports; the user still decides in the consent step.
+        let scope = (b.scope?.isEmpty == false ? b.scope! : Self.scopes.joined(separator: " "))
+        b.scope = scope
         guard b.response_type == "code", b.resource == Self.resource, b.code_challenge_method == "S256",
               b.code_challenge.count == 43, b.code_challenge.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
-              !b.scope.isEmpty, Set(b.scope.split(separator: " ").map(String.init)).isSubset(of: Set(Self.scopes)),
+              Set(scope.split(separator: " ").map(String.init)).isSubset(of: Set(Self.scopes)),
               let c = try await OAuthClient.find(b.client_id, on: req.db), c.redirects.contains(b.redirect_uri)
         else { throw Abort(.badRequest, reason: "invalid_request") }
         let raw = AuthSupport.randomToken()
         try await OAuthSecret(raw: raw, kind: "consent", payload: Self.pack(Pending(userID: try user.requireID(), request: b)), lifetime: 300).save(on: req.db)
         let projects = try await Project.query(on: req.db).filter(\.$ownerID == user.requireID()).all()
         return .object(["consent_token": .string(raw), "client_name": .string(c.name), "client_id": .string(b.client_id.uuidString),
-            "redirect_uri": .string(b.redirect_uri), "scopes": .strings(b.scope.split(separator: " ").map(String.init)),
+            "redirect_uri": .string(b.redirect_uri), "scopes": .strings(scope.split(separator: " ").map(String.init)),
             "projects": try .encoded(projects.map(ProjectDTO.init))])
     }
     struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool }
@@ -99,11 +117,12 @@ struct OAuthController: RouteCollection {
             var url = URLComponents(string: a.redirect_uri)!
             var items = url.queryItems ?? []
             if let state = a.state { items.append(URLQueryItem(name: "state", value: state)) }
+            items.append(URLQueryItem(name: "iss", value: Self.issuer)) // RFC 9207
             if b.approve {
                 guard !b.project_ids.isEmpty else { throw Abort(.badRequest, reason: "projects_required") }
                 for id in b.project_ids { _ = try await ProjectAccess(user: user, db: db).project(id) }
-                let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: a.resource,
-                                   scopes: a.scope.split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)))
+                let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: Self.resource,
+                                   scopes: (a.scope ?? "").split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)))
                 try await g.save(on: db)
                 let code = AuthSupport.randomToken()
                 try await OAuthSecret(raw: code, kind: "code", grantID: g.requireID(), payload: Self.pack(a), lifetime: 120).save(on: db)
@@ -115,11 +134,13 @@ struct OAuthController: RouteCollection {
         }
     }
     struct TokenRequest: Content {
-        var grant_type: String; var client_id: UUID; var resource: String
+        var grant_type: String; var client_id: UUID; var resource: String?
         var code: String?; var redirect_uri: String?; var code_verifier: String?; var refresh_token: String?; var scope: String?
     }
     @Sendable func token(_ req: Request) async throws -> Response {
-        let b = try req.content.decode(TokenRequest.self)
+        var decoded = try req.content.decode(TokenRequest.self)
+        if decoded.resource == nil { decoded.resource = Self.resource }
+        let b = decoded
         guard ["authorization_code", "refresh_token"].contains(b.grant_type), b.resource == Self.resource,
               let raw = b.grant_type == "authorization_code" ? b.code : b.refresh_token else { return try await tokenError(req) }
         // Return errors after committing: throwing inside this transaction would undo reuse revocation.

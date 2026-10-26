@@ -22,16 +22,16 @@ struct MCPController: RouteCollection {
               let grant = try await OAuthGrant.find(gid, on: req.db), !grant.revoked,
               grant.resource == OAuthController.resource,
               let user = try await User.find(grant.userID, on: req.db) else {
-            return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(OAuthController.issuer)/.well-known/oauth-protected-resource/mcp\""])
+            return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(OAuthController.issuer)/.well-known/oauth-protected-resource/mcp\", scope=\"\(OAuthController.scopes.joined(separator: " "))\""])
         }
         if let version = req.headers.first(name: "MCP-Protocol-Version"), !Self.versions.contains(version) { throw Abort(.badRequest, reason: "unsupported_protocol_version") }
         let body: JSONValue
         do { body = try req.content.decode(JSONValue.self) }
-        catch { return try await error(id: .null, code: -32700, message: "Parse error").encodeResponse(for: req) }
+        catch { return try await rpcError(id: .null, code: -32700, message: "Parse error").encodeResponse(for: req) }
         let id = body["id"]
         guard case .object(let fields) = body, body["jsonrpc"] == .string("2.0"), let method = body["method"].string,
               fields["id"] == nil || id.string != nil || { if case .number = id { return true }; return false }() else {
-            return try await error(id: .null, code: -32600, message: "Invalid request").encodeResponse(for: req)
+            return try await rpcError(id: .null, code: -32600, message: "Invalid request").encodeResponse(for: req)
         }
         if fields["id"] == nil {
             return Response(status: .accepted)
@@ -47,7 +47,7 @@ struct MCPController: RouteCollection {
         case "tools/list": result = .object(["tools": .array(Self.tools.filter { grant.scopes.contains($0.scope) }.map(\.definition))])
         case "tools/call":
             guard let name = body["params"]["name"].string, let tool = Self.tools.first(where: { $0.name == name }) else {
-                return try await error(id: id, code: -32602, message: "Unknown tool").encodeResponse(for: req)
+                return try await rpcError(id: id, code: -32602, message: "Unknown tool").encodeResponse(for: req)
             }
             do {
                 guard grant.scopes.contains(tool.scope) else { throw Abort(.forbidden, reason: "insufficient_scope") }
@@ -58,11 +58,11 @@ struct MCPController: RouteCollection {
                 let message = (error as? any AbortError).map { $0.status == .notFound ? "not_found" : $0.reason } ?? "invalid_arguments"
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(message)])]), "isError": .bool(true)])
             }
-        default: return try await error(id: id, code: -32601, message: "Method not found").encodeResponse(for: req)
+        default: return try await rpcError(id: id, code: -32601, message: "Method not found").encodeResponse(for: req)
         }
         return try await JSONValue.object(["jsonrpc": .string("2.0"), "id": id, "result": result]).encodeResponse(for: req)
     }
-    func error(id: JSONValue, code: Double, message: String) -> JSONValue {
+    func rpcError(id: JSONValue, code: Double, message: String) -> JSONValue {
         .object(["jsonrpc": .string("2.0"), "id": id, "error": .object(["code": .number(code), "message": .string(message)])])
     }
     struct Tool {
@@ -78,9 +78,10 @@ struct MCPController: RouteCollection {
         Tool(name: "create_task", scope: "tasks:write", properties: ["projectID": string, "title": string, "description": string], required: ["projectID", "title"]),
         Tool(name: "update_task", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "title": string, "description": string, "status": string, "projectID": string], required: ["id", "version"])
     ]
-    func project(_ id: UUID, user: User, grant: OAuthGrant, db: any Database) async throws -> Project {
+    /// Effective rights = explicitly granted project IDs AND the user's current effective role (incl. teams).
+    func project(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> Project {
         guard grant.projects.contains(id) else { throw Abort(.notFound) }
-        return try await ProjectAccess(user: user, db: db).project(id)
+        return try await ProjectAccess(user: user, db: db).project(id, role: role)
     }
     func uuid(_ value: JSONValue) throws -> UUID {
         guard let s = value.string, let id = UUID(uuidString: s) else { throw Abort(.badRequest, reason: "invalid_id") }; return id
@@ -108,7 +109,7 @@ struct MCPController: RouteCollection {
         case "list_tasks":
             let id = try uuid(a["projectID"])
             _ = try await project(id, user: user, grant: grant, db: db)
-            let tasks = try await TodoTask.query(on: db).filter(\.$projectID == id).filter(\.$ownerID == user.requireID()).sort(\.$createdAt).sort(\.$id).all()
+            let tasks = try await TodoTask.query(on: db).filter(\.$projectID == id).sort(\.$createdAt).sort(\.$id).all()
             return try .encoded(tasks.map(TaskDTO.init))
         case "get_task":
             let task = try await ProjectAccess(user: user, db: db).task(uuid(a["id"]))
@@ -116,17 +117,22 @@ struct MCPController: RouteCollection {
             return try .encoded(TaskDTO(task))
         case "create_task":
             let b = try a.decode(CreateTaskRequest.self)
-            _ = try await project(b.projectID, user: user, grant: grant, db: db)
-            let t = TodoTask(ownerID: try user.requireID(), projectID: b.projectID, title: try cleanTitle(b.title), details: b.description ?? "")
-            try await t.save(on: db); return try .encoded(TaskDTO(t))
+            let t = try await db.transaction { db -> TodoTask in
+                try await lockSharingGraph(on: db)
+                _ = try await project(b.projectID, user: user, grant: grant, db: db, role: .edit)
+                let t = TodoTask(ownerID: try user.requireID(), projectID: b.projectID, title: try cleanTitle(b.title), details: b.description ?? "")
+                try await t.save(on: db); return t
+            }
+            return try .encoded(TaskDTO(t))
         case "update_task":
             let id = try uuid(a["id"]), b = try a.decode(UpdateTaskRequest.self)
             return try await db.transaction { db in
+                try await lockSharingGraph(on: db)
                 try await lockRow(table: TodoTask.schema, id: id, on: db)
                 let t = try await ProjectAccess(user: user, db: db).task(id)
-                _ = try await project(t.projectID, user: user, grant: grant, db: db)
+                _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
                 guard t.version == b.version else { throw Abort(.conflict, reason: "version_conflict") }
-                if let p = b.projectID { _ = try await project(p, user: user, grant: grant, db: db); t.projectID = p }
+                if let p = b.projectID { _ = try await project(p, user: user, grant: grant, db: db, role: .edit); t.projectID = p }
                 if let title = b.title { t.title = try cleanTitle(title) }
                 if let d = b.description { t.details = d }
                 if let s = b.status { guard TaskStatus.all.contains(s) else { throw Abort(.badRequest, reason: "invalid_status") }; t.status = s }
