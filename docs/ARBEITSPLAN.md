@@ -37,3 +37,9 @@ Bekannte Lücken: activity_events werden von Projekt-/Aufgaben-Routen noch nicht
 ## Checkpoint 26.10.2026 mittags
 OAuth/MCP gemergt (ADR 0007). Beim Merge zeigte sich auf MariaDB 12 ein echter Fehler: ein Lesezugriff vor `SELECT … FOR UPDATE` in derselben Transaktion scheitert bei Konkurrenz mit "Record has changed since last read" (Snapshot-Isolation). Behoben in `OAuthController` (Lookup vor der Transaktion, Sperre vor dem ersten Lesen). **Regel für neue Konkurrenzcode:** zuerst sperren, dann lesen. Gesamtsuite: 83 Tests auf MariaDB grün (1 übersprungen), SQLite grün (14 übersprungen).
 Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell beschafftem Token belegt; der interaktive OAuth-Flow der CLI im Browser ist nicht geprüft. PWA Etappe 2 läuft (Agent a54439e…, nach Limit fortgesetzt). Apple Etappe 2: Codex-Job im Worktree etappe2-wt.
+
+## MCP-Erweiterung und Cleanup (26.10.2026)
+- [x] MCP: list_comments, add_comment, get_progress (lesend), list_attachments, get_attachment; Scopes comments:write, attachments:read, agents:read; gemeinsamer CommentService mit REST
+- [x] `cleanup-expired` (replikatsicher), Tests SQLite und MariaDB (eigene DB), Vertrag, ADR 0007 Nachtrag
+- [ ] Cleanup als wiederkehrenden Job einplanen (Cron/Swarm) und in BETRIEB dokumentieren
+- [ ] Consent-Oberfläche für neue Scopes; Claude-Code-Abnahme der neuen Werkzeuge
