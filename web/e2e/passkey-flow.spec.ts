@@ -219,6 +219,54 @@ test('attachment upload with preview', async () => {
 	await expect.poll(() => att.getByRole('img').evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(1);
 });
 
+test('oauth consent page and grant management', async () => {
+	// Public client registration (RFC 7591) via API; the consent UI is what is under test.
+	const reg = await page.request.post('/oauth/register', {
+		data: { client_name: 'Test-Assistent', redirect_uris: ['https://client.example/cb'], token_endpoint_auth_method: 'none' },
+		headers: { 'Content-Type': 'application/json' }
+	});
+	expect(reg.ok(), await reg.text()).toBeTruthy();
+	const clientID = ((await reg.json()) as { client_id: string }).client_id;
+	await page.route('https://client.example/**', (route) => route.fulfill({ status: 200, body: 'client' }));
+
+	const authorize = (state: string) =>
+		`/consent?response_type=code&client_id=${clientID}&redirect_uri=${encodeURIComponent('https://client.example/cb')}` +
+		`&scope=${encodeURIComponent('projects:read tasks:read')}&state=${state}&code_challenge=${'A'.repeat(43)}&code_challenge_method=S256`;
+
+	// Deny: no project needed, redirect carries access_denied.
+	await page.goto(authorize('deny1'));
+	await expect(page.getByTestId('consent-redirect')).toContainText('https://client.example');
+	await expect(page.getByText('Aufgaben lesen')).toBeVisible();
+	await page.getByRole('button', { name: 'Ablehnen' }).click();
+	await page.waitForURL(/client\.example\/cb\?.*error=access_denied/);
+	expect(page.url()).toContain('state=deny1');
+
+	// Approve needs an explicit project selection.
+	await page.goto(authorize('ok1'));
+	await page.getByRole('button', { name: 'Erlauben' }).click();
+	await expect(page.getByTestId('consent-error')).toHaveText('Bitte wähle mindestens ein Projekt.');
+	await page.getByLabel('Haushalt').check();
+	await page.getByRole('button', { name: 'Erlauben' }).click();
+	await page.waitForURL(/client\.example\/cb\?.*code=/);
+	expect(page.url()).toContain('state=ok1');
+
+	// Invalid request shows a message instead of a form.
+	await page.goto('/consent?client_id=nope');
+	await expect(page.getByTestId('consent-invalid')).toBeVisible();
+
+	// Grant list and revoke.
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Konto', exact: true }).click();
+	const grant = page.getByTestId('oauth-grant').filter({ hasText: clientID });
+	await expect(grant).toContainText('Projekte lesen, Aufgaben lesen');
+	await expect(grant).toContainText('Haushalt');
+	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).click();
+	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).last().click();
+	await expect(page.getByTestId('oauth-info')).toHaveText('Der Zugriff wurde widerrufen.');
+	await expect(grant).toContainText('Widerrufen');
+	await expect(grant.getByRole('button', { name: 'Zugriff widerrufen' })).toHaveCount(0);
+});
+
 test('account: passkeys, sessions and recovery', async () => {
 	await page.getByRole('button', { name: 'Konto', exact: true }).click();
 	await expect(page.getByTestId('passkey-item')).toHaveCount(1);
@@ -235,14 +283,11 @@ test('account: passkeys, sessions and recovery', async () => {
 
 	await expect(page.getByTestId('session-item').filter({ hasText: 'Diese Sitzung' })).toHaveCount(1);
 
-	// Admin issues a recovery code via API (no UI for issuing yet); the user redeems it on /recover.
-	const id = (await page.getByTestId('account-id').innerText()).trim();
-	const issued = await page.request.post(`/v1/identity/accounts/${id}/recovery`, {
-		data: {},
-		headers: { 'Content-Type': 'application/json' }
-	});
-	expect(issued.ok()).toBeTruthy();
-	const { token } = (await issued.json()) as { token: string };
+	// Admin issues a recovery code in the UI (shown once); the user redeems it on /recover.
+	await page.getByLabel('Konto-ID').fill((await page.getByTestId('account-id').innerText()).trim());
+	await page.getByRole('button', { name: 'Code ausstellen' }).click();
+	const token = (await page.getByTestId('recovery-code').innerText()).trim();
+	expect(token.length).toBeGreaterThan(20);
 	await page.goto('/recover');
 	await page.getByLabel('Recovery-Code').fill(token);
 	await page.getByRole('button', { name: 'Code einlösen' }).click();

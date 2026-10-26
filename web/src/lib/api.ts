@@ -168,6 +168,22 @@ export interface RecoveryToken {
 	token: string;
 	expiresAt: string;
 }
+/** Response of `GET /oauth/authorize` (contracts/oauth-mcp.yaml): what the client asks for. */
+export interface ConsentRequest {
+	consent_token: string;
+	client_name: string;
+	client_id: string;
+	redirect_uri: string;
+	scopes: string[];
+	projects: Project[];
+}
+export interface OAuthGrant {
+	id: string;
+	client_id: string;
+	scopes: string[];
+	project_ids: string[];
+	revoked: boolean;
+}
 export interface RegistrationBegin {
 	challengeID: string;
 	options: CreationOptionsJSON;
@@ -204,7 +220,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 	async function request<T>(method: string, path: string, body?: unknown, bearer?: string): Promise<T> {
 		let response: Response;
 		try {
-			response = await fetchFn(base + path, {
+			// OAuth endpoints live outside the versioned `/v1` namespace.
+			response = await fetchFn(path.startsWith('/oauth/') ? path : base + path, {
 				method,
 				credentials: bearer ? 'omit' : 'same-origin',
 				// The backend requires JSON for cookie-authenticated writes (CSRF protection).
@@ -374,6 +391,9 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		listSessions: () => request<SessionInfo[]>('GET', '/me/sessions'),
 		revokeSession: (id: string) => request<void>('DELETE', `/me/sessions/${id}`),
 		revokeOtherSessions: () => request<void>('POST', '/me/sessions/revoke-others', {}),
+		/** Admin only: issues a one-time recovery code for an account (shown once, replaces older codes). */
+		issueRecovery: (accountID: string) =>
+			request<RecoveryToken>('POST', `/identity/accounts/${encodeURIComponent(accountID)}/recovery`, {}),
 		redeemRecovery: (code: string) => request<RecoveryToken>('POST', '/identity/recovery/redeem', { code }),
 		recoveryPasskeyBegin: (bearer: string) =>
 			request<RegistrationBegin>('POST', '/identity/recovery/passkeys/begin', {}, bearer),
@@ -383,7 +403,19 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				'/identity/recovery/passkeys/finish',
 				{ challengeID, credential, passkeyName: name },
 				bearer
-			)
+			),
+
+		// OAuth consent and grants (contracts/oauth-mcp.yaml)
+		/** `search` is the raw query string of the authorization request, passed through unchanged. */
+		oauthAuthorize: (search: string) => request<ConsentRequest>('GET', `/oauth/authorize${search}`),
+		oauthConsent: (consentToken: string, approve: boolean, projectIDs: string[]) =>
+			request<{ redirect_uri: string }>('POST', '/oauth/consent', {
+				consent_token: consentToken,
+				approve,
+				project_ids: approve ? projectIDs : []
+			}),
+		listOAuthGrants: () => request<OAuthGrant[]>('GET', '/oauth/grants'),
+		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`)
 	};
 }
 
