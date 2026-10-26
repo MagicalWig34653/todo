@@ -1,4 +1,6 @@
 import Fluent
+import FluentSQL
+import SQLKit
 import Foundation
 import Vapor
 import XCTVapor
@@ -28,10 +30,23 @@ struct TestApp {
         try routes(app)
         if useMariaDB {
             // Fresh schema per test; tests run serially against the dev database `todo_test`.
-            try await app.autoRevert()
+            try await resetMariaDB(app)
         }
         try await app.autoMigrate()
         return TestApp(app: app, settings: settings, databaseSettings: database)
+    }
+
+    /// Drops every table (and migration bookkeeping) so each test starts from an empty schema, independent of
+    /// the order in which modules registered their migrations.
+    static func resetMariaDB(_ app: Application) async throws {
+        guard let sql = app.db as? any SQLDatabase else { return }
+        _ = try await sql.raw("SET FOREIGN_KEY_CHECKS=0").run()
+        let rows = try await sql.raw("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE()").all()
+        for row in rows {
+            let name = try row.decode(column: "t", as: String.self)
+            _ = try await sql.raw("DROP TABLE IF EXISTS `\(unsafeRaw: name)`").run()
+        }
+        _ = try await sql.raw("SET FOREIGN_KEY_CHECKS=1").run()
     }
 
     /// Second application instance on the same database, like another swarm replica.
