@@ -6,6 +6,8 @@
 	import { formatWhen } from '#lib/planning.js';
 	import { passkeysSupported, serializeRegistration, toCreationOptions } from '#lib/webauthn.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import OAuthGrants from './OAuthGrants.svelte';
+	import RecoveryIssue from './RecoveryIssue.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 
 	let passkeys = $state<Passkey[]>([]);
@@ -132,4 +134,8 @@
 			<div><Button size="sm" variant="outline" onclick={endOthers}>{t('account.sessions.revokeOthers')}</Button></div>
 		{/if}
 	</div>
+
+	<OAuthGrants />
+
+	{#if auth.user?.isAdmin}<RecoveryIssue />{/if}
 </section>

@@ -19,6 +19,7 @@ export default defineConfig({
 	server: {
 		proxy: {
 			'/health': process.env.BACKEND_URL ?? 'http://127.0.0.1:28080',
+			'/oauth/': process.env.BACKEND_URL ?? 'http://127.0.0.1:28080',
 			'/v1': process.env.BACKEND_URL ?? 'http://127.0.0.1:28080'
 		}
 	},
