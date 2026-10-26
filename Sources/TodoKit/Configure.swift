@@ -54,6 +54,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateCollaborationSchema())
     app.migrations.add(CreateSharingSchema())
     app.migrations.add(CreateAgentSchema())
+    configureAttachments(app)
 }
 
 public func configureContent() {
