@@ -7,6 +7,13 @@ import XCTVapor
 struct TestApp {
     let app: Application
     let settings: AppSettings
+    private let storedDatabaseSettings: DatabaseSettings
+
+    init(app: Application, settings: AppSettings, databaseSettings: DatabaseSettings? = nil) {
+        self.app = app
+        self.settings = settings
+        self.storedDatabaseSettings = databaseSettings ?? Self.databaseSettings
+    }
 
     static func make(password: Bool = false) async throws -> TestApp {
         let app = try await Application.make(.testing)
@@ -15,7 +22,8 @@ struct TestApp {
         settings.bootstrapToken = "bootstrap-secret"
         settings.passwordLoginEnabled = password
         app.settings = settings
-        try configureDatabase(app, settings: databaseSettings)
+        let database = databaseSettings
+        try configureDatabase(app, settings: database)
         configureMigrations(app)
         try routes(app)
         if useMariaDB {
@@ -23,21 +31,24 @@ struct TestApp {
             try await app.autoRevert()
         }
         try await app.autoMigrate()
-        return TestApp(app: app, settings: settings)
+        return TestApp(app: app, settings: settings, databaseSettings: database)
     }
 
     /// Second application instance on the same database, like another swarm replica.
     func replica() async throws -> TestApp {
         let other = try await Application.make(.testing)
         other.settings = settings
-        try configureDatabase(other, settings: TestApp.databaseSettings)
+        try configureDatabase(other, settings: storedDatabaseSettings)
         try routes(other)
-        return TestApp(app: other, settings: settings)
+        return TestApp(app: other, settings: settings, databaseSettings: storedDatabaseSettings)
     }
 
     static var useMariaDB: Bool { ProcessInfo.processInfo.environment["TODO_TEST_MARIADB"] == "1" }
 
-    static let sqliteFile = FileManager.default.temporaryDirectory.appendingPathComponent("todo-\(UUID()).sqlite").path
+    /// A fresh application gets its own file; replica() reuses the captured database settings.
+    static var sqliteFile: String {
+        FileManager.default.temporaryDirectory.appendingPathComponent("todo-\(UUID()).sqlite").path
+    }
 
     static var databaseSettings: DatabaseSettings {
         if useMariaDB {
