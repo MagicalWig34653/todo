@@ -122,6 +122,75 @@ struct ProjectAccess {
     }
 }
 
+/// Shared write operations for projects and tasks. Callers (REST routes and the sync mutation endpoint) run them
+/// inside a transaction after `lockSharingGraph`; all permission checks live here so neither path can bypass them.
+enum PlanningOperations {
+    static func cleanName(_ raw: String, reason: String) throws -> String {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 200 else { throw Abort(.badRequest, reason: reason) }
+        return name
+    }
+
+    static func createProject(user: User, db: any Database, id: UUID? = nil, body: CreateProjectRequest) async throws -> Project {
+        let access = ProjectAccess(user: user, db: db)
+        if let parent = body.parentID { _ = try await access.project(parent, role: .manage) }
+        let project = Project(
+            ownerID: try user.requireID(), parentID: body.parentID, name: try cleanName(body.name, reason: "invalid_name"))
+        project.id = id
+        try await project.save(on: db)
+        return project
+    }
+
+    static func updateProject(user: User, db: any Database, id projectID: UUID, body: UpdateProjectRequest) async throws -> ProjectDTO {
+        let access = ProjectAccess(user: user, db: db)
+        try await lockRow(table: Project.schema, id: projectID, on: db)
+        let project = try await access.project(projectID, role: .manage)
+        guard project.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
+        if let name = body.name { project.name = try cleanName(name, reason: "invalid_name") }
+        if body.moveToRoot == true {
+            project.parentID = nil
+        } else if let newParent = body.parentID ?? nil {
+            _ = try await access.project(newParent, role: .manage)
+            if try await access.isSelfOrDescendant(newParent, of: projectID) {
+                throw Abort(.unprocessableEntity, reason: "project_cycle")
+            }
+            project.parentID = newParent
+        }
+        project.version += 1
+        try await project.save(on: db)
+        return try await access.dto(project)
+    }
+
+    static func deleteProject(user: User, db: any Database, id projectID: UUID, expectedVersion: Int? = nil) async throws {
+        let access = ProjectAccess(user: user, db: db)
+        let project = try await access.project(projectID)
+        if let expectedVersion, project.version != expectedVersion { throw Abort(.conflict, reason: "version_conflict") }
+        try await access.requireDeletion(project)
+        try await project.delete(on: db)
+    }
+
+    static func createTask(user: User, db: any Database, id: UUID? = nil, body: CreateTaskRequest) async throws -> TodoTask {
+        _ = try await ProjectAccess(user: user, db: db).project(body.projectID, role: .edit)
+        let task = TodoTask(
+            ownerID: try user.requireID(), projectID: body.projectID,
+            title: try cleanName(body.title, reason: "invalid_title"), details: body.description ?? "")
+        task.id = id
+        try await task.save(on: db)
+        return task
+    }
+
+    static func deleteTask(user: User, db: any Database, id taskID: UUID, expectedVersion: Int? = nil) async throws {
+        let access = ProjectAccess(user: user, db: db)
+        let task = try await access.task(taskID, role: .edit)
+        if let expectedVersion, task.version != expectedVersion { throw Abort(.conflict, reason: "version_conflict") }
+        let project = try await access.project(task.projectID)
+        guard try await SharingAccess(user: user, db: db).visibility(project).canDelete else {
+            throw Abort(.forbidden)
+        }
+        try await task.delete(on: db)
+    }
+}
+
 struct PlanningController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let v1 = routes.grouped("v1")
@@ -140,12 +209,6 @@ struct PlanningController: RouteCollection {
         return id
     }
 
-    private func cleanName(_ raw: String, reason: String) throws -> String {
-        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name.count <= 200 else { throw Abort(.badRequest, reason: reason) }
-        return name
-    }
-
     // MARK: Projects
 
     @Sendable func listProjects(_ req: Request) async throws -> [ProjectDTO] {
@@ -161,12 +224,7 @@ struct PlanningController: RouteCollection {
         let body = try req.content.decode(CreateProjectRequest.self)
         let project = try await req.db.transaction { db in
             try await lockSharingGraph(on: db)
-            let access = ProjectAccess(user: user, db: db)
-            if let parent = body.parentID { _ = try await access.project(parent, role: .manage) }
-            let project = Project(
-                ownerID: try user.requireID(), parentID: body.parentID, name: try cleanName(body.name, reason: "invalid_name"))
-            try await project.save(on: db)
-            return project
+            return try await PlanningOperations.createProject(user: user, db: db, body: body)
         }
         return try await ProjectDTO(project).encodeResponse(status: .created, for: req)
     }
@@ -177,23 +235,7 @@ struct PlanningController: RouteCollection {
         let projectID = try id(req)
         return try await req.db.transaction { db in
             try await lockSharingGraph(on: db)
-            let access = ProjectAccess(user: user, db: db)
-            try await lockRow(table: Project.schema, id: projectID, on: db)
-            let project = try await access.project(projectID, role: .manage)
-            guard project.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
-            if let name = body.name { project.name = try cleanName(name, reason: "invalid_name") }
-            if body.moveToRoot == true {
-                project.parentID = nil
-            } else if let newParent = body.parentID ?? nil {
-                _ = try await access.project(newParent, role: .manage)
-                if try await access.isSelfOrDescendant(newParent, of: projectID) {
-                    throw Abort(.unprocessableEntity, reason: "project_cycle")
-                }
-                project.parentID = newParent
-            }
-            project.version += 1
-            try await project.save(on: db)
-            return try await access.dto(project)
+            return try await PlanningOperations.updateProject(user: user, db: db, id: projectID, body: body)
         }
     }
 
@@ -202,10 +244,7 @@ struct PlanningController: RouteCollection {
         let projectID = try id(req)
         return try await req.db.transaction { db in
             try await lockSharingGraph(on: db)
-            let access = ProjectAccess(user: user, db: db)
-            let project = try await access.project(projectID)
-            try await access.requireDeletion(project)
-            try await project.delete(on: db)
+            try await PlanningOperations.deleteProject(user: user, db: db, id: projectID)
             return .noContent
         }
     }
@@ -230,12 +269,7 @@ struct PlanningController: RouteCollection {
         let body = try req.content.decode(CreateTaskRequest.self)
         let task = try await req.db.transaction { db in
             try await lockSharingGraph(on: db)
-            _ = try await ProjectAccess(user: user, db: db).project(body.projectID, role: .edit)
-            let task = TodoTask(
-                ownerID: try user.requireID(), projectID: body.projectID,
-                title: try cleanName(body.title, reason: "invalid_title"), details: body.description ?? "")
-            try await task.save(on: db)
-            return task
+            return try await PlanningOperations.createTask(user: user, db: db, body: body)
         }
         return try await TaskDTO(task).encodeResponse(status: .created, for: req)
     }
@@ -250,7 +284,7 @@ struct PlanningController: RouteCollection {
             try await lockRow(table: TodoTask.schema, id: taskID, on: db)
             let task = try await access.task(taskID, role: .edit)
             guard task.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
-            if let title = body.title { task.title = try cleanName(title, reason: "invalid_title") }
+            if let title = body.title { task.title = try PlanningOperations.cleanName(title, reason: "invalid_title") }
             if let description = body.description { task.details = description }
             if let status = body.status {
                 guard TaskStatus.all.contains(status) else { throw Abort(.badRequest, reason: "invalid_status") }
@@ -271,13 +305,7 @@ struct PlanningController: RouteCollection {
         let taskID = try id(req)
         return try await req.db.transaction { db in
             try await lockSharingGraph(on: db)
-            let access = ProjectAccess(user: user, db: db)
-            let task = try await access.task(taskID, role: .edit)
-            let project = try await access.project(task.projectID)
-            guard try await SharingAccess(user: user, db: db).visibility(project).canDelete else {
-                throw Abort(.forbidden)
-            }
-            try await task.delete(on: db)
+            try await PlanningOperations.deleteTask(user: user, db: db, id: taskID)
             return .noContent
         }
     }
