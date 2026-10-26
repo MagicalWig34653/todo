@@ -7,6 +7,7 @@ struct HealthResponse: Content {
 }
 
 public func routes(_ app: Application) throws {
+    try app.register(collection: OAuthController())
     try app.register(collection: AuthController())
     try app.register(collection: PlanningController())
     // Liveness: process is up. No dependencies checked.
