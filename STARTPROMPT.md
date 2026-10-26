@@ -16,8 +16,8 @@ Das System muss von Beginn an für mehrere API-Replikate im Docker Swarm entworf
 
 ## Referenzprojekte – nur lesen
 
-- `/Users/linolaske/Documents/Code Projekte/PhpstormProjects/timetrack-backend`
-- `/Users/linolaske/Documents/Code Projekte/PhpstormProjects/timetrack-pwa`
+- `../timetrack-backend`
+- `../timetrack-pwa`
 
 Lies deren AGENTS.md und relevante Architektur-/Statusdokumente vor einer Übernahme. Untersuche insbesondere Passkeys, Recovery, OAuth/MCP, Sitzung/CSRF, MariaDB, Job-Leases, PWA und API-Verträge. Verändere diese Referenzprojekte nicht. Übernimm keine privaten Daten, Secrets, Laufzeitdatenbanken, Git-Historien oder projektspezifischen Zeittrackingregeln.
 

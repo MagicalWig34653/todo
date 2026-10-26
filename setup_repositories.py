@@ -14,8 +14,8 @@ def digest(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--main', type=Path, default=Path('/Users/linolaske/Documents/Code Projekte/PhpstormProjects/todo'))
-    parser.add_argument('--apple', type=Path, default=Path('/Users/linolaske/Documents/Code Projekte/Xcode/todo'))
+    parser.add_argument('--main', type=Path, default=Path('../todo'))
+    parser.add_argument('--apple', type=Path, default=Path('../../Xcode/todo'))
     args = parser.parse_args()
     source = Path(__file__).resolve().parent
     target = args.main.expanduser().resolve()
