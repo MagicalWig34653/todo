@@ -52,6 +52,8 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
 public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateInitialSchema())
     app.migrations.add(CreateCollaborationSchema())
+    app.migrations.add(CreateSharingSchema())
+    app.migrations.add(CreateAgentSchema())
 }
 
 public func configureContent() {

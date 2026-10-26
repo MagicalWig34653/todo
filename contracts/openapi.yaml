@@ -2,22 +2,1120 @@ openapi: 3.1.0
 info:
   title: Todo API
   version: 0.1.0
+  description: 'Implemented health, AuthController and PlanningController API. Other areas are maintained
+    in separate contracts/<area>.yaml files.
+
+    All JSON property names are case-sensitive. Dates are ISO 8601 strings. Swift optional response properties
+    are omitted when nil; optional request properties accept null. Unknown request properties are ignored.
+    Length limits described as Swift Characters count grapheme clusters, so JSON Schema maxLength is intentionally
+    not used for them.
+
+    Session authentication accepts Bearer or cookie todo_session; Bearer takes precedence even if invalid.
+    Cookie-authenticated unsafe methods that call requireUser require Content-Type application/json (415
+    json_required); if Origin is present it must exactly match RP_ORIGIN (403 origin_not_allowed). Missing
+    Origin is accepted. GET/HEAD/OPTIONS skip this check. Bearer requests skip this CSRF check but endpoints
+    decoding JSON still need an appropriate content type. No CSRF token header is used. Public auth endpoints
+    and logout do not call requireUser and do not enforce this header-based check; WebAuthn finish verifies
+    the origin in clientDataJSON separately.
+
+    Missing and foreign project/task resources return the same 404, including references. PATCH requires
+    an expected version and returns 409 version_conflict on mismatch; DELETE has no version check. Lists
+    currently have no pagination, cursor, sync or idempotency support. Vapor errors have {error: true,
+    reason: string}; reason is not a universal enum.'
+  license:
+    name: Licensing undecided
+servers:
+  - url: http://localhost:28080
+    description: Local development; production URL depends on deployment.
+tags:
+  - name: Health
+    description: Process and database probes.
+  - name: Auth
+    description: Authentication, current account and invitations.
+  - name: Planning
+    description: Owned projects and tasks.
+security:
+  - BearerAuth: []
+  - CookieAuth: []
 paths:
   /health/live:
     get:
-      summary: Liveness – process is up
+      operationId: healthLive
+      summary: Check process liveness
+      tags:
+        - Health
+      security: []
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /health/ready:
     get:
-      summary: Readiness – database reachable
+      operationId: healthReady
+      summary: Check database readiness
+      tags:
+        - Health
+      security: []
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
-        "503": { description: Database unavailable }
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/capabilities:
+    get:
+      operationId: capabilities
+      summary: Read available authentication methods
+      tags:
+        - Auth
+      security: []
+      description: password reflects PASSWORD_LOGIN_ENABLED (default false); bootstrapOpen requires no
+        users and a configured bootstrap token.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/auth/register/begin:
+    post:
+      operationId: registerBegin
+      summary: Begin passkey registration
+      tags:
+        - Auth
+      security: []
+      description: token is the configured bootstrap secret only while no users exist, otherwise an unused,
+        unexpired invitation token. No existing session required. Challenges expire after the configured
+        lifetime (default 300 seconds).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterBeginRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterBeginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/auth/register/finish:
+    post:
+      operationId: registerFinish
+      summary: Finish passkey registration and start a session
+      tags:
+        - Auth
+      security: []
+      description: Verifies WebAuthn challenge, RP and origin. First account becomes admin; invitation
+        consumed transactionally. passkeyName defaults to Passkey. Successful challenge use is single-use.
+        Challenge deletion rolls back on registration failure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterFinishRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '409':
+          description: 'bootstrap_closed: user insertion failed, including concurrent bootstrap account creation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/auth/login/begin:
+    post:
+      operationId: loginBegin
+      summary: Begin discoverable passkey login
+      tags:
+        - Auth
+      security: []
+      description: No request body is read; no JSON content type or Origin header is required. Challenge
+        lifetime defaults to 300 seconds.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginBeginResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/auth/login/finish:
+    post:
+      operationId: loginFinish
+      summary: Finish passkey login and start a session
+      tags:
+        - Auth
+      security: []
+      description: Verifies signature, challenge, RP, origin and sign counter. The challenge is consumed
+        before credential verification, so a failed verification requires a new begin request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginFinishRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/auth/password/login:
+    post:
+      operationId: passwordLogin
+      summary: Log in with optional password authentication
+      tags:
+        - Auth
+      security: []
+      description: Server rejects disabled password login with 403 password_login_disabled before decoding
+        the body. Username is lowercased.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordLoginRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke presented session and clear cookie
+      tags:
+        - Auth
+      security:
+        - {}
+        - BearerAuth: []
+        - CookieAuth: []
+      description: 'Optional Bearer or todo_session cookie; Bearer takes precedence. Idempotently deletes
+        the presented token, including expired tokens. Does not call requireUser: no JSON or Origin/CSRF
+        check, and no valid session required. Always clears the cookie.'
+      responses:
+        '204':
+          description: No content
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/me:
+    get:
+      operationId: me
+      summary: Read current user
+      tags:
+        - Auth
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/me/password:
+    post:
+      operationId: setPassword
+      summary: Set username and password
+      tags:
+        - Auth
+      description: Requires password login enabled; otherwise 403 password_login_disabled before authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPasswordRequest'
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '409':
+          description: username_taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/invitations:
+    post:
+      operationId: createInvitation
+      summary: Create an invitation (admin only)
+      tags:
+        - Auth
+      description: No body is read. With cookie authentication send Content-Type application/json even
+        with no body. Token is returned once, stored hashed, expires in seven days and is single-use.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/projects:
+    get:
+      operationId: listProjects
+      summary: List own projects
+      tags:
+        - Planning
+      description: Unpaginated, ordered by createdAt then id. No foreign projects are returned.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      operationId: createProject
+      summary: Create a project
+      tags:
+        - Planning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/projects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateProject
+      summary: Update or move a project
+      tags:
+        - Planning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '422':
+          description: 'project_cycle: target parent is the project itself or a descendant.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deleteProject
+      summary: Delete a project and its descendants
+      tags:
+        - Planning
+      description: Cascades to subprojects and tasks. No expected version is checked. No body is read;
+        cookie authentication still requires Content-Type application/json.
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List own tasks
+      tags:
+        - Planning
+      description: Unpaginated, ordered by createdAt then id. A valid projectID filters results after
+        ownership validation. An invalid UUID query value is ignored by the current backend.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      parameters:
+        - name: projectID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional project filter.
+    post:
+      operationId: createTask
+      summary: Create a task
+      tags:
+        - Planning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateTask
+      summary: Update or move a task
+      tags:
+        - Planning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteTask
+      summary: Delete a task
+      tags:
+        - Planning
+      description: No expected version is checked. No body is read; cookie authentication still requires
+        Content-Type application/json.
+      responses:
+        '204':
+          description: No content
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Opaque session token, not JWT. Returned on successful registration or login.
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: todo_session
+      description: Same opaque session token. See global description for conditional CSRF rules.
+  headers:
+    SessionCookie:
+      description: todo_session=<token>; Path=/; Expires=<session expiry>; HttpOnly; SameSite=Strict.
+        Secure when RP_ORIGIN starts with https://. Logout sets an empty value, Expires at Unix epoch
+        and Max-Age=0. Session lifetime defaults to 30 days.
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Malformed JSON/UUID or validation failure. reason may be invalid_display_name, invalid_challenge,
+        challenge_expired, registration_failed, invalid_credentials_format, invalid_name, invalid_title
+        or invalid_status; decoder reasons are not stable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid or expired session (Unauthorized), or login_failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden (admin required), invalid_token, password_login_disabled or origin_not_allowed
+        depending on operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaType:
+      description: Unsupported request content type. Cookie-authenticated unsafe operations require application/json
+        (reason json_required). Body decoding may also reject an unsupported media type.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not Found. Missing and foreign projects/tasks are indistinguishable, including referenced
+        parents, task project filters and move targets.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    VersionConflict:
+      description: 'version_conflict: expected version differs from stored version; refetch before retrying.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/VersionConflictError'
+    InternalError:
+      description: Unexpected server/database error. Vapor production errors use a generic reason.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
     Health:
       type: object
-      required: [status]
+      required:
+        - status
       properties:
-        status: { type: string, example: ok }
+        status:
+          type: string
+          const: ok
+    Error:
+      type: object
+      required:
+        - error
+        - reason
+      properties:
+        error:
+          type: boolean
+          const: true
+        reason:
+          type: string
+    VersionConflictError:
+      type: object
+      required:
+        - error
+        - reason
+      properties:
+        error:
+          type: boolean
+          const: true
+        reason:
+          type: string
+          const: version_conflict
+    Capabilities:
+      type: object
+      required:
+        - passkey
+        - password
+        - bootstrapOpen
+      properties:
+        passkey:
+          type: boolean
+          const: true
+        password:
+          type: boolean
+        bootstrapOpen:
+          type: boolean
+    User:
+      type: object
+      required:
+        - id
+        - displayName
+        - isAdmin
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        isAdmin:
+          type: boolean
+        username:
+          type: string
+      description: Absent username is omitted, not null.
+    Session:
+      type: object
+      required:
+        - token
+        - expiresAt
+        - user
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/User'
+    Invitation:
+      type: object
+      required:
+        - token
+        - expiresAt
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    RegisterBeginRequest:
+      type: object
+      required:
+        - token
+        - displayName
+      properties:
+        token:
+          type: string
+        displayName:
+          type: string
+          description: Trimmed before validation; 1–100 Swift Characters after trimming.
+    PasswordLoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: Lowercased for lookup; no trimming.
+        password:
+          type: string
+    SetPasswordRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: Lowercased; 3–64 Swift Characters, no trimming.
+        password:
+          type: string
+          description: 12–256 Swift Characters. Hashed with Bcrypt.
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        parentID:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+      description: Absent parentID is omitted, not null. New projects start at version 1.
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Trimmed; 1–200 Swift Characters after trimming.
+        parentID:
+          anyOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+    UpdateProjectRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+        name:
+          anyOf:
+            - type: string
+              description: Trimmed; 1–200 Swift Characters after trimming.
+            - type: 'null'
+        parentID:
+          anyOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+        moveToRoot:
+          anyOf:
+            - type: boolean
+            - type: 'null'
+      description: Expected version is required. Every successful PATCH increments version, including
+        no-op updates. moveToRoot=true takes precedence over parentID. Omitted or null parentID leaves
+        the parent unchanged; use moveToRoot to clear it. Optional null fields are ignored.
+    Task:
+      type: object
+      required:
+        - id
+        - projectID
+        - title
+        - description
+        - status
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectID:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - in_progress
+            - in_review
+            - done
+        version:
+          type: integer
+      description: New tasks start at version 1, status open and description empty unless supplied.
+    CreateTaskRequest:
+      type: object
+      required:
+        - projectID
+        - title
+      properties:
+        projectID:
+          type: string
+          format: uuid
+        title:
+          type: string
+          description: Trimmed; 1–200 Swift Characters after trimming.
+        description:
+          anyOf:
+            - type: string
+            - type: 'null'
+    UpdateTaskRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+        title:
+          anyOf:
+            - type: string
+              description: Trimmed; 1–200 Swift Characters after trimming.
+            - type: 'null'
+        description:
+          anyOf:
+            - type: string
+            - type: 'null'
+        status:
+          anyOf:
+            - type: string
+              enum:
+                - open
+                - in_progress
+                - in_review
+                - done
+            - type: 'null'
+        projectID:
+          anyOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+      description: Expected version is required. Every successful PATCH increments version, including
+        no-op updates. Omitted or null fields are ignored.
+    Base64URL:
+      type: string
+      pattern: ^[A-Za-z0-9_-]*={0,2}$
+      description: Base64url encoded bytes, not a JSON byte array. Server output is unpadded.
+    CreationOptions:
+      type: object
+      required:
+        - challenge
+        - user
+        - rp
+        - pubKeyCredParams
+        - timeout
+        - attestation
+      properties:
+        challenge:
+          $ref: '#/components/schemas/Base64URL'
+        user:
+          type: object
+          required:
+            - id
+            - name
+            - displayName
+          properties:
+            id:
+              $ref: '#/components/schemas/Base64URL'
+            name:
+              type: string
+            displayName:
+              type: string
+        rp:
+          type: object
+          required:
+            - id
+            - name
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        pubKeyCredParams:
+          type: array
+          items:
+            type: object
+            required:
+              - type
+              - alg
+            properties:
+              type:
+                type: string
+                const: public-key
+              alg:
+                type: integer
+                enum:
+                  - -7
+                  - -35
+                  - -36
+                  - -65535
+                  - -257
+                  - -258
+                  - -259
+                  - -37
+                  - -38
+                  - -39
+        timeout:
+          type: integer
+          const: 300000
+          description: Milliseconds.
+        attestation:
+          type: string
+          const: none
+      description: 'Exact Encodable shape of webauthn-swift beginRegistration defaults: no authenticatorSelection,
+        excludeCredentials or extensions. user.id encodes the UTF-8 UUID string. Convert base64url fields
+        to bytes before passing to navigator.credentials.create.'
+    RequestOptions:
+      type: object
+      required:
+        - challenge
+        - timeout
+        - rpId
+        - userVerification
+      properties:
+        challenge:
+          $ref: '#/components/schemas/Base64URL'
+        timeout:
+          type: integer
+          const: 60000
+          description: Milliseconds.
+        rpId:
+          type: string
+        userVerification:
+          type: string
+          const: preferred
+      description: 'Exact Encodable shape of beginAuthentication defaults: allowCredentials is nil and
+        omitted (discoverable credentials). Convert challenge to bytes before navigator.credentials.get.'
+    RegistrationCredential:
+      type: object
+      required:
+        - id
+        - type
+        - rawId
+        - response
+      properties:
+        id:
+          $ref: '#/components/schemas/Base64URL'
+        type:
+          type: string
+          const: public-key
+        rawId:
+          $ref: '#/components/schemas/Base64URL'
+        response:
+          type: object
+          required:
+            - clientDataJSON
+            - attestationObject
+          properties:
+            clientDataJSON:
+              $ref: '#/components/schemas/Base64URL'
+            attestationObject:
+              $ref: '#/components/schemas/Base64URL'
+      description: 'Request Decodable shape: type is mandatory. The library RegistrationCredential encoder
+        omits type, so its encoded output alone cannot be used as a finish request. Extra browser fields
+        are ignored.'
+    AuthenticationCredential:
+      type: object
+      required:
+        - id
+        - type
+        - rawId
+        - response
+      properties:
+        id:
+          $ref: '#/components/schemas/Base64URL'
+        type:
+          type: string
+          const: public-key
+        rawId:
+          $ref: '#/components/schemas/Base64URL'
+        authenticatorAttachment:
+          anyOf:
+            - type: string
+            - type: 'null'
+        response:
+          type: object
+          required:
+            - clientDataJSON
+            - authenticatorData
+            - signature
+          properties:
+            clientDataJSON:
+              $ref: '#/components/schemas/Base64URL'
+            authenticatorData:
+              $ref: '#/components/schemas/Base64URL'
+            signature:
+              $ref: '#/components/schemas/Base64URL'
+            userHandle:
+              anyOf:
+                - $ref: '#/components/schemas/Base64URL'
+                - type: 'null'
+            attestationObject:
+              anyOf:
+                - $ref: '#/components/schemas/Base64URL'
+                - type: 'null'
+      description: Browser credential JSON; binary response fields must be base64url strings. Optional
+        authenticatorAttachment accepts string values (typically platform or cross-platform). Extra fields
+        are ignored.
+    RegisterFinishRequest:
+      type: object
+      required:
+        - challengeID
+        - credential
+      properties:
+        challengeID:
+          type: string
+          format: uuid
+        credential:
+          $ref: '#/components/schemas/RegistrationCredential'
+        passkeyName:
+          anyOf:
+            - type: string
+            - type: 'null'
+    LoginFinishRequest:
+      type: object
+      required:
+        - challengeID
+        - credential
+      properties:
+        challengeID:
+          type: string
+          format: uuid
+        credential:
+          $ref: '#/components/schemas/AuthenticationCredential'
+    RegisterBeginResponse:
+      type: object
+      required:
+        - challengeID
+        - options
+      properties:
+        challengeID:
+          type: string
+          format: uuid
+        options:
+          $ref: '#/components/schemas/CreationOptions'
+    LoginBeginResponse:
+      type: object
+      required:
+        - challengeID
+        - options
+      properties:
+        challengeID:
+          type: string
+          format: uuid
+        options:
+          $ref: '#/components/schemas/RequestOptions'
