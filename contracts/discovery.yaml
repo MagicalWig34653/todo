@@ -200,11 +200,11 @@ paths:
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
-  /v1/tasks/{taskID}/labels:
+  /v1/tasks/{id}/labels:
     get:
       summary: Eigene Labels an erlaubter Aufgabe auflisten
       parameters:
-        - $ref: '#/components/parameters/TaskID'
+        - $ref: '#/components/parameters/ID'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -220,12 +220,12 @@ paths:
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
-  /v1/tasks/{taskID}/labels/{id}:
+  /v1/tasks/{id}/labels/{labelID}:
     put:
       summary: Eigenes Label idempotent einer erlaubten Aufgabe zuordnen
       parameters:
-        - $ref: '#/components/parameters/TaskID'
         - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/LabelPathID'
       responses:
         '204':
           description: Erfolgreich
@@ -238,8 +238,8 @@ paths:
     delete:
       summary: Eigene Zuordnung idempotent entfernen
       parameters:
-        - $ref: '#/components/parameters/TaskID'
         - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/LabelPathID'
       responses:
         '204':
           description: Erfolgreich
@@ -295,8 +295,8 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
-    TaskID:
-      name: taskID
+    LabelPathID:
+      name: labelID
       in: path
       required: true
       schema: {type: string, format: uuid}

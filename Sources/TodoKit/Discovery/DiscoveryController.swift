@@ -20,9 +20,9 @@ struct DiscoveryController: RouteCollection {
         v1.post("labels", use: createLabel)
         v1.patch("labels", ":id", use: updateLabel)
         v1.delete("labels", ":id", use: deleteLabel)
-        v1.get("tasks", ":taskID", "labels", use: taskLabels)
-        v1.put("tasks", ":taskID", "labels", ":id", use: attachLabel)
-        v1.delete("tasks", ":taskID", "labels", ":id", use: detachLabel)
+        v1.get("tasks", ":id", "labels", use: taskLabels)
+        v1.put("tasks", ":id", "labels", ":labelID", use: attachLabel)
+        v1.delete("tasks", ":id", "labels", ":labelID", use: detachLabel)
         v1.get("filters", use: listFilters)
         v1.post("filters", use: createFilter)
         v1.patch("filters", ":id", use: updateFilter)
@@ -107,7 +107,7 @@ struct DiscoveryController: RouteCollection {
 
     @Sendable func taskLabels(_ req: Request) async throws -> DiscoveryPage<DiscoveryLabelDTO> {
         let service = try await service(req)
-        let taskID = try id(req, "taskID")
+        let taskID = try id(req)
         _ = try await service.task(taskID)
         return try await labels(service, req: req, taskID: taskID)
     }
@@ -122,8 +122,8 @@ struct DiscoveryController: RouteCollection {
 
     private func changeLink(_ req: Request, attach: Bool) async throws -> HTTPStatus {
         let user = try await req.requireUser()
-        let taskID = try id(req, "taskID")
-        let labelID = try id(req)
+        let taskID = try id(req)
+        let labelID = try id(req, "labelID")
         return try await req.db.transaction { db in
             // Serialize repeated PUTs on the label; the unique pair also protects the database.
             try await lockRow(table: DiscoveryLabel.schema, id: labelID, on: db)

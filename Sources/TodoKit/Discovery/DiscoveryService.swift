@@ -102,7 +102,7 @@ struct DiscoveryService {
                     after = id
                     do {
                         let project = try await access.project(id)
-                        hits.append(DiscoveryHit(kind: "project", id: id, project: try ProjectDTO(project), task: nil))
+                        hits.append(DiscoveryHit(kind: "project", id: id, project: try await access.dto(project), task: nil))
                     } catch let error as AbortError where error.status == .notFound { continue }
                     if hits.count > size { break }
                 }
@@ -128,7 +128,7 @@ struct DiscoveryService {
                 do {
                     let task = try await task(id)
                     let project = try await access.project(task.projectID)
-                    hits.append(DiscoveryHit(kind: "task", id: id, project: try ProjectDTO(project), task: try TaskDTO(task)))
+                    hits.append(DiscoveryHit(kind: "task", id: id, project: try await access.dto(project), task: try TaskDTO(task)))
                 } catch let error as AbortError where error.status == .notFound { continue }
                 if hits.count > size { break }
             }

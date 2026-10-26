@@ -70,9 +70,11 @@ final class DiscoveryTests: XCTestCase {
             let response = try await t.json(method, path, ["name": "Hack", "version": 1, "criteria": [:]], token: b)
             XCTAssertEqual(response.status, .notFound, path)
         }
-        let attachForeign = try await t.json(.PUT, "/v1/tasks/\(foreignTask.requireID())/labels/\(lid)", token: a)
+        let foreignTaskID = try foreignTask.requireID()
+        let attachForeign = try await t.json(.PUT, "/v1/tasks/\(foreignTaskID)/labels/\(lid)", token: a)
         XCTAssertEqual(attachForeign.status, .notFound)
-        for query in ["labelID=\(lid)", "projectID=\(p.requireID())"] {
+        let pid = try p.requireID()
+        for query in ["labelID=\(lid)", "projectID=\(pid)"] {
             let response = try await t.json(.GET, "/v1/search?\(query)", token: b)
             XCTAssertEqual(response.status, .notFound)
         }
@@ -196,9 +198,9 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertEqual(attach.status, .notFound)
         let labels = try await t.json(.GET, "/v1/tasks/\(second)/labels", token: a)
         XCTAssertEqual(labels.status, .notFound)
-        // Bob owns the project now but not its tasks: both checks must succeed for a task hit.
+        // Tasks follow their current project, so Bob sees exactly the task in the project he now owns.
         let bobResult = try await t.json(.GET, "/v1/search?status=open", token: b)
-        XCTAssertTrue(items(bobResult.body).isEmpty)
+        XCTAssertEqual(items(bobResult.body).map { $0["id"] as! String }, [second.uuidString])
         let wrongUser = try await t.json(.GET, "/v1/search?status=open&cursor=\(cursor)", token: b)
         XCTAssertEqual(wrongUser.status, .badRequest)
         let wrongQuery = try await t.json(.GET, "/v1/search?q=changed&cursor=\(cursor)", token: a)
@@ -244,5 +246,41 @@ final class DiscoveryTests: XCTestCase {
             let response = try await t.json(.GET, "/v1/search?\(query)", token: a)
             XCTAssertEqual(response.status, .badRequest, query)
         }
+    }
+
+    func testTeamGrantsDriveSearchVisibility() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let (alice, a) = try await account(t, "Alice")
+        let (bob, b) = try await account(t, "Bob")
+        let shared = try await project(t, alice, "Needle shared")
+        let hidden = try await project(t, alice, "Needle hidden")
+        _ = try await task(t, alice, shared, "Needle visible task")
+        _ = try await task(t, alice, hidden, "Needle hidden task")
+        let before = try await t.json(.GET, "/v1/search?q=needle", token: b)
+        XCTAssertTrue(items(before.body).isEmpty)
+        XCTAssertNil(before.body?["total"])
+        let team = try await t.json(.POST, "/v1/teams", ["name": "Crew"], token: a)
+        let teamID = team.body!["id"] as! String
+        let bobID = try bob.requireID().uuidString
+        _ = try await t.json(.PUT, "/v1/teams/\(teamID)/members", ["userID": bobID, "isAdmin": false], token: a)
+        // A pending invitation grants nothing.
+        let sharedID = try shared.requireID().uuidString
+        let grant = try await t.json(.PUT, "/v1/projects/\(sharedID)/grants",
+            ["principalType": "team", "principalID": teamID, "role": "read"], token: a)
+        XCTAssertEqual(grant.status, .ok)
+        let pending = try await t.json(.GET, "/v1/search?q=needle", token: b)
+        XCTAssertTrue(items(pending.body).isEmpty)
+        _ = try await t.json(.POST, "/v1/teams/\(teamID)/accept", token: b)
+        let after = try await t.json(.GET, "/v1/search?q=needle", token: b)
+        let titles = items(after.body).map { ($0["task"] as? [String: Any])?["title"] as? String ?? ($0["project"] as! [String: Any])["name"] as! String }
+        XCTAssertEqual(Set(titles), ["Needle shared", "Needle visible task"])
+        XCTAssertFalse(String(describing: after.body).contains("hidden"))
+        let denied = try await t.json(.GET, "/v1/search?projectID=\(try hidden.requireID())", token: b)
+        XCTAssertEqual(denied.status, .notFound)
+        let revoke = try await t.json(.DELETE, "/v1/teams/\(teamID)/members/\(bobID)", token: a)
+        XCTAssertEqual(revoke.status, .noContent)
+        let revoked = try await t.json(.GET, "/v1/search?q=needle", token: b)
+        XCTAssertTrue(items(revoked.body).isEmpty)
     }
 }
