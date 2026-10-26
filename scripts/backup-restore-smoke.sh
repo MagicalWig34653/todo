@@ -18,9 +18,10 @@ trap 'exit 143' TERM
 umask 077
 openssl rand -hex 32 > "$work/password"
 docker create --name "$name" --tmpfs /var/lib/mysql \
-  --mount "type=bind,src=$work/password,dst=/run/secrets/root,readonly" \
-  -e MARIADB_ROOT_PASSWORD_FILE=/run/secrets/root -e MARIADB_DATABASE=todo mariadb:12.3 >/dev/null
+  -e MARIADB_ROOT_PASSWORD_FILE=/run/root-password -e MARIADB_DATABASE=todo mariadb:12.3 >/dev/null
 created=1
+# docker cp instead of a bind mount: works with remote daemons and VMs (Colima) that do not share the host temp dir.
+docker cp "$work/password" "$name:/run/root-password"
 docker start "$name" >/dev/null
 export DB_CONTAINER=$name DB_NAME=todo
 source scripts/db-common.sh

@@ -24,11 +24,12 @@ if ! docker service inspect "${STACK}_backend" >/dev/null 2>&1; then
 fi
 # Wait for DB before creating exactly one migration task. Never retry failed migrations blindly.
 for ((i=0; i<120; i++)); do
-  if docker run --rm --network "${STACK}_internal" mariadb:12.3 \
-    mariadb-admin --host db ping --silent >/dev/null 2>&1; then break; fi
+  # Unauthenticated ping is rejected, so rely on the service's own healthcheck (innodb_initialized).
+  db_container=$(docker ps -q --filter "label=com.docker.swarm.service.name=${STACK}_db" | head -n1)
+  if [[ -n "$db_container" && $(docker inspect --format '{{.State.Health.Status}}' "$db_container") == healthy ]]; then break; fi
   sleep 2
 done
-[[ $i -lt 120 ]] || { echo 'Database timeout' >&2; exit 1; }
+[[ $i -lt 120 ]] || { docker stack ps "$STACK" --no-trunc >&2 || true; docker service logs --tail 30 "${STACK}_db" >&2 || true; echo 'Database timeout' >&2; exit 1; }
 old_tasks=$(docker service ps --no-trunc --format '{{.ID}}' "${STACK}_migrate")
 docker service scale "${STACK}_migrate=0" >/dev/null
 migration_running=1

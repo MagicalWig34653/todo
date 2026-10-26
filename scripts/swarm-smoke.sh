@@ -26,11 +26,16 @@ cleanup() {
       docker config rm "${STACK}_deployment-lock" >/dev/null || result=1
     fi
     if docker volume inspect "${STACK}_db" >/dev/null 2>&1; then
-      docker volume rm "${STACK}_db" >/dev/null || result=1
+      # The volume stays "in use" until the last task container is gone.
+      for ((j=0; j<45; j++)); do
+        if docker volume rm "${STACK}_db" >/dev/null 2>&1; then break; fi
+        sleep 2
+      done
+      if docker volume inspect "${STACK}_db" >/dev/null 2>&1; then echo "Cleanup timeout: volume ${STACK}_db remains" >&2; result=1; fi
     fi
   fi
   for secret in "${secrets[@]-}"; do [[ -z "$secret" ]] && continue; docker secret rm "$secret" >/dev/null || result=1; done
-  if [[ $node_labeled == 1 ]]; then docker node update --label-rm todo.data self >/dev/null || result=1; fi
+  if [[ $node_labeled == 1 ]]; then docker node update --label-rm todo.data "$node_id" >/dev/null || result=1; fi
   if [[ $created_swarm == 1 ]]; then docker swarm leave --force >/dev/null || result=1; fi
   exit "$result"
 }
@@ -43,10 +48,11 @@ case "$state" in
   *) echo "Unsupported Swarm state: $state" >&2; exit 1 ;;
 esac
 [[ $(docker node ls -q | wc -l | tr -d ' ') == 1 ]] || { echo 'Smoke requires a single-node manager; refusing changes' >&2; exit 1; }
-label=$(docker node inspect self --format '{{index .Spec.Labels "todo.data"}}')
+node_id=$(docker info --format '{{.Swarm.NodeID}}')
+label=$(docker node inspect "$node_id" --format '{{index .Spec.Labels "todo.data"}}')
 if [[ "$label" != true ]]; then
   [[ -z "$label" || "$label" == '<no value>' ]] || { echo 'Existing todo.data label conflicts' >&2; exit 1; }
-  docker node update --label-add todo.data=true self >/dev/null
+  docker node update --label-add todo.data=true "$node_id" >/dev/null
   node_labeled=1
 fi
 for secret in "$DB_PASSWORD_SECRET" "$DB_ROOT_PASSWORD_SECRET" "$BOOTSTRAP_TOKEN_SECRET"; do
@@ -75,15 +81,19 @@ for container in "${containers[@]-}"; do
   echo "Liveness + readiness OK: $container"
 done
 since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-for ((i=0; i<24; i++)); do
-  for path in health/live health/ready v1/capabilities; do
-    curl --fail --silent --show-error --max-time 10 -H 'Connection: close' "http://localhost:$BACKEND_PORT/$path"
-    printf '\n'
-  done
-done
+# Probes go through the Swarm VIP (service name "backend") from a container on the overlay network.
+# This does not depend on host port forwarding, which VM-based Docker hosts (Colima) may lack for ingress.
+probe='for i in $(seq 24); do for path in health/live health/ready v1/capabilities; do exec 3<>/dev/tcp/backend/8080; printf "GET /$path HTTP/1.1\r\nHost: backend\r\nConnection: close\r\n\r\n" >&3; IFS= read -r st <&3; exec 3>&-; [[ "$st" == *" 200 "* ]] || { echo "FAIL $path: $st" >&2; exit 1; }; done; done'
+docker run --rm --network "${STACK}_internal" --entrypoint /bin/bash "$BACKEND_IMAGE" -c "$probe"
+# Best-effort check of the published ingress port from the host (informational only).
+if curl --fail --silent --max-time 10 "http://localhost:$BACKEND_PORT/health/live" >/dev/null 2>&1; then
+  echo "Host ingress port $BACKEND_PORT reachable."
+else
+  echo "Host ingress port $BACKEND_PORT NOT reachable from host (expected on Colima/VM hosts); not verified."
+fi
 # Existing Vapor request logs may identify each container; no identity header is assumed.
 for container in "${containers[@]-}"; do
   count=$(docker logs --since "$since" "$container" 2>&1 | awk '/GET \/(health\/|v1\/capabilities)/ {n++} END {print n+0}')
   echo "Replica $container: $count matching request log lines (includes healthchecks)."
 done
-echo 'Three healthy replicas; 72 public HTTP probes passed. Counts alone do not prove even balancing.'
+echo 'Three healthy replicas; 72 in-cluster HTTP probes via the service VIP passed. Counts alone do not prove even balancing.'

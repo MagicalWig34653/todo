@@ -1,6 +1,6 @@
 # Betrieb
 
-Stand: 26.10.2026. Diese Grundlage setzt `docs/ARCHITEKTUR.md` (Swarm und Konsistenz; Betrieb und Prüfung) um. Eine Stack-Datei allein ist kein Betriebsnachweis. Die unten dokumentierten Laufzeitprüfungen sind in dieser Umgebung blockiert, nicht bestanden.
+Stand: 26.10.2026. Diese Grundlage setzt `docs/ARCHITEKTUR.md` (Swarm und Konsistenz; Betrieb und Prüfung) um. Eine Stack-Datei allein ist kein Betriebsnachweis. Die Laufzeitprüfungen sind am 26.10.2026 auf einem Einzelknoten (Colima) real gelaufen; Grenzen stehen im letzten Abschnitt.
 
 ## Voraussetzungen und Konfiguration
 
@@ -52,7 +52,7 @@ Das YAML aktualisiert je eine Backend-Replika, startet die neue zuerst, wartet f
 scripts/swarm-smoke.sh
 ```
 
-Der Smoke verwendet einen eindeutigen eigenen Stacknamen, zufällige Laufzeit-Secrets, drei Replikate und standardmäßig Port 38080. `BACKEND_PORT` kann einen anderen freien Port wählen. Er initialisiert Swarm nur bei Zustand `inactive`, akzeptiert einen bestehenden Einzelknoten-Manager und verweigert Mehrknoten-Cluster. Ein temporär hinzugefügtes Daten-Label wird entfernt, ein vorhandenes `true` erhalten. Anschließend werden alle drei Container auf Health geprüft, beide Health-Routen direkt je Container aufgerufen und 72 HTTP-Anfragen ohne Passkey über den veröffentlichten Port ausgeführt (24 je `/health/live`, `/health/ready`, `/v1/capabilities`). Eine Route `/health` allein existiert nicht.
+Der Smoke verwendet einen eindeutigen eigenen Stacknamen, zufällige Laufzeit-Secrets, drei Replikate und standardmäßig Port 38080. `BACKEND_PORT` kann einen anderen freien Port wählen. Er initialisiert Swarm nur bei Zustand `inactive`, akzeptiert einen bestehenden Einzelknoten-Manager und verweigert Mehrknoten-Cluster. Ein temporär hinzugefügtes Daten-Label wird entfernt, ein vorhandenes `true` erhalten. Anschließend werden alle drei Container auf Health geprüft, beide Health-Routen direkt je Container aufgerufen und 72 HTTP-Anfragen ohne Passkey aus einem Container im Overlay-Netz gegen die Swarm-VIP `backend:8080` ausgeführt (24 je `/health/live`, `/health/ready`, `/v1/capabilities`). Der veröffentlichte Host-Port wird nur informativ geprüft; auf VM-Hosts wie Colima ist er nicht erreichbar. Eine Route `/health` allein existiert nicht.
 
 Anfrage-Logzeilen werden je Container gezählt, soweit die bestehenden Vapor-Logs sie liefern. Darin können Healthchecks enthalten sein; es gibt keinen Replica-Header. Die Zahlen zeigen daher keine garantierte Gleichverteilung der öffentlichen Anfragen. Stack, eigenes DB-Volume und eigene Secrets werden bei Erfolg/Fehler entfernt. Swarm wird nur verlassen, wenn das Skript ihn selbst initialisiert hat. Keine globalen Prune-/Compose-Down-Befehle; fremde Stacks und Port 13306 bleiben unberührt. SIGKILL oder ein verlorener Docker-Daemon können Cleanup verhindern; in diesem Fall ausschließlich die im Lauf ausgegebenen eigenen Ressourcen prüfen.
 
@@ -83,10 +83,15 @@ Für Produktion einen echten gemeinsamen S3-kompatiblen Dienst auswählen. Versi
 
 ## Tatsächlich ausgeführte Prüfungen am 26.10.2026
 
-- `docker stack config -c deploy/swarm/stack.yaml`: erfolgreich gerendert; kein Deploymentnachweis.
-- `bash -n` und `shellcheck -x` für alle neuen Shellskripte: erfolgreich.
-- `docker compose build backend`: aufgerufen, vor dem Build durch verweigerten Schreibzugriff auf Docker-Buildx-Aktivitätsdateien blockiert.
-- `scripts/swarm-smoke.sh` und `scripts/backup-restore-smoke.sh`: wirklich aufgerufen, beide bereits am Docker-Zugriff mit `permission denied` für den lokalen Colima-Socket gescheitert. Keine Container/Stacks/Secrets/Swarm-Änderungen angelegt; kein Restore und keine HTTP-Probe ausgeführt. Das beweist keine Störung des lokal laufenden Docker-Daemons, sondern eine Zugriffsgrenze dieser Agentenumgebung.
-- `swift test --scratch-path /private/tmp/codex-swarm-scratch`: aufgerufen; zunächst Cache-Schreibzugriff verweigert. Mit Cachepfaden unter `/private/tmp` blockierte die verschachtelte SwiftPM-Sandbox. Ein weiterer Versuch mit `--disable-sandbox` erreichte die Paketauflösung, scheiterte aber an der GitHub-DNS-Auflösung. Weiterer Offline-Versuch und Ergebnis siehe STATUS, Abschnitt Betrieb.
+Umgebung: macOS, Docker über Colima (Einzelknoten, Swarm vorher `inactive`).
 
-Nächste Abnahme: Swift-Tests mit verfügbaren Abhängigkeiten abschließen, Image in einer Umgebung mit Docker-Zugriff bauen und beide Smoke-Skripte erneut ausführen. Bis dahin sind Linux-Start, Migration unter Swarm, drei gesunde Replikate, Cleanup und echter Restore unbestätigt.
+- `swift test --scratch-path /private/tmp/claude-501/sb-ops` nach Merge von main: 37 Tests, 0 Fehler, 6 übersprungen (MariaDB-Tests ohne `TODO_TEST_DB`). `_FILE`-Tests in `SettingsTests` (Priorität, Zeilenenden, leere Datei, Fehlerfälle) laufen grün.
+- `docker compose build backend`: erfolgreich (Image `todo-dev-backend:local`).
+- `scripts/backup-restore-smoke.sh`: bestanden. Prüfsummen OK, Zeilenzahlen aller Tabellen (inkl. leerer Tabelle, Binärwerte/NULL) nach Restore in `restore_smoke` identisch, Wegwerf-Container entfernt. Gefundener Fehler: Bind-Mount der Temp-Datei scheitert bei Colima (Host-Temp nicht in der VM); jetzt `docker cp`.
+- `scripts/swarm-smoke.sh`: bestanden (Exit 0) mit 3 Replikaten, Migration als einmaliger Task, alle drei Container healthy, Live-/Ready-Check je Container, 72 In-Cluster-Probes über die VIP ohne Fehler, Cleanup vollständig (Stack, Netz, Config, Secrets, Volume, Label; Swarm wieder `inactive`). Gefundene und behobene Fehler: `docker node inspect self` funktioniert mit Node-ID statt `self`; die DB-Wartebedingung (`mariadb-admin ping` ohne Auth) schlug fehl und nutzt jetzt den Container-Healthstatus; Volume-Cleanup wartet auf das Ende der Task-Container.
+
+Grenzen, nicht bewiesen:
+- Host-Port 38080 war von macOS aus nicht erreichbar (Colima leitet Swarm-Ingress nicht weiter); das Routing Mesh von außen ist ungeprüft.
+- Die Request-Logzählung je Replika liefert 0, da Vapor im Production-Logging keine Zeilen schreibt; Lastverteilung über die VIP ist daher nicht belegt.
+- Nur ein Knoten: kein Mehrknoten-Verhalten, kein Node-Verlust, kein Rolling-Update unter Last, kein Rollback, kein Replica-Ausfall, kein Login über Replikas.
+- Restore wurde mit synthetischen Daten geprüft, nicht mit einer echten Anwendungsdatenbank; S3 ist nur S3Mock.
