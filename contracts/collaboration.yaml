@@ -7,7 +7,9 @@ info:
     danach 1–10000 Zeichen enthalten. Jede erfolgreiche Mutation erzeugt atomar ein Ereignis; Konflikte und Idempotenzwiederholungen
     erzeugen keines. Fehlermeldungen sind technische Codes. Bestehende Aufgaben-/Projektcontroller erzeugen noch
     keine Ereignisse. Migration: CreateCollaborationSchema (vier Tabellen, keine Datenübernahme); explizit vor Serverstart
-    ausführen.'
+    ausführen. Erforderliche effektive Rolle (inkl. Team-Freigaben): Lesen = read, Kommentare anlegen/ändern/löschen = comment
+    (Ändern nur durch den Autor, Löschen durch den Autor oder manage), Abnahmekriterien ändern = edit. Sichtbar, aber
+    ohne ausreichende Rolle: 403; unsichtbar: 404.'
 security:
 - bearerAuth: []
 - sessionCookie: []

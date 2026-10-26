@@ -13,7 +13,7 @@ public func recordActivity(
     try await db.transaction { db in
         try await lockRow(table: TodoTask.schema, id: taskID, on: db)
         guard let user = try await User.find(authorizedUserID, on: db) else { throw Abort(.notFound) }
-        _ = try await ProjectAccess(user: user, db: db).task(taskID)
+        _ = try await ProjectAccess(user: user, db: db).task(taskID, role: .comment)
         try await appendActivity(taskID: taskID, actorType: actorType, actorID: actorID, kind: kind, subjectID: subjectID, on: db)
     }
 }

@@ -136,6 +136,72 @@ final class CollaborationTests: XCTestCase, @unchecked Sendable {
         } catch { XCTAssertEqual((error as? Abort)?.status, .notFound) }
     }
 
+    func testMaximumLengthTextRoundTripsWithoutTruncation() async throws {
+        let f = try await fixture()
+        defer { Task { await f.test.shutdown() } }
+        let long = String(repeating: "ä", count: 10_000)
+        let comment = try await request(f.test, .POST, f.path + "/comments", token: f.token, body: json(["body": long]), key: "long-1")
+        XCTAssertEqual(comment.status, .created)
+        let id = try XCTUnwrap(comment.object["id"] as? String)
+        let read = try await request(f.test, .GET, f.path + "/comments/" + id, token: f.token)
+        XCTAssertEqual(read.object["body"] as? String, long)
+        let replay = try await request(f.test, .POST, f.path + "/comments", token: f.token, body: json(["body": long]), key: "long-1")
+        XCTAssertEqual(replay.status, .created)
+        XCTAssertEqual(replay.object["id"] as? String, id)
+        let criterion = try await request(f.test, .POST, f.path + "/acceptance-criteria", token: f.token, body: json(["text": long]))
+        XCTAssertEqual((criterion.object["text"] as? String)?.count, 10_000)
+        let list = try await request(f.test, .GET, f.path + "/acceptance-criteria", token: f.token)
+        XCTAssertEqual(list.status, .ok)
+    }
+
+    func testGrantRolesGateCommentsAndCriteria() async throws {
+        let f = try await fixture()
+        defer { Task { await f.test.shutdown() } }
+        let task = try await TodoTask.find(f.taskID, on: f.test.app.db)
+        let projectID = try XCTUnwrap(task).projectID
+        var tokens: [String: String] = [:]
+        for role in ["read", "comment", "edit", "manage"] {
+            let user = User(displayName: role, isAdmin: false)
+            try await user.save(on: f.test.app.db)
+            let token = UUID().uuidString
+            try await UserSession(userID: user.requireID(), tokenHash: AuthSupport.hash(token), expiresAt: Date().addingTimeInterval(3600)).save(on: f.test.app.db)
+            let granted = try await f.test.json(.PUT, "/v1/projects/\(projectID)/grants",
+                ["principalType": "person", "principalID": user.requireID().uuidString, "role": role], token: f.token)
+            XCTAssertEqual(granted.status, .ok)
+            tokens[role] = token
+        }
+        let ownerComment = try await request(f.test, .POST, f.path + "/comments", token: f.token, body: json(["body": "Owner"]))
+        let ownerCommentID = try XCTUnwrap(ownerComment.object["id"] as? String)
+        // Read: may read but not write.
+        let read = try XCTUnwrap(tokens["read"])
+        let readList = try await request(f.test, .GET, f.path + "/comments", token: read)
+        XCTAssertEqual(readList.status, .ok)
+        let readPost = try await request(f.test, .POST, f.path + "/comments", token: read, body: json(["body": "x"]))
+        XCTAssertEqual(readPost.status, .forbidden)
+        // Comment: may comment, not touch criteria, not edit foreign comments.
+        let commenter = try XCTUnwrap(tokens["comment"])
+        let mine = try await request(f.test, .POST, f.path + "/comments", token: commenter, body: json(["body": "Mine"]))
+        XCTAssertEqual(mine.status, .created)
+        let criterionAttempt = try await request(f.test, .POST, f.path + "/acceptance-criteria", token: commenter, body: json(["text": "x"]))
+        XCTAssertEqual(criterionAttempt.status, .forbidden)
+        let foreignEdit = try await request(f.test, .PATCH, f.path + "/comments/\(ownerCommentID)", token: commenter, body: json(["body": "Hijack", "version": 1]))
+        XCTAssertEqual(foreignEdit.status, .forbidden)
+        let foreignDelete = try await request(f.test, .DELETE, f.path + "/comments/\(ownerCommentID)", token: commenter, body: json(["version": 1]))
+        XCTAssertEqual(foreignDelete.status, .forbidden)
+        // Edit: may manage criteria.
+        let editor = try XCTUnwrap(tokens["edit"])
+        let criterion = try await request(f.test, .POST, f.path + "/acceptance-criteria", token: editor, body: json(["text": "Done when green"]))
+        XCTAssertEqual(criterion.status, .created)
+        let editorDeleteForeign = try await request(f.test, .DELETE, f.path + "/comments/\(ownerCommentID)", token: editor, body: json(["version": 1]))
+        XCTAssertEqual(editorDeleteForeign.status, .forbidden)
+        // Manage: may moderate foreign comments.
+        let manager = try XCTUnwrap(tokens["manage"])
+        let moderated = try await request(f.test, .DELETE, f.path + "/comments/\(ownerCommentID)", token: manager, body: json(["version": 1]))
+        XCTAssertEqual(moderated.status, .noContent)
+        let activity = try await request(f.test, .GET, f.path + "/activity", token: manager)
+        XCTAssertEqual(activity.status, .ok)
+    }
+
     func testStableCursorAndPublicRecorderRollback() async throws {
         let f = try await fixture()
         defer { Task { await f.test.shutdown() } }
