@@ -1,7 +1,7 @@
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
 	plugins: [
@@ -17,6 +17,10 @@ export default defineConfig({
 		})
 	],
 	server: {
-		proxy: { '/health': process.env.BACKEND_URL ?? 'http://127.0.0.1:28080' }
-	}
+		proxy: {
+			'/health': process.env.BACKEND_URL ?? 'http://127.0.0.1:28080',
+			'/v1': process.env.BACKEND_URL ?? 'http://127.0.0.1:28080'
+		}
+	},
+	test: { include: ['tests/**/*.test.ts'] }
 });
