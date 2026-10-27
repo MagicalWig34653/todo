@@ -222,11 +222,11 @@ await shot('konto', { fullPage: true });
 await mobile();
 await page.goto('/');
 const menu = page.getByRole('button', { name: 'Menü' });
-if (await menu.isVisible().catch(() => false)) {
-	await menu.click();
-	await shot('projekte-mobil');
-}
-await page.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().click();
+const nav = page.getByRole('navigation', { name: 'Projekte' });
+await menu.click();
+await nav.getByRole('button', { name: 'Küche', exact: true }).first().waitFor();
+await shot('projekte-mobil');
+await nav.getByRole('button', { name: 'Küche', exact: true }).first().click();
 await page.getByTestId('task-heading').filter({ hasText: 'Küche' }).waitFor();
 await shot('aufgaben-mobil');
 await page.getByRole('tab', { name: 'Board' }).click();
@@ -236,5 +236,10 @@ const mt = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledi
 if (!(await mt.getByTestId('task-detail').isVisible().catch(() => false))) await mt.getByRole('button', { name: 'Details' }).click();
 await mt.getByTestId('task-detail').scrollIntoViewIfNeeded();
 await shot('aufgabendetail-mobil');
+for (const [name, file] of [['Heute', 'heute-mobil'], ['Suche', 'suche-mobil'], ['Teams', 'teams-mobil'], ['Konto', 'konto-mobil']]) {
+	await menu.click();
+	await nav.getByRole('button', { name, exact: true }).click();
+	await shot(file);
+}
 
 await browser.close();

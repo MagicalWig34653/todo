@@ -295,3 +295,59 @@ test('account: passkeys, sessions and recovery', async () => {
 	await page.getByRole('button', { name: 'Neuen Passkey erstellen' }).click();
 	await expect(page.getByTestId('recovery-done')).toBeVisible();
 });
+
+test('mobile 390px: navigation drawer and no horizontal page scroll', async () => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/');
+	const login = page.getByRole('button', { name: 'Mit Passkey anmelden' });
+	const menu = page.getByRole('button', { name: 'Menü' });
+	await expect(login.or(menu)).toBeVisible();
+	if (await login.isVisible()) await login.click();
+	await expect(menu).toBeVisible();
+
+	const noOverflow = async (label: string) => {
+		const w = await page.evaluate(() => ({
+			doc: document.documentElement.scrollWidth,
+			body: document.body.scrollWidth,
+			inner: window.innerWidth
+		}));
+		expect(w.doc, `${label}: documentElement overflows`).toBeLessThanOrEqual(w.inner);
+		expect(w.body, `${label}: body overflows`).toBeLessThanOrEqual(w.inner);
+	};
+	const nav = page.getByRole('navigation', { name: 'Projekte' });
+
+	// Drawer is closed by default and opens via the menu button.
+	await expect(nav).toBeHidden();
+	await menu.click();
+	await expect(menu).toHaveAttribute('aria-expanded', 'true');
+	await expect(nav).toBeVisible();
+	await noOverflow('drawer');
+	await nav.getByRole('button', { name: 'Küche', exact: true }).click();
+	await expect(nav).toBeHidden();
+	await expect(page.getByTestId('task-heading')).toHaveText('Küche');
+
+	// Task rows stay inside the viewport, including the edit button.
+	const row = page.getByTestId('task-item').first();
+	await expect(row).toBeVisible();
+	const edit = row.getByRole('button', { name: 'Bearbeiten' });
+	const box = await edit.boundingBox();
+	expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+	await noOverflow('task list');
+	await row.getByRole('button', { name: 'Details' }).click();
+	await expect(row.getByTestId('task-detail')).toBeVisible();
+	await noOverflow('task detail');
+	await row.getByRole('button', { name: 'Details' }).click();
+
+	await page.getByRole('tab', { name: 'Board' }).click();
+	await expect(page.getByTestId('board-column-open')).toBeVisible();
+	await noOverflow('board');
+
+	for (const view of ['Heute', 'Suche', 'Teams', 'Konto']) {
+		await menu.click();
+		await nav.getByRole('button', { name: view, exact: true }).click();
+		await expect(nav).toBeHidden();
+		await page.waitForTimeout(300);
+		await noOverflow(view);
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+});

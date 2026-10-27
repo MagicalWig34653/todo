@@ -25,7 +25,7 @@
 	let projects = $state<Project[]>([]);
 	let selectedID = $state<string | null>(null);
 	let newName = $state('');
-	let navOpen = $state(true);
+	let navOpen = $state(false);
 
 	const tree = $derived(buildTree(projects));
 	const selected = $derived(projects.find((p) => p.id === selectedID) ?? null);
@@ -60,11 +60,18 @@
 		}, load);
 </script>
 
-<div class="mx-auto flex min-h-dvh max-w-5xl flex-col">
+<div class="mx-auto flex min-h-dvh max-w-5xl flex-col overflow-x-clip">
 	<header class="flex items-center justify-between gap-2 border-b px-4 py-2">
 		<div class="flex items-center gap-2">
-			<Button variant="ghost" size="sm" class="md:hidden" onclick={() => (navOpen = !navOpen)}>
-				{t('projects.title')}
+			<Button
+				variant="outline"
+				size="sm"
+				class="md:hidden"
+				aria-expanded={navOpen}
+				aria-controls="main-nav"
+				onclick={() => (navOpen = !navOpen)}
+			>
+				{t('nav.openMenu')}
 			</Button>
 			<span class="font-semibold">{t('app.name')}</span>
 		</div>
@@ -91,8 +98,20 @@
 	{/if}
 
 	<div class="flex flex-1 flex-col md:flex-row">
+		{#if navOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-30 bg-black/40 md:hidden"
+				aria-label={t('common.cancel')}
+				tabindex="-1"
+				onclick={() => (navOpen = false)}
+			></button>
+		{/if}
 		<nav
-			class="flex flex-col gap-3 border-b p-3 md:w-72 md:shrink-0 md:border-r md:border-b-0 {navOpen ? '' : 'hidden md:flex'}"
+			id="main-nav"
+			class="bg-background flex-col gap-3 p-3 md:static md:flex md:w-72 md:shrink-0 md:border-r {navOpen
+				? 'fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] overflow-y-auto border-r shadow-lg'
+				: 'hidden'}"
 			aria-label={t('projects.title')}
 		>
 			<ul class="flex flex-col" aria-label={t('nav.views')}>
@@ -134,7 +153,7 @@
 			</ul>
 		</nav>
 
-		<main class="flex-1 p-4">
+		<main class="min-w-0 flex-1 p-4">
 			{#if view === 'today' || view === 'upcoming' || view === 'upNext'}
 				<PlanningView mode={view} />
 			{:else if view === 'search'}

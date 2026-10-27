@@ -95,8 +95,8 @@
 
 	<ul class="flex flex-col gap-1">
 		{#each tasks as task (task.id)}
-			<li class="rounded-md border p-2" data-testid="task-item">
-				<div class="flex items-center gap-2">
+			<li class="min-w-0 rounded-md border p-2" data-testid="task-item">
+				<div class="flex flex-wrap items-center gap-2">
 					<input
 						type="checkbox"
 						class="size-5"
@@ -104,7 +104,7 @@
 						aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
 						onchange={() => toggle(task)}
 					/>
-					<span class={['flex-1 text-sm', task.status === 'done' && 'text-muted-foreground line-through']}>
+					<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
 						{task.title}
 					</span>
 					<select
