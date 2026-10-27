@@ -1,63 +1,171 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
 
-/* shadcn-svelte neutral theme tokens (hand-maintained, see docs/STATUS.md for the toolchain workaround). */
+/* Dark mode is class based (`.dark` on <html>): follows the system by default, the user can pin light or dark (see lib/theme.svelte.ts). */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens (shadcn-svelte zinc scale in OKLCH plus one accent). Hand-maintained, see docs/STATUS.md for the toolchain workaround.
+ * Accent = --ui-accent*, used for the active navigation entry, primary calls to action and focus.
+ */
 :root {
 	--radius: 0.625rem;
 	--background: oklch(1 0 0);
-	--foreground: oklch(0.145 0 0);
-	--muted: oklch(0.97 0 0);
-	--muted-foreground: oklch(0.45 0 0);
-	--primary: oklch(0.205 0 0);
+	--foreground: oklch(0.141 0.005 285.823);
+	--card: oklch(1 0 0);
+	--card-foreground: oklch(0.141 0.005 285.823);
+	--popover: oklch(1 0 0);
+	--popover-foreground: oklch(0.141 0.005 285.823);
+	--primary: oklch(0.21 0.006 285.885);
 	--primary-foreground: oklch(0.985 0 0);
-	--secondary: oklch(0.97 0 0);
-	--secondary-foreground: oklch(0.205 0 0);
+	--secondary: oklch(0.967 0.001 286.375);
+	--secondary-foreground: oklch(0.21 0.006 285.885);
+	--muted: oklch(0.967 0.001 286.375);
+	--muted-foreground: oklch(0.47 0.016 285.938);
+	--accent: oklch(0.967 0.001 286.375);
+	--accent-foreground: oklch(0.21 0.006 285.885);
 	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.9 0 0);
-	--input: oklch(0.85 0 0);
-	--ring: oklch(0.55 0 0);
+	--border: oklch(0.92 0.004 286.32);
+	--input: oklch(0.88 0.004 286.32);
+	--ring: oklch(0.62 0.17 262);
+	--sidebar: oklch(0.985 0 0);
+	--sidebar-foreground: oklch(0.141 0.005 285.823);
+	--sidebar-border: oklch(0.92 0.004 286.32);
+	--ui-accent: oklch(0.546 0.215 262.9);
+	--ui-accent-foreground: oklch(1 0 0);
+	--ui-accent-ink: oklch(0.488 0.215 264);
+	--ui-accent-soft: oklch(0.96 0.02 262);
+	--success: oklch(0.52 0.13 150);
+	--success-soft: oklch(0.96 0.04 150);
+	--warning: oklch(0.55 0.13 70);
+	--warning-soft: oklch(0.97 0.05 85);
+	--shadow-card: 0 1px 2px oklch(0 0 0 / 5%);
+	--shadow-pop: 0 12px 40px oklch(0 0 0 / 14%);
+	color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root {
-		--background: oklch(0.145 0 0);
-		--foreground: oklch(0.985 0 0);
-		--muted: oklch(0.269 0 0);
-		--muted-foreground: oklch(0.72 0 0);
-		--primary: oklch(0.922 0 0);
-		--primary-foreground: oklch(0.205 0 0);
-		--secondary: oklch(0.269 0 0);
-		--secondary-foreground: oklch(0.985 0 0);
-		--destructive: oklch(0.704 0.191 22.216);
-		--border: oklch(1 0 0 / 12%);
-		--input: oklch(1 0 0 / 18%);
-		--ring: oklch(0.65 0 0);
-	}
+.dark {
+	--background: oklch(0.141 0.005 285.823);
+	--foreground: oklch(0.985 0 0);
+	--card: oklch(0.18 0.006 285.885);
+	--card-foreground: oklch(0.985 0 0);
+	--popover: oklch(0.21 0.006 285.885);
+	--popover-foreground: oklch(0.985 0 0);
+	--primary: oklch(0.92 0.004 286.32);
+	--primary-foreground: oklch(0.21 0.006 285.885);
+	--secondary: oklch(0.274 0.006 286.033);
+	--secondary-foreground: oklch(0.985 0 0);
+	--muted: oklch(0.255 0.006 286.033);
+	--muted-foreground: oklch(0.72 0.015 286.067);
+	--accent: oklch(0.274 0.006 286.033);
+	--accent-foreground: oklch(0.985 0 0);
+	--destructive: oklch(0.704 0.191 22.216);
+	--border: oklch(1 0 0 / 10%);
+	--input: oklch(1 0 0 / 16%);
+	--ring: oklch(0.65 0.17 262);
+	--sidebar: oklch(0.17 0.006 285.885);
+	--sidebar-foreground: oklch(0.985 0 0);
+	--sidebar-border: oklch(1 0 0 / 10%);
+	--ui-accent: oklch(0.62 0.19 262);
+	--ui-accent-foreground: oklch(0.141 0.005 285.823);
+	--ui-accent-ink: oklch(0.75 0.14 262);
+	--ui-accent-soft: oklch(0.27 0.06 262);
+	--success: oklch(0.75 0.15 150);
+	--success-soft: oklch(0.27 0.05 150);
+	--warning: oklch(0.8 0.14 80);
+	--warning-soft: oklch(0.29 0.05 80);
+	--shadow-card: 0 1px 2px oklch(0 0 0 / 30%);
+	--shadow-pop: 0 12px 40px oklch(0 0 0 / 50%);
+	color-scheme: dark;
 }
 
 @theme inline {
+	--font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--breakpoint-menu: 768px;
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
 	--color-muted: var(--muted);
 	--color-muted-foreground: var(--muted-foreground);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
 	--color-secondary: var(--secondary);
 	--color-secondary-foreground: var(--secondary-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
-	--radius-md: calc(var(--radius) - 2px);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-ui-accent: var(--ui-accent);
+	--color-ui-accent-foreground: var(--ui-accent-foreground);
+	--color-ui-accent-ink: var(--ui-accent-ink);
+	--color-ui-accent-soft: var(--ui-accent-soft);
+	--color-success: var(--success);
+	--color-success-soft: var(--success-soft);
+	--color-warning: var(--warning);
+	--color-warning-soft: var(--warning-soft);
+	--radius-sm: calc(var(--radius) * 0.6);
+	--radius-md: calc(var(--radius) * 0.8);
 	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.4);
+	--shadow-card: var(--shadow-card);
+	--shadow-pop: var(--shadow-pop);
 }
 
 @layer base {
 	* {
 		border-color: var(--border);
 	}
+	html {
+		-webkit-text-size-adjust: 100%;
+		scrollbar-gutter: stable;
+	}
 	body {
 		background: var(--background);
 		color: var(--foreground);
-		font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+		font-family: var(--font-sans);
+		font-size: 15px;
+		line-height: 1.55;
+		-webkit-font-smoothing: antialiased;
 	}
+	h1,
+	h2,
+	h3 {
+		text-wrap: balance;
+	}
+	:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+	input:not([type='checkbox']):not([type='radio']):not([type='file']) {
+		min-height: 2.25rem;
+	}
+	time,
+	[data-tabular] {
+		font-variant-numeric: tabular-nums;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
+/* Check mark of the checkbox component (kept here: tailwind-merge would drop the colour utility next to an arbitrary background image). */
+input[data-slot='checkbox']:checked {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+	background-position: center;
+	background-repeat: no-repeat;
+}
+.dark input[data-slot='checkbox']:checked {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
 }

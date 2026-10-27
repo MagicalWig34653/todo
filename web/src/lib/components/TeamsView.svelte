@@ -7,6 +7,13 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { memberLabel } from '#lib/people.js';
 	import PersonPicker from './PersonPicker.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import PageHeader from './app/PageHeader.svelte';
+	import Panel from './app/Panel.svelte';
+	import EmptyState from './app/EmptyState.svelte';
+	import UsersIcon from '@lucide/svelte/icons/users';
+	import Plus from '@lucide/svelte/icons/plus';
+	import UserPlus from '@lucide/svelte/icons/user-plus';
 
 	let teams = $state<Team[]>([]);
 	let invitations = $state<TeamMembership[]>([]);
@@ -57,27 +64,26 @@
 </script>
 
 <section class="flex flex-col gap-4">
-	<h2 class="text-xl font-semibold" data-testid="view-heading">{t('teams.title')}</h2>
+	<PageHeader title={t('teams.title')} testid="view-heading" />
 
 	{#if invitations.length > 0}
-		<div class="flex flex-col gap-1">
-			<h3 class="text-sm font-medium">{t('teams.invitations')}</h3>
+		<Panel title={t('teams.invitations')}>
 			{#each invitations as m (m.id)}
-				<div class="flex items-center gap-2 rounded-md border p-2 text-sm" data-testid="team-invitation">
+				<div class="flex items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="team-invitation">
 					<span class="flex-1">{t('teams.invitedTo', { name: m.teamName ?? teams.find((x) => x.id === m.teamID)?.name ?? t('teams.unknownTeam') })}</span>
 					<Button size="sm" onclick={() => accept(m)}>{t('teams.accept')}</Button>
 				</div>
 			{/each}
-		</div>
+		</Panel>
 	{/if}
 
 	<form class="flex gap-2" onsubmit={create}>
-		<Input bind:value={newName} placeholder={t('teams.new')} aria-label={t('teams.new')} />
-		<Button type="submit" size="lg">{t('teams.create')}</Button>
+		<Input class="h-10" bind:value={newName} placeholder={t('teams.new')} aria-label={t('teams.new')} />
+		<Button type="submit" class="h-10"><Plus aria-hidden="true" />{t('teams.create')}</Button>
 	</form>
 
-	{#if teams.length === 0}<p class="text-muted-foreground text-sm">{t('teams.empty')}</p>{/if}
-	<ul class="flex flex-wrap gap-1">
+	{#if teams.length === 0}<EmptyState title={t('teams.empty')} icon={UsersIcon} />{/if}
+	<ul class="flex flex-wrap gap-2">
 		{#each teams as team (team.id)}
 			<li>
 				<Button size="sm" variant={selectedID === team.id ? 'default' : 'outline'} onclick={() => (selectedID = team.id)} data-testid="team-item">{team.name}</Button>
@@ -86,15 +92,14 @@
 	</ul>
 
 	{#if selected}
-		<div class="flex flex-col gap-2">
-			<h3 class="text-sm font-medium">{t('teams.members', { name: selected.name })}</h3>
-			<ul class="flex flex-col gap-1">
+		<Panel title={t('teams.members', { name: selected.name })}>
+			<ul class="flex flex-col gap-2">
 				{#each members as m (m.id)}
-					<li class="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm" data-testid="team-member">
+					<li class="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="team-member">
 						<span class="flex-1 break-all" title={m.userID}>{memberLabel(m, auth.user?.id, t('teams.you'))}</span>
-						{#if m.userID === selected.founderID}<span class="text-muted-foreground text-xs">{t('teams.founder')}</span>{/if}
-						{#if !m.accepted}<span class="text-muted-foreground text-xs">{t('teams.pending')}</span>{/if}
-						{#if m.isAdmin}<span class="bg-muted rounded px-1.5 py-0.5 text-xs">{t('teams.admin')}</span>{/if}
+						{#if m.userID === selected.founderID}<Badge>{t('teams.founder')}</Badge>{/if}
+						{#if !m.accepted}<Badge variant="warning">{t('teams.pending')}</Badge>{/if}
+						{#if m.isAdmin}<Badge variant="accent">{t('teams.admin')}</Badge>{/if}
 						{#if iAmAdmin}
 							{#if m.accepted}
 								<Button size="xs" variant="ghost" onclick={() => setAdmin(m, !m.isAdmin)}>
@@ -109,10 +114,10 @@
 			{#if iAmAdmin}
 				<form class="flex items-start gap-2" onsubmit={invite}>
 					{#key pickerKey}<PersonPicker bind:value={inviteID} idLabel={t('teams.memberID')} />{/key}
-					<Button type="submit" size="lg" variant="outline" disabled={!inviteID.trim()}>{t('teams.invite')}</Button>
+					<Button type="submit" variant="outline" disabled={!inviteID.trim()}><UserPlus aria-hidden="true" />{t('teams.invite')}</Button>
 				</form>
 			{/if}
-		</div>
+		</Panel>
 	{:else if teams.length > 0}
 		<p class="text-muted-foreground text-sm">{t('teams.select')}</p>
 	{/if}

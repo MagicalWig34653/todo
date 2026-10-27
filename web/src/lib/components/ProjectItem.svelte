@@ -6,6 +6,10 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import Self from './ProjectItem.svelte';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Folder from '@lucide/svelte/icons/folder';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 
 	interface Props {
 		node: ProjectNode;
@@ -52,34 +56,36 @@
 <li data-testid="project-item">
 	<div
 		class={cn(
-			'group flex items-center gap-1 rounded-md pr-1',
-			selectedID === project.id ? 'bg-muted font-medium' : 'hover:bg-muted/60'
+			'group flex items-center gap-0.5 rounded-lg pr-1 transition-colors',
+			selectedID === project.id ? 'bg-ui-accent-soft text-ui-accent-ink font-medium' : 'text-foreground/90 hover:bg-muted'
 		)}
-		style:padding-left="{depth * 14 + 4}px"
+		style:padding-left="{depth * 12 + 2}px"
 	>
 		{#if node.children.length > 0}
 			<button
-				class="text-muted-foreground size-6 shrink-0"
+				class="text-muted-foreground inline-flex size-6 shrink-0 items-center justify-center rounded"
 				aria-label={collapsed ? t('projects.expand') : t('projects.collapse')}
-				onclick={() => (collapsed = !collapsed)}>{collapsed ? '▸' : '▾'}</button
+				aria-expanded={!collapsed}
+				onclick={() => (collapsed = !collapsed)}><ChevronRight class={['size-3.5 transition-transform', !collapsed && 'rotate-90']} aria-hidden="true" /></button
 			>
 		{:else}
 			<span class="size-6 shrink-0"></span>
 		{/if}
-		<button class="min-h-9 flex-1 truncate py-1 text-left text-sm" onclick={() => onselect(project.id)}>
-			{project.name}
+		<button class="flex min-h-9 min-w-0 flex-1 items-center gap-2 py-1 text-left text-sm" onclick={() => onselect(project.id)}>
+			<Folder class="size-4 shrink-0 opacity-70" aria-hidden="true" />
+			<span class="truncate">{project.name}</span>
 		</button>
 		<Button
 			variant="ghost"
 			size="icon-sm"
 			aria-label={t('projects.title') + ': ' + project.name}
 			aria-expanded={mode !== 'none'}
-			onclick={() => open(mode === 'none' ? 'menu' : 'none')}>⋯</Button
+			onclick={() => open(mode === 'none' ? 'menu' : 'none')}><Ellipsis aria-hidden="true" /></Button
 		>
 	</div>
 
 	{#if mode !== 'none'}
-		<div class="bg-muted/40 my-1 flex flex-col gap-2 rounded-md p-2" style:margin-left="{depth * 14 + 28}px">
+		<div class="bg-card my-1 flex flex-col gap-2 rounded-lg border p-2 shadow-card" style:margin-left="{depth * 12 + 26}px">
 			{#if mode === 'menu'}
 				<div class="flex flex-wrap gap-1">
 					<Button size="sm" variant="outline" onclick={() => open('rename')}>{t('common.rename')}</Button>
@@ -100,8 +106,8 @@
 			{:else if mode === 'move'}
 				<label class="flex items-center gap-2 text-sm">
 					{t('projects.moveTo')}
-					<select
-						class="border-input bg-background h-9 flex-1 rounded-md border px-2"
+					<Select
+						class="flex-1"
 						value={project.parentID ?? ''}
 						onchange={(e) => moveTo(e.currentTarget.value)}
 					>
@@ -109,7 +115,7 @@
 						{#each targets as target (target.project.id)}
 							<option value={target.project.id}>{'  '.repeat(target.depth)}{target.project.name}</option>
 						{/each}
-					</select>
+					</Select>
 				</label>
 				<Button size="sm" variant="ghost" onclick={() => open('none')}>{t('common.cancel')}</Button>
 			{:else if mode === 'delete'}

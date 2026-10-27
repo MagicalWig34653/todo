@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { api, type Criterion } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -51,7 +52,7 @@
 	<ul class="flex flex-col gap-1">
 		{#each items as c (c.id)}
 			<li class="flex items-center gap-2 text-sm" data-testid="criterion">
-				<input type="checkbox" class="size-4" checked={c.completed} aria-label={c.text} onchange={() => toggle(c)} />
+				<Checkbox  class="size-4" checked={c.completed} aria-label={c.text} onchange={() => toggle(c)} />
 				<span class={['flex-1', c.completed && 'text-muted-foreground line-through']}>{c.text}</span>
 				<Button size="xs" variant="ghost" aria-label={t('criteria.remove', { text: c.text })} onclick={() => remove(c)}>×</Button>
 			</li>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type MilestoneWithTasks, type Project, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -52,7 +53,6 @@
 </script>
 
 <section class="flex flex-col gap-4" data-testid="milestones">
-	<h2 class="text-xl font-semibold" data-testid="task-heading">{project.name}</h2>
 	<form class="flex flex-wrap items-end gap-2" onsubmit={create}>
 		<Input class="min-w-40 flex-1" bind:value={title} placeholder={t('milestones.new')} aria-label={t('milestones.new')} />
 		<Input class="w-auto" type="datetime-local" bind:value={due} aria-label={t('milestones.due')} />
@@ -68,7 +68,7 @@
 				<div class="flex flex-wrap items-center gap-2">
 					<h3 class="flex-1 font-medium break-words">{m.milestone.title}</h3>
 					{#if m.milestone.dueAt}
-						<span class={['rounded px-1.5 py-0.5 text-xs', isOverdue(m.milestone.dueAt, progress.total > 0 && progress.done === progress.total) ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground']}>
+						<span class={['rounded-full px-2 py-0.5 text-xs font-medium', isOverdue(m.milestone.dueAt, progress.total > 0 && progress.done === progress.total) ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground']}>
 							{t('planning.due')} {formatWhen(m.milestone.dueAt)}
 						</span>
 					{/if}
@@ -86,7 +86,7 @@
 				<ul class="flex flex-col gap-1">
 					{#each m.tasks as task (task.id)}
 						<li class="flex items-center gap-2 text-sm" data-testid="milestone-task">
-							<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs">{t(`status.${task.status}` as MessageKey)}</span>
+							<span class="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs font-medium">{t(`status.${task.status}` as MessageKey)}</span>
 							<span class={['flex-1 break-words', task.status === 'done' && 'text-muted-foreground line-through']}>{task.title}</span>
 							<Button size="xs" variant="ghost" aria-label={t('milestones.unassign', { title: task.title })} onclick={() => unassign(m, task)}>
 								{t('milestones.unassignShort')}
@@ -95,14 +95,14 @@
 					{/each}
 				</ul>
 				<div class="flex flex-wrap gap-2">
-					<select
-						class="border-input bg-background h-9 min-w-0 flex-1 rounded-md border px-2 text-sm"
+					<Select
+						
 						aria-label={t('milestones.pickTask')}
 						bind:value={picks[m.milestone.id]}
 					>
 						<option value="">{t('milestones.pickTask')}</option>
 						{#each options as o (o.id)}<option value={o.id}>{o.title}</option>{/each}
-					</select>
+					</Select>
 					<Button size="sm" variant="outline" disabled={!picks[m.milestone.id]} onclick={() => assign(m)}>{t('milestones.assign')}</Button>
 				</div>
 			</li>

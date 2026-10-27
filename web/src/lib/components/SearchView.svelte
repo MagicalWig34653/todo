@@ -5,6 +5,13 @@
 	import { STATUSES, collectAll } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import PageHeader from './app/PageHeader.svelte';
+	import Panel from './app/Panel.svelte';
+	import EmptyState from './app/EmptyState.svelte';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import X from '@lucide/svelte/icons/x';
 
 	let { projects, onopen }: { projects: Project[]; onopen: (projectID: string) => void } = $props();
 
@@ -99,36 +106,36 @@
 </script>
 
 <section class="flex flex-col gap-4">
-	<h2 class="text-xl font-semibold" data-testid="view-heading">{t('search.title')}</h2>
+	<PageHeader title={t('search.title')} testid="view-heading" />
 
-	<form class="flex flex-col gap-2" onsubmit={submit}>
+	<form class="flex flex-col gap-3" onsubmit={submit}>
 		<div class="flex gap-2">
-			<Input bind:value={q} placeholder={t('search.placeholder')} aria-label={t('search.placeholder')} />
-			<Button type="submit" size="lg">{t('search.submit')}</Button>
+			<Input class="h-10" bind:value={q} placeholder={t('search.placeholder')} aria-label={t('search.placeholder')} />
+			<Button type="submit" class="h-10"><SearchIcon aria-hidden="true" />{t('search.submit')}</Button>
 		</div>
-		<div class="flex flex-wrap gap-2 text-sm">
-			<select class="border-input bg-background h-8 rounded-md border px-1" aria-label={t('search.project')} bind:value={projectID}>
+		<div class="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
+			<Select class="w-full sm:w-auto sm:min-w-44" aria-label={t('search.project')} bind:value={projectID}>
 				<option value="">{t('search.anyProject')}</option>
 				{#each projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-			</select>
-			<select class="border-input bg-background h-8 rounded-md border px-1" aria-label={t('search.label')} bind:value={labelID}>
+			</Select>
+			<Select class="w-full sm:w-auto sm:min-w-44" aria-label={t('search.label')} bind:value={labelID}>
 				<option value="">{t('search.anyLabel')}</option>
 				{#each labels as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
-			</select>
-			<select class="border-input bg-background h-8 rounded-md border px-1" aria-label={t('search.status')} bind:value={status}>
+			</Select>
+			<Select class="w-full sm:w-auto sm:min-w-44" aria-label={t('search.status')} bind:value={status}>
 				<option value="">{t('search.anyStatus')}</option>
 				{#each STATUSES as s (s)}<option value={s}>{t(`status.${s}` as MessageKey)}</option>{/each}
-			</select>
+			</Select>
 		</div>
 	</form>
 
 	{#if activeFilter}<p class="text-muted-foreground text-sm">{t('search.activeFilter', { name: activeFilter.name })}</p>{/if}
-	{#if searched && hits.length === 0}<p class="text-muted-foreground text-sm">{t('search.noResults')}</p>{/if}
-	<ul class="flex flex-col gap-1">
+	{#if searched && hits.length === 0}<EmptyState title={t('search.noResults')} icon={SearchIcon} />{/if}
+	<ul class="flex flex-col gap-2">
 		{#each hits as h (h.kind + h.id)}
-			<li class="flex items-center gap-2 rounded-md border p-2 text-sm" data-testid="search-hit">
-				<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs">{t(`search.hit.${h.kind}` as MessageKey)}</span>
-				<button class="flex-1 text-left" onclick={() => onopen(h.project.id)}>
+			<li class="bg-card flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm shadow-card" data-testid="search-hit">
+				<Badge variant={h.kind === 'task' ? 'accent' : 'default'}>{t(`search.hit.${h.kind}` as MessageKey)}</Badge>
+				<button class="min-w-0 flex-1 text-left font-medium hover:underline" onclick={() => onopen(h.project.id)}>
 					{h.kind === 'task' ? h.task?.title : h.project.name}
 				</button>
 				{#if h.kind === 'task'}<span class="text-muted-foreground text-xs">{h.project.name}</span>{/if}
@@ -140,16 +147,15 @@
 	{#if hasCriteria && !activeFilter}
 		<form class="flex gap-2" onsubmit={saveFilter}>
 			<Input bind:value={filterName} placeholder={t('search.filterName')} aria-label={t('search.filterName')} />
-			<Button type="submit" variant="outline" size="lg">{t('search.saveFilter')}</Button>
+			<Button type="submit" variant="outline">{t('search.saveFilter')}</Button>
 		</form>
 	{/if}
 
-	<div class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('search.filters')}</h3>
-		{#if filters.length === 0}<p class="text-muted-foreground text-xs">{t('search.filters.empty')}</p>{/if}
-		<ul class="flex flex-wrap gap-1">
+	<Panel title={t('search.filters')}>
+		{#if filters.length === 0}<p class="text-muted-foreground text-sm">{t('search.filters.empty')}</p>{/if}
+		<ul class="flex flex-wrap gap-1.5">
 			{#each filters as f (f.id)}
-				<li class="bg-secondary flex flex-wrap items-center gap-1 rounded-full px-2 py-0.5 text-xs" data-testid="saved-filter">
+				<li class="bg-secondary flex flex-wrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs" data-testid="saved-filter">
 					{#if renamingID === f.id}
 						<Input class="h-7 w-40 text-xs" bind:value={renameDraft} aria-label={t('search.renameFilter', { name: f.name })} />
 						<button onclick={() => renameFilter(f)}>{t('common.save')}</button>
@@ -160,33 +166,32 @@
 						{#if hasCriteria}
 							<button class="text-muted-foreground" aria-label={t('search.overwriteFilter', { name: f.name })} onclick={() => overwriteFilter(f)}>{t('search.overwrite')}</button>
 						{/if}
-						<button class="text-muted-foreground" aria-label={t('search.deleteFilter', { name: f.name })} onclick={() => deleteFilter(f)}>×</button>
+						<button class="text-muted-foreground" aria-label={t('search.deleteFilter', { name: f.name })} onclick={() => deleteFilter(f)}><X class="size-3.5" aria-hidden="true" /></button>
 					{/if}
 				</li>
 			{/each}
 		</ul>
-	</div>
+	</Panel>
 
-	<div class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('labels.manage')}</h3>
-		{#if labels.length === 0}<p class="text-muted-foreground text-xs">{t('labels.empty')}</p>{/if}
-		<ul class="flex flex-wrap gap-1">
+	<Panel title={t('labels.manage')}>
+		{#if labels.length === 0}<p class="text-muted-foreground text-sm">{t('labels.empty')}</p>{/if}
+		<ul class="flex flex-wrap gap-1.5">
 			{#each labels as l (l.id)}
-				<li class="bg-secondary flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" data-testid="label-item">
+				<li class="bg-secondary flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs" data-testid="label-item">
 					{l.name}
 					{#if deletingLabelID === l.id}
 						<span>{t('labels.deleteConfirm', { name: l.name })}</span>
 						<button class="text-destructive" onclick={() => deleteLabel(l)}>{t('common.delete')}</button>
 						<button onclick={() => (deletingLabelID = null)}>{t('common.cancel')}</button>
 					{:else}
-						<button class="text-muted-foreground" aria-label={t('labels.remove', { name: l.name })} onclick={() => (deletingLabelID = l.id)}>×</button>
+						<button class="text-muted-foreground" aria-label={t('labels.remove', { name: l.name })} onclick={() => (deletingLabelID = l.id)}><X class="size-3.5" aria-hidden="true" /></button>
 					{/if}
 				</li>
 			{/each}
 		</ul>
 		<form class="flex gap-2" onsubmit={addLabel}>
 			<Input bind:value={labelName} placeholder={t('labels.new')} aria-label={t('labels.new')} />
-			<Button type="submit" variant="outline" size="lg">{t('labels.create')}</Button>
+			<Button type="submit" variant="outline">{t('labels.create')}</Button>
 		</form>
-	</div>
+	</Panel>
 </section>

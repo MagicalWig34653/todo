@@ -6,6 +6,7 @@
 	import { formatWhen } from '#lib/planning.js';
 	import { passkeysSupported, serializeRegistration, toCreationOptions } from '#lib/webauthn.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import PageHeader from './app/PageHeader.svelte';
 	import OAuthGrants from './OAuthGrants.svelte';
 	import RecoveryIssue from './RecoveryIssue.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -67,22 +68,22 @@
 	}
 </script>
 
-<section class="flex flex-col gap-6">
-	<h2 class="text-xl font-semibold" data-testid="view-heading">{t('account.title')}</h2>
+<section class="flex flex-col gap-4">
+	<PageHeader title={t('account.title')} testid="view-heading" />
 
-	<div class="flex flex-col gap-1 text-sm">
-		<h3 class="font-medium">{t('account.id')}</h3>
+	<div class="bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-card sm:p-5 text-sm">
+		<h3 class="text-base font-semibold">{t('account.id')}</h3>
 		<code class="bg-muted w-fit rounded px-2 py-1 text-xs break-all" data-testid="account-id">{auth.user?.id}</code>
 		<p class="text-muted-foreground text-xs">{t('account.idHint')}</p>
 	</div>
 
-	{#if info}<p class="text-sm" role="status" data-testid="account-info">{info}</p>{/if}
+	{#if info}<p class="bg-success-soft text-success rounded-lg px-3 py-2 text-sm" role="status" data-testid="account-info">{info}</p>{/if}
 
-	<div class="flex flex-col gap-2">
-		<h3 class="text-sm font-medium">{t('account.passkeys')}</h3>
-		<ul class="flex flex-col gap-1">
+	<div class="bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-card sm:p-5">
+		<h3 class="text-base font-semibold">{t('account.passkeys')}</h3>
+		<ul class="flex flex-col gap-2">
 			{#each passkeys as p (p.id)}
-				<li class="rounded-md border p-2 text-sm" data-testid="passkey-item">
+				<li class="rounded-lg border p-2.5 text-sm" data-testid="passkey-item">
 					<div class="flex flex-wrap items-center gap-2">
 						<span class={['flex-1', p.revokedAt && 'text-muted-foreground line-through']}>{p.name || t('account.passkeys.unnamed')}</span>
 						{#if p.createdAt}<span class="text-muted-foreground text-xs">{t('account.passkeys.created', { when: formatWhen(p.createdAt) })}</span>{/if}
@@ -116,11 +117,11 @@
 		</form>
 	</div>
 
-	<div class="flex flex-col gap-2">
-		<h3 class="text-sm font-medium">{t('account.sessions')}</h3>
-		<ul class="flex flex-col gap-1">
+	<div class="bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-card sm:p-5">
+		<h3 class="text-base font-semibold">{t('account.sessions')}</h3>
+		<ul class="flex flex-col gap-2">
 			{#each sessions as s (s.id)}
-				<li class="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm" data-testid="session-item">
+				<li class="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="session-item">
 					<span class="flex-1">
 						{#if s.current}<strong>{t('account.sessions.current')}</strong>{/if}
 						{#if s.createdAt}<span class="text-muted-foreground text-xs">{t('account.sessions.created', { when: formatWhen(s.createdAt) })}</span>{/if}

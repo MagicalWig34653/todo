@@ -490,12 +490,20 @@ test('mobile 390px: navigation drawer and no horizontal page scroll', async () =
 	await expect(page.getByTestId('board-column-open')).toBeVisible();
 	await noOverflow('board');
 
+	// Bottom navigation (phones) reaches the main views directly; it replaces the drawer for them.
+	const bottom = page.getByRole('navigation', { name: 'Hauptnavigation' });
+	await expect(bottom).toBeVisible();
 	for (const view of ['Heute', 'Suche', 'Teams', 'Konto']) {
-		await menu.click();
-		await nav.getByRole('button', { name: view, exact: true }).click();
-		await expect(nav).toBeHidden();
+		await bottom.getByRole('button', { name: view, exact: true }).click();
+		await expect(page.getByTestId('view-heading')).toBeVisible();
 		await page.waitForTimeout(300);
 		await noOverflow(view);
 	}
+	// The drawer still offers the remaining planning views.
+	await menu.click();
+	await nav.getByRole('button', { name: 'Anstehend', exact: true }).click();
+	await expect(nav).toBeHidden();
+	await expect(page.getByTestId('view-heading')).toHaveText('Anstehend');
+	await noOverflow('Anstehend');
 	await page.setViewportSize({ width: 1280, height: 720 });
 });

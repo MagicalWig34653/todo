@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Label } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -45,14 +46,14 @@
 	{/each}
 	{#if assigned.length === 0}<span class="text-muted-foreground text-xs">{t('labels.none')}</span>{/if}
 	{#if free.length > 0}
-		<select
-			class="border-input bg-background h-7 rounded-md border px-1 text-xs"
+		<Select
+			
 			aria-label={t('labels.add')}
 			bind:value={pick}
 			onchange={add}
 		>
 			<option value="">{t('labels.pick')}</option>
 			{#each free as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
-		</select>
+		</Select>
 	{/if}
 </div>

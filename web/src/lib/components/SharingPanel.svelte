@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, ApiError, type EffectiveVisibility, type PrincipalType, type Project, type ProjectGrant, type Role, type Team } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -72,7 +74,7 @@
 
 <section class="flex flex-col gap-4" data-testid="sharing-panel">
 	{#if vis}
-		<div class="flex flex-col gap-1 rounded-md border p-3 text-sm" data-testid="visibility">
+		<div class="flex flex-col gap-1 rounded-lg border p-3 text-sm" data-testid="visibility">
 			<h3 class="font-medium">{t('sharing.visibility')}</h3>
 			<p>{t('sharing.yourRole')}: <strong data-testid="my-role">{roleText(vis.role)}</strong></p>
 			<p>{vis.inherits ? t('sharing.inheritsOn') : t('sharing.inheritsOff')}</p>
@@ -90,7 +92,7 @@
 	{:else}
 		<div class="flex items-center gap-2 text-sm">
 			<label class="flex items-center gap-2">
-				<input type="checkbox" class="size-4" checked={vis?.inherits ?? false} onchange={toggleInherit} />
+				<Checkbox  class="size-4" checked={vis?.inherits ?? false} onchange={toggleInherit} />
 				{t('sharing.inherits')}
 			</label>
 		</div>
@@ -100,8 +102,8 @@
 			{#if grants.length === 0}<p class="text-muted-foreground text-xs">{t('sharing.grants.empty')}</p>{/if}
 			<ul class="flex flex-col gap-1">
 				{#each grants as g (g.id)}
-					<li class="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm" data-testid="grant">
-						<span class="bg-muted rounded px-1.5 py-0.5 text-xs">{t(g.principalType === 'team' ? 'sharing.team' : 'sharing.person')}</span>
+					<li class="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="grant">
+						<span class="bg-muted rounded-full px-2 py-0.5 text-xs font-medium">{t(g.principalType === 'team' ? 'sharing.team' : 'sharing.person')}</span>
 						<span class="flex-1 font-mono text-xs break-all">{principalLabel(g)}</span>
 						<span class="text-xs">{roleText(g.role)}</span>
 						<Button size="xs" variant="destructive" onclick={() => revoke(g)}>{t('sharing.revoke')}</Button>
@@ -111,21 +113,21 @@
 		</div>
 
 		<form class="flex flex-wrap items-end gap-2" onsubmit={add}>
-			<select class="border-input bg-background h-9 rounded-md border px-2 text-sm" aria-label={t('sharing.principalType')} bind:value={type}>
+			<Select  aria-label={t('sharing.principalType')} bind:value={type}>
 				<option value="person">{t('sharing.person')}</option>
 				<option value="team">{t('sharing.team')}</option>
-			</select>
+			</Select>
 			{#if type === 'person'}
 				{#key pickerKey}<PersonPicker bind:value={personID} idLabel={t('sharing.personID')} />{/key}
 			{:else}
-				<select class="border-input bg-background h-9 rounded-md border px-2 text-sm" aria-label={t('sharing.team')} bind:value={teamID}>
+				<Select  aria-label={t('sharing.team')} bind:value={teamID}>
 					<option value="">{t('sharing.pickTeam')}</option>
 					{#each teams as team (team.id)}<option value={team.id}>{team.name}</option>{/each}
-				</select>
+				</Select>
 			{/if}
-			<select class="border-input bg-background h-9 rounded-md border px-2 text-sm" aria-label={t('sharing.yourRole')} bind:value={role}>
+			<Select  aria-label={t('sharing.yourRole')} bind:value={role}>
 				{#each ROLES as r (r)}<option value={r}>{roleText(r)}</option>{/each}
-			</select>
+			</Select>
 			<Button type="submit" size="lg">{t('sharing.add')}</Button>
 		</form>
 

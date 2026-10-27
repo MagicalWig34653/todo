@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Attachment, type AttachmentRole } from '#lib/api.js';
 	import { ATTACHMENT_ROLES, checkFile, formatSize, isImage, sha256Hex } from '#lib/attachments.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
@@ -89,9 +90,9 @@
 			aria-label={t('attachments.choose')}
 			class="max-w-full text-xs"
 		/>
-		<select class="border-input bg-background h-8 rounded-md border px-1 text-xs" aria-label={t('attachments.role')} bind:value={role}>
+		<Select  aria-label={t('attachments.role')} bind:value={role}>
 			{#each ATTACHMENT_ROLES as r (r)}<option value={r}>{t(`attachments.role.${r}` as MessageKey)}</option>{/each}
-		</select>
+		</Select>
 		<Button type="submit" size="sm" disabled={busy}>{busy ? t('attachments.uploading') : t('attachments.upload')}</Button>
 	</form>
 	<p class="text-muted-foreground text-xs">{t('attachments.hint')}</p>

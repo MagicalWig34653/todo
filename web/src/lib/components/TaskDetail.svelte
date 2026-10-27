@@ -14,33 +14,33 @@
 	const bump = () => void activityKey++;
 </script>
 
-<div class="bg-muted/30 mt-2 flex flex-col gap-4 rounded-md p-3" data-testid="task-detail">
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('planning.title')}</h3>
+<div class="bg-muted/40 mt-3 flex flex-col gap-5 rounded-lg border p-3 sm:p-4" data-testid="task-detail">
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('planning.title')}</h3>
 		<TaskPlanning taskID={task.id} onsaved={async () => { await onplanned?.(); bump(); }} />
 	</section>
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('task.section.dependencies')}</h3>
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.dependencies')}</h3>
 		<TaskDependencies {task} onchanged={bump} />
 	</section>
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('task.section.labels')}</h3>
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.labels')}</h3>
 		<TaskLabels taskID={task.id} />
 	</section>
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('task.section.criteria')}</h3>
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.criteria')}</h3>
 		<TaskCriteria taskID={task.id} />
 	</section>
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('task.section.attachments')}</h3>
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.attachments')}</h3>
 		<TaskAttachments taskID={task.id} onchanged={bump} />
 	</section>
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('task.section.comments')}</h3>
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.comments')}</h3>
 		<TaskComments taskID={task.id} onchanged={bump} />
 	</section>
-	<section class="flex flex-col gap-1">
-		<h3 class="text-sm font-medium">{t('task.section.activity')}</h3>
+	<section class="flex flex-col gap-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.activity')}</h3>
 		<TaskActivity taskID={task.id} refreshKey={activityKey} />
 	</section>
 </div>

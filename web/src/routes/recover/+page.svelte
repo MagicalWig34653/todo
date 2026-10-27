@@ -6,6 +6,7 @@
 	import { passkeysSupported, serializeRegistration, toCreationOptions } from '#lib/webauthn.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import AuthShell from '#lib/components/app/AuthShell.svelte';
 	import { Label } from '#lib/components/ui/label/index.js';
 
 	let code = $state('');
@@ -61,8 +62,7 @@
 	};
 </script>
 
-<main class="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-4 px-4 py-10">
-	<h1 class="text-2xl font-semibold">{t('recovery.title')}</h1>
+<AuthShell title={t('recovery.title')}>
 	<p class="text-muted-foreground text-sm">{t('recovery.intro')}</p>
 
 	{#if done}
@@ -83,4 +83,4 @@
 
 	{#if error}<p role="alert" class="text-destructive text-sm">{error}</p>{/if}
 	<a class="text-muted-foreground text-sm underline" href="/">{t('recovery.toLogin')}</a>
-</main>
+</AuthShell>

@@ -22,15 +22,15 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2" data-testid="recovery-issue">
-	<h3 class="text-sm font-medium">{t('account.recovery')}</h3>
+<div class="bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-card sm:p-5" data-testid="recovery-issue">
+	<h3 class="text-base font-semibold">{t('account.recovery')}</h3>
 	<p class="text-muted-foreground text-xs">{t('account.recovery.hint')}</p>
 	<form class="flex gap-2" onsubmit={issue}>
 		<Input bind:value={accountID} placeholder={t('account.recovery.accountID')} aria-label={t('account.recovery.accountID')} />
 		<Button type="submit" size="lg">{t('account.recovery.issue')}</Button>
 	</form>
 	{#if issued}
-		<div class="flex flex-col gap-1 rounded-md border p-2 text-sm" role="status">
+		<div class="flex flex-col gap-1 rounded-lg border p-2.5 text-sm" role="status">
 			<span class="text-xs">{t('account.recovery.codeLabel')}</span>
 			<code class="bg-muted w-fit rounded px-2 py-1 text-xs break-all" data-testid="recovery-code">{issued.token}</code>
 			<span class="text-muted-foreground text-xs">{t('account.recovery.expires', { when: formatWhen(issued.expiresAt) })}</span>

@@ -6,6 +6,8 @@
 	import { t } from '#lib/i18n/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import AuthShell from '#lib/components/app/AuthShell.svelte';
+	import Fingerprint from '@lucide/svelte/icons/fingerprint';
 	import { Label } from '#lib/components/ui/label/index.js';
 
 	let caps = $state<Capabilities | null>(null);
@@ -36,11 +38,10 @@
 	}
 </script>
 
-<main class="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-4 py-10">
-	<h1 class="text-2xl font-semibold">{t('login.title')}</h1>
+<AuthShell title={t('login.title')}>
 
-	<Button size="lg" class="h-11 w-full" disabled={busy} onclick={() => run(() => auth.loginWithPasskey())}>
-		{t('login.passkey')}
+	<Button size="lg" class="h-11 w-full text-[15px]" disabled={busy} onclick={() => run(() => auth.loginWithPasskey())}>
+		<Fingerprint aria-hidden="true" />{t('login.passkey')}
 	</Button>
 
 	{#if caps?.password}
@@ -72,9 +73,9 @@
 		{#if caps?.bootstrapOpen}
 			<p>{t('login.bootstrapHint')}</p>
 		{/if}
-		<a class="underline" href="/recover">{t('login.recoveryLink')}</a>
-		<a class="underline" href="/setup">
+		<a class="hover:text-foreground underline" href="/recover">{t('login.recoveryLink')}</a>
+		<a class="hover:text-foreground underline" href="/setup">
 			{caps?.bootstrapOpen ? t('login.bootstrapLink') : t('login.inviteLink')}
 		</a>
 	</div>
-</main>
+</AuthShell>

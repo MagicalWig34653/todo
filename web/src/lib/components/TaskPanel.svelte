@@ -8,6 +8,13 @@
 	import TaskDetail from './TaskDetail.svelte';
 	import TaskChips from './TaskChips.svelte';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import EmptyState from './app/EmptyState.svelte';
+	import ListTodo from '@lucide/svelte/icons/list-todo';
+	import Plus from '@lucide/svelte/icons/plus';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Pencil from '@lucide/svelte/icons/pencil';
 
 	let { project }: { project: Project } = $props();
 
@@ -82,24 +89,21 @@
 	}
 </script>
 
-<section class="flex flex-col gap-4">
-	<h2 class="text-xl font-semibold" data-testid="task-heading">{project.name}</h2>
-
+<section class="flex flex-col gap-3">
 	<form class="flex gap-2" onsubmit={add}>
-		<Input bind:value={quick} placeholder={t('tasks.quickPlaceholder')} aria-label={t('tasks.quickPlaceholder')} />
-		<Button type="submit" size="lg">{t('tasks.add')}</Button>
+		<Input class="h-10" bind:value={quick} placeholder={t('tasks.quickPlaceholder')} aria-label={t('tasks.quickPlaceholder')} />
+		<Button type="submit" class="h-10"><Plus aria-hidden="true" />{t('tasks.add')}</Button>
 	</form>
 
 	{#if loaded && tasks.length === 0}
-		<p class="text-muted-foreground text-sm">{t('tasks.empty')}</p>
+		<EmptyState title={t('tasks.empty')} icon={ListTodo} />
 	{/if}
 
-	<ul class="flex flex-col gap-1">
+	<ul class="flex flex-col gap-2">
 		{#each tasks as task (task.id)}
-			<li class="min-w-0 rounded-md border p-2" data-testid="task-item">
+			<li class="bg-card min-w-0 rounded-xl border p-3 shadow-card transition-colors hover:border-foreground/20" data-testid="task-item">
 				<div class="flex flex-wrap items-center gap-2">
-					<input
-						type="checkbox"
+					<Checkbox
 						class="size-5"
 						checked={task.status === 'done'}
 						aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
@@ -108,8 +112,8 @@
 					<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
 						{task.title}
 					</span>
-					<select
-						class="border-input bg-background h-8 rounded-md border px-1 text-xs"
+					<Select
+						class="w-32 [&_select]:h-8 [&_select]:text-xs"
 						aria-label={t('tasks.status')}
 						value={task.status}
 						onchange={(e) => setStatus(task, e.currentTarget.value as TaskStatus)}
@@ -117,20 +121,21 @@
 						{#each STATUSES as s (s)}
 							<option value={s}>{t(`status.${s}` as MessageKey)}</option>
 						{/each}
-					</select>
+					</Select>
 					<Button
 						size="sm"
 						variant="ghost"
 						aria-expanded={detailID === task.id}
-						onclick={() => (detailID = detailID === task.id ? null : task.id)}>{t('task.details')}</Button
+						onclick={() => (detailID = detailID === task.id ? null : task.id)}
+						>{t('task.details')}<ChevronDown class={['transition-transform', detailID === task.id && 'rotate-180']} aria-hidden="true" /></Button
 					>
 					<Button size="sm" variant="ghost" onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
-						{t('tasks.edit')}
+						<Pencil aria-hidden="true" />{t('tasks.edit')}
 					</Button>
 				</div>
 
 				{#if task.planning && (task.planning.priority > 0 || task.planning.dueAt || task.planning.plannedAt || task.planning.hasRecurrence || task.planning.reminderCount > 0)}
-					<div class="mt-1 flex flex-wrap gap-1 pl-7" data-testid="task-chips"><TaskChips pt={task.planning} status={task.status} /></div>
+					<div class="mt-2 flex flex-wrap gap-1.5 pl-8" data-testid="task-chips"><TaskChips pt={task.planning} status={task.status} /></div>
 				{/if}
 
 				{#if detailID === task.id}
@@ -155,7 +160,7 @@
 						</div>
 					</div>
 				{:else if task.description}
-					<p class="text-muted-foreground mt-1 pl-7 text-sm whitespace-pre-wrap">{task.description}</p>
+					<p class="text-muted-foreground mt-1.5 pl-8 text-sm whitespace-pre-wrap">{task.description}</p>
 				{/if}
 			</li>
 		{/each}

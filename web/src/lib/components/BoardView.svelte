@@ -5,6 +5,9 @@
 	import { STATUSES, moveWithin } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import TaskChips from './TaskChips.svelte';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 
 	let { project }: { project: Project } = $props();
 
@@ -35,27 +38,27 @@
 	}
 </script>
 
-<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4" data-testid="board">
+<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="board">
 	{#each STATUSES as status (status)}
-		<section class="bg-muted/30 flex flex-col gap-2 rounded-md p-2" aria-label={t(`status.${status}` as MessageKey)} data-testid="board-column-{status}">
-			<h3 class="text-sm font-medium">{t(`status.${status}` as MessageKey)} <span class="text-muted-foreground">({cols[status].length})</span></h3>
+		<section class="bg-muted/50 flex flex-col gap-2 rounded-xl border p-2.5" aria-label={t(`status.${status}` as MessageKey)} data-testid="board-column-{status}">
+			<h3 class="flex items-center gap-2 px-1 text-sm font-semibold">{t(`status.${status}` as MessageKey)} <span class="text-muted-foreground bg-background rounded-full border px-1.5 text-xs font-medium" data-tabular>{cols[status].length}</span></h3>
 			{#if cols[status].length === 0}<p class="text-muted-foreground text-xs">{t('board.empty')}</p>{/if}
-			<ul class="flex flex-col gap-1">
+			<ul class="flex flex-col gap-2">
 				{#each cols[status] as pt (pt.task.id)}
-					<li class="bg-background rounded-md border p-2 text-sm" data-testid="board-card">
+					<li class="bg-card rounded-lg border p-2.5 text-sm shadow-card" data-testid="board-card">
 						<p>{pt.task.title}</p>
-						<div class="mt-1 flex flex-wrap gap-1"><TaskChips {pt} status={pt.task.status} /></div>
+						<div class="mt-1.5 flex flex-wrap gap-1"><TaskChips {pt} status={pt.task.status} /></div>
 						<div class="mt-1 flex flex-wrap items-center gap-1">
-							<Button size="xs" variant="outline" aria-label={t('board.moveUp')} onclick={() => move(status, pt.task.id, -1)}>↑</Button>
-							<Button size="xs" variant="outline" aria-label={t('board.moveDown')} onclick={() => move(status, pt.task.id, 1)}>↓</Button>
-							<select
-								class="border-input bg-background h-6 rounded-md border px-1 text-xs"
+							<Button size="xs" variant="outline" aria-label={t('board.moveUp')} onclick={() => move(status, pt.task.id, -1)}><ArrowUp aria-hidden="true" /></Button>
+							<Button size="xs" variant="outline" aria-label={t('board.moveDown')} onclick={() => move(status, pt.task.id, 1)}><ArrowDown aria-hidden="true" /></Button>
+							<Select
+								class="min-w-0 basis-full [&_select]:h-7 [&_select]:text-xs"
 								aria-label={t('board.moveTo')}
 								value={status}
 								onchange={(e) => setStatus(pt, e.currentTarget.value as TaskStatus)}
 							>
 								{#each STATUSES as s (s)}<option value={s}>{t(`status.${s}` as MessageKey)}</option>{/each}
-							</select>
+							</Select>
 						</div>
 					</li>
 				{/each}

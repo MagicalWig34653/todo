@@ -5,6 +5,8 @@
 	import { t } from '#lib/i18n/index.js';
 	import { redirectTarget, safeRedirect, scopeLabel } from '#lib/oauth.js';
 	import LoginView from '#lib/components/LoginView.svelte';
+	import AuthShell from '#lib/components/app/AuthShell.svelte';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	let request = $state<ConsentRequest | null>(null);
@@ -61,8 +63,7 @@
 {:else if !auth.user}
 	<LoginView />
 {:else}
-	<main class="mx-auto flex max-w-xl flex-col gap-4 p-6">
-		<h1 class="text-xl font-semibold" data-testid="consent-heading">{t('consent.title')}</h1>
+	<AuthShell title={t('consent.title')} testid="consent-heading" wide>
 		{#if invalid}
 			<p role="alert" data-testid="consent-invalid">{t('consent.invalid')}</p>
 		{:else if !request}
@@ -83,8 +84,8 @@
 					<p class="text-sm">{t('consent.noProjects')}</p>
 				{/if}
 				{#each request.projects as p (p.id)}
-					<label class="flex min-h-9 items-center gap-2 text-sm">
-						<input type="checkbox" bind:checked={selected[p.id]} />
+					<label class="flex min-h-9 items-center gap-2.5 rounded-lg border px-3 text-sm">
+						<Checkbox bind:checked={selected[p.id]} />
 						<span>{p.name}</span>
 					</label>
 				{/each}
@@ -96,5 +97,5 @@
 				<Button size="lg" variant="outline" disabled={busy || leaving} onclick={() => decide(false)}>{t('consent.deny')}</Button>
 			</div>
 		{/if}
-	</main>
+	</AuthShell>
 {/if}

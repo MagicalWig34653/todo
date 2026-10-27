@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type PlanningTask } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -85,22 +86,21 @@
 	</div>
 	<div class="flex flex-col gap-1">
 		<Label for="prio-{taskID}">{t('planning.priority')}</Label>
-		<select
+		<Select
 			id="prio-{taskID}"
-			class="border-input bg-background h-9 rounded-md border px-2 text-sm"
 			disabled={!current}
 			bind:value={priority}
 		>
 			{#each PRIORITIES as p (p)}
 				<option value={p}>{t(`planning.priority.${p}` as MessageKey)}</option>
 			{/each}
-		</select>
+		</Select>
 	</div>
 </div>
 <fieldset class="mt-2 flex flex-wrap items-end gap-2" data-testid="recurrence-form">
 	<legend class="text-sm font-medium">{t('planning.recurrence')}</legend>
-	<select
-		class="border-input bg-background h-9 rounded-md border px-2 text-sm"
+	<Select
+		
 		aria-label={t('planning.recurrence.frequency')}
 		disabled={!current}
 		bind:value={frequency}
@@ -108,7 +108,7 @@
 		{#each FREQUENCIES as f (f)}
 			<option value={f}>{t(`planning.recurrence.${f}` as MessageKey)}</option>
 		{/each}
-	</select>
+	</Select>
 	{#if frequency !== 'none'}
 		<div class="flex flex-col gap-1">
 			<Label for="interval-{taskID}">{t('planning.recurrence.interval', { unit: t(`planning.recurrence.unit.${frequency}` as MessageKey) })}</Label>

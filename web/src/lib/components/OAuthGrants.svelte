@@ -28,8 +28,8 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2" data-testid="oauth-grants">
-	<h3 class="text-sm font-medium">{t('account.oauth')}</h3>
+<div class="bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-card sm:p-5" data-testid="oauth-grants">
+	<h3 class="text-base font-semibold">{t('account.oauth')}</h3>
 	<p class="text-muted-foreground text-xs">{t('account.oauth.hint')}</p>
 	{#if info}<p class="text-sm" role="status" data-testid="oauth-info">{info}</p>{/if}
 	{#if grants.length === 0}
@@ -38,7 +38,7 @@
 	<ul class="flex flex-col gap-1">
 		{#each grants as g (g.id)}
 			{@const resolved = resolveGrantProjects(g, projects)}
-			<li class="rounded-md border p-2 text-sm" data-testid="oauth-grant">
+			<li class="rounded-lg border p-2.5 text-sm" data-testid="oauth-grant">
 				<div class="flex flex-wrap items-center gap-2">
 					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']}>{t('account.oauth.client', { id: g.client_id })}</span>
 					{#if g.revoked}

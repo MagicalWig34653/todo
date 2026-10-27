@@ -127,6 +127,8 @@ await detail.getByTestId('comment').first().waitFor();
 await detail.getByLabel('Kommentar schreiben').fill('Erledigt ich morgen früh vor der Arbeit.');
 await detail.getByRole('button', { name: 'Kommentieren' }).click();
 await page.waitForTimeout(500);
+// close the detail again: its dependency picker lists the other tasks and would match later task filters
+await task.getByRole('button', { name: 'Details' }).click();
 
 // Planung für Heute / Anstehend
 const plan = async (project, title, days, prio) => {

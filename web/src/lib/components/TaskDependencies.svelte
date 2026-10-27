@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -44,7 +45,7 @@
 	<ul class="flex flex-col gap-1">
 		{#each prerequisites as p (p.id)}
 			<li class="flex items-center gap-2 text-sm" data-testid="dependency">
-				<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs">{t(`status.${p.status}` as MessageKey)}</span>
+				<span class="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs font-medium">{t(`status.${p.status}` as MessageKey)}</span>
 				<span class={['flex-1 break-words', p.status === 'done' && 'text-muted-foreground line-through']}>{p.title}</span>
 				<Button size="xs" variant="ghost" aria-label={t('dependencies.remove', { title: p.title })} onclick={() => remove(p)}>
 					{t('dependencies.removeShort')}
@@ -53,10 +54,10 @@
 		{/each}
 	</ul>
 	<form class="flex flex-wrap gap-2" onsubmit={add}>
-		<select class="border-input bg-background h-9 min-w-0 flex-1 rounded-md border px-2 text-sm" aria-label={t('dependencies.pick')} bind:value={pick}>
+		<Select  aria-label={t('dependencies.pick')} bind:value={pick}>
 			<option value="">{t('dependencies.pick')}</option>
 			{#each options as o (o.id)}<option value={o.id}>{o.title}</option>{/each}
-		</select>
+		</Select>
 		<Button type="submit" size="sm" variant="outline" disabled={!pick}>{t('dependencies.add')}</Button>
 	</form>
 	<p class="text-muted-foreground text-xs">{t('dependencies.hint')}</p>
