@@ -1,4 +1,5 @@
 import Crypto
+import Foundation
 import Fluent
 import XCTVapor
 @testable import TodoKit
@@ -7,7 +8,7 @@ final class AttachmentTests: XCTestCase {
     // A real one-pixel PNG; magic-byte checks intentionally do not promise a full image decoder.
     let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXZkAAAAASUVORK5CYII=")!
 
-    let sqlitePath = "/private/tmp/attachment-test-\(UUID()).sqlite"
+    let sqlitePath = NSTemporaryDirectory() + "attachment-test-\(UUID()).sqlite"
 
     func makeApp() async throws -> TestApp {
         if TestApp.useMariaDB { return try await TestApp.make() }
