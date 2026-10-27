@@ -90,3 +90,7 @@ Grenzen, nicht bewiesen:
 ## Nachtrag 27.10.2026: externe DB/S3
 
 Stack auf externe DB/S3 umgestellt (Image `ghcr.io/magicalwig34653/todo-backend`, `stack.env.example`). `docker stack config` mit gesetztem `DB_HOST`/`S3_ENDPOINT` ist gültig (ohne diese Variablen bricht es bewusst ab). `scripts/swarm-smoke.sh` lief danach erneut grün (3 Replikate, Migration, 72 Probes, vollständiges Cleanup) mit externer Wegwerf-DB. Die Aussagen zu Single-Node-Grenzen oben gelten unverändert; die frühere Beschreibung der Stack-DB/S3Mock in den Prüfungen vom 26.10. ist historisch.
+
+## Apple App Site Association (Passkeys in nativen Apps)
+
+Das Backend liefert `GET /.well-known/apple-app-site-association` und `GET /apple-app-site-association` öffentlich (ohne Authentifizierung, ohne Redirect) als `application/json`. Inhalt aus `AASA_APP_IDS` (kommagetrennte App-IDs `TeamID.BundleID`, z. B. `J2DU2P47XW.de.linolaske.todo,J2DU2P47XW.de.linolaske.todo.mac`): `{"webcredentials":{"apps":[...]}}`. Ist `AASA_APP_IDS` nicht gesetzt oder leer, antwortet der Endpunkt mit 404. Produktionsbeispiel für die Domain `todo.linolaske.de`: `RP_ID=todo.linolaske.de`, `RP_ORIGIN=https://todo.linolaske.de` (siehe `deploy/swarm/stack.env.example`). Der Reverse Proxy muss den Pfad unverändert und ohne Redirect durchreichen. Test: `AASATests` (SQLite).

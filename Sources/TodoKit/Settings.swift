@@ -12,6 +12,8 @@ public struct AppSettings: Sendable {
     public var sessionLifetime: TimeInterval
     public var challengeLifetime: TimeInterval
     public var secureCookies: Bool
+    /// Apple app IDs (TeamID.BundleID) for the apple-app-site-association webcredentials entry. Empty: not served.
+    public var appleAppIDs: [String]
 
     public init(
         relyingPartyID: String = "localhost",
@@ -21,7 +23,8 @@ public struct AppSettings: Sendable {
         bootstrapToken: String? = nil,
         sessionLifetime: TimeInterval = 30 * 24 * 3600,
         challengeLifetime: TimeInterval = 300,
-        secureCookies: Bool = false
+        secureCookies: Bool = false,
+        appleAppIDs: [String] = []
     ) {
         self.relyingPartyID = relyingPartyID
         self.relyingPartyName = relyingPartyName
@@ -31,6 +34,7 @@ public struct AppSettings: Sendable {
         self.sessionLifetime = sessionLifetime
         self.challengeLifetime = challengeLifetime
         self.secureCookies = secureCookies
+        self.appleAppIDs = appleAppIDs
     }
 
     public static func fromEnvironment(
@@ -43,6 +47,10 @@ public struct AppSettings: Sendable {
         s.passwordLoginEnabled = (try RuntimeEnvironment.value("PASSWORD_LOGIN_ENABLED", get: get) ?? "false") == "true"
         s.bootstrapToken = try RuntimeEnvironment.value("BOOTSTRAP_TOKEN", get: get).flatMap { $0.isEmpty ? nil : $0 }
         s.secureCookies = s.relyingPartyOrigin.hasPrefix("https://")
+        s.appleAppIDs = (try RuntimeEnvironment.value("AASA_APP_IDS", get: get) ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
         return s
     }
 }

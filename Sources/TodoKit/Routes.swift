@@ -21,6 +21,18 @@ public func routes(_ app: Application) throws {
     try app.register(collection: AgentController())
     try app.register(collection: AttachmentController())
     try app.register(collection: SyncController())
+    // Apple app-site-association for passkeys in native apps: public, no redirect, JSON.
+    for path in [[".well-known", "apple-app-site-association"], ["apple-app-site-association"]] {
+        app.get(path.map { PathComponent(stringLiteral: $0) }) { req async throws -> Response in
+            let ids = req.application.settings.appleAppIDs
+            guard !ids.isEmpty else { throw Abort(.notFound) }
+            let body = try JSONSerialization.data(
+                withJSONObject: ["webcredentials": ["apps": ids]], options: [.sortedKeys])
+            var headers = HTTPHeaders()
+            headers.contentType = .json
+            return Response(status: .ok, headers: headers, body: .init(data: body))
+        }
+    }
     // Liveness: process is up. No dependencies checked.
     app.get("health", "live") { _ in HealthResponse(status: "ok") }
 

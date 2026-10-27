@@ -21,6 +21,7 @@ x-backend: &backend
     S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
     RP_ID: ${RP_ID:-localhost}
     RP_ORIGIN: ${RP_ORIGIN:-http://localhost:38080}
+    AASA_APP_IDS: ${AASA_APP_IDS:-}
     PASSWORD_LOGIN_ENABLED: 'false'
   secrets: [db_password, bootstrap_token, s3_access_key, s3_secret_key]
 services:
