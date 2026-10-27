@@ -52,7 +52,10 @@ struct SharingController: RouteCollection {
         let user = try await req.requireUser()
         return try await req.db.transaction { db in
             try await lockSharingGraph(on: db)
-            return try await operation(SharingAccess(user: user, db: db))
+            let before = try await SyncRecorder.visibility(on: db)
+            let result = try await operation(SharingAccess(user: user, db: db))
+            try await SyncRecorder.recordVisibilityChanges(from: before, on: db)
+            return result
         }
     }
 

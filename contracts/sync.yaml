@@ -1,13 +1,18 @@
 openapi: 3.0.3
 info:
   title: Todo Sync
-  version: 1.0.0
+  version: 1.1.0
   description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
     ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz
     im Änderungsprotokoll bezeichnet. Cursor "c0" liefert den vollständigen sichtbaren Stand. Jede Änderung wird nach
     denselben Rechten wie die REST-Lesepfade gefiltert (ProjectAccess/SharingAccess); Nicht-Sichtbares fehlt
     ohne Fehler. Löschungen erscheinen als Tombstones, aber nur für Konten, die das Objekt zum Löschzeitpunkt lesen
-    konnten. Mutationen verwenden dieselben Operationen und Rechteprüfungen wie die REST-Routen (Fremdes 404, zu
+    konnten. Sichtbarkeitsänderungen durch Freigaben, Teamannahme/-entzug, Eigentum, Vererbung und Verschiebungen
+    erzeugen ebenfalls Upserts für gewonnenen Zugriff (inklusive Altbestand) bzw. Tombstones für verlorenen Zugriff.
+    Alternative Rechte bleiben wirksam. Entzug-Tombstones gehen nur an betroffene Konten und werden bei inzwischen
+    wieder lesbaren Objekten unterdrückt; erneute Freigabe erzeugt neue Upserts. Auch geänderte redigierte Elternreferenzen
+    werden aktualisiert. Clients wenden Änderungen in Sequenzreihenfolge an; kein Resync ab c0 nach Rechtewechsel nötig.
+    Upserts können auch unverändert berechtigten Konten erneut geliefert werden. Mutationen verwenden dieselben Operationen und Rechteprüfungen wie die REST-Routen (Fremdes 404, zu
     geringe Rolle 403, Versionskonflikt 409). Migration: CreateSyncSchema (legt Protokolltabellen an und füllt
     bestehende Projekte/Aufgaben als Upserts nach); explizit vor Serverstart ausführen.'
 security:
@@ -157,7 +162,10 @@ components:
         seq: {type: integer}
         entityType: {type: string, enum: [project, task]}
         entityID: {type: string, format: uuid}
-        kind: {type: string, enum: [upsert, delete]}
+        kind:
+          type: string
+          enum: [upsert, delete]
+          description: 'delete entfernt lokale Daten bei physischer Löschung oder Zugriffsverlust; enthält keine Projekt-/Aufgaben-Payload. Ein Zugriffsverlust löscht das Objekt serverseitig nicht.'
         project: {$ref: '#/components/schemas/Project'}
         task: {$ref: '#/components/schemas/Task'}
     SyncChanges:

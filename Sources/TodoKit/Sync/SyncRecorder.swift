@@ -21,9 +21,9 @@ enum SyncRecorder {
         try await SyncChange(seq: seq, entityType: type, entityID: id, kind: "upsert", projectID: projectID).save(on: db)
     }
 
-    static func recordDelete(type: String, id: UUID, projectID: UUID?, audience: [UUID], on db: any Database) async throws {
+    static func recordDelete(type: String, id: UUID, projectID: UUID?, audience: [UUID], kind: String = "delete", on db: any Database) async throws {
         let seq = try await nextSeq(on: db)
-        try await SyncChange(seq: seq, entityType: type, entityID: id, kind: "delete", projectID: projectID).save(on: db)
+        try await SyncChange(seq: seq, entityType: type, entityID: id, kind: kind, projectID: projectID).save(on: db)
         for user in audience { try await SyncTombstoneAudience(seq: seq, userID: user).save(on: db) }
     }
 
@@ -33,6 +33,55 @@ enum SyncRecorder {
             if try await SharingAccess(user: user, db: db).visibility(project).role != nil { result.append(try user.requireID()) }
         }
         return result
+    }
+
+    struct VisibilitySnapshot {
+        let readers: [UUID: Set<UUID>]
+        let parents: [UUID: UUID]
+    }
+
+    /// Transaction-local comparison only; all authoritative rights and emitted events live in the database.
+    /// Callers already hold lockSharingGraph before their first read and keep it until commit.
+    static func visibility(on db: any Database) async throws -> VisibilitySnapshot {
+        var readers: [UUID: Set<UUID>] = [:]
+        var parents: [UUID: UUID] = [:]
+        for project in try await Project.query(on: db).all() {
+            let id = try project.requireID()
+            readers[id] = Set(try await self.readers(of: project, on: db))
+            parents[id] = project.parentID
+        }
+        return VisibilitySnapshot(readers: readers, parents: parents)
+    }
+
+    static func recordVisibilityChanges(from before: VisibilitySnapshot, on db: any Database) async throws {
+        let after = try await visibility(on: db)
+        for id in after.readers.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+            let old = before.readers[id] ?? [], new = after.readers[id] ?? []
+            let lost = old.subtracting(new)
+            let gained = new.subtracting(old)
+            // A still-readable isolated child also needs a refresh when its redacted parent reference changes.
+            let parentChanged = old.intersection(new).contains { user in
+                let oldParent = before.parents[id].flatMap { before.readers[$0]?.contains(user) == true ? $0 : nil }
+                let newParent = after.parents[id].flatMap { after.readers[$0]?.contains(user) == true ? $0 : nil }
+                return oldParent != newParent
+            }
+            if !gained.isEmpty || parentChanged {
+                try await recordUpsert(type: "project", id: id, projectID: id, on: db)
+            }
+            if !lost.isEmpty {
+                try await recordDelete(type: "project", id: id, projectID: id, audience: Array(lost), kind: "revoke", on: db)
+            }
+            guard !gained.isEmpty || !lost.isEmpty else { continue }
+            for task in try await TodoTask.query(on: db).filter(\.$projectID == id).sort(\.$id).all() {
+                if !gained.isEmpty {
+                    try await recordUpsert(type: "task", id: task.requireID(), projectID: id, on: db)
+                }
+                if !lost.isEmpty {
+                    try await recordDelete(type: "task", id: task.requireID(), projectID: id,
+                        audience: Array(lost), kind: "revoke", on: db)
+                }
+            }
+        }
     }
 
     /// True if the ID was ever deleted; client-chosen IDs may not resurrect a tombstoned entity.
@@ -49,7 +98,10 @@ struct SyncProjectMiddleware: AsyncModelMiddleware {
     }
 
     func update(model: Project, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        let stored = try await Project.find(model.requireID(), on: db)
+        let before = stored?.parentID != model.parentID ? try await SyncRecorder.visibility(on: db) : nil
         try await next.update(model, on: db)
+        if let before { try await SyncRecorder.recordVisibilityChanges(from: before, on: db) }
         try await SyncRecorder.recordUpsert(type: "project", id: model.requireID(), projectID: model.requireID(), on: db)
     }
 
@@ -87,7 +139,20 @@ struct SyncTaskMiddleware: AsyncModelMiddleware {
     }
 
     func update(model: TodoTask, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        let stored = try await TodoTask.find(model.requireID(), on: db)
+        var lost = Set<UUID>()
+        if let stored, stored.projectID != model.projectID,
+           let source = try await Project.find(stored.projectID, on: db),
+           let target = try await Project.find(model.projectID, on: db) {
+            let old = Set(try await SyncRecorder.readers(of: source, on: db))
+            let new = Set(try await SyncRecorder.readers(of: target, on: db))
+            lost = old.subtracting(new)
+        }
         try await next.update(model, on: db)
+        if !lost.isEmpty {
+            try await SyncRecorder.recordDelete(type: "task", id: model.requireID(), projectID: model.projectID,
+                audience: Array(lost), kind: "revoke", on: db)
+        }
         try await SyncRecorder.recordUpsert(type: "task", id: model.requireID(), projectID: model.projectID, on: db)
     }
 

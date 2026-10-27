@@ -10,7 +10,7 @@ final class SyncChange: Model, @unchecked Sendable {
     @Field(key: "seq") var seq: Int
     @Field(key: "entity_type") var entityType: String // project | task
     @Field(key: "entity_id") var entityID: UUID
-    @Field(key: "kind") var kind: String // upsert | delete
+    @Field(key: "kind") var kind: String // upsert | delete | revoke
     @OptionalField(key: "project_id") var projectID: UUID?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     init() {}
@@ -19,8 +19,8 @@ final class SyncChange: Model, @unchecked Sendable {
     }
 }
 
-/// Who was allowed to read an object at the moment it was deleted. Tombstones cannot be authorized afterwards
-/// (the project row is gone), so the audience is frozen into the log.
+/// Frozen audience for a physical deletion or visibility loss. Current authorization cannot recover
+/// who previously had access, so tombstone recipients are persisted with the event.
 final class SyncTombstoneAudience: Model, @unchecked Sendable {
     static let schema = "sync_tombstone_audience"
     @ID(key: .id) var id: UUID?

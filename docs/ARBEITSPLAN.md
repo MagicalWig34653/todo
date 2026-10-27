@@ -49,5 +49,17 @@ Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell be
 
 ## Sync-Strang (26.10.2026)
 - [x] Backend: Änderungsfeed mit Cursor, Tombstones, idempotente Mutationen mit 409 (ADR 0009, `contracts/sync.yaml`); SQLite und MariaDB grün (88 Tests).
-- [ ] Zugriffsänderungen (Freigabe/Entzug/Verschieben) als Feedereignisse; Aufbewahrung/Kompaktierung.
+- [x] Zugriffsänderungen (Freigabe/Entzug/Verschieben) als Feedereignisse (27.10.2026, SQLite geprüft; MariaDB-Nachprüfung offen).
+- [ ] Aufbewahrung/Kompaktierung.
 - [ ] PWA-Offline-Cache und Apple-Client an Sync anbinden; Merge des Branches in `main`.
+
+## Sync-Sichtbarkeitsänderungen (27.10.2026)
+- Auftrag: Zugriffsgewinne und -verluste unter `lockSharingGraph` transaktional im DB-Feed erfassen; SQLite-SyncTests prüfen, Vertrag/ADR aktualisieren. Kein Commit, Docker oder Änderungen an web/.
+- Umsetzung: effektive Leser vor/nach Sharing- und Verschiebeoperationen vergleichen; Zugriffsverlust von echter Löschung unterscheiden.
+- Nächster Schritt: Implementierung und Regressionstests; MariaDB bleibt ungeprüft.
+
+### Abschluss Sync-Sichtbarkeit (27.10.2026)
+- [x] Effektive Sichtbarkeit transaktional vergleichen und Upserts/Entzug-Tombstones einschließlich Altbestand persistieren; erneute Freigabe, alternative Rechte und Elternredaktion berücksichtigen.
+- [x] SyncTests: 10 Tests, 1 MariaDB-Test übersprungen, 0 Fehler; separater nativer Swift-Build erfolgreich, YAML geparst, Diff-Whitespace geprüft. Reproduzierbarer Sandbox-Aufruf und Grenzen in STATUS.md.
+- [x] Vertrag 1.1.0 und ADR 0009 aktualisiert; keine neue Schema-Migration, interner `revoke`-Typ erfordert neue Leser auf allen Replikaten. `main`/`5bec1c5`, uncommitted; keine eigenen Jobs, kein Docker/Commit, fremde web/- und Screenshot-Änderungen erhalten.
+- [ ] Nächster Schritt: MariaDB-Konkurrenzabnahme, danach Clients anbinden und Vergleichskosten messen. Linux und echte Clients in diesem Auftrag ungeprüft.

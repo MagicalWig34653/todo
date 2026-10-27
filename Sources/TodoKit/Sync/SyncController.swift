@@ -88,10 +88,21 @@ struct SyncController: RouteCollection {
         let access = ProjectAccess(user: user, db: req.db)
         var result: [SyncChangeDTO] = []
         for row in rows {
-            if row.kind == "delete" {
+            if row.kind == "delete" || row.kind == "revoke" {
                 let allowed = try await SyncTombstoneAudience.query(on: req.db)
                     .filter(\.$seq == row.seq).filter(\.$userID == userID).count() > 0
                 if allowed {
+                    // A later regrant/move may have restored access. Never remove currently readable data
+                    // because of a historical revocation, including when the regrant is on another page.
+                    if row.kind == "revoke" {
+                        do {
+                            if row.entityType == "project" { _ = try await access.project(row.entityID) }
+                            else { _ = try await access.task(row.entityID) }
+                            continue
+                        } catch let error as any AbortError where error.status == .notFound || error.status == .forbidden {
+                            // Still inaccessible: deliver the frozen revocation audience's tombstone.
+                        }
+                    }
                     result.append(SyncChangeDTO(seq: row.seq, entityType: row.entityType, entityID: row.entityID,
                         kind: "delete", project: nil, task: nil))
                 }

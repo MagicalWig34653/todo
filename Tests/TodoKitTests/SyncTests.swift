@@ -174,6 +174,161 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(seen, 3)
     }
 
+    private func cursor(_ t: TestApp, _ token: String) async throws -> String {
+        let feed = try await changes(t, token)
+        return try XCTUnwrap(feed.body?["cursor"] as? String)
+    }
+
+    private func assertFeed(_ t: TestApp, _ token: String, after cursor: String,
+        upserts: Set<String> = [], deletes: Set<String> = [], file: StaticString = #filePath, line: UInt = #line) async throws {
+        let feed = try await changes(t, token, cursor)
+        XCTAssertEqual(feed.status, .ok, file: file, line: line)
+        for (kind, expected) in [("upsert", upserts), ("delete", deletes)] {
+            let actual = entries(feed.body).filter { $0["kind"] as? String == kind }
+                .compactMap { ($0["entityID"] as? String)?.lowercased() }
+            XCTAssertEqual(Set(actual), Set(expected.map { $0.lowercased() }), file: file, line: line)
+        }
+    }
+
+    func testGrantSubtreeRevocationRegrantAndPagingAcrossReplicas() async throws {
+        let t = try await TestApp.make(), replica = try await t.replica()
+        defer { Task { await t.shutdown(); await replica.shutdown() } }
+        let owner = try await account(t), guest = try await account(t), stranger = try await account(t)
+        let root = UUID().uuidString, child = UUID().uuidString, task = UUID().uuidString
+        _ = try await mutate(t, owner.token, "project.create", id: root, ["name": "Root"])
+        _ = try await mutate(t, owner.token, "project.create", id: child, ["name": "Child", "parentID": root])
+        _ = try await mutate(t, owner.token, "task.create", id: task, ["title": "Old task", "projectID": child])
+        let before = try await cursor(replica, guest.token)
+        let grant = try await t.json(.PUT, "/v1/projects/\(root)/grants",
+            ["principalType": "person", "principalID": guest.id, "role": "read"], token: owner.token)
+        XCTAssertEqual(grant.status, .ok)
+        let gid = try XCTUnwrap(grant.body?["id"] as? String)
+        try await assertFeed(replica, guest.token, after: before, upserts: [root, child, task])
+        let granted = try await cursor(replica, guest.token)
+        let removal = try await t.json(.DELETE, "/v1/projects/\(root)/grants/\(gid)", token: owner.token)
+        XCTAssertEqual(removal.status, .noContent)
+        try await assertFeed(replica, guest.token, after: granted, deletes: [root, child, task])
+        try await assertFeed(replica, owner.token, after: granted)
+        try await assertFeed(replica, stranger.token, after: before)
+        let revoked = try await cursor(replica, guest.token)
+        let deleted = try await SyncRecorder.wasDeleted(UUID(uuidString: task)!, on: replica.app.db)
+        XCTAssertFalse(deleted, "Revocation must not permanently reserve an entity ID")
+        _ = try await t.json(.PUT, "/v1/projects/\(root)/grants",
+            ["principalType": "person", "principalID": guest.id, "role": "read"], token: owner.token)
+        try await assertFeed(replica, guest.token, after: revoked, upserts: [root, child, task])
+        // Historical revocations cannot delete currently readable entities, even across page boundaries.
+        var pageCursor = before
+        var visible = Set<String>()
+        for _ in 0..<30 {
+            let page = try await replica.json(.GET, "/v1/sync/changes?cursor=\(pageCursor)&limit=1", token: guest.token)
+            for row in entries(page.body) {
+                XCTAssertEqual(row["kind"] as? String, "upsert")
+                visible.insert(try XCTUnwrap(row["entityID"] as? String).lowercased())
+            }
+            pageCursor = try XCTUnwrap(page.body?["cursor"] as? String)
+            if page.body?["hasMore"] as? Bool == false { break }
+        }
+        XCTAssertEqual(visible, Set([root, child, task].map { $0.lowercased() }))
+    }
+
+    func testTeamAcceptanceAndRemovalPreserveAlternativeAccess() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let owner = try await account(t), guest = try await account(t)
+        let root = UUID().uuidString, child = UUID().uuidString, task = UUID().uuidString
+        _ = try await mutate(t, owner.token, "project.create", id: root, ["name": "Root"])
+        _ = try await mutate(t, owner.token, "project.create", id: child, ["name": "Child", "parentID": root])
+        _ = try await mutate(t, owner.token, "task.create", id: task, ["title": "T", "projectID": child])
+        let team = try await t.json(.POST, "/v1/teams", ["name": "Team"], token: owner.token)
+        let teamID = try XCTUnwrap(team.body?["id"] as? String)
+        _ = try await t.json(.PUT, "/v1/projects/\(root)/grants",
+            ["principalType": "team", "principalID": teamID, "role": "read"], token: owner.token)
+        let before = try await cursor(t, guest.token)
+        _ = try await t.json(.PUT, "/v1/teams/\(teamID)/members", ["userID": guest.id, "isAdmin": false], token: owner.token)
+        try await assertFeed(t, guest.token, after: before)
+        let accepted = try await t.json(.POST, "/v1/teams/\(teamID)/accept", token: guest.token)
+        XCTAssertEqual(accepted.status, .noContent)
+        try await assertFeed(t, guest.token, after: before, upserts: [root, child, task])
+        _ = try await t.json(.PUT, "/v1/projects/\(child)/grants",
+            ["principalType": "person", "principalID": guest.id, "role": "read"], token: owner.token)
+        let granted = try await cursor(t, guest.token)
+        let removed = try await t.json(.DELETE, "/v1/teams/\(teamID)/members/\(guest.id)", token: owner.token)
+        XCTAssertEqual(removed.status, .noContent)
+        // Child stays visible, but its parent reference must now be redacted.
+        try await assertFeed(t, guest.token, after: granted, upserts: [child], deletes: [root])
+        let feed = try await changes(t, guest.token, granted)
+        let dto = entries(feed.body).first { $0["kind"] as? String == "upsert" }?["project"] as? [String: Any]
+        XCTAssertNil(dto?["parentID"] as? String)
+    }
+
+    func testTaskAndProjectMovesEmitVisibilityChanges() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let owner = try await account(t), sourceGuest = try await account(t), targetGuest = try await account(t)
+        let source = UUID().uuidString, target = UUID().uuidString, child = UUID().uuidString, task = UUID().uuidString
+        for id in [source, target] { _ = try await mutate(t, owner.token, "project.create", id: id, ["name": "Root"]) }
+        _ = try await mutate(t, owner.token, "project.create", id: child, ["name": "Child", "parentID": source])
+        _ = try await mutate(t, owner.token, "task.create", id: task, ["title": "T", "projectID": child])
+        for (project, guest) in [(source, sourceGuest), (target, targetGuest)] {
+            _ = try await t.json(.PUT, "/v1/projects/\(project)/grants",
+                ["principalType": "person", "principalID": guest.id, "role": "read"], token: owner.token)
+        }
+        let before = try await cursor(t, owner.token)
+        let moved = try await t.json(.PATCH, "/v1/tasks/\(task)", ["version": 1, "projectID": target], token: owner.token)
+        XCTAssertEqual(moved.status, .ok)
+        try await assertFeed(t, sourceGuest.token, after: before, deletes: [task])
+        try await assertFeed(t, targetGuest.token, after: before, upserts: [task])
+        try await assertFeed(t, owner.token, after: before, upserts: [task])
+        let back = try await mutate(t, owner.token, "task.update", id: task, ["version": 2, "projectID": child])
+        XCTAssertEqual(back.status, .ok)
+        let beforeProjectMove = try await cursor(t, owner.token)
+        let projectMove = try await mutate(t, owner.token, "project.update", id: child, ["version": 1, "parentID": target])
+        XCTAssertEqual(projectMove.status, .ok)
+        try await assertFeed(t, sourceGuest.token, after: beforeProjectMove, deletes: [child, task])
+        try await assertFeed(t, targetGuest.token, after: beforeProjectMove, upserts: [child, task])
+    }
+
+    func testInheritanceOwnershipAndRollback() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let owner = try await account(t), guest = try await account(t)
+        let root = UUID().uuidString, child = UUID().uuidString, task = UUID().uuidString
+        _ = try await mutate(t, owner.token, "project.create", id: root, ["name": "Root"])
+        _ = try await mutate(t, owner.token, "project.create", id: child, ["name": "Child", "parentID": root])
+        _ = try await mutate(t, owner.token, "task.create", id: task, ["title": "T", "projectID": child])
+        _ = try await t.json(.PUT, "/v1/projects/\(root)/grants",
+            ["principalType": "person", "principalID": guest.id, "role": "read"], token: owner.token)
+        let before = try await cursor(t, guest.token)
+        let restricted = try await t.json(.PUT, "/v1/projects/\(child)/inheritance",
+            ["version": 1, "inherits": false], token: owner.token)
+        XCTAssertEqual(restricted.status, .ok)
+        try await assertFeed(t, guest.token, after: before, deletes: [child, task])
+        let restrictedCursor = try await cursor(t, guest.token)
+        let transferred = try await t.json(.PUT, "/v1/projects/\(child)/owner",
+            ["version": 2, "ownerType": "person", "ownerID": guest.id], token: owner.token)
+        XCTAssertEqual(transferred.status, .ok)
+        try await assertFeed(t, guest.token, after: restrictedCursor, upserts: [child, task])
+        try await assertFeed(t, owner.token, after: restrictedCursor, deletes: [child, task])
+        let head = try await cursor(t, guest.token)
+        do {
+            try await t.app.db.transaction { db in
+                try await lockSharingGraph(on: db)
+                let before = try await SyncRecorder.visibility(on: db)
+                // Change ownership inside the transaction, then abort after recording its visibility effects.
+                let storedPolicy = try await ProjectSharing.query(on: db).filter(\.$projectID == UUID(uuidString: child)!).first()
+                let policy = try XCTUnwrap(storedPolicy)
+                policy.ownerID = UUID(uuidString: owner.id)!
+                try await policy.save(on: db)
+                try await SyncRecorder.recordVisibilityChanges(from: before, on: db)
+                throw Abort(.conflict)
+            }
+            XCTFail("Expected rollback")
+        } catch let error as Abort { XCTAssertEqual(error.status, .conflict) }
+        let afterRollback = try await cursor(t, guest.token)
+        XCTAssertEqual(afterRollback, head)
+        try await assertFeed(t, guest.token, after: head)
+    }
+
     func testConcurrentDuplicateDeliveriesAcrossReplicasApplyOnce() async throws {
         try XCTSkipUnless(TestApp.useMariaDB, "needs real row locking across connections")
         let a = try await TestApp.make()
