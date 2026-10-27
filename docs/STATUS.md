@@ -226,3 +226,12 @@ Offen: Rechteänderungen (Freigabe/Entzug, Verschieben in unsichtbares Projekt) 
 
 ## Screenshots (27.10.2026)
 Echte PWA-Screenshots (Desktop 1360x860, Mobil 390x844, deutsche Demo-Daten) liegen in `docs-site/screenshots/` und sind in `README.md` und `docs-site/index.html` eingebunden. Erzeugt mit `web/screenshots/capture.mjs` (Playwright/Chromium, virtueller Authenticator) gegen einen frischen Compose-Stack (Projekt `todo-shots`, Ports DB 23507, S3 29291, Backend 28281, `RP_ORIGIN=http://localhost:25373`, eigenes Image-Tag; Vite auf 25373 mit `BACKEND_URL`): `BASE_URL=http://localhost:25373 OUT_DIR=../docs-site/screenshots node screenshots/capture.mjs` in `web/`. Stack danach mit `down -v` entfernt. Befunde: Aufgabenzeilen laufen auf 390 px Breite rechts über den Rand (Schaltfläche "Bearbeiten" abgeschnitten); Mobil-Projektmenü nicht aufgenommen.
+
+## Checkpoint 27.10.2026 (Veröffentlichung, CI, TestFlight, AASA)
+
+- Repos public: MagicalWig34653/todo und MagicalWig34653/todo-apple (nur `main`; Historie auf noreply-Adresse umgeschrieben). Pages: https://magicalwig34653.github.io/todo/.
+- CI grün (Backend SQLite + PWA) nach Linux-Fixes (Typprüfer-Timeout in VirtualAuthenticator, portabler Temp-Pfad in AttachmentTests). Docker publish nach ghcr.io/magicalwig34653/todo-backend grün. MariaDB-Suite läuft nur lokal.
+- Swarm-Stack: ghcr-Image, externe DB/S3, `deploy/swarm/stack.env.example`.
+- Backend liefert `/.well-known/apple-app-site-association` aus `AASA_APP_IDS` (404 wenn leer).
+- Apple: App-ID `de.linolaske.todo` angelegt, signierter Export für TestFlight erfolgreich (nicht hochgeladen); App-Store-Connect-Eintrag vom Nutzer angelegt.
+- Offen: Backend unter todo.linolaske.de betreiben (Nutzer), Upload des Builds, Passkey-Test auf Gerät, macOS-App-ID, mobiles Layout der Aufgabenzeilen (390 px), Apple Etappe 2 (Codex-Job ohne Ergebnis).
