@@ -17,7 +17,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-image=${BACKEND_IMAGE:-ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-latest}}
+image=${BACKEND_IMAGE:-ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-edge}}
 # BACKEND_IMAGE (full reference) only overrides the migration image and must match an override file
 # if the stack image is overridden too (the smoke test does this). Extra stack files (e.g. overrides) may be passed as space-separated STACK_EXTRA_FILES.
 compose_args=(-c stack.yaml)

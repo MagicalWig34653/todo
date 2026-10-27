@@ -4,7 +4,7 @@ version: '3.8'
 # Configure via deploy/swarm/stack.env.example (copy, fill, `set -a; . file; set +a`)
 # and the external Swarm secrets referenced at the bottom.
 x-backend: &backend
-  image: ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-latest}
+  image: ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-edge}
   networks: [internal]
   environment: &environment
     DATABASE_DRIVER: mariadb
