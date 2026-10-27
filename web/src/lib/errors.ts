@@ -17,6 +17,7 @@ export function describeError(e: unknown): string {
 			const key = `error.${e.reason}`;
 			return key in de ? errorMessage(e.reason) : t('error.upload_failed');
 		}
+		if (e.status === 422 && !(`error.${e.reason}` in de)) return t('error.unprocessable');
 		return errorMessage(e.reason);
 	}
 	return t('error.generic');

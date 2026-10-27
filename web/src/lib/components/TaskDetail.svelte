@@ -4,6 +4,7 @@
 	import TaskActivity from './TaskActivity.svelte';
 	import TaskAttachments from './TaskAttachments.svelte';
 	import TaskComments from './TaskComments.svelte';
+	import TaskDependencies from './TaskDependencies.svelte';
 	import TaskCriteria from './TaskCriteria.svelte';
 	import TaskLabels from './TaskLabels.svelte';
 	import TaskPlanning from './TaskPlanning.svelte';
@@ -17,6 +18,10 @@
 	<section class="flex flex-col gap-1">
 		<h3 class="text-sm font-medium">{t('planning.title')}</h3>
 		<TaskPlanning taskID={task.id} onsaved={async () => { await onplanned?.(); bump(); }} />
+	</section>
+	<section class="flex flex-col gap-1">
+		<h3 class="text-sm font-medium">{t('task.section.dependencies')}</h3>
+		<TaskDependencies {task} onchanged={bump} />
 	</section>
 	<section class="flex flex-col gap-1">
 		<h3 class="text-sm font-medium">{t('task.section.labels')}</h3>

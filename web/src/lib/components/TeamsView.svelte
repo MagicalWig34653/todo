@@ -5,6 +5,8 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { memberLabel } from '#lib/people.js';
+	import PersonPicker from './PersonPicker.svelte';
 
 	let teams = $state<Team[]>([]);
 	let invitations = $state<TeamMembership[]>([]);
@@ -12,6 +14,7 @@
 	let members = $state<TeamMembership[]>([]);
 	let newName = $state('');
 	let inviteID = $state('');
+	let pickerKey = $state(0);
 
 	const selected = $derived(teams.find((x) => x.id === selectedID) ?? null);
 	const iAmAdmin = $derived(members.some((m) => m.userID === auth.user?.id && m.isAdmin && m.accepted));
@@ -42,7 +45,10 @@
 		e.preventDefault();
 		const id = inviteID.trim();
 		if (!id || !selectedID) return;
-		if (await attempt(async () => { await api.putTeamMember(selectedID!, id, false); await loadMembers(); }, loadMembers)) inviteID = '';
+		if (await attempt(async () => { await api.putTeamMember(selectedID!, id, false); await loadMembers(); }, loadMembers)) {
+			inviteID = '';
+			pickerKey++;
+		}
 	}
 	const setAdmin = (m: TeamMembership, isAdmin: boolean) =>
 		attempt(async () => { await api.putTeamMember(m.teamID, m.userID, isAdmin); await loadMembers(); }, loadMembers);
@@ -57,8 +63,8 @@
 		<div class="flex flex-col gap-1">
 			<h3 class="text-sm font-medium">{t('teams.invitations')}</h3>
 			{#each invitations as m (m.id)}
-				<div class="flex items-center gap-2 rounded-md border p-2 text-sm">
-					<span class="flex-1">{t('teams.invitedTo', { name: teams.find((x) => x.id === m.teamID)?.name ?? t('teams.unknownTeam') })}</span>
+				<div class="flex items-center gap-2 rounded-md border p-2 text-sm" data-testid="team-invitation">
+					<span class="flex-1">{t('teams.invitedTo', { name: m.teamName ?? teams.find((x) => x.id === m.teamID)?.name ?? t('teams.unknownTeam') })}</span>
 					<Button size="sm" onclick={() => accept(m)}>{t('teams.accept')}</Button>
 				</div>
 			{/each}
@@ -85,7 +91,7 @@
 			<ul class="flex flex-col gap-1">
 				{#each members as m (m.id)}
 					<li class="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm" data-testid="team-member">
-						<span class="flex-1 font-mono text-xs break-all">{m.userID === auth.user?.id ? t('teams.you') : m.userID}</span>
+						<span class="flex-1 break-all" title={m.userID}>{memberLabel(m, auth.user?.id, t('teams.you'))}</span>
 						{#if m.userID === selected.founderID}<span class="text-muted-foreground text-xs">{t('teams.founder')}</span>{/if}
 						{#if !m.accepted}<span class="text-muted-foreground text-xs">{t('teams.pending')}</span>{/if}
 						{#if m.isAdmin}<span class="bg-muted rounded px-1.5 py-0.5 text-xs">{t('teams.admin')}</span>{/if}
@@ -101,11 +107,10 @@
 				{/each}
 			</ul>
 			{#if iAmAdmin}
-				<form class="flex gap-2" onsubmit={invite}>
-					<Input bind:value={inviteID} placeholder={t('teams.memberID')} aria-label={t('teams.memberID')} />
-					<Button type="submit" size="lg" variant="outline">{t('teams.invite')}</Button>
+				<form class="flex items-start gap-2" onsubmit={invite}>
+					{#key pickerKey}<PersonPicker bind:value={inviteID} idLabel={t('teams.memberID')} />{/key}
+					<Button type="submit" size="lg" variant="outline" disabled={!inviteID.trim()}>{t('teams.invite')}</Button>
 				</form>
-				<p class="text-muted-foreground text-xs">{t('teams.memberIDHint')}</p>
 			{/if}
 		</div>
 	{:else if teams.length > 0}

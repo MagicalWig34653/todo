@@ -67,6 +67,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      # Attachments are stored through the backend, so S3 must be up before it serves requests.
+      s3:
+        condition: service_started
     environment: *backend-env
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-28080}:8080"

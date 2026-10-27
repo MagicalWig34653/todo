@@ -1,10 +1,18 @@
 <script lang="ts">
-	import type { PlanningTask } from '#lib/api.js';
+	import type { TaskStatus } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { formatWhen, isOverdue } from '#lib/planning.js';
 
-	let { pt }: { pt: PlanningTask } = $props();
-	const done = $derived(pt.task.status === 'done');
+	/** Structural: works for `PlanningTask` entries and for task-list entries with a planning summary. */
+	interface Chips {
+		priority: number;
+		dueAt?: string | null;
+		plannedAt?: string | null;
+		hasRecurrence?: boolean;
+		reminderCount?: number;
+	}
+	let { pt, status }: { pt: Chips; status: TaskStatus } = $props();
+	const done = $derived(status === 'done');
 </script>
 
 {#if pt.priority > 0}
@@ -27,5 +35,13 @@
 {#if pt.plannedAt}
 	<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs" data-testid="chip-planned">
 		{t('planning.planned')} {formatWhen(pt.plannedAt)}
+	</span>
+{/if}
+{#if pt.hasRecurrence}
+	<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs" data-testid="chip-recurrence">{t('planning.chip.recurrence')}</span>
+{/if}
+{#if pt.reminderCount}
+	<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs" data-testid="chip-reminders">
+		{t('planning.chip.reminders', { count: pt.reminderCount })}
 	</span>
 {/if}

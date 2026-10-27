@@ -23,6 +23,15 @@ export interface Project {
 	version: number;
 }
 export type TaskStatus = 'open' | 'in_progress' | 'in_review' | 'done';
+/** Compact planning data that `GET /tasks` attaches to every list entry. */
+export interface TaskPlanningSummary {
+	dueAt?: string | null;
+	plannedAt?: string | null;
+	priority: number;
+	position: number;
+	hasRecurrence: boolean;
+	reminderCount: number;
+}
 export interface Task {
 	id: string;
 	projectID: string;
@@ -30,6 +39,22 @@ export interface Task {
 	description: string;
 	status: TaskStatus;
 	version: number;
+	/** Only present in task lists. */
+	planning?: TaskPlanningSummary;
+}
+export interface DirectoryUser {
+	id: string;
+	displayName: string;
+}
+export interface Milestone {
+	id: string;
+	projectID: string;
+	title: string;
+	dueAt?: string | null;
+}
+export interface MilestoneWithTasks {
+	milestone: Milestone;
+	tasks: Task[];
 }
 
 export type Role = 'read' | 'comment' | 'edit' | 'manage';
@@ -45,6 +70,10 @@ export interface TeamMembership {
 	userID: string;
 	isAdmin: boolean;
 	accepted: boolean;
+	/** Only in the invitation list. */
+	teamName?: string | null;
+	/** Only in the member list. */
+	displayName?: string | null;
 }
 export interface ProjectGrant {
 	id: string;
@@ -114,6 +143,7 @@ export interface Comment {
 	id: string;
 	taskID: string;
 	authorID: string;
+	authorName?: string | null;
 	body: string;
 	version: number;
 }
@@ -129,6 +159,7 @@ export interface Activity {
 	sequence: number;
 	actorType: 'Person' | 'Integration' | 'Run';
 	actorID: string;
+	actorName?: string | null;
 	kind: string;
 	subjectID?: string | null;
 	createdAt?: string | null;
@@ -298,6 +329,20 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		today: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/today${query({ timeZone })}`),
 		upcoming: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/upcoming${query({ timeZone })}`),
 		upNext: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/up-next${query({ timeZone })}`),
+		dependencies: (taskID: string) => request<Task[]>('GET', `/planning/tasks/${taskID}/dependencies`),
+		addDependency: (taskID: string, prerequisiteID: string) =>
+			request<void>('PUT', `/planning/tasks/${taskID}/dependencies`, { prerequisiteID }),
+		removeDependency: (taskID: string, prerequisiteID: string) =>
+			request<void>('DELETE', `/planning/tasks/${taskID}/dependencies/${prerequisiteID}`),
+		milestones: (projectID: string) =>
+			request<MilestoneWithTasks[]>('GET', `/planning/milestones${query({ projectID })}`),
+		createMilestone: (projectID: string, title: string, dueAt: string | null) =>
+			request<Milestone>('POST', '/planning/milestones', { projectID, title, dueAt }),
+		deleteMilestone: (id: string) => request<void>('DELETE', `/planning/milestones/${id}`),
+		assignMilestoneTask: (milestoneID: string, taskID: string) =>
+			request<void>('PUT', `/planning/milestones/${milestoneID}/tasks/${taskID}`),
+		unassignMilestoneTask: (milestoneID: string, taskID: string) =>
+			request<void>('DELETE', `/planning/milestones/${milestoneID}/tasks/${taskID}`),
 
 		// Discovery (contracts/discovery.yaml)
 		search: (criteria: Criteria, cursor?: string | null) =>
@@ -309,6 +354,12 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		listFilters: (cursor?: string | null) =>
 			request<Page<SavedFilter>>('GET', `/filters${query({ cursor, limit: 100 })}`),
 		createFilter: (name: string, criteria: Criteria) => request<SavedFilter>('POST', '/filters', { name, criteria }),
+		updateFilter: (f: SavedFilter, changes: { name?: string; criteria?: Criteria }) =>
+			request<SavedFilter>('PATCH', `/filters/${f.id}`, {
+				name: changes.name ?? f.name,
+				criteria: changes.criteria ?? f.criteria,
+				version: f.version
+			}),
 		deleteFilter: (id: string) => request<void>('DELETE', `/filters/${id}`),
 		filterResults: (id: string, cursor?: string | null) =>
 			request<Page<SearchHit>>('GET', `/filters/${id}/results${query({ cursor })}`),
@@ -338,6 +389,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<Page<Activity>>('GET', `/tasks/${taskID}/activity${query({ cursor, limit: 100 })}`),
 
 		// Sharing (contracts/sharing.yaml)
+		/** Restricted directory: only people with an existing relation; `q` needs at least two characters. */
+		searchUsers: (q: string) => request<DirectoryUser[]>('GET', `/users/search${query({ q, limit: 8 })}`),
 		listTeams: () => request<Team[]>('GET', '/teams'),
 		createTeam: (name: string) => request<Team>('POST', '/teams', { name }),
 		teamInvitations: () => request<TeamMembership[]>('GET', '/team-invitations'),

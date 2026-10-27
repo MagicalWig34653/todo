@@ -4,6 +4,7 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
+	import { personName } from '#lib/people.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	let { taskID, refreshKey = 0 }: { taskID: string; refreshKey?: number } = $props();
@@ -36,7 +37,9 @@
 		<li class="flex flex-wrap gap-x-2" data-testid="activity">
 			<span class="text-muted-foreground">{a.createdAt ? formatWhen(a.createdAt) : ''}</span>
 			<span>{label(a.kind)}</span>
-			<span class="text-muted-foreground">({t(`activity.actor.${a.actorType}` as MessageKey)})</span>
+			<span class="text-muted-foreground" data-testid="activity-actor">
+				({a.actorType === 'Person' ? personName(a.actorName, t('activity.actor.Person')) : t(`activity.actor.${a.actorType}` as MessageKey)})
+			</span>
 		</li>
 	{/each}
 </ol>

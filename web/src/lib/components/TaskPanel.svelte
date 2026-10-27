@@ -6,6 +6,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import TaskDetail from './TaskDetail.svelte';
+	import TaskChips from './TaskChips.svelte';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	let { project }: { project: Project } = $props();
@@ -128,8 +129,12 @@
 					</Button>
 				</div>
 
+				{#if task.planning && (task.planning.priority > 0 || task.planning.dueAt || task.planning.plannedAt || task.planning.hasRecurrence || task.planning.reminderCount > 0)}
+					<div class="mt-1 flex flex-wrap gap-1 pl-7" data-testid="task-chips"><TaskChips pt={task.planning} status={task.status} /></div>
+				{/if}
+
 				{#if detailID === task.id}
-					<TaskDetail {task} />
+					<TaskDetail {task} onplanned={load} />
 				{/if}
 
 				{#if editingID === task.id}

@@ -4,6 +4,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import PersonPicker from './PersonPicker.svelte';
 
 	let { project, onchanged }: { project: Project; onchanged: () => unknown } = $props();
 
@@ -15,6 +16,7 @@
 	let canManage = $state(true);
 	let type = $state<PrincipalType>('person');
 	let personID = $state('');
+	let pickerKey = $state(0);
 	let teamID = $state('');
 	let role = $state<Role>('read');
 	let checkID = $state('');
@@ -47,7 +49,10 @@
 		e.preventDefault();
 		const id = type === 'person' ? personID.trim() : teamID;
 		if (!id) return;
-		if (await attempt(async () => { await api.putGrant(project.id, type, id, role); await load(); }, load)) personID = '';
+		if (await attempt(async () => { await api.putGrant(project.id, type, id, role); await load(); }, load)) {
+			personID = '';
+			pickerKey++;
+		}
 	}
 	const revoke = (g: ProjectGrant) => attempt(async () => { await api.deleteGrant(project.id, g.id); await load(); }, load);
 	const toggleInherit = () =>
@@ -111,7 +116,7 @@
 				<option value="team">{t('sharing.team')}</option>
 			</select>
 			{#if type === 'person'}
-				<Input class="max-w-xs" bind:value={personID} placeholder={t('sharing.personID')} aria-label={t('sharing.personID')} />
+				{#key pickerKey}<PersonPicker bind:value={personID} idLabel={t('sharing.personID')} />{/key}
 			{:else}
 				<select class="border-input bg-background h-9 rounded-md border px-2 text-sm" aria-label={t('sharing.team')} bind:value={teamID}>
 					<option value="">{t('sharing.pickTeam')}</option>

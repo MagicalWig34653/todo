@@ -21,6 +21,8 @@
 	let filterName = $state('');
 	let labelName = $state('');
 	let deletingLabelID = $state<string | null>(null);
+	let renamingID = $state<string | null>(null);
+	let renameDraft = $state('');
 
 	const criteria = $derived<Criteria>({
 		...(q.trim() ? { q: q.trim() } : {}),
@@ -70,6 +72,18 @@
 			filters = filters.filter((x) => x.id !== f.id);
 			if (activeFilter?.id === f.id) activeFilter = null;
 		});
+	const replaceFilter = (u: SavedFilter) => {
+		filters = filters.map((x) => (x.id === u.id ? u : x));
+		if (activeFilter?.id === u.id) activeFilter = u;
+	};
+	async function renameFilter(f: SavedFilter) {
+		const name = renameDraft.trim();
+		if (!name) return;
+		if (await attempt(async () => replaceFilter(await api.updateFilter(f, { name })), loadMeta)) renamingID = null;
+	}
+	/** Overwrites the stored criteria with the ones currently in the form. */
+	const overwriteFilter = (f: SavedFilter) =>
+		attempt(async () => replaceFilter(await api.updateFilter(f, { criteria })), loadMeta);
 	async function addLabel(e: Event) {
 		e.preventDefault();
 		const name = labelName.trim();
@@ -135,9 +149,19 @@
 		{#if filters.length === 0}<p class="text-muted-foreground text-xs">{t('search.filters.empty')}</p>{/if}
 		<ul class="flex flex-wrap gap-1">
 			{#each filters as f (f.id)}
-				<li class="bg-secondary flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" data-testid="saved-filter">
-					<button aria-label={t('search.runFilter', { name: f.name })} onclick={() => applyFilter(f)}>{f.name}</button>
-					<button class="text-muted-foreground" aria-label={t('search.deleteFilter', { name: f.name })} onclick={() => deleteFilter(f)}>×</button>
+				<li class="bg-secondary flex flex-wrap items-center gap-1 rounded-full px-2 py-0.5 text-xs" data-testid="saved-filter">
+					{#if renamingID === f.id}
+						<Input class="h-7 w-40 text-xs" bind:value={renameDraft} aria-label={t('search.renameFilter', { name: f.name })} />
+						<button onclick={() => renameFilter(f)}>{t('common.save')}</button>
+						<button onclick={() => (renamingID = null)}>{t('common.cancel')}</button>
+					{:else}
+						<button aria-label={t('search.runFilter', { name: f.name })} onclick={() => applyFilter(f)}>{f.name}</button>
+						<button class="text-muted-foreground" aria-label={t('search.renameFilter', { name: f.name })} onclick={() => ((renamingID = f.id), (renameDraft = f.name))}>{t('common.rename')}</button>
+						{#if hasCriteria}
+							<button class="text-muted-foreground" aria-label={t('search.overwriteFilter', { name: f.name })} onclick={() => overwriteFilter(f)}>{t('search.overwrite')}</button>
+						{/if}
+						<button class="text-muted-foreground" aria-label={t('search.deleteFilter', { name: f.name })} onclick={() => deleteFilter(f)}>×</button>
+					{/if}
 				</li>
 			{/each}
 		</ul>

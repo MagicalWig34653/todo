@@ -3,6 +3,7 @@
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { personName } from '#lib/people.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
@@ -59,7 +60,7 @@
 			{@const mine = c.authorID === auth.user?.id}
 			<li class="bg-muted/40 rounded-md p-2 text-sm" data-testid="comment">
 				<div class="text-muted-foreground mb-1 flex items-center justify-between text-xs">
-					<span>{mine ? t('comments.mine') : t('comments.other')}</span>
+					<span data-testid="comment-author">{mine ? t('comments.mine') : personName(c.authorName, t('comments.other'))}</span>
 					{#if mine && editingID !== c.id}
 						<span class="flex gap-1">
 							<Button size="xs" variant="ghost" onclick={() => ((editingID = c.id), (draft = c.body))}>{t('comments.edit')}</Button>

@@ -14,10 +14,11 @@
 	import SearchView from './SearchView.svelte';
 	import TeamsView from './TeamsView.svelte';
 	import SharingPanel from './SharingPanel.svelte';
+	import MilestonesPanel from './MilestonesPanel.svelte';
 	import AccountView from './AccountView.svelte';
 
 	type View = 'project' | 'today' | 'upcoming' | 'upNext' | 'search' | 'teams' | 'account';
-	type Tab = 'list' | 'board' | 'sharing';
+	type Tab = 'list' | 'board' | 'milestones' | 'sharing';
 	const VIEWS: View[] = ['today', 'upcoming', 'upNext', 'search', 'teams', 'account'];
 	let view = $state<View>('project');
 	let tab = $state<Tab>('list');
@@ -171,7 +172,7 @@
 				<AccountView />
 			{:else if selected}
 				<div class="mb-3 flex gap-1" role="tablist">
-					{#each ['list', 'board', 'sharing'] as const as tb (tb)}
+					{#each ['list', 'board', 'milestones', 'sharing'] as const as tb (tb)}
 						<Button size="sm" role="tab" aria-selected={tab === tb} variant={tab === tb ? 'default' : 'outline'} onclick={() => (tab = tb)}>
 							{t(`view.${tb}` as MessageKey)}
 						</Button>
@@ -180,6 +181,8 @@
 				{#if tab === 'board'}
 					<h2 class="mb-3 text-xl font-semibold" data-testid="task-heading">{selected.name}</h2>
 					<BoardView project={selected} />
+				{:else if tab === 'milestones'}
+					<MilestonesPanel project={selected} />
 				{:else if tab === 'sharing'}
 					<h2 class="mb-3 text-xl font-semibold" data-testid="task-heading">{selected.name}</h2>
 					<SharingPanel project={selected} onchanged={load} />

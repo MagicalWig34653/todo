@@ -206,6 +206,154 @@ test('teams, sharing and visibility', async () => {
 	await expect(page.getByTestId('grant')).toHaveCount(0);
 });
 
+test('recurrence, reminders, dependencies, milestones and filter changes', async () => {
+	await openProject('Küche');
+	await page.getByRole('tab', { name: 'Liste' }).click();
+	const task = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
+	await task.getByRole('button', { name: 'Details' }).click();
+	const detail = task.getByTestId('task-detail');
+
+	// A recurrence needs a date: refused before any request.
+	await detail.getByLabel('Häufigkeit der Wiederholung').selectOption('weekly');
+	await detail.getByRole('button', { name: 'Planung speichern' }).click();
+	await expect(detail.getByTestId('recurrence-error')).toBeVisible();
+
+	await detail.getByLabel('Fällig').fill(localToday(22));
+	await detail.getByLabel('Alle … Wochen').fill('2');
+	await detail.getByLabel('Neue Erinnerung').fill(localToday(21));
+	await detail.getByRole('button', { name: 'Erinnerung hinzufügen' }).click();
+	await expect(detail.getByTestId('reminder')).toHaveCount(1);
+	const [saved] = await Promise.all([
+		page.waitForResponse((r) => r.url().includes('/v1/planning/tasks/') && r.request().method() === 'PUT'),
+		detail.getByRole('button', { name: 'Planung speichern' }).click()
+	]);
+	expect(saved.status(), await saved.text()).toBe(200);
+	// The list shows the compact planning summary delivered with the task list.
+	await expect(task.getByTestId('task-chips')).toContainText('Wiederholt sich');
+	await expect(task.getByTestId('task-chips')).toContainText('Erinnerungen: 1');
+
+	await page.reload();
+	await openProject('Küche');
+	const again = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
+	await again.getByRole('button', { name: 'Details' }).click();
+	await expect(again.getByLabel('Häufigkeit der Wiederholung')).toHaveValue('weekly');
+	await expect(again.getByLabel('Alle … Wochen')).toHaveValue('2');
+	await expect(again.getByTestId('reminder')).toHaveCount(1);
+
+	// Dependencies: Putzen needs Einkaufen; the reverse direction would be a cycle.
+	await again.getByLabel('Voraussetzung wählen').selectOption({ label: 'Einkaufen' });
+	await again.getByRole('button', { name: 'Voraussetzung hinzufügen' }).click();
+	await expect(again.getByTestId('dependency')).toContainText('Einkaufen');
+	await again.getByRole('button', { name: 'Details' }).click();
+	const shop = page.getByTestId('task-item').filter({ hasText: 'Einkaufen' });
+	await shop.getByRole('button', { name: 'Details' }).click();
+	await shop.getByLabel('Voraussetzung wählen').selectOption({ label: 'Putzen' });
+	await shop.getByRole('button', { name: 'Voraussetzung hinzufügen' }).click();
+	await expect(page.getByTestId('notice')).toContainText('Kreis');
+	await expect(shop.getByTestId('dependency')).toHaveCount(0);
+
+	// Milestone with a task and progress.
+	await page.getByRole('tab', { name: 'Meilensteine' }).click();
+	await page.getByLabel('Neuer Meilenstein').fill('Frühjahrsputz');
+	await page.getByRole('button', { name: 'Meilenstein anlegen' }).click();
+	const ms = page.getByTestId('milestone').filter({ hasText: 'Frühjahrsputz' });
+	await expect(ms).toBeVisible();
+	await ms.getByLabel('Aufgabe zuordnen').selectOption({ label: 'Putzen' });
+	await ms.getByRole('button', { name: 'Zuordnen' }).click();
+	await expect(ms.getByTestId('milestone-task')).toContainText('Putzen');
+	await expect(ms.getByTestId('milestone-progress')).toHaveText('0 von 1 erledigt');
+
+	// Saved filter: rename, then overwrite with the current search.
+	await page.getByRole('button', { name: 'Suche', exact: true }).click();
+	await page.getByRole('button', { name: 'Filter Putzliste umbenennen' }).click();
+	await page.getByLabel('Filter Putzliste umbenennen').fill('Putzplan');
+	await page.getByTestId('saved-filter').getByRole('button', { name: 'Speichern' }).click();
+	await expect(page.getByTestId('saved-filter')).toContainText('Putzplan');
+	await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('Einkauf');
+	await page.getByRole('button', { name: 'Filter Putzplan mit der aktuellen Suche überschreiben' }).click();
+	await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('');
+	await page.getByRole('button', { name: 'Filter Putzplan anwenden' }).click();
+	await expect(page.getByTestId('search-hit').filter({ hasText: 'Einkaufen' })).toBeVisible();
+	await expect(page.getByTestId('search-hit').filter({ hasText: 'Putzen' })).toHaveCount(0);
+});
+
+test('invited person: directory search, team invitation name, author and actor names', async () => {
+	const invitation = await page.request.post('/v1/invitations', {
+		data: {},
+		headers: { 'Content-Type': 'application/json' }
+	});
+	expect(invitation.ok(), await invitation.text()).toBeTruthy();
+	const { token } = (await invitation.json()) as { token: string };
+
+	const guestCtx = await page.context().browser()!.newContext();
+	try {
+		const guest = await guestCtx.newPage();
+		const cdp = await guestCtx.newCDPSession(guest);
+		await cdp.send('WebAuthn.enable');
+		await cdp.send('WebAuthn.addVirtualAuthenticator', {
+			options: {
+				protocol: 'ctap2',
+				transport: 'internal',
+				hasResidentKey: true,
+				hasUserVerification: true,
+				isUserVerified: true,
+				automaticPresenceSimulation: true
+			}
+		});
+		await guest.goto(`/setup?token=${token}`);
+		await guest.getByLabel('Anzeigename').fill('Berta Beispiel');
+		await guest.getByRole('button', { name: 'Passkey erstellen' }).click();
+		await expect(guest.getByRole('button', { name: 'Abmelden' })).toBeVisible();
+
+		const guestID = ((await (await guest.request.get('/v1/me')).json()) as { id: string }).id;
+
+		// First contact: there is no global directory, so the search finds nobody and the account ID is used.
+		await page.getByRole('button', { name: 'Teams', exact: true }).click();
+		await page.getByTestId('team-item').filter({ hasText: 'Familie' }).click();
+		await page.getByLabel('Person suchen (Name)').fill('Bert');
+		await expect(page.getByText('Niemand gefunden.')).toBeVisible();
+		await page.getByLabel('Konto-ID der Person').fill(guestID);
+		await page.getByRole('button', { name: 'Einladen' }).click();
+		const row = page.getByTestId('team-member').filter({ hasText: 'Berta Beispiel' });
+		await expect(row).toContainText('Einladung offen');
+
+		// The invitee sees the team name, not just an ID.
+		await guest.getByRole('button', { name: 'Teams', exact: true }).click();
+		await expect(guest.getByTestId('team-invitation')).toContainText('Einladung zum Team Familie');
+
+		// Now a relation exists: she is found by name and can be shared a project with.
+		await openProject('Haushalt');
+		await page.getByRole('tab', { name: 'Liste' }).click();
+		await page.getByLabel('Neue Aufgabe, Enter zum Anlegen').fill('Wochenplan');
+		await page.keyboard.press('Enter');
+		await expect(page.getByTestId('task-item').filter({ hasText: 'Wochenplan' })).toBeVisible();
+		await page.getByRole('tab', { name: 'Freigaben' }).click();
+		await page.getByLabel('Person suchen (Name)').fill('Berta');
+		await page.getByTestId('person-results').getByRole('button', { name: 'Berta Beispiel' }).click();
+		await page.getByLabel('Deine Rolle').selectOption('comment');
+		await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
+		await expect(page.getByTestId('grant')).toHaveCount(1);
+
+		await guest.reload();
+		await guest.getByTestId('project-item').getByRole('button', { name: 'Haushalt', exact: true }).first().click();
+		const guestTask = guest.getByTestId('task-item').filter({ hasText: 'Wochenplan' });
+		await guestTask.getByRole('button', { name: 'Details' }).click();
+		await guestTask.getByLabel('Kommentar schreiben').fill('Hallo vom Gast');
+		await guestTask.getByRole('button', { name: 'Kommentieren' }).click();
+		await expect(guestTask.getByTestId('comment')).toContainText('Hallo vom Gast');
+
+		// The admin sees the author's name on the comment and the actor's name in the activity.
+		await page.getByRole('tab', { name: 'Liste' }).click();
+		const mine = page.getByTestId('task-item').filter({ hasText: 'Wochenplan' });
+		await mine.getByRole('button', { name: 'Details' }).click();
+		await expect(mine.getByTestId('comment-author')).toHaveText('Berta Beispiel');
+		await expect(mine.getByTestId('activity-actor').filter({ hasText: 'Berta Beispiel' }).first()).toBeVisible();
+		await expect(mine.getByTestId('activity-actor').filter({ hasText: 'Test Admin' }).first()).toBeVisible();
+	} finally {
+		await guestCtx.close();
+	}
+});
+
 test('attachment upload with preview', async () => {
 	await openProject('Küche');
 	await page.getByRole('tab', { name: 'Liste' }).click();

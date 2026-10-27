@@ -44,7 +44,7 @@
 				{#each cols[status] as pt (pt.task.id)}
 					<li class="bg-background rounded-md border p-2 text-sm" data-testid="board-card">
 						<p>{pt.task.title}</p>
-						<div class="mt-1 flex flex-wrap gap-1"><TaskChips {pt} /></div>
+						<div class="mt-1 flex flex-wrap gap-1"><TaskChips {pt} status={pt.task.status} /></div>
 						<div class="mt-1 flex flex-wrap items-center gap-1">
 							<Button size="xs" variant="outline" aria-label={t('board.moveUp')} onclick={() => move(status, pt.task.id, -1)}>↑</Button>
 							<Button size="xs" variant="outline" aria-label={t('board.moveDown')} onclick={() => move(status, pt.task.id, 1)}>↓</Button>

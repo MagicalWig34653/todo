@@ -35,7 +35,7 @@
 			<li class="rounded-md border p-2" data-testid="planning-item">
 				<div class="flex flex-wrap items-center gap-2">
 					<span class="flex-1 text-sm">{pt.task.title}</span>
-					<TaskChips {pt} />
+					<TaskChips {pt} status={pt.task.status} />
 					<Button size="sm" variant="ghost" onclick={() => (openID = openID === pt.task.id ? null : pt.task.id)}>{t('task.details')}</Button>
 				</div>
 				{#if openID === pt.task.id}<TaskDetail task={pt.task} onplanned={load} />{/if}

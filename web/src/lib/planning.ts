@@ -1,4 +1,4 @@
-import type { Page, PlanningTask, TaskStatus } from './api.js';
+import type { Page, PlanningTask, Recurrence, Task, TaskStatus } from './api.js';
 
 export const STATUSES: TaskStatus[] = ['open', 'in_progress', 'in_review', 'done'];
 export const PRIORITIES = [0, 1, 2, 3] as const;
@@ -64,4 +64,40 @@ export async function collectAll<T>(fetchPage: (cursor: string | null) => Promis
 
 export function browserTimeZone(): string {
 	return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+export type Frequency = 'none' | 'daily' | 'weekly' | 'monthly';
+
+/** Form state (local inputs) -> API recurrence; `none` or a missing anchor date yields null. */
+export function buildRecurrence(frequency: Frequency, interval: number, until: string, timeZone = browserTimeZone()): Recurrence | null {
+	if (frequency === 'none') return null;
+	const n = Math.min(1000, Math.max(1, Math.trunc(Number.isFinite(interval) ? interval : 1)));
+	return { frequency, interval: n, timeZone, until: fromLocalInput(until) };
+}
+
+/** A recurrence needs a due or planned date (backend: `recurrence_requires_date`). */
+export function recurrenceNeedsDate(recurrence: Recurrence | null, due: string, planned: string): boolean {
+	return recurrence !== null && !due && !planned;
+}
+
+/** Adds a reminder (local input) keeping the list unique and sorted; invalid input is ignored. */
+export function addReminder(reminders: string[], local: string): string[] {
+	const iso = fromLocalInput(local);
+	if (!iso || reminders.includes(iso)) return reminders;
+	return [...reminders, iso].sort();
+}
+
+export function removeReminder(reminders: string[], iso: string): string[] {
+	return reminders.filter((r) => r !== iso);
+}
+
+/** Tasks that are not yet in `excluded` and not the task itself, for dependency/milestone pickers. */
+export function candidateTasks(all: Task[], selfID: string | null, excluded: Task[]): Task[] {
+	const skip = new Set([...excluded.map((x) => x.id), ...(selfID ? [selfID] : [])]);
+	return all.filter((x) => !skip.has(x.id));
+}
+
+/** Milestone progress: finished vs. all assigned tasks. */
+export function milestoneProgress(tasks: Task[]): { done: number; total: number } {
+	return { done: tasks.filter((x) => x.status === 'done').length, total: tasks.length };
 }
