@@ -39,12 +39,25 @@ final class VirtualAuthenticator {
 
     func registrationResponse(challenge: String) -> [String: Any] {
         counter = 0
-        let authData = rpIDHash + [0x45] + counterBytes() + [UInt8](repeating: 0, count: 16)
-            + [UInt8(credentialID.count >> 8), UInt8(credentialID.count & 0xff)] + credentialID + coseKey()
+        var authData: [UInt8] = []
+        authData += rpIDHash
+        authData += [0x45]
+        authData += counterBytes()
+        authData += [UInt8](repeating: 0, count: 16)
+        authData += [UInt8(credentialID.count >> 8), UInt8(credentialID.count & 0xff)]
+        authData += credentialID
+        authData += coseKey()
         // {"fmt":"none","attStmt":{},"authData":h'…'}
-        let cbor: [UInt8] = [0xA3, 0x63] + Array("fmt".utf8) + [0x64] + Array("none".utf8)
-            + [0x67] + Array("attStmt".utf8) + [0xA0]
-            + [0x68] + Array("authData".utf8) + [0x59, UInt8(authData.count >> 8), UInt8(authData.count & 0xff)] + authData
+        var cbor: [UInt8] = [0xA3, 0x63]
+        cbor += Array("fmt".utf8)
+        cbor += [0x64]
+        cbor += Array("none".utf8)
+        cbor += [0x67]
+        cbor += Array("attStmt".utf8)
+        cbor += [0xA0, 0x68]
+        cbor += Array("authData".utf8)
+        cbor += [0x59, UInt8(authData.count >> 8), UInt8(authData.count & 0xff)]
+        cbor += authData
         return [
             "id": b64url(credentialID), "rawId": b64url(credentialID), "type": "public-key",
             "response": [
