@@ -1,50 +1,29 @@
 version: '3.8'
-# Test baseline. Replace S3Mock and supply TLS ingress before production use.
+# Swarm stack: API replicas plus a one-shot migration service.
+# MariaDB and S3-compatible storage are EXTERNAL (not part of this stack).
+# Configure via deploy/swarm/stack.env.example (copy, fill, `set -a; . file; set +a`)
+# and the external Swarm secrets referenced at the bottom.
 x-backend: &backend
-  image: ${BACKEND_IMAGE:-todo-dev-backend:local}
+  image: ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-latest}
   networks: [internal]
   environment: &environment
     DATABASE_DRIVER: mariadb
-    DB_HOST: db
-    DB_PORT: '3306'
-    DB_NAME: todo
-    DB_USER: todo
+    DB_HOST: ${DB_HOST:?DB_HOST required}
+    DB_PORT: ${DB_PORT:-3306}
+    DB_NAME: ${DB_NAME:-todo}
+    DB_USER: ${DB_USER:-todo}
     DB_PASSWORD_FILE: /run/secrets/db_password
     BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
+    S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT required}
+    S3_BUCKET: ${S3_BUCKET:-todo-attachments}
+    S3_REGION: ${S3_REGION:-us-east-1}
+    S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+    S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
     RP_ID: ${RP_ID:-localhost}
     RP_ORIGIN: ${RP_ORIGIN:-http://localhost:38080}
     PASSWORD_LOGIN_ENABLED: 'false'
-  secrets: [db_password, bootstrap_token]
+  secrets: [db_password, bootstrap_token, s3_access_key, s3_secret_key]
 services:
-  db:
-    image: mariadb:12.3
-    environment:
-      MARIADB_DATABASE: todo
-      MARIADB_USER: todo
-      MARIADB_PASSWORD_FILE: /run/secrets/db_password
-      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
-    secrets: [db_password, db_root_password]
-    networks: [internal]
-    volumes: [db:/var/lib/mysql]
-    healthcheck:
-      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
-      interval: 5s
-      timeout: 5s
-      retries: 24
-      start_period: 20s
-    deploy:
-      replicas: 1
-      placement:
-        constraints: [node.labels.todo.data == true]
-      update_config:
-        order: stop-first
-  s3:
-    image: adobe/s3mock:5.2.3
-    environment:
-      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: todo-attachments
-    networks: [internal]
-    deploy:
-      replicas: 1
   migrate:
     <<: *backend
     command: [migrate, --yes]
@@ -87,8 +66,6 @@ networks:
   internal:
     driver: overlay
     attachable: true
-volumes:
-  db:
 configs:
   healthcheck:
     file: ./healthcheck.sh
@@ -96,9 +73,12 @@ secrets:
   db_password:
     external: true
     name: ${DB_PASSWORD_SECRET:-todo_db_password}
-  db_root_password:
-    external: true
-    name: ${DB_ROOT_PASSWORD_SECRET:-todo_db_root_password}
   bootstrap_token:
     external: true
     name: ${BOOTSTRAP_TOKEN_SECRET:-todo_bootstrap_token}
+  s3_access_key:
+    external: true
+    name: ${S3_ACCESS_KEY_SECRET:-todo_s3_access_key}
+  s3_secret_key:
+    external: true
+    name: ${S3_SECRET_KEY_SECRET:-todo_s3_secret_key}

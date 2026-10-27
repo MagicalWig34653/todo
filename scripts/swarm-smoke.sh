@@ -5,13 +5,18 @@ cd "$(dirname "$0")/.."
 state=$(docker info --format '{{.Swarm.LocalNodeState}}')
 created_swarm=0
 stack_created=0
-node_labeled=0
 secrets=()
 STACK="todo-smoke-$(date +%s)-$$"
 export STACK
 export BACKEND_IMAGE=${BACKEND_IMAGE:-todo-dev-backend:local}
 export BACKEND_REPLICAS=3 BACKEND_PORT=${BACKEND_PORT:-38080}
-export DB_PASSWORD_SECRET="${STACK}_password" DB_ROOT_PASSWORD_SECRET="${STACK}_root" BOOTSTRAP_TOKEN_SECRET="${STACK}_bootstrap"
+export DB_PASSWORD_SECRET="${STACK}_password" BOOTSTRAP_TOKEN_SECRET="${STACK}_bootstrap"
+export S3_ACCESS_KEY_SECRET="${STACK}_s3_access" S3_SECRET_KEY_SECRET="${STACK}_s3_secret"
+# The stack has no database: the smoke starts a throwaway external MariaDB on its own attachable overlay network.
+EXT_NET="${STACK}_extdb" EXT_DB="${STACK}_extdb_mariadb"
+export DB_HOST="$EXT_DB" DB_PORT=3306 DB_NAME=todo DB_USER=todo S3_ENDPOINT=http://s3.invalid S3_BUCKET=todo-attachments
+tmpdir=$(mktemp -d)
+ext_created=0
 cleanup() {
   local result=$?
   trap - EXIT
@@ -25,17 +30,18 @@ cleanup() {
     if docker config inspect "${STACK}_deployment-lock" >/dev/null 2>&1; then
       docker config rm "${STACK}_deployment-lock" >/dev/null || result=1
     fi
-    if docker volume inspect "${STACK}_db" >/dev/null 2>&1; then
-      # The volume stays "in use" until the last task container is gone.
-      for ((j=0; j<45; j++)); do
-        if docker volume rm "${STACK}_db" >/dev/null 2>&1; then break; fi
-        sleep 2
-      done
-      if docker volume inspect "${STACK}_db" >/dev/null 2>&1; then echo "Cleanup timeout: volume ${STACK}_db remains" >&2; result=1; fi
-    fi
   fi
+  docker rm -f "$EXT_DB" >/dev/null 2>&1 || true
+  if [[ $ext_created == 1 ]]; then
+    for ((j=0; j<45; j++)); do
+      docker network rm "$EXT_NET" >/dev/null 2>&1 || true
+      if ! docker network inspect "$EXT_NET" >/dev/null 2>&1; then break; fi
+      sleep 2
+    done
+    if [[ $j == 45 ]]; then echo "Cleanup timeout: network $EXT_NET remains" >&2; result=1; fi
+  fi
+  rm -rf "$tmpdir"
   for secret in "${secrets[@]-}"; do [[ -z "$secret" ]] && continue; docker secret rm "$secret" >/dev/null || result=1; done
-  if [[ $node_labeled == 1 ]]; then docker node update --label-rm todo.data "$node_id" >/dev/null || result=1; fi
   if [[ $created_swarm == 1 ]]; then docker swarm leave --force >/dev/null || result=1; fi
   exit "$result"
 }
@@ -48,17 +54,33 @@ case "$state" in
   *) echo "Unsupported Swarm state: $state" >&2; exit 1 ;;
 esac
 [[ $(docker node ls -q | wc -l | tr -d ' ') == 1 ]] || { echo 'Smoke requires a single-node manager; refusing changes' >&2; exit 1; }
-node_id=$(docker info --format '{{.Swarm.NodeID}}')
-label=$(docker node inspect "$node_id" --format '{{index .Spec.Labels "todo.data"}}')
-if [[ "$label" != true ]]; then
-  [[ -z "$label" || "$label" == '<no value>' ]] || { echo 'Existing todo.data label conflicts' >&2; exit 1; }
-  docker node update --label-add todo.data=true "$node_id" >/dev/null
-  node_labeled=1
-fi
-for secret in "$DB_PASSWORD_SECRET" "$DB_ROOT_PASSWORD_SECRET" "$BOOTSTRAP_TOKEN_SECRET"; do
+for secret in "$BOOTSTRAP_TOKEN_SECRET" "$S3_ACCESS_KEY_SECRET" "$S3_SECRET_KEY_SECRET"; do
   openssl rand -hex 32 | docker secret create "$secret" - >/dev/null
   secrets+=("$secret")
 done
+# Throwaway external MariaDB (password injected from the same random secret value via a temp file).
+db_pw=$(openssl rand -hex 32)
+printf '%s' "$db_pw" | docker secret create "$DB_PASSWORD_SECRET" - >/dev/null
+secrets+=("$DB_PASSWORD_SECRET")
+docker network create --driver overlay --attachable "$EXT_NET" >/dev/null
+ext_created=1
+docker run -d --name "$EXT_DB" --network "$EXT_NET" \
+  -e MARIADB_DATABASE=todo -e MARIADB_USER=todo -e MARIADB_PASSWORD="$db_pw" -e MARIADB_RANDOM_ROOT_PASSWORD=1 \
+  mariadb:12.3 >/dev/null
+for ((i=0; i<60; i++)); do
+  [[ $(docker exec "$EXT_DB" healthcheck.sh --connect --innodb_initialized >/dev/null 2>&1; echo $?) == 0 ]] && break
+  sleep 2
+done
+[[ $i -lt 60 ]] || { docker logs --tail 30 "$EXT_DB" >&2; echo 'External test DB timeout' >&2; exit 1; }
+cat > "$tmpdir/extdb.yaml" <<EOF
+version: '3.8'
+services:
+  migrate: {image: $BACKEND_IMAGE, networks: [internal, extdb]}
+  backend: {image: $BACKEND_IMAGE, networks: [internal, extdb]}
+networks:
+  extdb: {external: true, name: $EXT_NET}
+EOF
+export STACK_EXTRA_FILES="$tmpdir/extdb.yaml"
 stack_created=1
 scripts/swarm-deploy.sh
 for ((i=0; i<150; i++)); do

@@ -85,7 +85,7 @@ web/                 SvelteKit-PWA (src, tests, e2e)
 contracts/           OpenAPI-Verträge je Bereich
 docs/                Projektgedächtnis: Status, Arbeitsplan, Konzepte, ADRs
 docs-site/           Statische Projektseite (GitHub Pages)
-deploy/swarm         Swarm-Deployment
+deploy/swarm         Swarm-Stack (externe DB/S3, GHCR-Image) und stack.env.example
 scripts/             Test-, Backup- und Deploy-Skripte
 compose.yaml         Entwicklungsstack
 Dockerfile           Backend-Image

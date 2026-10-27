@@ -17,19 +17,17 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-image=${BACKEND_IMAGE:-todo-dev-backend:local}
+image=${BACKEND_IMAGE:-ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-latest}}
+# BACKEND_IMAGE (full reference) only overrides the migration image and must match an override file
+# if the stack image is overridden too (the smoke test does this). Extra stack files (e.g. overrides) may be passed as space-separated STACK_EXTRA_FILES.
+compose_args=(-c stack.yaml)
+for f in ${STACK_EXTRA_FILES:-}; do compose_args+=(-c "$f"); done
+# DB and S3 are external: the one-shot migration below fails (without retry) if the DB is unreachable.
+# Required: DB_HOST, S3_ENDPOINT and the external secrets (see deploy/swarm/stack.env.example).
 replicas=${BACKEND_REPLICAS:-3}
 if ! docker service inspect "${STACK}_backend" >/dev/null 2>&1; then
-  BACKEND_REPLICAS=0 docker stack deploy --resolve-image never -c stack.yaml "$STACK"
+  BACKEND_REPLICAS=0 docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
 fi
-# Wait for DB before creating exactly one migration task. Never retry failed migrations blindly.
-for ((i=0; i<120; i++)); do
-  # Unauthenticated ping is rejected, so rely on the service's own healthcheck (innodb_initialized).
-  db_container=$(docker ps -q --filter "label=com.docker.swarm.service.name=${STACK}_db" | head -n1)
-  if [[ -n "$db_container" && $(docker inspect --format '{{.State.Health.Status}}' "$db_container") == healthy ]]; then break; fi
-  sleep 2
-done
-[[ $i -lt 120 ]] || { docker stack ps "$STACK" --no-trunc >&2 || true; docker service logs --tail 30 "${STACK}_db" >&2 || true; echo 'Database timeout' >&2; exit 1; }
 old_tasks=$(docker service ps --no-trunc --format '{{.ID}}' "${STACK}_migrate")
 docker service scale "${STACK}_migrate=0" >/dev/null
 migration_running=1
@@ -48,5 +46,5 @@ for ((i=0; i<120; i++)); do
   sleep 2
 done
 [[ $i -lt 120 ]] || { echo 'Migration timeout' >&2; exit 1; }
-BACKEND_REPLICAS=$replicas docker stack deploy --resolve-image never -c stack.yaml "$STACK"
+BACKEND_REPLICAS=$replicas docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
 echo "Migration complete; rollout started for $replicas replicas. Check health before accepting rollout."

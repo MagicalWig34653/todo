@@ -20,7 +20,9 @@ struct S3Store: Sendable {
               let bucket = Environment.get("S3_BUCKET"), !bucket.isEmpty,
               bucket.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == ".") })
         else { throw Abort(.serviceUnavailable, reason: "attachment_storage_unconfigured") }
-        let access = Environment.get("S3_ACCESS_KEY"), secret = Environment.get("S3_SECRET_KEY")
+        // Keys may come from Swarm secrets via S3_ACCESS_KEY_FILE / S3_SECRET_KEY_FILE.
+        let access = try RuntimeEnvironment.value("S3_ACCESS_KEY", get: Environment.get)
+        let secret = try RuntimeEnvironment.value("S3_SECRET_KEY", get: Environment.get)
         guard (access == nil) == (secret == nil), access?.isEmpty != true, secret?.isEmpty != true else {
             throw Abort(.serviceUnavailable, reason: "attachment_storage_credentials_invalid")
         }
