@@ -11,6 +11,34 @@ Arbeitsname: **Todo**. Status: in aktiver Entwicklung, noch nicht für den Produ
 - **Identität:** Passkeys (WebAuthn), mehrere benannte Passkeys, Sessions, Wiederherstellung per Einmalcode, Rate-Limits. Passwort-Login nur optional.
 - **Agenten:** MCP-Endpunkt `/mcp` mit OAuth (PKCE, Resource Indicators), Agentenaufträge mit Checkpoints; lokale Mac-Runner starten Claude Code. Aufträge werden in der App gespeichert, nicht in einer Chat-Sitzung.
 
+## Screenshots
+
+Echte Aufnahmen der PWA (Demo-Daten, Chromium mit virtuellem Passkey). Weitere unter [docs-site/screenshots/](docs-site/screenshots/).
+
+<img src="docs-site/screenshots/projekte-aufgaben.png" alt="Projektbaum mit frei verschachtelten Projekten und Aufgabenliste (Desktop)">
+
+*Projektbaum mit frei verschachtelten Projekten und Aufgabenliste (Desktop)*
+
+<img src="docs-site/screenshots/aufgabendetail.png" alt="Aufgabendetail mit Planung, Labels, Abnahmekriterien und Kommentaren">
+
+*Aufgabendetail mit Planung, Labels, Abnahmekriterien und Kommentaren*
+
+<img src="docs-site/screenshots/board.png" alt="Board-Ansicht mit Statusspalten">
+
+*Board-Ansicht mit Statusspalten*
+
+<img src="docs-site/screenshots/suche.png" alt="Suche mit gespeicherten Filtern">
+
+*Suche mit gespeicherten Filtern*
+
+<img src="docs-site/screenshots/zustimmung.png" alt="OAuth-Zustimmung für einen KI-Assistenten (MCP)">
+
+*OAuth-Zustimmung für einen KI-Assistenten (MCP)*
+
+<img src="docs-site/screenshots/aufgaben-mobil.png" alt="Aufgabenliste auf dem Smartphone" width="260">
+
+*Aufgabenliste auf dem Smartphone*
+
 ## Architektur
 
 ```text

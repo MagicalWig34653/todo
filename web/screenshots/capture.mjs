@@ -1,0 +1,240 @@
+// Erzeugt die Screenshots für README.md und docs-site/ gegen einen frischen, isolierten Stack.
+// Aufruf siehe docs/STATUS.md (Abschnitt "Screenshots"): BASE_URL, OUT_DIR, BOOTSTRAP_TOKEN per Umgebung.
+// Alle Daten sind erfundene Demo-Daten; der Passkey liegt nur im virtuellen Authenticator.
+import { chromium } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+
+const BASE = process.env.BASE_URL ?? 'http://localhost:25373';
+const OUT = process.env.OUT_DIR ?? '../docs-site/screenshots';
+const TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
+mkdirSync(OUT, { recursive: true });
+
+const DESKTOP = { width: 1360, height: 860 };
+const MOBILE = { width: 390, height: 844 };
+
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ baseURL: BASE, viewport: DESKTOP, locale: 'de-DE', timezoneId: 'Europe/Berlin' });
+const page = await ctx.newPage();
+page.setDefaultTimeout(15000);
+
+const cdp = await ctx.newCDPSession(page);
+await cdp.send('WebAuthn.enable');
+await cdp.send('WebAuthn.addVirtualAuthenticator', {
+	options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
+});
+
+const shot = async (name, opts = {}) => {
+	await page.waitForTimeout(400);
+	await page.screenshot({ path: `${OUT}/${name}.png`, ...opts });
+	console.log('shot', name);
+};
+const desktop = () => page.setViewportSize(DESKTOP);
+const mobile = () => page.setViewportSize(MOBILE);
+const localDate = (days, hour) => {
+	const d = new Date(Date.now() + days * 86400000);
+	const p = (n) => String(n).padStart(2, '0');
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(hour)}:00`;
+};
+
+// Registrierung mit Ersteinrichtungscode (der Code wird nicht ins Bild genommen).
+await page.goto('/setup');
+await page.getByLabel('Einrichtungs- oder Einladungscode').fill(TOKEN);
+await page.getByLabel('Anzeigename').fill('Mara Beispiel');
+await page.getByRole('button', { name: 'Passkey erstellen' }).click();
+await page.getByRole('button', { name: 'Abmelden' }).waitFor();
+await page.getByRole('button', { name: 'Abmelden' }).click();
+await page.getByRole('button', { name: 'Mit Passkey anmelden' }).waitFor();
+await shot('login');
+await mobile();
+await shot('login-mobil');
+await desktop();
+await page.getByRole('button', { name: 'Mit Passkey anmelden' }).click();
+await page.getByRole('button', { name: 'Abmelden' }).waitFor();
+
+// Projekte
+const addRoot = async (name) => {
+	await page.getByLabel('Neues Projekt').fill(name);
+	await page.getByRole('button', { name: 'Projekt anlegen' }).click();
+	await page.getByTestId('project-item').filter({ hasText: name }).first().waitFor();
+};
+const addSub = async (parent, name) => {
+	const root = page.getByTestId('project-item').filter({ hasText: parent }).first();
+	await root.getByRole('button', { name: new RegExp(`Projekte: ${parent}`) }).click().catch(() => {});
+	await root.getByRole('button', { name: 'Unterprojekt' }).first().click();
+	await root.getByLabel('Name des Unterprojekts').fill(name);
+	await root.getByRole('button', { name: 'Speichern' }).click();
+	await page.getByTestId('project-item').filter({ hasText: name }).last().waitFor();
+};
+await addRoot('Urlaub Portugal');
+await addRoot('Website-Relaunch');
+await addRoot('Haushalt');
+await addSub('Haushalt', 'Küche');
+await addSub('Haushalt', 'Garten');
+await addSub('Website-Relaunch', 'Design');
+await addSub('Website-Relaunch', 'Entwicklung');
+
+const open = async (name) => {
+	await page.getByTestId('project-item').getByRole('button', { name, exact: true }).first().click();
+	await page.getByTestId('task-heading').filter({ hasText: name }).waitFor();
+};
+const addTasks = async (titles) => {
+	for (const title of titles) {
+		await page.getByLabel('Neue Aufgabe, Enter zum Anlegen').fill(title);
+		await page.keyboard.press('Enter');
+		await page.getByTestId('task-item').filter({ hasText: title }).first().waitFor();
+	}
+};
+
+await open('Küche');
+await addTasks(['Wocheneinkauf erledigen', 'Backofen reinigen', 'Spülmaschine ausräumen', 'Gewürzregal sortieren', 'Neue Kaffeemaschine vergleichen']);
+await open('Garten');
+await addTasks(['Hecke schneiden', 'Tomaten gießen']);
+await open('Design');
+await addTasks(['Farbkonzept abstimmen', 'Startseite entwerfen']);
+await open('Entwicklung');
+await addTasks(['Kontaktformular bauen', 'Seitenladezeit messen', 'Cookie-Hinweis prüfen']);
+await open('Urlaub Portugal');
+await addTasks(['Flüge buchen', 'Unterkunft in Lissabon reservieren']);
+
+// Labels über die Suche anlegen
+await page.getByRole('button', { name: 'Suche', exact: true }).click();
+for (const l of ['dringend', 'einkaufen', 'Idee']) {
+	await page.getByLabel('Neues Label').fill(l);
+	await page.getByRole('button', { name: 'Label anlegen' }).click();
+	await page.getByTestId('label-item').filter({ hasText: l }).waitFor();
+}
+
+// Details zu einer Aufgabe
+await open('Küche');
+const task = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' });
+await task.getByRole('button', { name: 'Details' }).click();
+const detail = task.getByTestId('task-detail');
+await detail.getByLabel('Fällig').fill(localDate(0, 18));
+await detail.getByLabel('Priorität').selectOption('3');
+await detail.getByRole('button', { name: 'Planung speichern' }).click();
+await detail.getByLabel('Label hinzufügen').selectOption({ label: 'dringend' });
+await detail.getByLabel('Label hinzufügen').selectOption({ label: 'einkaufen' }).catch(() => {});
+for (const c of ['Milch und Eier', 'Gemüse für das Wochenende', 'Kaffeebohnen']) {
+	await detail.getByLabel('Neues Kriterium').fill(c);
+	await detail.getByRole('button', { name: 'Kriterium hinzufügen' }).click();
+	await detail.getByRole('checkbox', { name: c }).waitFor();
+}
+await detail.getByRole('checkbox', { name: 'Milch und Eier' }).check();
+await detail.getByRole('checkbox', { name: 'Kaffeebohnen' }).check();
+await detail.getByLabel('Kommentar schreiben').fill('Bitte Bio-Milch nehmen, die andere war letzte Woche zu schnell sauer.');
+await detail.getByRole('button', { name: 'Kommentieren' }).click();
+await detail.getByTestId('comment').first().waitFor();
+await detail.getByLabel('Kommentar schreiben').fill('Erledigt ich morgen früh vor der Arbeit.');
+await detail.getByRole('button', { name: 'Kommentieren' }).click();
+await page.waitForTimeout(500);
+
+// Planung für Heute / Anstehend
+const plan = async (project, title, days, prio) => {
+	await open(project);
+	const t = page.getByTestId('task-item').filter({ hasText: title });
+	await t.getByRole('button', { name: 'Details' }).click();
+	const d = t.getByTestId('task-detail');
+	await d.getByLabel('Fällig').fill(localDate(days, 12));
+	await d.getByLabel('Priorität').selectOption(String(prio));
+	await d.getByRole('button', { name: 'Planung speichern' }).click();
+	await page.waitForTimeout(300);
+	await t.getByRole('button', { name: 'Schließen' }).click().catch(() => {});
+};
+await plan('Küche', 'Backofen reinigen', 0, 2);
+await plan('Entwicklung', 'Kontaktformular bauen', 0, 3);
+await plan('Design', 'Farbkonzept abstimmen', 2, 2);
+await plan('Garten', 'Hecke schneiden', 3, 1);
+
+// Board: Status verteilen
+await open('Küche');
+await page.getByRole('tab', { name: 'Board' }).click();
+const move = async (title, col) => {
+	await page
+		.getByTestId('board-column-open')
+		.getByTestId('board-card')
+		.filter({ hasText: title })
+		.getByLabel('Verschieben nach Spalte')
+		.selectOption(col);
+	await page.waitForTimeout(400);
+};
+await move('Spülmaschine ausräumen', 'done').catch(async () => {});
+await move('Backofen reinigen', 'in_progress');
+await move('Gewürzregal sortieren', 'in_progress');
+
+// Aufnahmen Desktop
+await page.getByRole('tab', { name: 'Board' }).click();
+await shot('board');
+await page.getByRole('tab', { name: 'Liste' }).click();
+await page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' }).waitFor();
+await shot('projekte-aufgaben', { fullPage: false });
+const det = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' });
+if (!(await det.getByTestId('task-detail').isVisible().catch(() => false))) await det.getByRole('button', { name: 'Details' }).click();
+await det.getByTestId('task-detail').scrollIntoViewIfNeeded();
+await shot('aufgabendetail');
+
+await page.getByRole('button', { name: 'Heute', exact: true }).click();
+await page.getByTestId('view-heading').waitFor();
+await shot('heute');
+
+await page.getByRole('button', { name: 'Suche', exact: true }).click();
+await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('Kontakt');
+await page.getByRole('button', { name: 'Suchen', exact: true }).click();
+await page.getByTestId('search-hit').first().waitFor();
+await page.getByLabel('Name des Filters').fill('Kontaktformular').catch(() => {});
+await page.getByRole('button', { name: 'Als Filter speichern' }).click().catch(() => {});
+await shot('suche');
+
+// Team und Freigaben
+await page.getByRole('button', { name: 'Teams', exact: true }).click();
+await page.getByLabel('Neues Team').fill('Familie');
+await page.getByRole('button', { name: 'Team anlegen' }).click();
+await page.getByTestId('team-item').filter({ hasText: 'Familie' }).waitFor();
+await shot('teams');
+await open('Haushalt');
+await page.getByRole('tab', { name: 'Freigaben' }).click();
+await page.getByLabel('Empfänger').selectOption('team');
+await page.getByLabel('Team', { exact: true }).selectOption({ label: 'Familie' });
+await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
+await page.getByTestId('grant').first().waitFor();
+await shot('freigaben');
+
+// OAuth-Zustimmung
+const reg = await page.request.post('/oauth/register', {
+	data: { client_name: 'Claude Code (Demo)', redirect_uris: ['https://client.example/cb'], token_endpoint_auth_method: 'none' },
+	headers: { 'Content-Type': 'application/json' }
+});
+const clientID = (await reg.json()).client_id;
+await page.goto(
+	`/consent?response_type=code&client_id=${clientID}&redirect_uri=${encodeURIComponent('https://client.example/cb')}` +
+		`&scope=${encodeURIComponent('projects:read tasks:read tasks:write comments:write')}&state=demo&code_challenge=${'A'.repeat(43)}&code_challenge_method=S256`
+);
+await page.getByText('Zugriff erlauben?').first().waitFor();
+await page.getByLabel('Website-Relaunch').check().catch(() => {});
+await shot('zustimmung');
+
+// Konto
+await page.goto('/');
+await page.getByRole('button', { name: 'Konto', exact: true }).click();
+await page.getByText('Konto und Sicherheit').first().waitFor();
+await shot('konto', { fullPage: true });
+
+// Mobil
+await mobile();
+await page.goto('/');
+const menu = page.getByRole('button', { name: 'Menü' });
+if (await menu.isVisible().catch(() => false)) {
+	await menu.click();
+	await shot('projekte-mobil');
+}
+await page.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().click();
+await page.getByTestId('task-heading').filter({ hasText: 'Küche' }).waitFor();
+await shot('aufgaben-mobil');
+await page.getByRole('tab', { name: 'Board' }).click();
+await shot('board-mobil');
+await page.getByRole('tab', { name: 'Liste' }).click();
+const mt = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' });
+if (!(await mt.getByTestId('task-detail').isVisible().catch(() => false))) await mt.getByRole('button', { name: 'Details' }).click();
+await mt.getByTestId('task-detail').scrollIntoViewIfNeeded();
+await shot('aufgabendetail-mobil');
+
+await browser.close();
