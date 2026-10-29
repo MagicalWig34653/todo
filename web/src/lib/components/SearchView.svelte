@@ -13,7 +13,11 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
 
-	let { projects, onopen }: { projects: Project[]; onopen: (projectID: string) => void } = $props();
+	let {
+		projects,
+		onopen,
+		initial = {}
+	}: { projects: Project[]; onopen: (projectID: string) => void; initial?: { labelID?: string; filterID?: string } } = $props();
 
 	let q = $state('');
 	let projectID = $state('');
@@ -43,7 +47,16 @@
 		[labels, filters] = await Promise.all([collectAll((c) => api.listLabels(c)), collectAll((c) => api.listFilters(c))]);
 	}
 	$effect(() => {
-		attempt(loadMeta);
+		attempt(async () => {
+			await loadMeta();
+			// Opened from "Filter und Etiketten": run the chosen filter or label right away.
+			const f = initial.filterID ? filters.find((x) => x.id === initial.filterID) : undefined;
+			if (f) await applyFilter(f);
+			else if (initial.labelID) {
+				labelID = initial.labelID;
+				await run();
+			}
+		});
 	});
 
 	async function run(more = false) {

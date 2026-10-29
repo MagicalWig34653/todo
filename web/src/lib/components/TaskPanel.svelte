@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { api, type Project, type Task, type TaskStatus } from '#lib/api.js';
+	import { api, type BoardResponse, type Project, type Task, type TaskStatus } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { groupTasks, type Display } from '#lib/listLogic.js';
+	import { workspace } from '#lib/workspace.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -16,55 +18,54 @@
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Pencil from '@lucide/svelte/icons/pencil';
 
-	let { project }: { project: Project } = $props();
+	interface Props {
+		project: Project;
+		tasks: Task[];
+		board: BoardResponse | null;
+		display: Display;
+		loaded: boolean;
+		reload: () => Promise<void>;
+	}
+	let { project, tasks, board, display, loaded, reload }: Props = $props();
 
 	const STATUSES: TaskStatus[] = ['open', 'in_progress', 'in_review', 'done'];
 
-	let tasks = $state<Task[]>([]);
-	let loaded = $state(false);
-	let quick = $state('');
 	let editingID = $state<string | null>(null);
 	let draftTitle = $state('');
 	let draftDescription = $state('');
 	let deletingID = $state<string | null>(null);
 	let detailID = $state<string | null>(null);
+	let addTitles = $state<Record<string, string>>({});
 
-	async function load() {
-		tasks = await api.listTasks(project.id);
-		loaded = true;
-	}
-
+	// Reset transient state when another project is shown.
 	$effect(() => {
-		// Reload whenever another project is selected.
 		void project.id;
-		loaded = false;
 		editingID = null;
 		deletingID = null;
 		detailID = null;
-		attempt(load);
 	});
 
-	function replace(updated: Task) {
-		tasks = tasks.map((x) => (x.id === updated.id ? updated : x));
+	const shown = $derived(display.showDone ? tasks : tasks.filter((x) => x.status !== 'done'));
+	const groups = $derived(groupTasks(shown, display.grouping, board?.mode === 'columns' ? board.columns : [], display.sort));
+	const realColumns = $derived(board?.mode === 'columns');
+
+	async function after(action: () => Promise<unknown>) {
+		const ok = await attempt(action, reload);
+		if (ok) {
+			await reload();
+			attempt(() => workspace.reloadTasks());
+		}
+		return ok;
 	}
 
-	async function add(e: Event) {
+	async function add(e: Event, key: string, columnID: string | null) {
 		e.preventDefault();
-		const title = quick.trim();
+		const title = (addTitles[key] ?? '').trim();
 		if (!title) return;
-		const ok = await attempt(async () => {
-			tasks = [...tasks, await api.createTask(project.id, title)];
-		});
-		if (ok) quick = '';
+		if (await after(() => api.createTask(project.id, title, columnID ? { columnID } : {}))) addTitles[key] = '';
 	}
-
-	function toggle(task: Task) {
-		return attempt(async () => replace(await api.updateTask(task, { status: task.status === 'done' ? 'open' : 'done' })), load);
-	}
-
-	function setStatus(task: Task, status: TaskStatus) {
-		return attempt(async () => replace(await api.updateTask(task, { status })), load);
-	}
+	const toggle = (task: Task) => after(() => api.updateTask(task, { status: task.status === 'done' ? 'open' : 'done' }));
+	const setStatus = (task: Task, status: TaskStatus) => after(() => api.updateTask(task, { status }));
 
 	function edit(task: Task) {
 		editingID = task.id;
@@ -73,96 +74,119 @@
 	}
 
 	async function save(task: Task) {
-		const ok = await attempt(
-			async () => replace(await api.updateTask(task, { title: draftTitle, description: draftDescription })),
-			load
-		);
+		const ok = await after(() => api.updateTask(task, { title: draftTitle, description: draftDescription }));
 		if (ok || !tasks.some((x) => x.id === task.id)) editingID = null;
 	}
 
 	async function remove(task: Task) {
-		await attempt(async () => {
+		const ok = await after(async () => {
 			await api.deleteTask(task.id);
-			tasks = tasks.filter((x) => x.id !== task.id);
 			deletingID = null;
-		}, load);
+		});
+		if (!ok) await reload();
 	}
 </script>
 
-<section class="flex flex-col gap-3">
-	<form class="flex gap-2" onsubmit={add}>
-		<Input class="h-10" bind:value={quick} placeholder={t('tasks.quickPlaceholder')} aria-label={t('tasks.quickPlaceholder')} />
-		<Button type="submit" class="h-10"><Plus aria-hidden="true" />{t('tasks.add')}</Button>
+{#snippet addRow(key: string, columnID: string | null, label: string)}
+	<form class="flex items-center gap-2" onsubmit={(e) => add(e, key, columnID)}>
+		<Plus class="text-muted-foreground ml-1 size-4 shrink-0" aria-hidden="true" />
+		<Input
+			class="h-9 border-transparent bg-transparent shadow-none"
+			value={addTitles[key] ?? ''}
+			oninput={(e) => (addTitles[key] = e.currentTarget.value)}
+			placeholder={t('board.addTask')}
+			aria-label={label}
+		/>
 	</form>
+{/snippet}
 
-	{#if loaded && tasks.length === 0}
+<section class="flex flex-col gap-4">
+	{#if loaded && tasks.length === 0 && !realColumns}
 		<EmptyState title={t('tasks.empty')} icon={ListTodo} />
 	{/if}
 
-	<ul class="flex flex-col gap-2">
-		{#each tasks as task (task.id)}
-			<li class="bg-card min-w-0 rounded-xl border p-3 shadow-card transition-colors hover:border-foreground/20" data-testid="task-item">
-				<div class="flex flex-wrap items-center gap-2">
-					<Checkbox
-						class="size-5"
-						checked={task.status === 'done'}
-						aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
-						onchange={() => toggle(task)}
-					/>
-					<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
-						{task.title}
-					</span>
-					<Select
-						class="w-32 [&_select]:h-8 [&_select]:text-xs"
-						aria-label={t('tasks.status')}
-						value={task.status}
-						onchange={(e) => setStatus(task, e.currentTarget.value as TaskStatus)}
-					>
-						{#each STATUSES as s (s)}
-							<option value={s}>{t(`status.${s}` as MessageKey)}</option>
-						{/each}
-					</Select>
-					<Button
-						size="sm"
-						variant="ghost"
-						aria-expanded={detailID === task.id}
-						onclick={() => (detailID = detailID === task.id ? null : task.id)}
-						>{t('task.details')}<ChevronDown class={['transition-transform', detailID === task.id && 'rotate-180']} aria-hidden="true" /></Button
-					>
-					<Button size="sm" variant="ghost" onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
-						<Pencil aria-hidden="true" />{t('tasks.edit')}
-					</Button>
-				</div>
-
-				{#if task.planning && (task.planning.priority > 0 || task.planning.dueAt || task.planning.plannedAt || task.planning.hasRecurrence || task.planning.reminderCount > 0)}
-					<div class="mt-2 flex flex-wrap gap-1.5 pl-8" data-testid="task-chips"><TaskChips pt={task.planning} status={task.status} /></div>
-				{/if}
-
-				{#if detailID === task.id}
-					<TaskDetail {task} onplanned={load} />
-				{/if}
-
-				{#if editingID === task.id}
-					<div class="mt-2 flex flex-col gap-2">
-						<Label for="title-{task.id}">{t('tasks.titleLabel')}</Label>
-						<Input id="title-{task.id}" bind:value={draftTitle} />
-						<Label for="desc-{task.id}">{t('tasks.description')}</Label>
-						<Textarea id="desc-{task.id}" bind:value={draftDescription} placeholder={t('tasks.descriptionPlaceholder')} />
-						<div class="flex flex-wrap gap-1">
-							<Button size="sm" onclick={() => save(task)}>{t('common.save')}</Button>
-							<Button size="sm" variant="ghost" onclick={() => (editingID = null)}>{t('common.cancel')}</Button>
-							{#if deletingID === task.id}
-								<span class="self-center text-sm">{t('tasks.deleteConfirm', { title: task.title })}</span>
-								<Button size="sm" variant="destructive" onclick={() => remove(task)}>{t('common.delete')}</Button>
-							{:else}
-								<Button size="sm" variant="destructive" onclick={() => (deletingID = task.id)}>{t('common.delete')}</Button>
-							{/if}
+	{#each groups as group (group.key)}
+		<div class="flex flex-col gap-2" data-testid="task-group" data-group={group.key}>
+			{#if group.title || group.titleKey}
+				<h3 class="flex items-center gap-2 border-b pb-1 text-sm font-semibold">
+					{#if group.color}<span class="size-2.5 rounded-full" style:background={group.color} aria-hidden="true"></span>{/if}
+					{group.title ?? t(group.titleKey as MessageKey)}
+					<span class="text-muted-foreground font-normal" data-tabular>{group.tasks.length}</span>
+				</h3>
+			{/if}
+			<ul class="flex flex-col gap-2">
+				{#each group.tasks as task (task.id)}
+					<li class="bg-card min-w-0 rounded-xl border p-3 shadow-card transition-colors hover:border-foreground/20" data-testid="task-item">
+						<div class="flex flex-wrap items-center gap-2">
+							<Checkbox
+								class="size-5"
+								checked={task.status === 'done'}
+								aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
+								onchange={() => toggle(task)}
+							/>
+							<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
+								{task.title}
+							</span>
+							<Select
+								class="w-32 [&_select]:h-8 [&_select]:text-xs"
+								aria-label={t('tasks.status')}
+								value={task.status}
+								onchange={(e) => setStatus(task, e.currentTarget.value as TaskStatus)}
+							>
+								{#each STATUSES as s (s)}
+									<option value={s}>{t(`status.${s}` as MessageKey)}</option>
+								{/each}
+							</Select>
+							<Button
+								size="sm"
+								variant="ghost"
+								aria-expanded={detailID === task.id}
+								onclick={() => (detailID = detailID === task.id ? null : task.id)}
+								>{t('task.details')}<ChevronDown class={['transition-transform', detailID === task.id && 'rotate-180']} aria-hidden="true" /></Button
+							>
+							<Button size="sm" variant="ghost" onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
+								<Pencil aria-hidden="true" />{t('tasks.edit')}
+							</Button>
 						</div>
-					</div>
-				{:else if task.description}
-					<p class="text-muted-foreground mt-1.5 pl-8 text-sm whitespace-pre-wrap">{task.description}</p>
-				{/if}
-			</li>
-		{/each}
-	</ul>
+
+						{#if task.planning && (task.planning.priority > 0 || task.planning.dueAt || task.planning.plannedAt || task.planning.hasRecurrence || task.planning.reminderCount > 0)}
+							<div class="mt-2 flex flex-wrap gap-1.5 pl-8" data-testid="task-chips"><TaskChips pt={task.planning} status={task.status} /></div>
+						{/if}
+
+						{#if detailID === task.id}
+							<TaskDetail {task} onplanned={reload} />
+						{/if}
+
+						{#if editingID === task.id}
+							<div class="mt-2 flex flex-col gap-2">
+								<Label for="title-{task.id}">{t('tasks.titleLabel')}</Label>
+								<Input id="title-{task.id}" bind:value={draftTitle} />
+								<Label for="desc-{task.id}">{t('tasks.description')}</Label>
+								<Textarea id="desc-{task.id}" bind:value={draftDescription} placeholder={t('tasks.descriptionPlaceholder')} />
+								<div class="flex flex-wrap gap-1">
+									<Button size="sm" onclick={() => save(task)}>{t('common.save')}</Button>
+									<Button size="sm" variant="ghost" onclick={() => (editingID = null)}>{t('common.cancel')}</Button>
+									{#if deletingID === task.id}
+										<span class="self-center text-sm">{t('tasks.deleteConfirm', { title: task.title })}</span>
+										<Button size="sm" variant="destructive" onclick={() => remove(task)}>{t('common.delete')}</Button>
+									{:else}
+										<Button size="sm" variant="destructive" onclick={() => (deletingID = task.id)}>{t('common.delete')}</Button>
+									{/if}
+								</div>
+							</div>
+						{:else if task.description}
+							<p class="text-muted-foreground mt-1.5 pl-8 text-sm whitespace-pre-wrap">{task.description}</p>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			{#if realColumns && group.columnID !== undefined}
+				{@render addRow(group.key, group.columnID, t('board.addTaskIn', { name: group.title ?? t('board.noColumn') }))}
+			{/if}
+		</div>
+	{/each}
+
+	{#if !realColumns || display.grouping !== 'column'}
+		{@render addRow('__main', null, t('tasks.quickPlaceholder'))}
+	{/if}
 </section>

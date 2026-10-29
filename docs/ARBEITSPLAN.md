@@ -74,3 +74,8 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 - [ ] PWA: Board-Ansicht pro Projekt mit Drag-and-drop, Spalten verwalten (anlegen, umbenennen, einfärben, sortieren, löschen mit Zielwahl), Vorlage Offen/In Arbeit/Erledigt oder Kopie.
 - [ ] Apple: Board-Ansicht anbinden (Vertrag unverändert, `contracts/project-columns.yaml`).
 - [ ] Sync-Mutationen für Spalten (Offline-Schreiben), optional MCP-Schreibwerkzeuge für Spalten.
+
+## Checkpoint 29.10.2026 (PWA-Struktur und Spalten-Board)
+- [x] PWA in Todoist-Struktur (Seitenleiste, Quick-Add, Projektseite, Board mit Projektspalten) – Details und Prüfstand in STATUS.
+- [ ] Backend: Favoriten, Projektbeschreibung, Projektfarbe, Projektreihenfolge; danach localStorage-Provisorien entfernen.
+- [ ] Apple: Board-Anbindung an `GET /v1/projects/{id}/board`.

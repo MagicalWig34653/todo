@@ -24,9 +24,25 @@ await cdp.send('WebAuthn.addVirtualAuthenticator', {
 });
 
 const shot = async (name, opts = {}) => {
+	await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 	await page.waitForTimeout(400);
 	await page.screenshot({ path: `${OUT}/${name}.png`, ...opts });
 	console.log('shot', name);
+};
+const closeDialogs = async () => {
+	while (await page.locator('[aria-modal="true"]').first().isVisible()) await page.keyboard.press('Escape');
+};
+const nav = async (name) => {
+	await closeDialogs();
+	const btn = page.getByRole('button', { name: new RegExp(`^${name}( \\d+)?$`) }).first();
+	if (!(await btn.isVisible())) await page.getByRole('button', { name: 'Mehr', exact: true }).click();
+	await btn.click();
+};
+const setView = async (view) => {
+	await closeDialogs();
+	await page.getByTestId('display-menu').click();
+	await page.getByRole('dialog', { name: 'Anzeige' }).getByRole('button', { name: view }).click();
+	await page.keyboard.press('Escape');
 };
 const desktop = () => page.setViewportSize(DESKTOP);
 const mobile = () => page.setViewportSize(MOBILE);
@@ -41,7 +57,8 @@ await page.goto('/setup');
 await page.getByLabel('Einrichtungs- oder Einladungscode').fill(TOKEN);
 await page.getByLabel('Anzeigename').fill('Mara Beispiel');
 await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-await page.getByRole('button', { name: 'Abmelden' }).waitFor();
+await page.getByTestId('account-menu').waitFor();
+await page.getByTestId('account-menu').click();
 await page.getByRole('button', { name: 'Abmelden' }).click();
 await page.getByRole('button', { name: 'Mit Passkey anmelden' }).waitFor();
 await shot('login');
@@ -49,18 +66,20 @@ await mobile();
 await shot('login-mobil');
 await desktop();
 await page.getByRole('button', { name: 'Mit Passkey anmelden' }).click();
-await page.getByRole('button', { name: 'Abmelden' }).waitFor();
+await page.getByTestId('account-menu').waitFor();
 
 // Projekte
 const addRoot = async (name) => {
+	await page.getByTestId('add-project').click();
 	await page.getByLabel('Neues Projekt').fill(name);
 	await page.getByRole('button', { name: 'Projekt anlegen' }).click();
 	await page.getByTestId('project-item').filter({ hasText: name }).first().waitFor();
 };
 const addSub = async (parent, name) => {
 	const root = page.getByTestId('project-item').filter({ hasText: parent }).first();
-	await root.getByRole('button', { name: new RegExp(`Projekte: ${parent}`) }).click().catch(() => {});
-	await root.getByRole('button', { name: 'Unterprojekt' }).first().click();
+	await root.getByRole('button', { name: parent, exact: true }).first().hover();
+	await root.getByRole('button', { name: `Projektmenü: ${parent}` }).click();
+	await page.getByRole('button', { name: 'Unterprojekt' }).click();
 	await root.getByLabel('Name des Unterprojekts').fill(name);
 	await root.getByRole('button', { name: 'Speichern' }).click();
 	await page.getByTestId('project-item').filter({ hasText: name }).last().waitFor();
@@ -74,6 +93,7 @@ await addSub('Website-Relaunch', 'Design');
 await addSub('Website-Relaunch', 'Entwicklung');
 
 const open = async (name) => {
+	await closeDialogs();
 	await page.getByTestId('project-item').getByRole('button', { name, exact: true }).first().click();
 	await page.getByTestId('task-heading').filter({ hasText: name }).waitFor();
 };
@@ -97,7 +117,7 @@ await open('Urlaub Portugal');
 await addTasks(['Flüge buchen', 'Unterkunft in Lissabon reservieren']);
 
 // Labels über die Suche anlegen
-await page.getByRole('button', { name: 'Suche', exact: true }).click();
+await nav('Suche');
 for (const l of ['dringend', 'einkaufen', 'Idee']) {
 	await page.getByLabel('Neues Label').fill(l);
 	await page.getByRole('button', { name: 'Label anlegen' }).click();
@@ -147,26 +167,45 @@ await plan('Entwicklung', 'Kontaktformular bauen', 0, 3);
 await plan('Design', 'Farbkonzept abstimmen', 2, 2);
 await plan('Garten', 'Hecke schneiden', 3, 1);
 
-// Board: Status verteilen
+// Board: eigene Spalten per API anlegen (Küche) und Aufgaben einsortieren
 await open('Küche');
-await page.getByRole('tab', { name: 'Board' }).click();
-const move = async (title, col) => {
-	await page
-		.getByTestId('board-column-open')
-		.getByTestId('board-card')
-		.filter({ hasText: title })
-		.getByLabel('Verschieben nach Spalte')
-		.selectOption(col);
-	await page.waitForTimeout(400);
+const apiJSON = (method, url, body) =>
+	page.evaluate(
+		async ([m, u, b]) => {
+			const r = await fetch(`/v1${u}`, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
+			return r.status === 204 ? null : r.json();
+		},
+		[method, url, body ?? null]
+	);
+const kitchen = (await apiJSON('GET', '/projects')).find((p) => p.name === 'Küche');
+const cols = {};
+for (const [name, color, isDone] of [['Ideen', '#EB8A0A'], ['Geplant', '#2470E0'], ['In Arbeit', '#6B59D9'], ['Erledigt', '#45AE5C', true]]) {
+	cols[name] = await apiJSON('POST', `/projects/${kitchen.id}/columns`, { name, color, ...(isDone ? { isDone } : {}) });
+}
+const kTasks = await apiJSON('GET', `/tasks?projectID=${kitchen.id}`);
+const put = (title, col) => {
+	const task = kTasks.find((x) => x.title === title);
+	return apiJSON('PUT', `/tasks/${task.id}/column`, { version: task.version, columnID: cols[col].id });
 };
-await move('Spülmaschine ausräumen', 'done').catch(async () => {});
-await move('Backofen reinigen', 'in_progress');
-await move('Gewürzregal sortieren', 'in_progress');
+await put('Neue Kaffeemaschine vergleichen', 'Ideen');
+await put('Gewürzregal sortieren', 'Ideen');
+await put('Wocheneinkauf erledigen', 'Geplant');
+await put('Backofen reinigen', 'In Arbeit');
+await put('Spülmaschine ausräumen', 'Erledigt');
+await page.reload();
+await open('Küche');
+await page.getByTestId('project-description').fill('Alles rund um die Küche: Einkauf, Reinigung und Anschaffungen.');
 
 // Aufnahmen Desktop
-await page.getByRole('tab', { name: 'Board' }).click();
+await page.setViewportSize({ width: 1600, height: 900 });
+await setView('Board');
+await page.getByTestId('board-lane').first().waitFor();
 await shot('board');
-await page.getByRole('tab', { name: 'Liste' }).click();
+await page.getByTestId('project-more').click();
+await page.getByRole('button', { name: 'Zu Favoriten hinzufügen' }).click();
+await shot('seitenleiste', { clip: { x: 0, y: 0, width: 300, height: 900 } });
+await desktop();
+await setView('Liste');
 await page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' }).waitFor();
 await shot('projekte-aufgaben', { fullPage: false });
 const det = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' });
@@ -174,11 +213,11 @@ if (!(await det.getByTestId('task-detail').isVisible().catch(() => false))) awai
 await det.getByTestId('task-detail').scrollIntoViewIfNeeded();
 await shot('aufgabendetail');
 
-await page.getByRole('button', { name: 'Heute', exact: true }).click();
+await nav('Heute');
 await page.getByTestId('view-heading').waitFor();
 await shot('heute');
 
-await page.getByRole('button', { name: 'Suche', exact: true }).click();
+await nav('Suche');
 await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('Kontakt');
 await page.getByRole('button', { name: 'Suchen', exact: true }).click();
 await page.getByTestId('search-hit').first().waitFor();
@@ -187,13 +226,14 @@ await page.getByRole('button', { name: 'Als Filter speichern' }).click().catch((
 await shot('suche');
 
 // Team und Freigaben
-await page.getByRole('button', { name: 'Teams', exact: true }).click();
+await nav('Teams');
 await page.getByLabel('Neues Team').fill('Familie');
 await page.getByRole('button', { name: 'Team anlegen' }).click();
 await page.getByTestId('team-item').filter({ hasText: 'Familie' }).waitFor();
 await shot('teams');
 await open('Haushalt');
-await page.getByRole('tab', { name: 'Freigaben' }).click();
+await page.getByTestId('share-open').click();
+await page.getByTestId('share-dialog').waitFor();
 await page.getByLabel('Empfänger').selectOption('team');
 await page.getByLabel('Team', { exact: true }).selectOption({ label: 'Familie' });
 await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
@@ -216,31 +256,37 @@ await shot('zustimmung');
 
 // Konto
 await page.goto('/');
-await page.getByRole('button', { name: 'Konto', exact: true }).click();
+await nav('Konto');
 await page.getByText('Konto und Sicherheit').first().waitFor();
 await shot('konto', { fullPage: true });
 
 // Mobil
 await mobile();
 await page.goto('/');
-const menu = page.getByRole('button', { name: 'Menü' });
-const nav = page.getByRole('navigation', { name: 'Projekte' });
+const menu = page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Menü' });
+const drawer = page.getByRole('navigation', { name: 'Seitenleiste' });
 await menu.click();
-await nav.getByRole('button', { name: 'Küche', exact: true }).first().waitFor();
+await drawer.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().waitFor();
 await shot('projekte-mobil');
-await nav.getByRole('button', { name: 'Küche', exact: true }).first().click();
+await drawer.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().click();
 await page.getByTestId('task-heading').filter({ hasText: 'Küche' }).waitFor();
 await shot('aufgaben-mobil');
-await page.getByRole('tab', { name: 'Board' }).click();
+await setView('Board');
+await page.getByTestId('board-lane').first().waitFor();
 await shot('board-mobil');
-await page.getByRole('tab', { name: 'Liste' }).click();
+await setView('Liste');
 const mt = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' });
 if (!(await mt.getByTestId('task-detail').isVisible().catch(() => false))) await mt.getByRole('button', { name: 'Details' }).click();
 await mt.getByTestId('task-detail').scrollIntoViewIfNeeded();
 await shot('aufgabendetail-mobil');
 for (const [name, file] of [['Heute', 'heute-mobil'], ['Suche', 'suche-mobil'], ['Teams', 'teams-mobil'], ['Konto', 'konto-mobil']]) {
-	await menu.click();
-	await nav.getByRole('button', { name, exact: true }).click();
+	if (['Teams', 'Konto'].includes(name)) {
+		await menu.click();
+		await drawer.getByRole('button', { name: 'Mehr', exact: true }).click();
+		await drawer.getByRole('button', { name, exact: true }).click();
+	} else {
+		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name, exact: true }).click();
+	}
 	await shot(file);
 }
 

@@ -1,10 +1,48 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 
 // Serial tests share one page, so the passkey created in the first test is available to the later ones.
 test.describe.configure({ mode: 'serial' });
 let page: Page;
+
+/** Sidebar entry by name; entries under "Mehr" open that group first. Counts are part of the accessible name. */
+async function closeDialogs() {
+	while (await page.locator('[aria-modal="true"]').first().isVisible()) await page.keyboard.press('Escape');
+}
+async function nav(name: string) {
+	await closeDialogs();
+	const rx = new RegExp(`^${name}( \\d+)?$`);
+	const btn = page.getByRole('button', { name: rx });
+	if (!(await btn.first().isVisible())) await page.getByRole('button', { name: 'Mehr', exact: true }).click();
+	await btn.first().click();
+}
+const accountMenu = () => page.getByTestId('account-menu');
+async function logout(p: Page = page) {
+	await p.getByTestId('account-menu').click();
+	await p.getByRole('button', { name: 'Abmelden' }).click();
+}
+async function setView(view: 'Liste' | 'Board') {
+	await closeDialogs();
+	await page.getByTestId('display-menu').click();
+	await page.getByRole('dialog', { name: 'Anzeige' }).getByRole('button', { name: view }).click();
+	await page.keyboard.press('Escape');
+}
+/** HTML5 drag and drop with real mouse events: press on the card, move in steps, release on the target. */
+async function dragCard(source: Locator, target: Locator) {
+	await source.scrollIntoViewIfNeeded();
+	const a = (await source.boundingBox())!;
+	const b = (await target.boundingBox())!;
+	await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(a.x + a.width / 2 + 10, a.y + a.height / 2 + 10, { steps: 3 });
+	await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 });
+	await page.mouse.up();
+}
+async function openShare() {
+	await page.getByTestId('share-open').click();
+	await expect(page.getByTestId('share-dialog')).toBeVisible();
+}
 
 test.beforeAll(async ({ browser }) => {
 	page = await (await browser.newContext()).newPage();
@@ -33,10 +71,10 @@ test('bootstrap registration, logout, passkey login, project tree and task', asy
 	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
 	await page.getByLabel('Anzeigename').fill('Test Admin');
 	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible();
+	await expect(accountMenu()).toBeVisible();
 
 	// Logout returns to the login view.
-	await page.getByRole('button', { name: 'Abmelden' }).click();
+	await logout();
 	await expect(page.getByRole('button', { name: 'Mit Passkey anmelden' })).toBeVisible();
 
 	// Password login must not be offered when the server does not allow it.
@@ -44,18 +82,20 @@ test('bootstrap registration, logout, passkey login, project tree and task', asy
 
 	// Passkey login, also after a reload (cookie session survives).
 	await page.getByRole('button', { name: 'Mit Passkey anmelden' }).click();
-	await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible();
+	await expect(accountMenu()).toBeVisible();
 	await page.reload();
-	await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible();
+	await expect(accountMenu()).toBeVisible();
 
 	// Project, sub-project, task.
+	await page.getByTestId('add-project').click();
 	await page.getByLabel('Neues Projekt').fill('Haushalt');
 	await page.getByRole('button', { name: 'Projekt anlegen' }).click();
 	const root = page.getByTestId('project-item').filter({ hasText: 'Haushalt' }).first();
 	await expect(root).toBeVisible();
 
-	await root.getByRole('button', { name: /Projekte: Haushalt/ }).click();
-	await root.getByRole('button', { name: 'Unterprojekt' }).click();
+	await root.hover();
+	await root.getByRole('button', { name: 'Projektmenü: Haushalt' }).click();
+	await page.getByRole('button', { name: 'Unterprojekt' }).click();
 	await root.getByLabel('Name des Unterprojekts').fill('Küche');
 	await root.getByRole('button', { name: 'Speichern' }).click();
 	const sub = page.getByTestId('project-item').filter({ hasText: 'Küche' }).last();
@@ -87,6 +127,7 @@ function localToday(hour: number) {
 }
 
 async function openProject(name: string) {
+	await closeDialogs();
 	await page.getByTestId('project-item').getByRole('button', { name, exact: true }).first().click();
 	await expect(page.getByTestId('task-heading')).toHaveText(name);
 }
@@ -100,7 +141,7 @@ test('labels, planning, detail sections and views', async () => {
 	}
 
 	// Create a label in the search view.
-	await page.getByRole('button', { name: 'Suche', exact: true }).click();
+	await nav('Suche');
 	await page.getByLabel('Neues Label').fill('dringend');
 	await page.getByRole('button', { name: 'Label anlegen' }).click();
 	await expect(page.getByTestId('label-item').filter({ hasText: 'dringend' })).toBeVisible();
@@ -139,42 +180,130 @@ test('labels, planning, detail sections and views', async () => {
 	await expect(again.getByTestId('criteria-progress')).toHaveText('1 von 1 erfüllt');
 
 	// Today view lists the task due today with priority chip.
-	await page.getByRole('button', { name: 'Heute', exact: true }).click();
+	await nav('Heute');
 	const todayItem = page.getByTestId('planning-item').filter({ hasText: 'Einkaufen' });
 	await expect(todayItem).toBeVisible();
 	await expect(todayItem.getByTestId('chip-priority')).toHaveText('Hoch');
-	await page.getByRole('button', { name: 'Als Nächstes', exact: true }).click();
+	await nav('Als Nächstes');
 	await expect(page.getByTestId('planning-item').filter({ hasText: 'Einkaufen' })).toBeVisible();
-	await page.getByRole('button', { name: 'Anstehend', exact: true }).click();
+	await nav('Anstehend');
 	await expect(page.getByTestId('view-heading')).toHaveText('Anstehend');
 	await expect(page.getByTestId('planning-item').filter({ hasText: 'Einkaufen' })).toHaveCount(0);
 });
 
-test('board reorder persists, search and saved filter', async () => {
+test('board: status mode, columns, tasks, drag and menu moves, delete column', async () => {
+	await page.setViewportSize({ width: 1700, height: 900 });
 	await openProject('Küche');
-	await page.getByRole('tab', { name: 'Board' }).click();
-	const open = page.getByTestId('board-column-open');
-	await expect(open.getByTestId('board-card')).toHaveCount(2);
-	const before = await open.getByTestId('board-card').allInnerTexts();
-	const secondTitle = before[1].split('\n')[0];
-	await open.getByTestId('board-card').last().getByRole('button', { name: 'Nach oben' }).click();
-	await expect(open.getByTestId('board-card').first()).toContainText(secondTitle);
+	await setView('Board');
+	// Without own columns the board shows read-only status columns and a hint.
+	await expect(page.getByTestId('board')).toHaveAttribute('data-mode', 'status');
+	await expect(page.getByTestId('board-status-hint')).toBeVisible();
+	await expect(page.getByTestId('board-lane').filter({ hasText: 'Offen' }).getByTestId('board-card')).toHaveCount(2);
+	await expect(page.getByTestId('board-card').first().locator('xpath=ancestor::*[@draggable="true"]')).toHaveCount(0);
+
+	// Create real columns.
+	await page.getByTestId('template-status').click();
+	await expect(page.getByTestId('board')).toHaveAttribute('data-mode', 'columns');
+	const lane = (name: string) => page.getByTestId('board-lane').filter({ has: page.getByRole('heading', { name, exact: true }) });
+	await expect(lane('Offen').getByTestId('board-card')).toHaveCount(2);
+	await page.getByTestId('add-column').click();
+	await page.getByLabel('Name der Spalte').fill('Ideen');
+	await page.getByRole('button', { name: 'Spalte anlegen' }).click();
+	await expect(lane('Ideen')).toBeVisible();
+
+	// Add a task directly into a column.
+	await lane('Ideen').getByLabel('Aufgabe hinzufügen in Ideen').fill('Hochbeet planen');
+	await page.keyboard.press('Enter');
+	await expect(lane('Ideen').getByTestId('board-card')).toContainText('Hochbeet planen');
+
+	// Move by menu ("Verschieben nach") and persist across reload.
+	const putCol = () => page.waitForResponse((r) => r.url().includes('/column') && r.request().method() === 'PUT');
+	await lane('Offen').getByTestId('board-card').filter({ hasText: 'Putzen' }).getByRole('button', { name: /Aufgabenmenü/ }).click();
+	let moved = putCol();
+	await page.getByRole('button', { name: 'In Arbeit', exact: true }).click();
+	expect((await moved).status()).toBe(200);
+	await expect(lane('In Arbeit').getByTestId('board-card')).toContainText('Putzen');
+
+	await page.getByTestId('board').evaluate((e) => (e.scrollLeft = 0));
+	// Drag and drop a card to another column (HTML5 DnD).
+	moved = putCol();
+	await dragCard(lane('Offen').getByTestId('board-card').filter({ hasText: 'Einkaufen' }), lane('Ideen').getByTestId('board-card').first());
+	expect((await moved).status()).toBe(200);
+	await expect(lane('Ideen').getByTestId('board-card').filter({ hasText: 'Einkaufen' })).toBeVisible();
+
+	// Move into the done column marks the task done.
+	await lane('In Arbeit').getByTestId('board-card').filter({ hasText: 'Putzen' }).getByRole('button', { name: /Aufgabenmenü/ }).click();
+	moved = putCol();
+	await page.getByRole('button', { name: 'Erledigt', exact: true }).click();
+	await moved;
+	await expect(lane('Erledigt').getByTestId('board-card-check').first()).toHaveAttribute('aria-pressed', 'true');
+
+	// Reopen it again by moving it out of the done column.
+	await lane('Erledigt').getByTestId('board-card').filter({ hasText: 'Putzen' }).getByRole('button', { name: /Aufgabenmenü/ }).click();
+	moved = putCol();
+	await page.getByRole('button', { name: 'Offen', exact: true }).click();
+	await moved;
+	await expect(lane('Offen').getByTestId('board-card').filter({ hasText: 'Putzen' }).getByTestId('board-card-check')).toHaveAttribute('aria-pressed', 'false');
+
+	// Reorder a column via its menu.
+	await lane('Ideen').getByRole('button', { name: 'Spaltenmenü: Ideen' }).click();
+	await page.getByRole('button', { name: 'Nach links' }).click();
+	await expect(page.getByTestId('lane-title')).toHaveText(['Offen', 'In Arbeit', 'Ideen', 'Erledigt']);
+
+	// Persisted.
 	await page.reload();
 	await openProject('Küche');
-	await page.getByRole('tab', { name: 'Board' }).click();
-	await expect(page.getByTestId('board-column-open').getByTestId('board-card').first()).toContainText(secondTitle);
+	await expect(page.getByTestId('board')).toHaveAttribute('data-mode', 'columns');
+	await expect(page.getByTestId('lane-title')).toHaveText(['Offen', 'In Arbeit', 'Ideen', 'Erledigt']);
+	await expect(lane('Ideen').getByTestId('board-card')).toHaveCount(2);
 
-	// Move a card to another column.
-	await page
-		.getByTestId('board-column-open')
-		.getByTestId('board-card')
-		.filter({ hasText: 'Putzen' })
-		.getByLabel('Verschieben nach Spalte')
-		.selectOption('in_progress');
-	await expect(page.getByTestId('board-column-in_progress').getByTestId('board-card')).toContainText('Putzen');
+	// Rename and colour.
+	await lane('Ideen').getByRole('button', { name: 'Spaltenmenü: Ideen' }).click();
+	await page.getByRole('button', { name: 'Umbenennen' }).click();
+	await page.getByLabel('Spaltenname').fill('Ideenspeicher');
+	await page.keyboard.press('Enter');
+	await expect(lane('Ideenspeicher')).toBeVisible();
+	await lane('Ideenspeicher').getByRole('button', { name: 'Spaltenmenü: Ideenspeicher' }).click();
+	await page.getByRole('button', { name: 'Farbe #2470E0' }).click();
+	await expect(lane('Ideenspeicher').locator('span[style*="background"]').first()).toBeVisible();
 
+	// Delete a column: its tasks move to the chosen column.
+	await lane('Ideenspeicher').getByRole('button', { name: 'Spaltenmenü: Ideenspeicher' }).click();
+	await page.getByRole('button', { name: 'Spalte löschen' }).click();
+	await page.getByLabel('Aufgaben verschieben nach').selectOption({ label: 'Offen' });
+	await page.getByTestId('delete-column-dialog').getByRole('button', { name: 'Löschen' }).click();
+	await expect(page.getByTestId('lane-title').filter({ hasText: 'Ideenspeicher' })).toHaveCount(0);
+	await expect(lane('Offen').getByTestId('board-card').filter({ hasText: 'Hochbeet planen' })).toBeVisible();
+	await setView('Liste');
+	await page.setViewportSize({ width: 1280, height: 720 });
+});
+
+test('sidebar: favorites, counts, quick add shortcut, notifications', async () => {
+	await nav('Heute');
+	await page.keyboard.press('q');
+	await expect(page.getByTestId('quick-add')).toBeVisible();
+	await page.getByLabel('Titel', { exact: true }).fill('Per Kürzel angelegt');
+	await page.getByRole('button', { name: 'Aufgabe hinzufügen', exact: true }).last().click();
+	await expect(page.getByTestId('quick-add')).toHaveCount(0);
+	await nav('Eingang');
+	await expect(page.getByTestId('inbox-item').filter({ hasText: 'Per Kürzel angelegt' })).toBeVisible();
+
+	// Favorite (provisional, device-local) shows up in the Favoriten section.
+	const item = page.getByTestId('project-item').filter({ hasText: 'Küche' }).first();
+	await item.hover();
+	await item.getByRole('button', { name: 'Projektmenü: Küche' }).click();
+	await page.getByRole('button', { name: 'Zu Favoriten hinzufügen' }).click();
+	await expect(page.getByTestId('favorites')).toContainText('Küche');
+	await expect(page.getByTestId('project-count').first()).toBeVisible();
+
+	await page.getByTestId('notifications').click();
+	await expect(page.getByRole('dialog', { name: 'Benachrichtigungen' })).toContainText('Keine offenen Einladungen');
+	await page.keyboard.press('Escape');
+});
+
+test('search and saved filter', async () => {
 	// Search + saved filter.
-	await page.getByRole('button', { name: 'Suche', exact: true }).click();
+	await nav('Suche');
 	await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('putz');
 	await page.getByRole('button', { name: 'Suchen', exact: true }).click();
 	await expect(page.getByTestId('search-hit').filter({ hasText: 'Putzen' })).toBeVisible();
@@ -188,7 +317,7 @@ test('board reorder persists, search and saved filter', async () => {
 });
 
 test('teams, sharing and visibility', async () => {
-	await page.getByRole('button', { name: 'Teams', exact: true }).click();
+	await nav('Teams');
 	await page.getByLabel('Neues Team').fill('Familie');
 	await page.getByRole('button', { name: 'Team anlegen' }).click();
 	await expect(page.getByTestId('team-item')).toContainText('Familie');
@@ -196,7 +325,7 @@ test('teams, sharing and visibility', async () => {
 	await expect(page.getByTestId('team-member')).toContainText('Teamadministration');
 
 	await openProject('Haushalt');
-	await page.getByRole('tab', { name: 'Freigaben' }).click();
+	await openShare();
 	await expect(page.getByTestId('my-role')).toHaveText('Verwalten');
 	await page.getByLabel('Empfänger').selectOption('team');
 	await page.getByLabel('Team', { exact: true }).selectOption({ label: 'Familie' });
@@ -208,7 +337,7 @@ test('teams, sharing and visibility', async () => {
 
 test('recurrence, reminders, dependencies, milestones and filter changes', async () => {
 	await openProject('Küche');
-	await page.getByRole('tab', { name: 'Liste' }).click();
+	await setView('Liste');
 	const task = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
 	await task.getByRole('button', { name: 'Details' }).click();
 	const detail = task.getByTestId('task-detail');
@@ -253,7 +382,8 @@ test('recurrence, reminders, dependencies, milestones and filter changes', async
 	await expect(shop.getByTestId('dependency')).toHaveCount(0);
 
 	// Milestone with a task and progress.
-	await page.getByRole('tab', { name: 'Meilensteine' }).click();
+	await page.getByTestId('project-more').click();
+	await page.getByTestId('milestones-open').click();
 	await page.getByLabel('Neuer Meilenstein').fill('Frühjahrsputz');
 	await page.getByRole('button', { name: 'Meilenstein anlegen' }).click();
 	const ms = page.getByTestId('milestone').filter({ hasText: 'Frühjahrsputz' });
@@ -264,7 +394,7 @@ test('recurrence, reminders, dependencies, milestones and filter changes', async
 	await expect(ms.getByTestId('milestone-progress')).toHaveText('0 von 1 erledigt');
 
 	// Saved filter: rename, then overwrite with the current search.
-	await page.getByRole('button', { name: 'Suche', exact: true }).click();
+	await nav('Suche');
 	await page.getByRole('button', { name: 'Filter Putzliste umbenennen' }).click();
 	await page.getByLabel('Filter Putzliste umbenennen').fill('Putzplan');
 	await page.getByTestId('saved-filter').getByRole('button', { name: 'Speichern' }).click();
@@ -303,12 +433,12 @@ test('invited person: directory search, team invitation name, author and actor n
 		await guest.goto(`/setup?token=${token}`);
 		await guest.getByLabel('Anzeigename').fill('Berta Beispiel');
 		await guest.getByRole('button', { name: 'Passkey erstellen' }).click();
-		await expect(guest.getByRole('button', { name: 'Abmelden' })).toBeVisible();
+		await expect(guest.getByTestId('account-menu')).toBeVisible();
 
 		const guestID = ((await (await guest.request.get('/v1/me')).json()) as { id: string }).id;
 
 		// First contact: there is no global directory, so the search finds nobody and the account ID is used.
-		await page.getByRole('button', { name: 'Teams', exact: true }).click();
+		await nav('Teams');
 		await page.getByTestId('team-item').filter({ hasText: 'Familie' }).click();
 		await page.getByLabel('Person suchen (Name)').fill('Bert');
 		await expect(page.getByText('Niemand gefunden.')).toBeVisible();
@@ -318,16 +448,16 @@ test('invited person: directory search, team invitation name, author and actor n
 		await expect(row).toContainText('Einladung offen');
 
 		// The invitee sees the team name, not just an ID.
-		await guest.getByRole('button', { name: 'Teams', exact: true }).click();
+		await guest.getByRole('button', { name: 'Mehr', exact: true }).click().then(() => guest.getByRole('button', { name: 'Teams', exact: true }).click());
 		await expect(guest.getByTestId('team-invitation')).toContainText('Einladung zum Team Familie');
 
 		// Now a relation exists: she is found by name and can be shared a project with.
 		await openProject('Haushalt');
-		await page.getByRole('tab', { name: 'Liste' }).click();
+		await setView('Liste');
 		await page.getByLabel('Neue Aufgabe, Enter zum Anlegen').fill('Wochenplan');
 		await page.keyboard.press('Enter');
 		await expect(page.getByTestId('task-item').filter({ hasText: 'Wochenplan' })).toBeVisible();
-		await page.getByRole('tab', { name: 'Freigaben' }).click();
+		await openShare();
 		await page.getByLabel('Person suchen (Name)').fill('Berta');
 		await page.getByTestId('person-results').getByRole('button', { name: 'Berta Beispiel' }).click();
 		await page.getByLabel('Deine Rolle').selectOption('comment');
@@ -343,7 +473,7 @@ test('invited person: directory search, team invitation name, author and actor n
 		await expect(guestTask.getByTestId('comment')).toContainText('Hallo vom Gast');
 
 		// The admin sees the author's name on the comment and the actor's name in the activity.
-		await page.getByRole('tab', { name: 'Liste' }).click();
+		await setView('Liste');
 		const mine = page.getByTestId('task-item').filter({ hasText: 'Wochenplan' });
 		await mine.getByRole('button', { name: 'Details' }).click();
 		await expect(mine.getByTestId('comment-author')).toHaveText('Berta Beispiel');
@@ -356,7 +486,7 @@ test('invited person: directory search, team invitation name, author and actor n
 
 test('attachment upload with preview', async () => {
 	await openProject('Küche');
-	await page.getByRole('tab', { name: 'Liste' }).click();
+	await setView('Liste');
 	const task = page.getByTestId('task-item').filter({ hasText: 'Einkaufen' });
 	await task.getByRole('button', { name: 'Details' }).click();
 	await task.getByLabel('Datei auswählen').setInputFiles({ name: 'beleg.png', mimeType: 'image/png', buffer: PNG_1X1 });
@@ -404,7 +534,7 @@ test('oauth consent page and grant management', async () => {
 
 	// Grant list and revoke.
 	await page.goto('/');
-	await page.getByRole('button', { name: 'Konto', exact: true }).click();
+	await nav('Konto');
 	const grant = page.getByTestId('oauth-grant').filter({ hasText: clientID });
 	await expect(grant).toContainText('Projekte lesen, Aufgaben lesen');
 	await expect(grant).toContainText('Haushalt');
@@ -416,7 +546,7 @@ test('oauth consent page and grant management', async () => {
 });
 
 test('account: passkeys, sessions and recovery', async () => {
-	await page.getByRole('button', { name: 'Konto', exact: true }).click();
+	await nav('Konto');
 	await expect(page.getByTestId('passkey-item')).toHaveCount(1);
 	await page.getByLabel('Name des neuen Passkeys').fill('Zweiter');
 	await page.getByRole('button', { name: 'Passkey hinzufügen' }).click();
@@ -444,11 +574,11 @@ test('account: passkeys, sessions and recovery', async () => {
 	await expect(page.getByTestId('recovery-done')).toBeVisible();
 });
 
-test('mobile 390px: navigation drawer and no horizontal page scroll', async () => {
+test('mobile 390px: navigation drawer, board and no horizontal page scroll', async () => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/');
 	const login = page.getByRole('button', { name: 'Mit Passkey anmelden' });
-	const menu = page.getByRole('button', { name: 'Menü' });
+	const menu = page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Menü' });
 	await expect(login.or(menu)).toBeVisible();
 	if (await login.isVisible()) await login.click();
 	await expect(menu).toBeVisible();
@@ -462,7 +592,7 @@ test('mobile 390px: navigation drawer and no horizontal page scroll', async () =
 		expect(w.doc, `${label}: documentElement overflows`).toBeLessThanOrEqual(w.inner);
 		expect(w.body, `${label}: body overflows`).toBeLessThanOrEqual(w.inner);
 	};
-	const nav = page.getByRole('navigation', { name: 'Projekte' });
+	const nav = page.getByRole('navigation', { name: 'Seitenleiste' });
 
 	// Drawer is closed by default and opens via the menu button.
 	await expect(nav).toBeHidden();
@@ -470,11 +600,13 @@ test('mobile 390px: navigation drawer and no horizontal page scroll', async () =
 	await expect(menu).toHaveAttribute('aria-expanded', 'true');
 	await expect(nav).toBeVisible();
 	await noOverflow('drawer');
-	await nav.getByRole('button', { name: 'Küche', exact: true }).click();
+	await nav.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().click();
 	await expect(nav).toBeHidden();
 	await expect(page.getByTestId('task-heading')).toHaveText('Küche');
+	await expect(page.getByTestId('fab')).toBeVisible();
 
 	// Task rows stay inside the viewport, including the edit button.
+	await setView('Liste');
 	const row = page.getByTestId('task-item').first();
 	await expect(row).toBeVisible();
 	const edit = row.getByRole('button', { name: 'Bearbeiten' });
@@ -486,25 +618,36 @@ test('mobile 390px: navigation drawer and no horizontal page scroll', async () =
 	await noOverflow('task detail');
 	await row.getByRole('button', { name: 'Details' }).click();
 
-	await page.getByRole('tab', { name: 'Board' }).click();
-	await expect(page.getByTestId('board-column-open')).toBeVisible();
+	// Board scrolls horizontally inside its own container, not the page.
+	await setView('Board');
+	await expect(page.getByTestId('board')).toBeVisible();
+	await expect(page.getByTestId('board-lane').first()).toBeVisible();
 	await noOverflow('board');
+	const scroller = await page.getByTestId('board').evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, snap: getComputedStyle(e).scrollSnapType }));
+	expect(scroller.sw).toBeGreaterThan(scroller.cw);
+	expect(scroller.snap).toContain('x');
+	if (process.env.BOARD_SHOTS) await page.screenshot({ path: `${process.env.BOARD_SHOTS}/board-mobil.png` });
+	await setView('Liste');
 
-	// Bottom navigation (phones) reaches the main views directly; it replaces the drawer for them.
+	// Bottom navigation reaches the main views directly.
 	const bottom = page.getByRole('navigation', { name: 'Hauptnavigation' });
 	await expect(bottom).toBeVisible();
-	for (const view of ['Heute', 'Suche', 'Teams', 'Konto']) {
+	for (const view of ['Heute', 'Anstehend', 'Suche']) {
 		await bottom.getByRole('button', { name: view, exact: true }).click();
 		await expect(page.getByTestId('view-heading')).toBeVisible();
 		await page.waitForTimeout(300);
 		await noOverflow(view);
 	}
-	// The drawer still offers the remaining planning views.
-	await menu.click();
-	await nav.getByRole('button', { name: 'Anstehend', exact: true }).click();
-	await expect(nav).toBeHidden();
-	await expect(page.getByTestId('view-heading')).toHaveText('Anstehend');
-	await noOverflow('Anstehend');
+	// Drawer: Teams and Konto live under "Mehr".
+	for (const view of ['Teams', 'Konto']) {
+		await menu.click();
+		await nav.getByRole('button', { name: 'Mehr', exact: true }).click();
+		await nav.getByRole('button', { name: view, exact: true }).click();
+		await expect(nav).toBeHidden();
+		await expect(page.getByTestId('view-heading')).toBeVisible();
+		await page.waitForTimeout(300);
+		await noOverflow(view);
+	}
 	await page.setViewportSize({ width: 1280, height: 720 });
 });
 
@@ -514,7 +657,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.evaluate(() => localStorage.clear());
 	await page.reload();
-	await page.getByRole('button', { name: 'Konto', exact: true }).first().click();
+	await nav('Konto');
 	const html = page.locator('html');
 	await expect(page.getByTestId('appearance')).toBeVisible();
 	await expect(page.getByTestId('appearance-sync')).toHaveAttribute('data-state', 'saved');
@@ -552,7 +695,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await expect(html).toHaveAttribute('data-glow', 'strong');
 
 	if (SHOTS) {
-		await page.getByRole('button', { name: 'Konto', exact: true }).first().click();
+		await nav('Konto');
 		await page.locator('section:has(> [data-testid="appearance"])').screenshot({ path: `${SHOTS}/darstellung-dunkel.png` });
 	}
 
@@ -561,7 +704,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await page.reload();
 	await expect(html).toHaveClass(/dark/, { timeout: 10_000 });
 	await expect(html).toHaveAttribute('data-glow', 'strong');
-	await page.getByRole('button', { name: 'Konto', exact: true }).first().click();
+	await nav('Konto');
 	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #B45309');
 	await page.setViewportSize({ width: 1280, height: 720 });
 });

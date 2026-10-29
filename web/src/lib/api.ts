@@ -39,8 +39,43 @@ export interface Task {
 	description: string;
 	status: TaskStatus;
 	version: number;
+	/** Board column of the project (`null`/missing = no column) and 0-based position inside it. */
+	columnID?: string | null;
+	boardPosition?: number;
 	/** Only present in task lists. */
 	planning?: TaskPlanningSummary;
+}
+/** contracts/project-columns.yaml */
+export interface ProjectColumn {
+	id: string;
+	projectID: string;
+	name: string;
+	color?: string | null;
+	isDone: boolean;
+	position: number;
+	version: number;
+}
+export interface BoardColumn {
+	/** `null` for the virtual status columns of a project without own columns. */
+	id: string | null;
+	key?: TaskStatus | null;
+	name: string;
+	color?: string | null;
+	isDone: boolean;
+	position: number;
+	version?: number | null;
+	tasks: Task[];
+}
+export interface BoardResponse {
+	projectID: string;
+	mode: 'status' | 'columns';
+	columns: BoardColumn[];
+	unassigned: Task[];
+}
+export interface Pairing {
+	deviceID: string;
+	code: string;
+	expiresAt: string;
 }
 export interface DirectoryUser {
 	id: string;
@@ -323,13 +358,30 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			),
 		deleteProject: (id: string) => request<void>('DELETE', `/projects/${id}`),
 
-		listTasks: (projectID: string) => request<Task[]>('GET', `/tasks?projectID=${encodeURIComponent(projectID)}`),
-		createTask: (projectID: string, title: string) => request<Task>('POST', '/tasks', { projectID, title }),
+		listTasks: (projectID?: string) => request<Task[]>('GET', `/tasks${query({ projectID })}`),
+		createTask: (projectID: string, title: string, extra: { description?: string; columnID?: string | null } = {}) =>
+			request<Task>('POST', '/tasks', { projectID, title, ...extra }),
 		updateTask: (
 			t: Task,
 			changes: Partial<Pick<Task, 'title' | 'description' | 'status'>>
 		) => request<Task>('PATCH', `/tasks/${t.id}`, { version: t.version, ...changes }),
 		deleteTask: (id: string) => request<void>('DELETE', `/tasks/${id}`),
+
+		// Project columns and board (contracts/project-columns.yaml)
+		projectBoard: (projectID: string) => request<BoardResponse>('GET', `/projects/${projectID}/board`),
+		createColumn: (projectID: string, body: { name: string; color?: string; isDone?: boolean; index?: number }) =>
+			request<ProjectColumn>('POST', `/projects/${projectID}/columns`, body),
+		applyColumnTemplate: (projectID: string, source: string) =>
+			request<ProjectColumn[]>('POST', `/projects/${projectID}/columns/template`, { source }),
+		updateColumn: (c: { id: string; projectID: string; version: number }, changes: { name?: string; color?: string; isDone?: boolean; index?: number }) =>
+			request<ProjectColumn>('PATCH', `/projects/${c.projectID}/columns/${c.id}`, { version: c.version, ...changes }),
+		deleteColumn: (c: { id: string; projectID: string; version: number }, moveTo?: string) =>
+			request<void>('DELETE', `/projects/${c.projectID}/columns/${c.id}${query({ moveTo, version: c.version })}`),
+		moveTaskToColumn: (t: Task, columnID: string | null, index?: number) =>
+			request<Task>('PUT', `/tasks/${t.id}/column`, { version: t.version, columnID, ...(index === undefined ? {} : { index }) }),
+
+		// Agents (contracts/agents.yaml)
+		pairDevice: (label: string) => request<Pairing>('POST', '/agents/devices', { label }),
 
 		// Planning (contracts/planning-ext.yaml)
 		getPlanning: (taskID: string) => request<PlanningTask>('GET', `/planning/tasks/${taskID}`),

@@ -1,6 +1,6 @@
 # ADR 0011 – Projektspalten (Board pro Projekt)
 
-Status: Backend implementiert (29.10.2026); PWA-Board-UI und Apple-Anbindung offen.
+Status: Backend und PWA-Board-UI implementiert (29.10.2026); Apple-Anbindung offen.
 
 ## Anforderung (Nutzer)
 
@@ -34,7 +34,7 @@ Todoist begrenzt die Zahl der Projekte. Der Nutzer hat deshalb ein Projekt als B
 
 ## Grenzen / Folgearbeit
 
-- PWA-Board-UI (Drag-and-drop, Spaltenverwaltung, Vorlage wählen) und Apple-Anbindung offen.
+- Apple-Anbindung offen. PWA-Board umgesetzt (siehe STATUS „PWA-Umstrukturierung und Board“).
 - Sync-Mutationen für Spalten; Spalten-Aktivität im Aufgabenverlauf (aktuell nur die vorhandenen Statusereignisse).
 - Spaltenwechsel schreibt keine eigene Aktivität (nur Statuswechsel und Projektwechsel wie bisher).
 - Das alte `GET /v1/planning/board` (Status-Spalten, `task_planning.position`) und `PUT /v1/planning/board/reorder` bleiben unverändert für Statusboards bestehen; Boards mit eigenen Spalten nutzen `GET /v1/projects/{id}/board`.
