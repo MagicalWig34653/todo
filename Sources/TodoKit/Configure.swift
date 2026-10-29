@@ -69,6 +69,7 @@ public func configureMigrations(_ app: Application) {
     configureAttachments(app)
     configureMaintenance(app)
     app.migrations.add(CreateSyncSchema())
+    app.migrations.add(WidenLongTextColumns())
 }
 
 public func configureContent() {

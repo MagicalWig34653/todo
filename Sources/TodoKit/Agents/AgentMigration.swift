@@ -90,3 +90,33 @@ struct CreateAgentSchema: AsyncMigration {
         }
     }
 }
+
+/// `.sql(.text)` becomes VARCHAR(255) on MariaDB, so longer values failed with "Data too long" (HTTP 500) although the
+/// contract allows up to 4000 characters (found by the runner end-to-end run against a real stack). SQLite does not
+/// enforce lengths and needs no change. Widens only; no data is rewritten.
+struct WidenLongTextColumns: AsyncMigration {
+    private static let columns: [(table: String, column: String, type: String, nullable: Bool)] = [
+        ("tasks", "description", "TEXT", false),
+        ("discovery_saved_filters", "criteria", "TEXT", false),
+        ("runner_devices", "label", "TEXT", false),
+        ("project_runner_bindings", "label", "TEXT", false),
+        ("agent_jobs", "scope", "TEXT", false),
+        ("agent_jobs", "progress", "TEXT", false),
+        ("agent_jobs", "result", "MEDIUMTEXT", true),
+        ("agent_checkpoints", "session_reference", "TEXT", false),
+        ("agent_checkpoints", "next_step", "TEXT", false),
+        ("agent_questions", "prompt", "TEXT", false),
+        ("agent_answers", "value", "TEXT", false),
+        ("agent_events", "detail", "TEXT", false),
+    ]
+
+    func prepare(on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase, sql.dialect.name == "mysql" else { return }
+        for item in Self.columns {
+            let nullability = item.nullable ? "NULL" : "NOT NULL"
+            try await sql.raw("ALTER TABLE `\(unsafeRaw: item.table)` MODIFY `\(unsafeRaw: item.column)` \(unsafeRaw: item.type) \(unsafeRaw: nullability)").run()
+        }
+    }
+
+    func revert(on db: any Database) async throws {}
+}
