@@ -81,7 +81,9 @@ struct MCPController: RouteCollection {
         Tool(name: "add_comment", scope: "comments:write", properties: ["taskID": string, "body": string, "idempotencyKey": string], required: ["taskID", "body"]),
         Tool(name: "get_progress", scope: "agents:read", properties: ["taskID": string], required: ["taskID"]),
         Tool(name: "list_attachments", scope: "attachments:read", properties: ["taskID": string], required: ["taskID"]),
-        Tool(name: "get_attachment", scope: "attachments:read", properties: ["id": string], required: ["id"])
+        Tool(name: "get_attachment", scope: "attachments:read", properties: ["id": string], required: ["id"]),
+        Tool(name: "list_columns", scope: "projects:read", properties: ["projectID": string], required: ["projectID"]),
+        Tool(name: "move_task_to_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "columnID": .object(["type": .array([.string("string"), .string("null")])]), "index": .object(["type": .string("integer")])], required: ["id", "version", "columnID"])
     ]
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
@@ -143,10 +145,16 @@ struct MCPController: RouteCollection {
                 let t = try await ProjectAccess(user: user, db: db).task(id)
                 _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
                 guard t.version == b.version else { throw Abort(.conflict, reason: "version_conflict") }
-                if let p = b.projectID { _ = try await project(p, user: user, grant: grant, db: db, role: .edit); t.projectID = p }
+                let before = t.status
+                if let p = b.projectID {
+                    _ = try await project(p, user: user, grant: grant, db: db, role: .edit)
+                    if p != t.projectID { t.columnID = nil; t.boardPosition = 0 }
+                    t.projectID = p
+                }
                 if let title = b.title { t.title = try cleanTitle(title) }
                 if let d = b.description { t.details = d }
                 if let s = b.status { guard TaskStatus.all.contains(s) else { throw Abort(.badRequest, reason: "invalid_status") }; t.status = s }
+                if t.status != before || b.projectID != nil { try await ColumnService.reconcile(t, on: db) }
                 t.version += 1; try await t.save(on: db); return try .encoded(TaskDTO(t))
             }
         case "list_comments":
@@ -185,6 +193,25 @@ struct MCPController: RouteCollection {
             guard let att = try await Attachment.find(uuid(a["id"]), on: db), att.status == "complete" else { throw Abort(.notFound) }
             _ = try await task(att.taskID, user: user, grant: grant, db: db)
             return try .encoded(AttachmentDTO(att))
+        case "list_columns":
+            // Board view of one granted project (same service as GET /v1/projects/{id}/board).
+            let id = try uuid(a["projectID"])
+            _ = try await project(id, user: user, grant: grant, db: db)
+            return try .encoded(try await ColumnService(user: user, db: db).board(id))
+        case "move_task_to_column":
+            let id = try uuid(a["id"])
+            guard case .number(let v) = a["version"], v == v.rounded() else { throw Abort(.badRequest, reason: "invalid_arguments") }
+            var columnID: UUID?
+            if !a["columnID"].isNull { columnID = try uuid(a["columnID"]) }
+            var index: Int?
+            if !a["index"].isNull { guard case .number(let n) = a["index"], n == n.rounded() else { throw Abort(.badRequest, reason: "invalid_index") }; index = Int(n) }
+            let request = MoveTaskRequest(version: Int(v), columnID: columnID, index: index)
+            return try await db.transaction { db in
+                try await lockSharingGraph(on: db)
+                let t = try await ProjectAccess(user: user, db: db).task(id)
+                _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
+                return try .encoded(try await ColumnService(user: user, db: db).move(id, request))
+            }
         default: throw Abort(.badRequest)
         }
     }

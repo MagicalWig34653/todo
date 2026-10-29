@@ -86,7 +86,7 @@ struct PlanningService: Sendable {
         return false
     }
 
-    func update(_ id: UUID, body: UpdateTaskRequest) async throws -> TaskDTO {
+    func update(_ id: UUID, body: UpdateTaskRequest, reconcileColumn: Bool = true) async throws -> TaskDTO {
         try await lock()
         try await lockRow(table: TodoTask.schema, id: id, on: db)
         let t = try await task(id, role: .edit)
@@ -111,8 +111,13 @@ struct PlanningService: Sendable {
                 }.delete()
                 try await PlanningMilestoneTask.query(on: db).filter(\.$taskID == id).delete()
                 if let p = try await TaskPlanning.find(id, on: db) { p.position = 0; try await p.save(on: db) }
+                // Columns belong to one project; the task lands in "Ohne Spalte" of the target.
+                t.columnID = nil; t.boardPosition = 0
             }
             t.projectID = project
+        }
+        if reconcileColumn, t.status != before.status || t.projectID != before.projectID {
+            try await ColumnService.reconcile(t, on: db)
         }
         t.version += 1
         try await t.save(on: db)

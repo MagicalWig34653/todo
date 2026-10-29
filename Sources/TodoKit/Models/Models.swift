@@ -116,6 +116,10 @@ final class TodoTask: Model, @unchecked Sendable {
     @Field(key: "description") var details: String
     @Field(key: "status") var status: String // open | in_progress | in_review | done
     @Field(key: "version") var version: Int
+    /// Board column of the task's own project (ADR 0011); nil = "Ohne Spalte" / status board.
+    @OptionalField(key: "column_id") var columnID: UUID?
+    /// 0-based position inside the column.
+    @Field(key: "board_position") var boardPosition: Int
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?
     init() {}
@@ -126,5 +130,6 @@ final class TodoTask: Model, @unchecked Sendable {
         self.details = details
         self.status = status
         self.version = 1
+        self.boardPosition = 0
     }
 }

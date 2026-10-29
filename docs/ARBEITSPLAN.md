@@ -67,3 +67,10 @@ Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell be
 ### Darstellung und Account-Preferences (29.10.2026)
 - [x] Backend `GET/PUT /v1/me/preferences` (Vertrag, Migration, Tests SQLite+MariaDB); PWA-Bereich "Darstellung" unter Konto mit Farbschema, Akzent (Presets/eigen), Leuchteffekt, Transparenz, Pre-Paint, Abgleich; Screenshots hell/dunkel. Details und Grenzen in STATUS.md.
 - [ ] Nächster Schritt: Apple-Client an Preferences anbinden; weitere Einstellungsgruppen im Dokument (`version` erhöhen, `PreferencesDocument.migrated`).
+
+## Projektspalten (29.10.2026)
+Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als-Spalte-Workaround** (Todoist-Limit, ADR 0011).
+- [x] Backend: `project_columns`, `tasks.column_id/board_position`, REST (`/v1/projects/{id}/columns|board`, `PUT /v1/tasks/{id}/column`), Sync-Feed, MCP `list_columns`/`move_task_to_column`, `contracts/project-columns.yaml`, Tests (SQLite, MariaDB).
+- [ ] PWA: Board-Ansicht pro Projekt mit Drag-and-drop, Spalten verwalten (anlegen, umbenennen, einfärben, sortieren, löschen mit Zielwahl), Vorlage Offen/In Arbeit/Erledigt oder Kopie.
+- [ ] Apple: Board-Ansicht anbinden (Vertrag unverändert, `contracts/project-columns.yaml`).
+- [ ] Sync-Mutationen für Spalten (Offline-Schreiben), optional MCP-Schreibwerkzeuge für Spalten.

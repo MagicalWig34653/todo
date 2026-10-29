@@ -21,6 +21,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: DirectoryController())
     try app.register(collection: AgentController())
     try app.register(collection: AttachmentController())
+    try app.register(collection: ColumnController())
     try app.register(collection: SyncController())
     // Apple app-site-association for passkeys in native apps: public, no redirect, JSON.
     for path in [[".well-known", "apple-app-site-association"], ["apple-app-site-association"]] {

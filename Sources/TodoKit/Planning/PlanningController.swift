@@ -35,6 +35,9 @@ struct TaskDTO: Content {
     let description: String
     let status: String
     let version: Int
+    /// Board column of the project (`null` = no column); position inside it.
+    let columnID: UUID?
+    let boardPosition: Int
     /// Only set by the task list (`GET /v1/tasks`); omitted from all other responses.
     var planning: TaskPlanningSummary?
 
@@ -45,6 +48,8 @@ struct TaskDTO: Content {
         description = t.details
         status = t.status
         version = t.version
+        columnID = t.columnID
+        boardPosition = t.boardPosition
     }
 }
 
@@ -65,6 +70,8 @@ struct CreateTaskRequest: Content {
     let projectID: UUID
     let title: String
     let description: String?
+    /// Optional board column of `projectID` (a done column creates the task as done).
+    var columnID: UUID? = nil
 }
 
 struct UpdateTaskRequest: Content {
@@ -190,6 +197,9 @@ enum PlanningOperations {
             ownerID: try user.requireID(), projectID: body.projectID,
             title: try cleanName(body.title, reason: "invalid_title"), details: body.description ?? "")
         task.id = id
+        if let columnID = body.columnID {
+            try await ColumnService(user: user, db: db).initialPlacement(for: task, columnID: columnID)
+        }
         try await task.save(on: db)
         try await appendActivity(taskID: task.requireID(), actorType: .person, actorID: user.requireID(), kind: "task.created", subjectID: nil, on: db)
         return task

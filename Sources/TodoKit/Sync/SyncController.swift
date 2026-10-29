@@ -9,6 +9,8 @@ struct SyncChangeDTO: Content {
     let kind: String
     let project: ProjectDTO?
     let task: TaskDTO?
+    /// Set for `entityType == "column"` upserts (project board columns).
+    var column: ColumnDTO? = nil
 }
 
 struct SyncChangesResponse: Content {
@@ -97,6 +99,10 @@ struct SyncController: RouteCollection {
                     if row.kind == "revoke" {
                         do {
                             if row.entityType == "project" { _ = try await access.project(row.entityID) }
+                            else if row.entityType == "column" {
+                                guard let c = try await ProjectColumn.find(row.entityID, on: req.db) else { throw Abort(.notFound) }
+                                _ = try await access.project(c.projectID)
+                            }
                             else { _ = try await access.task(row.entityID) }
                             continue
                         } catch let error as any AbortError where error.status == .notFound || error.status == .forbidden {
@@ -115,6 +121,11 @@ struct SyncController: RouteCollection {
                     let project = try await access.project(row.entityID)
                     result.append(SyncChangeDTO(seq: row.seq, entityType: "project", entityID: row.entityID,
                         kind: "upsert", project: try await access.dto(project), task: nil))
+                } else if row.entityType == "column" {
+                    guard let column = try await ProjectColumn.find(row.entityID, on: req.db) else { continue }
+                    _ = try await access.project(column.projectID)
+                    result.append(SyncChangeDTO(seq: row.seq, entityType: "column", entityID: row.entityID,
+                        kind: "upsert", project: nil, task: nil, column: try ColumnDTO(column)))
                 } else {
                     let task = try await access.task(row.entityID)
                     result.append(SyncChangeDTO(seq: row.seq, entityType: "task", entityID: row.entityID,

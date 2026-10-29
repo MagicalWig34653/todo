@@ -72,6 +72,12 @@ enum SyncRecorder {
                 try await recordDelete(type: "project", id: id, projectID: id, audience: Array(lost), kind: "revoke", on: db)
             }
             guard !gained.isEmpty || !lost.isEmpty else { continue }
+            for column in try await ProjectColumn.query(on: db).filter(\.$projectID == id).sort(\.$id).all() {
+                if !gained.isEmpty { try await recordUpsert(type: "column", id: column.requireID(), projectID: id, on: db) }
+                if !lost.isEmpty {
+                    try await recordDelete(type: "column", id: column.requireID(), projectID: id, audience: Array(lost), kind: "revoke", on: db)
+                }
+            }
             for task in try await TodoTask.query(on: db).filter(\.$projectID == id).sort(\.$id).all() {
                 if !gained.isEmpty {
                     try await recordUpsert(type: "task", id: task.requireID(), projectID: id, on: db)
@@ -120,6 +126,9 @@ struct SyncProjectMiddleware: AsyncModelMiddleware {
         for project in projects {
             let audience = try await SyncRecorder.readers(of: project, on: db)
             let pid = try project.requireID()
+            for column in try await ProjectColumn.query(on: db).filter(\.$projectID == pid).all() {
+                plan.append(("column", try column.requireID(), pid, audience))
+            }
             for task in try await TodoTask.query(on: db).filter(\.$projectID == pid).all() {
                 plan.append(("task", try task.requireID(), pid, audience))
             }
@@ -163,5 +172,31 @@ struct SyncTaskMiddleware: AsyncModelMiddleware {
         let audience = try await SyncRecorder.readers(of: project, on: db)
         try await next.delete(model, force: force, on: db)
         try await SyncRecorder.recordDelete(type: "task", id: model.requireID(), projectID: model.projectID, audience: audience, on: db)
+    }
+}
+
+/// Board columns are part of the change feed; deletion tombstones go to the project's readers.
+struct SyncColumnMiddleware: AsyncModelMiddleware {
+    func create(model: ProjectColumn, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.create(model, on: db)
+        try await SyncRecorder.recordUpsert(type: "column", id: model.requireID(), projectID: model.projectID, on: db)
+    }
+
+    func update(model: ProjectColumn, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.update(model, on: db)
+        try await SyncRecorder.recordUpsert(type: "column", id: model.requireID(), projectID: model.projectID, on: db)
+    }
+
+    func delete(model: ProjectColumn, force: Bool, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        let audience = try await Project.find(model.projectID, on: db).asyncMap { try await SyncRecorder.readers(of: $0, on: db) } ?? []
+        try await next.delete(model, force: force, on: db)
+        try await SyncRecorder.recordDelete(type: "column", id: model.requireID(), projectID: model.projectID, audience: audience, on: db)
+    }
+}
+
+private extension Optional {
+    func asyncMap<T>(_ f: (Wrapped) async throws -> T) async rethrows -> T? {
+        guard let v = self else { return nil }
+        return try await f(v)
     }
 }

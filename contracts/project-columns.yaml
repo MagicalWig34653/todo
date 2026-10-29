@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: Todo – Projektspalten und Board
+  version: 1.0.0
+  description: 'Jedes Projekt hat eigene, frei benennbare Board-Spalten (ADR 0011). Projekte sind unbegrenzt; Spalten
+    gehören genau einem Projekt und werden nicht an Unterprojekte vererbt. Ohne eigene Spalten liefert das Board
+    virtuelle Statusspalten (mode "status"). Lesen: Rolle read; Spalten ändern und Aufgaben verschieben: Rolle edit.
+    Unsichtbare oder fremde Objekte: 404, zu geringe Rolle: 403, veraltete Version: 409. Alle Schreibvorgänge laufen
+    unter der gemeinsamen Sharing-Graph-Sperre (replikasicher). Spalten erscheinen im Sync-Feed als entityType
+    "column" (upsert mit column, delete als Tombstone). Migration: CreateProjectColumns (vor CreateSyncSchema).'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/projects/{id}/columns:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listProjectColumns
+      summary: Spalten des Projekts (nach position)
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ColumnDTO'}}}}}
+        '404': {description: Projekt fehlt oder unsichtbar}
+    post:
+      operationId: createProjectColumn
+      summary: Spalte anlegen (edit)
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateColumnRequest'}}}
+      responses:
+        '201': {description: Angelegt, content: {application/json: {schema: {$ref: '#/components/schemas/ColumnDTO'}}}}
+        '400': {description: invalid_name, invalid_color oder invalid_index}
+        '403': {description: Rolle unzureichend}
+        '404': {description: Projekt fehlt oder unsichtbar}
+        '422': {description: too_many_columns (höchstens 200 je Projekt)}
+  /v1/projects/{id}/columns/template:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: applyProjectColumnTemplate
+      summary: Spalten aus Vorlage anlegen (edit)
+      description: 'source "status" legt Offen / In Arbeit / Erledigt (Erledigt mit isDone) an und ordnet vorhandene
+        Aufgaben nach Status ein. source = Projekt-UUID kopiert dessen Spalten (Leserecht am Quellprojekt nötig);
+        erledigte Aufgaben landen in der ersten isDone-Spalte. Nur wenn das Projekt noch keine Spalten hat (sonst 409 columns_exist).'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [source], properties: {source: {type: string, description: '"status" oder Projekt-UUID'}}}}}
+      responses:
+        '201': {description: Angelegt, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ColumnDTO'}}}}}
+        '400': {description: invalid_source}
+        '403': {description: Rolle unzureichend}
+        '404': {description: Projekt oder Quellprojekt fehlt oder unsichtbar}
+        '409': {description: columns_exist oder source_has_no_columns}
+  /v1/projects/{id}/columns/{columnID}:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: columnID, in: path, required: true, schema: {type: string, format: uuid}}
+    patch:
+      operationId: updateProjectColumn
+      summary: Spalte ändern, umbenennen, einfärben, umsortieren (edit)
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/UpdateColumnRequest'}}}
+      responses:
+        '200': {description: Geändert, content: {application/json: {schema: {$ref: '#/components/schemas/ColumnDTO'}}}}
+        '400': {description: Ungültige Eingabe}
+        '403': {description: Rolle unzureichend}
+        '404': {description: Spalte gehört nicht zu diesem Projekt oder ist unsichtbar}
+        '409': {description: version_conflict}
+    delete:
+      operationId: deleteProjectColumn
+      summary: Spalte löschen (edit); Aufgaben wandern weiter
+      description: 'Aufgaben der Spalte werden angehängt an: moveTo=<Spalten-UUID> | moveTo=none (Ohne Spalte) | ohne
+        Angabe die erste verbleibende Spalte (gibt es keine, Ohne Spalte bzw. Statusboard). Wandert eine Aufgabe in
+        oder aus einer isDone-Spalte, folgt der Status (done / open) und die Aufgabenversion steigt. Optional version
+        (Spaltenversion) für 409.'
+      parameters:
+      - {name: moveTo, in: query, required: false, schema: {type: string}}
+      - {name: version, in: query, required: false, schema: {type: integer}}
+      responses:
+        '204': {description: Gelöscht}
+        '403': {description: Rolle unzureichend}
+        '404': {description: Spalte oder Zielspalte fehlt oder unsichtbar}
+        '409': {description: version_conflict}
+  /v1/projects/{id}/board:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getProjectBoard
+      summary: Board eines Projekts (Spalten mit geordneten Aufgaben)
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {$ref: '#/components/schemas/BoardResponse'}}}}
+        '404': {description: Projekt fehlt oder unsichtbar}
+  /v1/tasks/{id}/column:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: moveTaskToColumn
+      summary: Aufgabe in Spalte und Position verschieben (edit)
+      description: 'columnID gehört zum Projekt der Aufgabe oder ist null (Ohne Spalte). index ist 0-basiert, fehlt = Ende,
+        zu große Werte werden begrenzt. Zielspalte wird dicht neu nummeriert. Spalte mit isDone setzt status done,
+        eine Nicht-Erledigt-Spalte öffnet eine erledigte Aufgabe (open) wieder. Die Aufgabenversion steigt immer;
+        veraltete Version: 409. Aufgabenversion gilt auch für die Boardposition.'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MoveTaskRequest'}}}
+      responses:
+        '200': {description: Verschoben, content: {application/json: {schema: {$ref: '#/components/schemas/TaskDTO'}}}}
+        '400': {description: invalid_index}
+        '403': {description: Rolle unzureichend}
+        '404': {description: Aufgabe unsichtbar oder Spalte gehört zu einem anderen Projekt}
+        '409': {description: version_conflict}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: session}
+  schemas:
+    ColumnDTO:
+      type: object
+      required: [id, projectID, name, isDone, position, version]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 100}
+        color: {type: [string, 'null'], pattern: '^#[0-9A-F]{6}$'}
+        isDone: {type: boolean}
+        position: {type: integer, minimum: 0, description: 'Dicht 0..n-1'}
+        version: {type: integer}
+    CreateColumnRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        color: {type: string, description: '#RRGGBB'}
+        isDone: {type: boolean, default: false}
+        index: {type: integer, minimum: 0, description: Einfügeposition, Standard Ende}
+    UpdateColumnRequest:
+      type: object
+      required: [version]
+      properties:
+        version: {type: integer}
+        name: {type: string}
+        color: {type: string, description: '#RRGGBB; leerer String entfernt die Farbe'}
+        isDone: {type: boolean}
+        index: {type: integer, minimum: 0}
+    MoveTaskRequest:
+      type: object
+      required: [version]
+      properties:
+        version: {type: integer, description: Aufgabenversion}
+        columnID: {type: [string, 'null'], format: uuid}
+        index: {type: integer, minimum: 0}
+    TaskDTO:
+      type: object
+      description: 'Wie in openapi.yaml, zusätzlich columnID (null = Ohne Spalte) und boardPosition (0-basiert in der Spalte).'
+      required: [id, projectID, title, description, status, version, boardPosition]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: string}
+        status: {enum: [open, in_progress, in_review, done]}
+        version: {type: integer}
+        columnID: {type: [string, 'null'], format: uuid}
+        boardPosition: {type: integer}
+        planning: {type: object, description: 'Fälligkeit, Priorität usw. (TaskPlanningSummary)'}
+    BoardColumn:
+      type: object
+      required: [name, isDone, position, tasks]
+      properties:
+        id: {type: [string, 'null'], format: uuid, description: 'null bei virtuellen Statusspalten'}
+        key: {type: [string, 'null'], description: 'Status der virtuellen Spalte (open, in_progress, in_review, done)'}
+        name: {type: string}
+        color: {type: [string, 'null']}
+        isDone: {type: boolean}
+        position: {type: integer}
+        version: {type: [integer, 'null']}
+        tasks: {type: array, items: {$ref: '#/components/schemas/TaskDTO'}}
+    BoardResponse:
+      type: object
+      required: [projectID, mode, columns, unassigned]
+      properties:
+        projectID: {type: string, format: uuid}
+        mode: {enum: [status, columns], description: 'status: keine eigenen Spalten, virtuelle Statusspalten (nur zum Lesen; Verschieben per Status-PATCH oder zuerst Spalten anlegen)'}
+        columns: {type: array, items: {$ref: '#/components/schemas/BoardColumn'}}
+        unassigned: {type: array, items: {$ref: '#/components/schemas/TaskDTO'}, description: 'Aufgaben ohne Spalte (nur mode columns)'}
+x-sync:
+  note: 'GET /v1/sync/changes liefert entityType "column" mit column (ColumnDTO) bzw. kind delete. Aufgaben-Upserts tragen columnID/boardPosition. Mutationen per /v1/sync/mutations für Spalten gibt es (noch) nicht; Spalten und Verschieben laufen über REST.'
+x-mcp-tools:
+  list_columns: {scope: 'projects:read', required: [projectID], arguments: {projectID: UUID}, result: BoardResponse, notes: 'Nur für freigegebene Projekt-IDs des Grants.'}
+  move_task_to_column: {scope: 'tasks:write', required: [id, version, columnID], arguments: {id: UUID, version: integer, columnID: 'UUID oder null', index: integer}, result: TaskDTO, notes: 'Gleicher Dienst wie PUT /v1/tasks/{id}/column; Aufgabe und Projekt müssen im Grant liegen.'}

@@ -51,6 +51,7 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
     // Change log hooks apply to every save/delete of projects and tasks, whichever route performs it.
     app.databases.middleware.use(SyncProjectMiddleware())
     app.databases.middleware.use(SyncTaskMiddleware())
+    app.databases.middleware.use(SyncColumnMiddleware())
 }
 
 /// Migrations are registered but never run on `serve`; run `App migrate --yes` once per deployment.
@@ -68,6 +69,8 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)
     configureMaintenance(app)
+    // Before the sync backfill: that migration reads tasks through the model, which now includes column_id.
+    app.migrations.add(CreateProjectColumns())
     app.migrations.add(CreateSyncSchema())
     app.migrations.add(WidenLongTextColumns())
 }
