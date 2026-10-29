@@ -169,3 +169,48 @@ input[data-slot='checkbox']:checked {
 .dark input[data-slot='checkbox']:checked {
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
 }
+
+/*
+ * Glow ("Leuchteffekt"): <html data-glow="off|subtle|medium|strong">. --glow-color is set by lib/theme.svelte.ts from the accent.
+ * Halos only decorate primary actions, the active navigation entry and keyboard focus; they never change text colours.
+ */
+:root {
+	--glow-color: var(--ui-accent);
+	--glow-r: 0px;
+	--glow-a: 0%;
+}
+:root[data-glow='subtle'] {
+	--glow-r: 10px;
+	--glow-a: 24%;
+}
+:root[data-glow='medium'] {
+	--glow-r: 16px;
+	--glow-a: 38%;
+}
+:root[data-glow='strong'] {
+	--glow-r: 22px;
+	--glow-a: 50%;
+}
+:root:not([data-glow='off']) .glow-accent {
+	box-shadow: 0 0 var(--glow-r) color-mix(in srgb, var(--glow-color) var(--glow-a), transparent);
+}
+:root:not([data-glow='off']) :focus-visible {
+	outline-color: var(--glow-color);
+	box-shadow: 0 0 calc(var(--glow-r) * 0.8) color-mix(in srgb, var(--glow-color) var(--glow-a), transparent);
+}
+
+/* Reduced transparency: in-app switch (data-transparency) or the system setting; blurred surfaces become opaque. */
+:root[data-transparency='reduced'] .backdrop-blur,
+:root[data-transparency='reduced'] [class*='backdrop-blur'] {
+	-webkit-backdrop-filter: none !important;
+	backdrop-filter: none !important;
+	background-color: var(--background) !important;
+}
+@media (prefers-reduced-transparency: reduce) {
+	.backdrop-blur,
+	[class*='backdrop-blur'] {
+		-webkit-backdrop-filter: none !important;
+		backdrop-filter: none !important;
+		background-color: var(--background) !important;
+	}
+}

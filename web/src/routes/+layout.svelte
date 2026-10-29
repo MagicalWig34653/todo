@@ -8,6 +8,12 @@
 
 	let { children }: LayoutProps = $props();
 
+	$effect(() => {
+		const id = auth.user?.id;
+		if (id) void theme.reconcile(id);
+		else theme.detach();
+	});
+
 	onMount(() => {
 		theme.init();
 		auth.restore();

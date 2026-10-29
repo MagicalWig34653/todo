@@ -189,6 +189,19 @@ export interface Passkey {
 	createdAt?: string;
 	revokedAt?: string;
 }
+export interface Preferences {
+	version: 1;
+	appearance: {
+		colorScheme: 'system' | 'light' | 'dark';
+		accent: string;
+		accentCustomHex?: string | null;
+		glow: string;
+	};
+	/** Server-assigned; 0 while nothing was stored. */
+	revision?: number;
+	updatedAt?: string | null;
+}
+
 export interface SessionInfo {
 	id: string;
 	createdAt?: string;
@@ -441,6 +454,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		addPasskeyBegin: () => request<RegistrationBegin>('POST', '/me/passkeys/begin', {}),
 		addPasskeyFinish: (challengeID: string, credential: RegistrationPayload, passkeyName?: string) =>
 			request<void>('POST', '/me/passkeys/finish', { challengeID, credential, passkeyName }),
+		getPreferences: () => request<Preferences>('GET', '/me/preferences'),
+		putPreferences: (body: Preferences) => request<Preferences>('PUT', '/me/preferences', body),
 		listSessions: () => request<SessionInfo[]>('GET', '/me/sessions'),
 		revokeSession: (id: string) => request<void>('DELETE', `/me/sessions/${id}`),
 		revokeOtherSessions: () => request<void>('POST', '/me/sessions/revoke-others', {}),

@@ -60,6 +60,7 @@ public func configureMigrations(_ app: Application) {
 
     app.migrations.add(CreateOAuthSchema())
     configureIdentity(app)
+    configurePreferences(app)
     app.migrations.add(CreatePlanningExtension())
 
     app.migrations.add(CreateDiscoverySchema())

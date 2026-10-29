@@ -507,3 +507,61 @@ test('mobile 390px: navigation drawer and no horizontal page scroll', async () =
 	await noOverflow('Anstehend');
 	await page.setViewportSize({ width: 1280, height: 720 });
 });
+
+test('appearance settings persist locally and in the account', async () => {
+	const SHOTS = process.env.APPEARANCE_SHOTS;
+	await page.setViewportSize({ width: 900, height: 1500 });
+	await page.emulateMedia({ colorScheme: 'light' });
+	await page.evaluate(() => localStorage.clear());
+	await page.reload();
+	await page.getByRole('button', { name: 'Konto', exact: true }).first().click();
+	const html = page.locator('html');
+	await expect(page.getByTestId('appearance')).toBeVisible();
+	await expect(page.getByTestId('appearance-sync')).toHaveAttribute('data-state', 'saved');
+
+	if (SHOTS) {
+		await page.getByTestId('appearance').scrollIntoViewIfNeeded();
+		await page.locator('section:has(> [data-testid="appearance"])').screenshot({ path: `${SHOTS}/darstellung-hell.png` });
+	}
+
+	await page.getByTestId('mode-dark').click();
+	await page.getByTestId('accent-teal').click();
+	await page.getByTestId('glow-strong').click();
+	await page.getByTestId('transparency-toggle').check();
+	await expect(html).toHaveClass(/dark/);
+	await expect(html).toHaveAttribute('data-glow', 'strong');
+	await expect(html).toHaveAttribute('data-transparency', 'reduced');
+	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #0D9488');
+	await expect(page.getByTestId('appearance-sync')).toHaveAttribute('data-state', 'saved');
+
+	await page.getByTestId('accent-hex').fill('zzz');
+	await page.getByTestId('accent-apply').click();
+	await expect(page.getByTestId('accent-invalid')).toBeVisible();
+	await page.getByTestId('accent-hex').fill('#B45309');
+	await page.getByTestId('accent-apply').click();
+	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #B45309');
+	await expect(page.getByTestId('appearance-sync')).toHaveAttribute('data-state', 'saved');
+
+	// the account holds the values
+	const stored = await page.evaluate(async () => (await fetch('/v1/me/preferences')).json());
+	expect(stored.appearance).toMatchObject({ colorScheme: 'dark', accent: 'custom', accentCustomHex: '#B45309', glow: 'strong' });
+
+	// pre-paint: the cached choice is applied before the app starts
+	await page.reload();
+	await expect(html).toHaveClass(/dark/);
+	await expect(html).toHaveAttribute('data-glow', 'strong');
+
+	if (SHOTS) {
+		await page.getByRole('button', { name: 'Konto', exact: true }).first().click();
+		await page.locator('section:has(> [data-testid="appearance"])').screenshot({ path: `${SHOTS}/darstellung-dunkel.png` });
+	}
+
+	// a fresh device (empty storage) gets the account's values
+	await page.evaluate(() => localStorage.clear());
+	await page.reload();
+	await expect(html).toHaveClass(/dark/, { timeout: 10_000 });
+	await expect(html).toHaveAttribute('data-glow', 'strong');
+	await page.getByRole('button', { name: 'Konto', exact: true }).first().click();
+	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #B45309');
+	await page.setViewportSize({ width: 1280, height: 720 });
+});

@@ -7,6 +7,7 @@
 	import { passkeysSupported, serializeRegistration, toCreationOptions } from '#lib/webauthn.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import PageHeader from './app/PageHeader.svelte';
+	import AppearanceSettings from './AppearanceSettings.svelte';
 	import OAuthGrants from './OAuthGrants.svelte';
 	import RecoveryIssue from './RecoveryIssue.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -135,6 +136,8 @@
 			<div><Button size="sm" variant="outline" onclick={endOthers}>{t('account.sessions.revokeOthers')}</Button></div>
 		{/if}
 	</div>
+
+	<AppearanceSettings />
 
 	<OAuthGrants />
 

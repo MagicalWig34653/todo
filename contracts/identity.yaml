@@ -205,6 +205,41 @@ paths:
         schema:
           type: string
           format: uuid
+  /v1/me/preferences:
+    get:
+      summary: Eigene Einstellungen (Darstellung); ohne gespeicherten Stand gelten Standardwerte mit revision 0
+      security:
+      - session: []
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+        '401':
+          description: Fehlende oder abgelaufene Sitzung
+    put:
+      summary: Einstellungen ersetzen (strikt validiert, höchstens 4 KiB); revision wird je Schreibzugriff erhöht
+      security:
+      - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferencesDocument'
+      responses:
+        '200':
+          description: Gespeichert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+        '400':
+          description: 'reason invalid_preferences, unknown_preferences_key oder unsupported_preferences_version'
+        '401':
+          description: Fehlende oder abgelaufene Sitzung
   /v1/me/sessions:
     get:
       summary: Eigene nicht abgelaufene Sitzungen ohne Geheimnisse
@@ -355,6 +390,44 @@ components:
       scheme: bearer
       description: Nur kurzlebiger Recovery-Token; niemals normale Session.
   schemas:
+    PreferencesDocument:
+      type: object
+      required: [version, appearance]
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          enum: [1]
+        appearance:
+          type: object
+          required: [colorScheme, accent, glow]
+          additionalProperties: false
+          properties:
+            colorScheme:
+              type: string
+              enum: [system, light, dark]
+            accent:
+              type: string
+              enum: [blue, teal, violet, green, orange, pink, graphite, indigo, navy, purple, magenta, crimson, forest, petrol, bronze, wine, slate, cocoa, olive, ocean, ink, custom]
+            accentCustomHex:
+              type: [string, 'null']
+              pattern: '^#[0-9a-fA-F]{6}$'
+              description: Genau bei accent=custom gesetzt; wird in Großbuchstaben gespeichert.
+            glow:
+              type: string
+              enum: [off, subtle, medium, strong]
+    Preferences:
+      allOf:
+      - $ref: '#/components/schemas/PreferencesDocument'
+      - type: object
+        required: [revision]
+        properties:
+          revision:
+            type: integer
+            description: 0 solange nichts gespeichert wurde.
+          updatedAt:
+            type: [string, 'null']
+            format: date-time
     RegistrationBegin:
       type: object
       required:

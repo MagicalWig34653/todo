@@ -7,10 +7,20 @@
 		<meta name="text-scale" content="scale" />
 		<meta name="color-scheme" content="light dark" />
 		<script>
+			// Pre-paint: apply the cached appearance before first render (mirrors lib/theme.svelte.ts; keys use the todo. prefix).
 			try {
+				var d = document.documentElement;
 				var m = localStorage.getItem('todo.theme');
-				if (m === 'dark' || (m !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
-			} catch (e) {}
+				if (m === 'dark' || (m !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) d.classList.add('dark');
+				var g = localStorage.getItem('todo.glow');
+				d.dataset.glow = g === 'off' || g === 'subtle' || g === 'medium' || g === 'strong' ? g : 'subtle';
+				if (localStorage.getItem('todo.transparency') === 'reduced') d.dataset.transparency = 'reduced';
+				var a = localStorage.getItem('todo.accent');
+				if (a && /^#[0-9a-f]{6}$/.test(a)) d.style.setProperty('--ui-accent', a);
+			} catch (e) {
+				document.documentElement.dataset.glow = 'subtle';
+				if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+			}
 		</script>
 		%sveltekit.head%
 	</head>

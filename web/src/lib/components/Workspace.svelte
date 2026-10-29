@@ -59,7 +59,7 @@
 		return out;
 	});
 	const navItem =
-		'flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-ui-accent-soft aria-[current=page]:text-ui-accent-ink';
+		'flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-ui-accent-soft aria-[current=page]:text-ui-accent-ink aria-[current=page]:glow-accent';
 	function go(v: View) {
 		view = v;
 		navOpen = false;

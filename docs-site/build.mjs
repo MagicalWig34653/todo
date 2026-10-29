@@ -351,6 +351,8 @@ const shots = {
     ['freigaben', 'Projektfreigaben an ein Team'],
     ['zustimmung', 'OAuth-Zustimmung für einen KI-Assistenten (MCP)'],
     ['konto', 'Konto und Sicherheit: Passkeys, Sitzungen, verbundene Anwendungen'],
+    ['darstellung-hell', 'Darstellung (hell): Farbschema, Akzentfarbe, Leuchteffekt, Transparenz'],
+    ['darstellung-dunkel', 'Darstellung (dunkel)'],
     ['login', 'Anmeldung per Passkey'],
   ],
   mobil: [
