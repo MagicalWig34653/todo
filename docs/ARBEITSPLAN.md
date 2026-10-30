@@ -88,3 +88,9 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 ## Checkpoint 30.10.2026 (Anhänge in der Datenbank)
 - [x] S3 optional, Anhänge standardmäßig in der DB (ADR 0013), `migrate-storage`, Infrastruktur/Docs ohne S3-Pflicht; SQLite + MariaDB grün (siehe STATUS).
 - [ ] Offen: S3-Test und `migrate-storage` gegen S3Mock (`docker compose --profile s3 up -d s3`, `S3_ENDPOINT=http://localhost:29090 S3_BUCKET=todo-attachments`), Swarm-Smoke erneut ausführen, bei Bedarf Streaming-Download für größere Limits.
+
+## Steuerzentrale für Agenten (30.10.2026, ADR 0014)
+- [x] Backend + MCP: Handbuch, Briefing, Fragen, Fortschritt/Features, Reviews, Build-Screenshots, `GET /v1/command-center`.
+- [ ] PWA: Seite "Überblick" (Kanban-Lanes, Listenansicht, Fragen beantworten, Review entscheiden, Briefing-Editor, Screenshot-Galerie, Vorlage anwenden).
+- [ ] Apple: dieselben Ansichten (Vertrag `contracts/command-center.yaml`). Consent-Oberfläche für Scope `attachments:write`.
+- [ ] Optional: Sync-Feed/Push für Fragen und Reviews; SQL-Voraggregation.

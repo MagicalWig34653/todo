@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Todo – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
+  version: 1.0.0
+  description: 'ADR 0014. Alle Pfade außer /v1/manual verlangen Sitzung oder Bearer. Unsichtbare/fremde Objekte: 404, zu geringe Rolle: 403,
+    Konflikte: 409. Zuordnung der Lanes (feste Reihenfolge): done > question > review > blocked > running > ready; Backlog-Spalten nur im Zähler.
+    Fortschritt: done=100 (status), sonst Unteraufgaben, sonst Kriterien, sonst letzter Notiz-Prozentwert (agent), sonst 0 (none).
+    Schreiben: Fragen/Fortschritt/Review anfordern/claim/structure = edit; Frage beantworten = comment; Review entscheiden = edit
+    (benannter Reviewer: manage); Agent-Briefing schreiben = manage. MCP-Werkzeuge: get_manual, get_project_structure, get_command_center,
+    get_task_context, claim_task, release_task, post_progress, set_task_structure, add_criterion, set_criterion, ask_question,
+    list_open_questions, get_question, answer_question, request_review, list_pending_reviews, decide_review, apply_agent_workflow_columns,
+    add_attachment, begin_attachment, complete_attachment, list_builds (Details: docs/agent-manual.md, tools/list). Neuer Scope attachments:write.
+    Spaltenvorlage: POST /v1/projects/{id}/columns/template {"source":"agent_workflow"} (project-columns.yaml). Kein Sync-Feed.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/manual:
+    get:
+      operationId: getAgentManual
+      summary: Versioniertes Agentenhandbuch (öffentlich); ?section=<id>
+      responses:
+        '200': {description: '{version, sections[{id,title}], section, format, content (Markdown), conventions}'}
+        '404': {description: unknown_section}
+  /v1/command-center:
+    get:
+      operationId: getCommandCenter
+      summary: Kanban-/Listenübersicht (Steuerzentrale)
+      description: 'Query: scope=account|project, projectID, includeSubprojects(true), view=kanban|list, lane=a,b, kind=task|feature, hasQuestion,
+        includeSubtasks(list), sort=attention|updated|due|progress|title, doneWithinDays(7), laneLimit(50), updatesLimit(20), limit(50), offset.
+        Antwort: {generatedAt, scope, projectID, view, summary{running,question,review,ready,blocked,done,backlog,openQuestions,pendingReviews,features,activeAgents},
+        lanes[{key,title,count,truncated,cards[]}] (kanban) | items[], total (list), updates[], builds[]}. Karte: {task,project,kind,isFeature,parentTaskID,lane,
+        progress{percent,source,subtasks*,criteria*},agent,openQuestionCount,questions[3],pendingReview,blockedReason,blockedBy,latestUpdate,builds[3],buildCount,nextDue,priority,subtasks[]}.'
+      responses:
+        '200': {description: Erfolgreich}
+        '400': {description: invalid_scope, project_required, invalid_view, invalid_lane, invalid_sort, ...}
+        '404': {description: Projekt fehlt oder unsichtbar}
+  /v1/projects/{id}/structure:
+    get:
+      operationId: getProjectStructure
+      summary: Briefing, Spalten mit Rollen, Vorlagenstatus, Zähler, Regeln
+      responses: {'200': {description: Erfolgreich}, '404': {description: unsichtbar}}
+  /v1/projects/{id}/agent-brief:
+    get:
+      operationId: getAgentBrief
+      summary: Agent-Briefing (Markdown) lesen
+      responses: {'200': {description: '{projectID,text,version,updatedAt}'}}
+    put:
+      operationId: putAgentBrief
+      summary: Briefing schreiben (manage, version Pflicht, 0 = neu; max. 20000 Zeichen)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text, version], properties: {text: {type: string}, version: {type: integer}}}}}}
+      responses: {'200': {description: Gespeichert}, '409': {description: version_conflict}}
+  /v1/questions:
+    get:
+      operationId: listQuestions
+      summary: 'Fragen ?projectID&taskID&state=open|answered|all&includeSubprojects&limit'
+      responses: {'200': {description: 'QuestionDTO[] (inkl. taskTitle, projectName, askedByType Person|Integration|Run, options, blocking, answer, agentQuestionID)'}}
+  /v1/questions/{id}:
+    get:
+      operationId: getQuestion
+      responses: {'200': {description: QuestionDTO}}
+  /v1/questions/{id}/answer:
+    post:
+      operationId: answerQuestion
+      summary: 'Antwort {answer}; Runner-Fragen laufen über AgentService.answer'
+      responses: {'200': {description: QuestionDTO}, '400': {description: invalid_answer_option}, '409': {description: question_already_answered}}
+  /v1/reviews:
+    get:
+      operationId: listReviews
+      summary: '?projectID&state=pending|accepted|changes_requested|withdrawn|all&limit'
+      responses: {'200': {description: ReviewDTO[]}}
+  /v1/tasks/{id}/context:
+    get:
+      operationId: getTaskContext
+      summary: Aufgabe mit Workflow, Fortschritt, Notizen, Kriterien, Unteraufgaben, Kommentaren, Fragen, Review, Builds
+      responses: {'200': {description: TaskContextDTO}}
+  /v1/tasks/{id}/claim:
+    post:
+      operationId: claimTask
+      summary: 'Body optional {agentName, takeOver}; 409 already_claimed'
+      responses: {'200': {description: TaskContextDTO}}
+    delete:
+      operationId: releaseTask
+      summary: '?force=true; 409 claimed_by_other'
+      responses: {'200': {description: TaskContextDTO}}
+  /v1/tasks/{id}/progress-notes:
+    get:
+      operationId: listProgressNotes
+      responses: {'200': {description: ProgressNoteDTO[]}}
+    post:
+      operationId: postProgressNote
+      summary: '{note, percent?}'
+      responses: {'201': {description: ProgressNoteDTO}}
+  /v1/tasks/{id}/questions:
+    get:
+      operationId: listTaskQuestions
+      responses: {'200': {description: QuestionDTO[]}}
+    post:
+      operationId: askQuestion
+      summary: '{prompt, options?, blocking?, agentName?, idempotencyKey?}'
+      responses: {'201': {description: QuestionDTO}}
+  /v1/tasks/{id}/review:
+    post:
+      operationId: requestReview
+      summary: '{summary, reviewerID?, agentName?}; Status in_review'
+      responses: {'200': {description: ReviewDTO}, '409': {description: review_already_pending}}
+  /v1/tasks/{id}/review/decision:
+    post:
+      operationId: decideReview
+      summary: '{decision: accept|request_changes, note?}'
+      responses: {'200': {description: ReviewDTO}, '409': {description: no_pending_review}}
+  /v1/tasks/{id}/structure:
+    put:
+      operationId: setTaskStructure
+      summary: '{kind?, parentTaskID? (null löst), blockedReason? (null löscht)}'
+      responses: {'200': {description: WorkflowDTO}, '422': {description: parent_must_share_project, subtask_depth_exceeded, invalid_parent}}
+  /v1/tasks/{id}/builds:
+    get:
+      operationId: listTaskBuilds
+      responses: {'200': {description: 'BuildArtifactDTO[] {id,attachmentID,taskID,buildID,label,platform,filename,mediaType,size,previewURL,createdAt}'}}
+  /v1/builds:
+    post:
+      operationId: registerBuild
+      summary: 'Fertigen Anhang als Build registrieren {attachmentID, buildID, label?, platform?} (Upload über /v1/attachments/begin, role result)'
+      responses: {'201': {description: BuildArtifactDTO}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: session}

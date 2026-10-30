@@ -160,8 +160,8 @@ extension MCPController {
         return id
     }
 
-    func workflowService(user: User, grant: OAuthGrant, db: any Database) -> WorkflowService {
-        WorkflowService(user: user, db: db, allowedProjects: Set(grant.projects), attachments: { try CommandCenterAttachments.service() })
+    func workflowService(user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) -> WorkflowService {
+        WorkflowService(user: user, db: db, allowedProjects: Set(grant.projects), attachments: { CommandCenterAttachments.service(settings: settings) })
     }
 
     func actor(grant: OAuthGrant, db: any Database) async throws -> WorkflowActor {
@@ -170,11 +170,11 @@ extension MCPController {
     }
 
     /// Dispatch for the tools of `workflowTools`.
-    func callWorkflow(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
+    func callWorkflow(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) async throws -> JSONValue {
         if name == "get_manual" {
             return try .encoded(try AgentManual.response(section: try optionalString(a, "section")))
         }
-        let service = workflowService(user: user, grant: grant, db: db)
+        let service = workflowService(user: user, grant: grant, db: db, settings: settings)
         let actor = try await self.actor(grant: grant, db: db)
         switch name {
         case "get_project_structure":
@@ -288,7 +288,7 @@ extension MCPController {
                  "description": .string("Agent brief, board columns and counts of one project (needs projects:read).")]),
     ])
 
-    func readResource(uri: String, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
+    func readResource(uri: String, user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) async throws -> JSONValue {
         func contents(_ mime: String, _ text: String) -> JSONValue {
             .object(["contents": .array([.object(["uri": .string(uri), "mimeType": .string(mime), "text": .string(text)])])])
         }
@@ -299,7 +299,7 @@ extension MCPController {
         let prefix = "todo://projects/", suffix = "/structure"
         if uri.hasPrefix(prefix), uri.hasSuffix(suffix), let id = UUID(uuidString: String(uri.dropFirst(prefix.count).dropLast(suffix.count))) {
             guard grant.scopes.contains("projects:read") else { throw Abort(.forbidden, reason: "insufficient_scope") }
-            let dto = try await workflowService(user: user, grant: grant, db: db).structure(id)
+            let dto = try await workflowService(user: user, grant: grant, db: db, settings: settings).structure(id)
             let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
             return contents("application/json", String(decoding: try encoder.encode(dto), as: UTF8.self))
         }

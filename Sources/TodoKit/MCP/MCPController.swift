@@ -54,7 +54,7 @@ struct MCPController: RouteCollection {
         case "resources/templates/list": result = .object(["resourceTemplates": Self.resourceTemplates])
         case "resources/read":
             guard let uri = body["params"]["uri"].string else { return try await rpcError(id: id, code: -32602, message: "Missing uri").encodeResponse(for: req) }
-            do { result = try await readResource(uri: uri, user: user, grant: grant, db: req.db) }
+            do { result = try await readResource(uri: uri, user: user, grant: grant, db: req.db, settings: req.application.settings) }
             catch let error as any AbortError {
                 return try await rpcError(id: id, code: error.status == .notFound ? -32002 : -32603, message: error.status == .notFound ? "Resource not found" : error.reason).encodeResponse(for: req)
             }
@@ -64,7 +64,7 @@ struct MCPController: RouteCollection {
             }
             do {
                 guard tool.scope.isEmpty || grant.scopes.contains(tool.scope) else { throw Abort(.forbidden, reason: "insufficient_scope") }
-                let value = try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db)
+                let value = try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db, settings: req.application.settings)
                 let text = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(false)])
             } catch {
@@ -107,7 +107,7 @@ struct MCPController: RouteCollection {
         let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest, reason: "invalid_title") }; return value
     }
-    func call(_ name: String, arguments a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
+    func call(_ name: String, arguments a: JSONValue, user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) async throws -> JSONValue {
         let a: JSONValue = a.isNull ? .object([:]) : a
         guard case .object(let args) = a, let tool = Self.tools.first(where: { $0.name == name }),
               Set(args.keys).isSubset(of: Set(tool.properties.keys)), tool.required.allSatisfy({ args[$0] != nil }) else { throw Abort(.badRequest, reason: "invalid_arguments") }
@@ -262,7 +262,7 @@ struct MCPController: RouteCollection {
                 try await ColumnService(user: user, db: db).delete(id, moveTo: target, expectedVersion: version)
             }
             return .object(["deleted": .bool(true)])
-        default: return try await callWorkflow(name, a, user: user, grant: grant, db: db)
+        default: return try await callWorkflow(name, a, user: user, grant: grant, db: db, settings: settings)
         }
     }
 

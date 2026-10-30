@@ -360,9 +360,6 @@ final class CommandCenterTests: XCTestCase {
     func testBuildScreenshotsRegisterAndGroup() async throws {
         let f = try await OAuthFixture.make()
         do {
-            guard ProcessInfo.processInfo.environment["S3_ENDPOINT"] != nil || ProcessInfo.processInfo.environment["TODO_ATTACHMENTS_IN_DB"] != nil else {
-                throw XCTSkip("needs attachment storage (S3Mock env)")
-            }
             let db = f.test.app.db
             let task = TodoTask(ownerID: try f.user.requireID(), projectID: try f.project.requireID(), title: "Shots", details: "")
             try await task.save(on: db)

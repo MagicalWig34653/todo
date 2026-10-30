@@ -32,7 +32,7 @@ struct CommandCenterController: RouteCollection {
         return id
     }
     private func service(_ req: Request) async throws -> WorkflowService {
-        WorkflowService(user: try await req.requireUser(), db: req.db, attachments: { try CommandCenterAttachments.service() })
+        WorkflowService(user: try await req.requireUser(), db: req.db, attachments: { [settings = req.application.settings] in CommandCenterAttachments.service(settings: settings) })
     }
     private func actor(_ req: Request) async throws -> WorkflowActor { try .person(try await req.requireUser()) }
     private func uuidQuery(_ req: Request, _ name: String) throws -> UUID? {
