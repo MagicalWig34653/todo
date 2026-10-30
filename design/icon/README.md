@@ -1,4 +1,4 @@
-# Todo – App-Icon
+# Todolino – App-Icon
 
 Ruhige, abgerundete Projektkarten mit einem klaren Haken. Die drei diagonal
 eingerückten Karten stehen für Projekt, Unterprojekt und Aufgabe. Blaugrün,

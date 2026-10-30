@@ -21,12 +21,12 @@ describe('option conversion', () => {
 			challenge: 'aGVsbG8',
 			user: { id: 'aGVsbG8', name: 'a', displayName: 'a' },
 			excludeCredentials: [{ id: 'aGVsbG8', type: 'public-key' }],
-			rp: { id: 'localhost', name: 'Todo' }
+			rp: { id: 'localhost', name: 'Todolino' }
 		});
 		expect(o.challenge).toBeInstanceOf(ArrayBuffer);
 		expect(o.user.id).toBeInstanceOf(ArrayBuffer);
 		expect(o.excludeCredentials?.[0].id).toBeInstanceOf(ArrayBuffer);
-		expect((o as unknown as { rp: unknown }).rp).toEqual({ id: 'localhost', name: 'Todo' });
+		expect((o as unknown as { rp: unknown }).rp).toEqual({ id: 'localhost', name: 'Todolino' });
 	});
 
 	it('handles request options without allowCredentials', () => {

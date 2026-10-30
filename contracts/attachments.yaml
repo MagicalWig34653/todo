@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Todo attachment REST API
+  title: Todolino attachment REST API
   version: 1.0.0
   description: |
     Backend upload capability, valid for 15 minutes and one successful PUT.

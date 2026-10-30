@@ -1,8 +1,8 @@
-# Todo
+# Todolino
 
 Intuitive Todo- und Projektplanung mit frei verschachtelten Projekten, Teams und Freigaben. Passkey zuerst, als PWA und SwiftUI-App, mit MCP/OAuth-Anbindung und lokalen Mac-Runnern, die Claude Code im Projektordner starten. Rückfragen, Fortschritt und Screenshots hängen direkt an der Aufgabe.
 
-Arbeitsname: **Todo**. Status: in aktiver Entwicklung, noch nicht für den Produktivbetrieb freigegeben.
+Produktname: **Todolino** (technische Namen wie Repository, Module und Domain bleiben „todo“). Status: in aktiver Entwicklung, noch nicht für den Produktivbetrieb freigegeben.
 
 ## Produktüberblick
 

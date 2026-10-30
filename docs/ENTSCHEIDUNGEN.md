@@ -17,6 +17,7 @@
 13. Die Timetrack-Projekte bleiben ausschließlich Lesereferenz. Kein Code wird kopiert; Passkey-, OAuth- und weitere Module werden neu geschrieben. Damit ist die Lizenzfrage zur Codeübernahme erledigt. Entscheidung vom 25.10.2026.
 14. Der Nutzer überlässt die Strukturierung der Arbeit dem Agenten; Routineentscheidungen werden selbst getroffen und dokumentiert.
 15. S3 darf nicht verpflichtend sein: Anhänge liegen standardmäßig in der Datenbank, S3 ist optional (ADR 0013). Entscheidung vom 30.10.2026.
+16. Produktname **Todolino** (30.10.2026, ADR 0017): nur sichtbarer Anzeigename; technische Namen (Repository, Module, Bundle-IDs, Image, Stack/Env/Secrets, `todo.*`-Schlüssel, Domain, API-Pfade, `todo://manual`) bleiben „todo“. Grund: Anlehnung an Todoist, aber eigene Version.
 
 ## Arbeitsannahmen, noch keine endgültigen Nutzerentscheidungen
 

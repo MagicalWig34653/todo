@@ -1,4 +1,4 @@
-# Claude Code – Todo
+# Claude Code – Todolino
 
 Anpassung bei Installation: Verweise auf den jeweiligen Repository-Typ konkretisieren und diesen Hinweis entfernen.
 

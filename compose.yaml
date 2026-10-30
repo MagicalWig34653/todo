@@ -50,7 +50,7 @@ services:
       DB_USER: ${DB_USER:-todo}
       DB_PASSWORD: ${DB_PASSWORD:-dev-only}
       RP_ID: ${RP_ID:-localhost}
-      RP_NAME: Todo
+      RP_NAME: Todolino
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:25173}
       PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-dev-bootstrap-only}

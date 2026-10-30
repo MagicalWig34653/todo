@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Todo Sync
+  title: Todolino Sync
   version: 1.2.0
   description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
     ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz

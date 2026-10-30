@@ -1,8 +1,8 @@
 {
 	"id": "/",
-	"name": "Todo",
-	"short_name": "Todo",
-	"description": "Todo- und Projektplanung",
+	"name": "Todolino",
+	"short_name": "Todolino",
+	"description": "Todolino – Todo- und Projektplanung",
 	"lang": "de",
 	"start_url": "/",
 	"scope": "/",

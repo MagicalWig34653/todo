@@ -1,6 +1,6 @@
 // German UI strings. Components must only reference keys, never literal text.
 export const de = {
-	'app.name': 'Todo',
+	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',
 	'common.cancel': 'Abbrechen',
@@ -357,7 +357,7 @@ export const de = {
 	'scope.tasks:read': 'Aufgaben lesen',
 	'scope.tasks:write': 'Aufgaben anlegen und ändern',
 	'consent.title': 'Zugriff erlauben?',
-	'consent.intro': 'Die Anwendung „{client}“ möchte im Namen deines Kontos auf Todo zugreifen.',
+	'consent.intro': 'Die Anwendung „{client}“ möchte im Namen deines Kontos auf Todolino zugreifen.',
 	'consent.redirect': 'Nach deiner Entscheidung gehst du zurück zu: {target}',
 	'consent.scopes': 'Angeforderte Rechte',
 	'consent.projects': 'Auf welche Projekte darf die Anwendung zugreifen?',

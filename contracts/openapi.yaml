@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo API
+  title: Todolino API
   version: 0.1.0
   description: 'Implemented health, AuthController and PlanningController API. Other areas are maintained
     in separate contracts/<area>.yaml files.

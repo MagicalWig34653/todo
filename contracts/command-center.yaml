@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
+  title: Todolino – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
   version: 1.0.0
   description: 'ADR 0014. Alle Pfade außer /v1/manual verlangen Sitzung oder Bearer. Unsichtbare/fremde Objekte: 404, zu geringe Rolle: 403,
     Konflikte: 409. Zuordnung der Lanes (feste Reihenfolge): done > question > review > blocked > running > ready; Backlog-Spalten nur im Zähler.

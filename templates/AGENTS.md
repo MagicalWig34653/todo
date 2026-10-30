@@ -1,4 +1,4 @@
-# Todo – Einstieg für Coding-Agenten
+# Todolino – Einstieg für Coding-Agenten
 
 Anpassung bei Installation: Diese Vorlage gehört in beide Repository-Wurzeln. Im Hauptrepository liegen die globalen Dokumente unter docs/. Im Apple-Repository den konkreten Weg zum Hauptrepository über eine lokale, nicht versionierte Workspace-Konfiguration auffindbar machen; in versionierten Anleitungen `<TODO_MAIN_REPO>` verwenden.
 

@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo – Teams und Projektfreigaben
+  title: Todolino – Teams und Projektfreigaben
   version: 1.0.0
   description: 'Ergänzung zum bestehenden API-Vertrag. Rollen und Vererbung: ADR 0005.
     Eine Einschränkung blockiert Grants der Vorfahren; direkte Grants des eingeschränkten

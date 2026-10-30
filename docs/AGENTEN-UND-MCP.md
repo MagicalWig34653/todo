@@ -52,7 +52,7 @@ Werkzeuge nach fachlichen Fähigkeiten schneiden, beispielsweise:
 
 Dies sind noch keine fixierten Namen oder Protokollschemas. Runner-Steuerung wie Claim/Heartbeat kann über eine separate authentifizierte API laufen und muss nicht jedem MCP-Client zugänglich sein.
 
-Scopes beispielsweise für Lesen, Bearbeiten, Kommentieren und Anhänge getrennt halten. Keine beliebigen Dateisystem- oder Shell-Werkzeuge im Todo-MCP anbieten. Freitext und Anhänge sind Daten; sie erweitern keine Berechtigungen. Der Verlauf nennt handelnde Person, Integration und Lauf.
+Scopes beispielsweise für Lesen, Bearbeiten, Kommentieren und Anhänge getrennt halten. Keine beliebigen Dateisystem- oder Shell-Werkzeuge im Todolino-MCP anbieten. Freitext und Anhänge sind Daten; sie erweitern keine Berechtigungen. Der Verlauf nennt handelnde Person, Integration und Lauf.
 
 ## Anhänge über MCP
 

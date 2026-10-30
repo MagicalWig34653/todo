@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo Identität
+  title: Todolino Identität
   version: 1.0.0
   description: 'Ergänzung zum bestehenden Auth-Vertrag. Normale Session: Bearer oder
     todo_session-Cookie; Cookie-Schreibzugriffe benötigen application/json und passenden

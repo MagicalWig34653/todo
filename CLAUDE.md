@@ -1,4 +1,4 @@
-# Claude Code – Todo
+# Claude Code – Todolino
 
 Hauptrepository: globale Dokumentation unter docs/, aktueller Arbeitsplan unter docs/ARBEITSPLAN.md.
 

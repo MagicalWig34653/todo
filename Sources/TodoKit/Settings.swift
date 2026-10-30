@@ -45,7 +45,7 @@ public struct AppSettings: Sendable {
 
     public init(
         relyingPartyID: String = "localhost",
-        relyingPartyName: String = "Todo",
+        relyingPartyName: String = "Todolino",
         relyingPartyOrigin: String = "http://localhost:25173",
         passwordLoginEnabled: Bool = false,
         bootstrapToken: String? = nil,

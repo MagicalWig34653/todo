@@ -2,7 +2,7 @@
 
 ## Ziel
 
-Eine ruhige, intuitive Todo-App mit schrittweise zuschaltbarer Projektplanung. Menschen und Coding-Agenten arbeiten an denselben Aufgaben. Ideen, Rückfragen, Entscheidungen, Fortschritt und Ergebnisse bleiben zusammenhängend in der App.
+Todolino ist eine ruhige, intuitive Todo-App mit schrittweise zuschaltbarer Projektplanung. Menschen und Coding-Agenten arbeiten an denselben Aufgaben. Ideen, Rückfragen, Entscheidungen, Fortschritt und Ergebnisse bleiben zusammenhängend in der App.
 
 Motivation: Der Nutzer erreicht bei Todoist schnell die Paywall und vermisst die direkte Anbindung an Claude Code für konkrete Entwicklungsprojekte. Ein vollständiger selbst betreibbarer Funktionsumfang ohne künstliche Paywall ist die vorgeschlagene Richtung; Lizenz und Geschäftsmodell sind noch offen.
 

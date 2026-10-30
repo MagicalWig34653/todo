@@ -13,7 +13,7 @@ describe('PWA icons', () => {
 	const manifest = JSON.parse(file('manifest.webmanifest').toString());
 
 	it('declares identity and de language', () => {
-		expect(manifest).toMatchObject({ id: '/', name: 'Todo', lang: 'de', scope: '/', start_url: '/' });
+		expect(manifest).toMatchObject({ id: '/', name: 'Todolino', lang: 'de', scope: '/', start_url: '/' });
 	});
 
 	it('lists any and maskable icons whose files exist with the declared size', () => {

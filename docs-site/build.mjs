@@ -171,14 +171,14 @@ function layout(page, body, { toc = [], sidebar = true, wide = false } = {}) {
   const tocHtml = toc.length > 2
     ? `<details class="toc" open><summary>Auf dieser Seite</summary><ul>${toc.map((t) => `<li class="d${t.depth}"><a href="#${t.id}">${esc(t.text)}</a></li>`).join('')}</ul></details>`
     : '';
-  const title = page.slug === 'index.html' ? 'Todo – Projektplanung für Menschen und Agenten' : `${page.title} – Todo`;
+  const title = page.slug === 'index.html' ? 'Todolino – Projektplanung für Menschen und Agenten' : `${page.title} – Todolino`;
   return `<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
-<meta name="description" content="Todo: intuitive Todo- und Projektplanung mit verschachtelten Projekten, Teams, Passkeys, PWA, SwiftUI, MCP und lokalen Claude-Code-Runnern.">
+<meta name="description" content="Todolino: intuitive Todo- und Projektplanung mit verschachtelten Projekten, Teams, Passkeys, PWA, SwiftUI, MCP und lokalen Claude-Code-Runnern.">
 <meta name="color-scheme" content="light dark">
 <script>${themeScript}</script>
 <link rel="stylesheet" href="${root}style.css">
@@ -186,7 +186,7 @@ function layout(page, body, { toc = [], sidebar = true, wide = false } = {}) {
 <body>
 <a class="skip" href="#inhalt">Zum Inhalt</a>
 <header class="top"><div class="bar">
-<a class="brand" href="${root}index.html"><span class="logo" aria-hidden="true">&#10003;</span> Todo</a>
+<a class="brand" href="${root}index.html"><span class="logo" aria-hidden="true">&#10003;</span> Todolino</a>
 <nav id="nav" class="nav" aria-label="Hauptnavigation">${nav}<a href="${GH}" rel="noopener">GitHub</a></nav>
 <button id="theme" class="btn" type="button">Dunkel</button>
 <button id="menu" class="btn menu" type="button" aria-expanded="false" aria-controls="nav">Menü</button>
@@ -198,7 +198,7 @@ ${tocHtml}
 ${body}
 </main>
 </div>
-<footer class="foot"><div class="bar">Todo – Projekt im Aufbau. Diese Seite wird beim Build aus <code>docs/</code> und <code>contracts/</code> erzeugt und enthält keine Zugangsdaten und keine Laufzeitdaten. <a href="${GH}" rel="noopener">Quellcode</a></div></footer>
+<footer class="foot"><div class="bar">Todolino – Projekt im Aufbau. Diese Seite wird beim Build aus <code>docs/</code> und <code>contracts/</code> erzeugt und enthält keine Zugangsdaten und keine Laufzeitdaten. <a href="${GH}" rel="noopener">Quellcode</a></div></footer>
 <script>${uiScript}</script>
 </body>
 </html>

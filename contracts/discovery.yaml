@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo Discovery
+  title: Todolino Discovery
   version: 1.0.0
   description: |
     Persönliche Labels und gespeicherte Filter sowie autorisierte Teilstringsuche.

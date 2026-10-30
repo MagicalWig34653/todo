@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo – Projektzustand je Konto, Projektkommentare, Aktivitätsfeed
+  title: Todolino – Projektzustand je Konto, Projektkommentare, Aktivitätsfeed
   version: 1.0.0
   description: 'Persönliche Projektreihenfolge, Favoriten und Anzeigeeinstellungen (je Konto, ADR 0012), Kommentare an
     Projekten und ein aggregierter Aktivitätsfeed. Rechte ausschließlich über ProjectAccess: Lesen = read, Kommentieren =

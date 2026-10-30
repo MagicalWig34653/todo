@@ -46,7 +46,7 @@ struct MCPController: RouteCollection {
             result = .object(["protocolVersion": .string(Self.versions.contains(requested) ? requested : "2025-11-25"),
                 "capabilities": .object(["tools": .object(["listChanged": .bool(false)]),
                     "resources": .object(["listChanged": .bool(false), "subscribe": .bool(false)])]),
-                "serverInfo": .object(["name": .string("Todo"), "version": .string("1.1")]),
+                "serverInfo": .object(["name": .string("Todolino"), "version": .string("1.1")]),
                 "instructions": .string(Self.instructions)])
         case "ping": result = .object([:])
         case "tools/list": result = .object(["tools": .array(Self.tools.filter { $0.scope.isEmpty || grant.scopes.contains($0.scope) }.map(\.definition))])

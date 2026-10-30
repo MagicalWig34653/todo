@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Todo Zusammenarbeit
+  title: Todolino Zusammenarbeit
   version: 1.0.0
   description: 'Etappe 2: Kommentare, Verlauf und Abnahmekriterien. Alle Ressourcen werden über ProjectAccess geprüft;
     Fremdes ist 404. Verschachtelte Ressourcen müssen zur Aufgabe gehören. Texte werden außen getrimmt und dürfen

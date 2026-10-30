@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo Agentenaufträge und Runner-API
+  title: Todolino Agentenaufträge und Runner-API
   version: 1.0.0
   description: Serververtrag gemäß ADR 0008. Menschliche Sitzungen und Geräte-Token
     sind getrennt. Keine automatischen Wiederholungen lokaler Coding-Läufe. Listen

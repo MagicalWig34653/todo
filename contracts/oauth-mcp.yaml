@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo OAuth und MCP
+  title: Todolino OAuth und MCP
   version: 1.0.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.

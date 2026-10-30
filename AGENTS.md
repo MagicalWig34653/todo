@@ -1,4 +1,4 @@
-# Todo – Einstieg für Coding-Agenten
+# Todolino – Einstieg für Coding-Agenten
 
 Dies ist das Hauptrepository für Backend, PWA und das globale Projektgedächtnis. Alle globalen Dokumente liegen unter docs/. Das Apple-Repository ist über .workspace.local.json auffindbar.
 

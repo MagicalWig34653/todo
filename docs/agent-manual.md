@@ -1,7 +1,7 @@
 <!-- manual-version: 1.0.0 -->
-# Todo agent manual
+# Todolino agent manual
 
-This manual is written for coding agents (Claude Code and others) that work for a person through the Todo MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
+This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
 
 ## Start here
 

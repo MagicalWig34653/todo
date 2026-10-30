@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo – Planungserweiterung
+  title: Todolino – Planungserweiterung
   version: 1.0.0
   description: 'Erweiterung des bestehenden Vertrags. ISO-8601-Zeitpunkte; Priorität 0 (keine) bis 3 (hoch). PUT
     ersetzt alle Planungsdaten. Wiederholungen benötigen dueAt oder plannedAt und erzeugen höchstens eine Folgeinstanz

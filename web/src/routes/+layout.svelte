@@ -22,7 +22,7 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>Todo</title>
+	<title>Todolino</title>
 </svelte:head>
 
 {@render children()}

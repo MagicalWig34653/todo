@@ -68,7 +68,7 @@ function faviconSvg() {
 		css += `.${n}-a{stop-color:${dark[0]}}.${n}-b{stop-color:${dark[1]}}`;
 	}
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" color-interpolation="sRGB">
-<title>Todo</title>
+<title>Todolino</title>
 <defs>${defs}<clipPath id="clip"><rect x="${(CX - side / 2).toFixed(1)}" y="${(CY - side / 2).toFixed(1)}" width="${side.toFixed(1)}" height="${side.toFixed(1)}" rx="${(side * 0.22).toFixed(1)}"/></clipPath>
 <style>@media (prefers-color-scheme:dark){${css}}</style></defs>
 <g clip-path="url(#clip)">${body}</g>

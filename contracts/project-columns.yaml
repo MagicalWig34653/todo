@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Todo – Projektspalten und Board
+  title: Todolino – Projektspalten und Board
   version: 1.0.0
   description: 'Jedes Projekt hat eigene, frei benennbare Board-Spalten (ADR 0011). Projekte sind unbegrenzt; Spalten
     gehören genau einem Projekt und werden nicht an Unterprojekte vererbt. Ohne eigene Spalten liefert das Board

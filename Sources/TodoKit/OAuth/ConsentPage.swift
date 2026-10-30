@@ -19,7 +19,7 @@ enum ConsentPage {
       if (!r.ok) { el('h1', 'Anfrage ungültig'); el('p', 'Die Autorisierungsanfrage ist ungültig oder abgelaufen.'); return; }
       const d = await r.json();
       el('h1', 'Zugriff erlauben?');
-      el('p', 'Die Anwendung „' + d.client_name + '“ möchte im Namen deines Kontos auf Todo zugreifen.');
+      el('p', 'Die Anwendung „' + d.client_name + '“ möchte im Namen deines Kontos auf Todolino zugreifen.');
       el('p', 'Rückkehr nach: ' + d.redirect_uri);
       el('h2', 'Berechtigungen');
       const ul = el('ul'); d.scopes.forEach(s => el('li', s, ul));

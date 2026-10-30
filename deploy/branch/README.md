@@ -1,4 +1,4 @@
-# Todo: Deploy-Branch
+# Todolino: Deploy-Branch
 
 Dieser Branch enthält nur, was für den Betrieb auf einem Docker-Swarm-Server nötig ist: Setup- und Update-Skripte, die Stack-Dateien, Backup/Restore und die Betriebsdokumentation. Der Quellcode liegt auf dem Branch `main` (https://github.com/MagicalWig34653/todo).
 
