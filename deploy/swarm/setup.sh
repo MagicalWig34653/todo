@@ -282,6 +282,8 @@ ask RP_ID "WebAuthn RP_ID (nackte Domain)" "$PUBLIC_DOMAIN" valid_domain \
   "RP_ID bindet die Passkeys an die Domain und kann später nicht ohne Verlust der Passkeys geändert werden."
 ask RP_ORIGIN "WebAuthn RP_ORIGIN (genauer Browser-Origin)" "https://$PUBLIC_DOMAIN" valid_origin
 case "$RP_ORIGIN" in http://*) warn "RP_ORIGIN ohne https: Passkeys und sichere Cookies funktionieren nur auf localhost ohne TLS." ;; esac
+# OAuth/MCP issuer (discovery URLs, resource indicator): an existing value is kept, otherwise it equals RP_ORIGIN.
+OAUTH_ISSUER="$(get OAUTH_ISSUER '')"; [ -n "$OAUTH_ISSUER" ] || OAUTH_ISSUER="$RP_ORIGIN"
 
 team_default="$(get APPLE_TEAM_ID '')"
 if [ -z "$team_default" ]; then
@@ -449,6 +451,7 @@ Stack:             $TODO_STACK
 Image:             ${IMAGE_BASE}:${TODO_IMAGE_TAG}
 Domain / RP_ID:    $PUBLIC_DOMAIN / $RP_ID
 RP_ORIGIN:         $RP_ORIGIN
+OAUTH_ISSUER:      $OAUTH_ISSUER
 AASA_APP_IDS:      ${AASA_APP_IDS:-(leer: Endpunkt antwortet 404)}
 Passwort-Login:    $PASSWORD_LOGIN_ENABLED
 Port / Replikate:  $BACKEND_PORT / $BACKEND_REPLICAS (CPU-Limit $BACKEND_CPU_LIMIT, Speicher-Limit $BACKEND_MEMORY_LIMIT)
@@ -485,6 +488,7 @@ write_env() {
     echo "PUBLIC_DOMAIN=$PUBLIC_DOMAIN"
     echo "RP_ID=$RP_ID"
     echo "RP_ORIGIN=$RP_ORIGIN"
+    echo "OAUTH_ISSUER=$OAUTH_ISSUER"
     echo "AASA_APP_IDS=$AASA_APP_IDS"
     echo "PASSWORD_LOGIN_ENABLED=$PASSWORD_LOGIN_ENABLED"
     echo "BACKEND_PORT=$BACKEND_PORT"
