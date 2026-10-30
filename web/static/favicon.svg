@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="102.2 102.2 787.7 787.7" color-interpolation="sRGB">
+<title>Todo</title>
+<defs><linearGradient id="p-background" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" class="background-a" stop-color="#F1F8FA"/>
+      <stop offset="1" class="background-b" stop-color="#D6E9ED"/>
+    </linearGradient><linearGradient id="p-project-root" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" class="project-root-a" stop-color="#A6CED7"/>
+      <stop offset="1" class="project-root-b" stop-color="#83B6C4"/>
+    </linearGradient><linearGradient id="p-project-child" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" class="project-child-a" stop-color="#589EA9"/>
+      <stop offset="1" class="project-child-b" stop-color="#357E8E"/>
+    </linearGradient><linearGradient id="p-project-task" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" class="project-task-a" stop-color="#FFFFFF"/>
+      <stop offset="1" class="project-task-b" stop-color="#EBF5F7"/>
+    </linearGradient><linearGradient id="p-checkmark" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" class="checkmark-a" stop-color="#238C91"/>
+      <stop offset="1" class="checkmark-b" stop-color="#126F7E"/>
+    </linearGradient><clipPath id="clip"><rect x="102.2" y="102.2" width="787.7" height="787.7" rx="173.3"/></clipPath>
+<style>@media (prefers-color-scheme:dark){.background-a{stop-color:#183840}.background-b{stop-color:#0E252F}.project-root-a{stop-color:#35616F}.project-root-b{stop-color:#294D5B}.project-child-a{stop-color:#569EA9}.project-child-b{stop-color:#357887}.project-task-a{stop-color:#E9F6F7}.project-task-b{stop-color:#CEE7EB}.checkmark-a{stop-color:#237F88}.checkmark-b{stop-color:#125F70}}</style></defs>
+<g clip-path="url(#clip)"><g id="background">
+    <rect width="1024" height="1024" fill="url(#p-background)"/>
+  </g><g id="project-root">
+    <rect x="224" y="224" width="448" height="448" rx="88" fill="url(#p-project-root)"/>
+  </g><g id="project-child">
+    <rect x="288" y="288" width="448" height="448" rx="80" fill="url(#p-project-child)"/>
+  </g><g id="project-task">
+    <rect x="352" y="352" width="416" height="416" rx="72" fill="url(#p-project-task)"/>
+  </g><g id="checkmark">
+    <path d="M 444 556 L 522 634 L 680 470" fill="none" stroke-width="60" stroke-linecap="round" stroke-linejoin="round" stroke="url(#p-checkmark)"/>
+  </g></g>
+</svg>
