@@ -6,7 +6,8 @@
 # Usage: deploy/swarm/setup.sh [options]
 #   --env-file FILE      env file to write and, when it exists, to read as defaults (default: deploy/swarm/stack.env)
 #   --answers-file FILE  KEY=VALUE answers (same names as in the env file, plus the secret values DB_PASSWORD,
-#                        S3_ACCESS_KEY, S3_SECRET_KEY, BOOTSTRAP_TOKEN, optionally APPLE_TEAM_ID/APPLE_BUNDLE_IDS,
+#                        BOOTSTRAP_TOKEN, only with ATTACHMENT_STORAGE=s3 also S3_ACCESS_KEY and S3_SECRET_KEY,
+#                        optionally APPLE_TEAM_ID/APPLE_BUNDLE_IDS,
 #                        PUBLIC_DOMAIN, CHECK_NETWORK, SWARM_ADVERTISE_ADDR); the file is parsed, never executed
 #   --non-interactive    never prompt; take answers (file, SETUP_<KEY> env vars, existing env file, defaults)
 #   --reconfigure        prompt again for every value, existing env values are the defaults
@@ -14,7 +15,7 @@
 #   --stack NAME         stack name (default: todo)
 #   --tag TAG            image tag instead of the newest sha- tag
 #   --swarm-init         non-interactive: run `docker swarm init` when no swarm is active
-#   --skip-checks        skip the database/S3 connectivity checks
+#   --skip-checks        skip the database (and, if chosen, S3) connectivity checks
 #   --no-deploy          write env file and create secrets only
 #   --dry-run            no docker calls, no secrets; shows the plan and writes the env file to a temp directory
 #   --yes                do not ask for the final confirmation
@@ -157,6 +158,8 @@ valid_mem() { [[ "$1" =~ ^([0-9]+[bBkKmMgG]?)$ ]] || bad "Speicher-Limit wie 512
 valid_ident() { [[ "$1" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$ ]] || bad "Name aus Buchstaben, Ziffern, _ . -"; }
 valid_bool() { [[ "$1" == true || "$1" == false ]] || bad "true oder false"; }
 valid_url() { [[ "$1" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$ ]] || bad "URL wie https://s3.example.org[:9000]"; }
+valid_storage() { [[ "$1" == database || "$1" == s3 ]] || bad "database (Standard) oder s3"; }
+valid_maxbytes() { { [[ "$1" =~ ^[0-9]{4,9}$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 134217728 ]; } || bad "Bytes zwischen 1024 und 134217728 (Standard 10485760 = 10 MiB)"; }
 valid_bucket() { [[ "$1" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || bad "Bucket-Name: 3-63 Zeichen, a-z 0-9 . -"; }
 valid_region() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{1,30}$ ]] || bad "Region wie eu-central-1 oder us-east-1"; }
 valid_team() { [ -z "$1" ] || [[ "$1" =~ ^[A-Z0-9]{10}$ ]] || bad "Apple Team ID: 10 Zeichen A-Z0-9 (leer = AASA aus)"; }
@@ -325,21 +328,33 @@ ask DB_NAME "DB_NAME" "todo" valid_ident
 ask DB_USER "DB_USER" "todo" valid_ident
 ask DB_PASSWORD_SECRET "Name des Swarm-Secrets für das DB-Passwort" "${TODO_STACK}_db_password" valid_ident
 
-# ---------------------------------------------------------------- Step 6: external S3
-step "Externer S3-Speicher"
-echo "Anhänge und Screenshots liegen in einem S3-kompatiblen Bucket (extern, muss existieren)."
-ask S3_ENDPOINT "S3_ENDPOINT" "$(get S3_ENDPOINT '')" valid_url
-ask S3_BUCKET "S3_BUCKET" "todo-attachments" valid_bucket
-ask S3_REGION "S3_REGION" "us-east-1" valid_region
-ask S3_ACCESS_KEY_SECRET "Name des Secrets für den S3-Access-Key" "${TODO_STACK}_s3_access_key" valid_ident
-ask S3_SECRET_KEY_SECRET "Name des Secrets für den S3-Secret-Key" "${TODO_STACK}_s3_secret_key" valid_ident
+# ---------------------------------------------------------------- Step 6: attachment storage (S3 optional)
+step "Speicher für Anhänge"
+echo "Anhänge und Screenshots liegen standardmäßig in der Datenbank (Tabelle attachment_blobs); ein S3-Dienst ist nicht nötig."
+storage_default=database
+# An env file from before the database store existed has S3 settings: keep using S3 unless changed explicitly.
+[ -z "$(get S3_ENDPOINT '')" ] || storage_default=s3
+ask ATTACHMENT_STORAGE "Anhänge speichern in: database (Standard) oder s3" "$storage_default" valid_storage \
+  "database = in der MariaDB (kein weiterer Dienst, Sicherung mit der Datenbank). s3 = externer S3-kompatibler Bucket (optional)."
+ask ATTACHMENT_MAX_BYTES "Größtes erlaubtes Anhang-Volumen je Datei in Bytes" "10485760" valid_maxbytes \
+  "Standard 10 MiB. Der Reverse Proxy muss Uploads dieser Größe zulassen; Datenbank: max_allowed_packet mindestens 2 MiB (Standard 16 MiB reicht)."
+S3_ENDPOINT=""; S3_BUCKET=""; S3_REGION=""; S3_ACCESS_KEY_SECRET=""; S3_SECRET_KEY_SECRET=""
+if [ "$ATTACHMENT_STORAGE" = s3 ]; then
+  echo "Externer S3-Speicher (muss existieren, privater Bucket)."
+  ask S3_ENDPOINT "S3_ENDPOINT" "$(get S3_ENDPOINT '')" valid_url
+  ask S3_BUCKET "S3_BUCKET" "todo-attachments" valid_bucket
+  ask S3_REGION "S3_REGION" "us-east-1" valid_region
+  ask S3_ACCESS_KEY_SECRET "Name des Secrets für den S3-Access-Key" "${TODO_STACK}_s3_access_key" valid_ident
+  ask S3_SECRET_KEY_SECRET "Name des Secrets für den S3-Secret-Key" "${TODO_STACK}_s3_secret_key" valid_ident
+fi
 ask BOOTSTRAP_TOKEN_SECRET "Name des Secrets für das Bootstrap-Token" "${TODO_STACK}_bootstrap_token" valid_ident \
   "Das Bootstrap-Token erlaubt einmalig das Anlegen des ersten Administrator-Kontos."
 
 # ---------------------------------------------------------------- Step 7: secrets
 step "Secrets"
 # Per secret: status exists | create | missing; value in SV_<KEY> (never printed).
-SECRET_KEYS="DB_PASSWORD S3_ACCESS_KEY S3_SECRET_KEY BOOTSTRAP_TOKEN"
+SECRET_KEYS="DB_PASSWORD BOOTSTRAP_TOKEN"
+[ "$ATTACHMENT_STORAGE" != s3 ] || SECRET_KEYS="DB_PASSWORD S3_ACCESS_KEY S3_SECRET_KEY BOOTSTRAP_TOKEN"
 secret_name() {
   case "$1" in
     DB_PASSWORD) echo "$DB_PASSWORD_SECRET" ;; S3_ACCESS_KEY) echo "$S3_ACCESS_KEY_SECRET" ;;
@@ -386,7 +401,7 @@ else
   net_args=()
   [ -z "$CHECK_NETWORK" ] || net_args=(--network "$CHECK_NETWORK")
   run_checks=1
-  if [ "$NONINTERACTIVE" = 0 ] && ! confirm "Datenbank und S3 jetzt auf Erreichbarkeit prüfen?" y; then run_checks=0; fi
+  if [ "$NONINTERACTIVE" = 0 ] && ! confirm "Datenbank${S3_ENDPOINT:+ und S3} jetzt auf Erreichbarkeit prüfen?" y; then run_checks=0; fi
   CHECK_FAILED=0
   if [ "$run_checks" = 1 ]; then
     if [ -n "${SV_DB_PASSWORD-}" ]; then
@@ -401,17 +416,19 @@ else
     else
       say "Datenbank: Passwort liegt nur im vorhandenen Secret vor, Anmeldetest übersprungen."
     fi
-    code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$S3_ENDPOINT" 2>/dev/null || true)"
-    if [ -z "$code" ] || [ "$code" = 000 ]; then
-      warn "S3-Endpunkt ${S3_ENDPOINT} von diesem Host aus nicht erreichbar (DNS, Port, TLS)."
-      CHECK_FAILED=1
-    else
-      say "S3-Endpunkt antwortet (HTTP $code, von diesem Host aus; Schlüssel werden hier nicht geprüft)."
-      bcode="$(curl -sS -o /dev/null -m 10 -I -w '%{http_code}' "${S3_ENDPOINT%/}/${S3_BUCKET}" 2>/dev/null || true)"
-      case "$bcode" in
-        404) warn "Bucket '${S3_BUCKET}' scheint nicht zu existieren (HTTP 404, Path-Style-Prüfung); vor dem Start anlegen." ;;
-        *) say "Bucket-Prüfung (HEAD ${S3_ENDPOINT%/}/${S3_BUCKET}): HTTP ${bcode:-?}." ;;
-      esac
+    if [ "$ATTACHMENT_STORAGE" = s3 ]; then
+      code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$S3_ENDPOINT" 2>/dev/null || true)"
+      if [ -z "$code" ] || [ "$code" = 000 ]; then
+        warn "S3-Endpunkt ${S3_ENDPOINT} von diesem Host aus nicht erreichbar (DNS, Port, TLS)."
+        CHECK_FAILED=1
+      else
+        say "S3-Endpunkt antwortet (HTTP $code, von diesem Host aus; Schlüssel werden hier nicht geprüft)."
+        bcode="$(curl -sS -o /dev/null -m 10 -I -w '%{http_code}' "${S3_ENDPOINT%/}/${S3_BUCKET}" 2>/dev/null || true)"
+        case "$bcode" in
+          404) warn "Bucket '${S3_BUCKET}' scheint nicht zu existieren (HTTP 404, Path-Style-Prüfung); vor dem Start anlegen." ;;
+          *) say "Bucket-Prüfung (HEAD ${S3_ENDPOINT%/}/${S3_BUCKET}): HTTP ${bcode:-?}." ;;
+        esac
+      fi
     fi
     if [ "$CHECK_FAILED" = 1 ]; then
       if [ "$NONINTERACTIVE" = 1 ]; then die "Verbindungsprüfung fehlgeschlagen (mit --skip-checks überspringbar)"; fi
@@ -436,7 +453,7 @@ AASA_APP_IDS:      ${AASA_APP_IDS:-(leer: Endpunkt antwortet 404)}
 Passwort-Login:    $PASSWORD_LOGIN_ENABLED
 Port / Replikate:  $BACKEND_PORT / $BACKEND_REPLICAS (CPU-Limit $BACKEND_CPU_LIMIT, Speicher-Limit $BACKEND_MEMORY_LIMIT)
 MariaDB:           $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME
-S3:                $S3_ENDPOINT, Bucket $S3_BUCKET, Region $S3_REGION
+Anhänge:           $ATTACHMENT_STORAGE, Limit $ATTACHMENT_MAX_BYTES Bytes$([ "$ATTACHMENT_STORAGE" != s3 ] || echo ", S3 $S3_ENDPOINT, Bucket $S3_BUCKET, Region $S3_REGION")
 Env-Datei:         $OUT_ENV (Modus 600)
 EOF
 for key in $SECRET_KEYS; do
@@ -479,11 +496,15 @@ write_env() {
     echo "DB_NAME=$DB_NAME"
     echo "DB_USER=$DB_USER"
     echo "DB_PASSWORD_SECRET=$DB_PASSWORD_SECRET"
-    echo "S3_ENDPOINT=$S3_ENDPOINT"
-    echo "S3_BUCKET=$S3_BUCKET"
-    echo "S3_REGION=$S3_REGION"
-    echo "S3_ACCESS_KEY_SECRET=$S3_ACCESS_KEY_SECRET"
-    echo "S3_SECRET_KEY_SECRET=$S3_SECRET_KEY_SECRET"
+    echo "ATTACHMENT_STORAGE=$ATTACHMENT_STORAGE"
+    echo "ATTACHMENT_MAX_BYTES=$ATTACHMENT_MAX_BYTES"
+    if [ "$ATTACHMENT_STORAGE" = s3 ]; then
+      echo "S3_ENDPOINT=$S3_ENDPOINT"
+      echo "S3_BUCKET=$S3_BUCKET"
+      echo "S3_REGION=$S3_REGION"
+      echo "S3_ACCESS_KEY_SECRET=$S3_ACCESS_KEY_SECRET"
+      echo "S3_SECRET_KEY_SECRET=$S3_SECRET_KEY_SECRET"
+    fi
     echo "BOOTSTRAP_TOKEN_SECRET=$BOOTSTRAP_TOKEN_SECRET"
   } > "$tmp"
   chmod 600 "$tmp"
@@ -617,7 +638,7 @@ echo "  2. Erstes Administrator-Konto mit Passkey registrieren und das Bootstrap
 echo "     (Secret '$BOOTSTRAP_TOKEN_SECRET'). Danach ist das Token wirkungslos; das Secret wird vom Stack noch"
 echo "     referenziert und bleibt bestehen."
 echo "  3. Reverse Proxy/TLS auf Port $BACKEND_PORT der Swarm-Knoten zeigen lassen; /.well-known/ ohne Redirect durchreichen."
-echo "  4. Backups einrichten: scripts/backup-db.sh (Datenbank) und Bucket-Sicherung (docs/BETRIEB.md)."
+echo "  4. Backups einrichten: scripts/backup-db.sh (Datenbank, enthält die Anhänge; bei S3 zusätzlich Bucket-Sicherung, docs/BETRIEB.md)."
 echo "  5. Updates: deploy/swarm/update.sh --env-file $ENV_FILE"
 [ "$SWARM_CREATED" = 0 ] || echo "  Hinweis: Dieses Skript hat den Swarm initialisiert ('docker swarm leave --force' macht das rückgängig)."
 if [ "$HEALTH_OK" = 0 ]; then

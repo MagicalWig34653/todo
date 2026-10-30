@@ -2,10 +2,14 @@ import Fluent
 import Vapor
 
 struct AttachmentController: RouteCollection {
+    /// Body limit for the upload PUT; ATTACHMENT_MAX_BYTES.
+    let maxBytes: Int
+    init(maxBytes: Int = AttachmentLimits.defaultMaxBytes) { self.maxBytes = maxBytes }
+
     func boot(routes: any RoutesBuilder) throws {
         let v1 = routes.grouped("v1")
         v1.post("attachments", "begin", use: begin)
-        v1.on(.PUT, "attachments", ":id", "upload", body: .collect(maxSize: "10mb"), use: upload)
+        v1.on(.PUT, "attachments", ":id", "upload", body: .collect(maxSize: ByteCount(value: maxBytes)), use: upload)
         v1.post("attachments", ":id", "complete", use: complete)
         v1.delete("attachments", ":id", use: abort)
         v1.get("attachments", ":id", "download", use: download)
@@ -16,23 +20,23 @@ struct AttachmentController: RouteCollection {
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
         return id
     }
-    private func service() throws -> AttachmentService { try AttachmentService(store: .fromEnvironment()) }
+    private func service(_ req: Request) -> AttachmentService { AttachmentService(settings: req.application.settings) }
     @Sendable func begin(_ req: Request) async throws -> UploadCapability {
         let user = try await req.requireUser()
-        return try await service().begin(req.content.decode(BeginAttachment.self), user: user, db: req.db)
+        return try await service(req).begin(req.content.decode(BeginAttachment.self), user: user, db: req.db)
     }
     @Sendable func upload(_ req: Request) async throws -> HTTPStatus {
         guard let token = req.headers.bearerAuthorization?.token else { throw Abort(.notFound) }
-        try await service().upload(id(req), token: token, data: Data(req.body.data?.readableBytesView ?? ByteBuffer().readableBytesView), db: req.db)
+        try await service(req).upload(id(req), token: token, data: Data(req.body.data?.readableBytesView ?? ByteBuffer().readableBytesView), db: req.db)
         return .noContent
     }
     @Sendable func complete(_ req: Request) async throws -> AttachmentDTO {
         let user = try await req.requireUser()
-        return try await service().complete(id(req), user: user, db: req.db)
+        return try await service(req).complete(id(req), user: user, db: req.db)
     }
     @Sendable func abort(_ req: Request) async throws -> HTTPStatus {
         let user = try await req.requireUser()
-        try await service().abort(id(req), user: user, db: req.db)
+        try await service(req).abort(id(req), user: user, db: req.db)
         return .noContent
     }
     @Sendable func list(_ req: Request) async throws -> [AttachmentDTO] {
@@ -51,8 +55,8 @@ struct AttachmentController: RouteCollection {
         guard let a = try await Attachment.find(id(req), on: req.db), a.status == "complete" else { throw Abort(.notFound) }
         try await AttachmentService.authorize(a, user: user, db: req.db)
         guard !preview || a.mediaType.hasPrefix("image/") else { throw Abort(.unsupportedMediaType) }
-        let service = try service()
-        let data = try await service.store.send("GET", key: a.objectKey)
+        let service = service(req)
+        let data = try await service.store(for: a).get(key: a.objectKey, db: req.db)
         try service.validate(data, for: a)
         // Recheck after storage I/O so revoked access cannot reuse an earlier authorization.
         try await AttachmentService.authorize(a, user: user, db: req.db)
@@ -63,7 +67,19 @@ struct AttachmentController: RouteCollection {
         headers.replaceOrAdd(name: "Content-Security-Policy", value: "default-src 'none'; sandbox")
         let filename = a.filename.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "attachment"
         headers.replaceOrAdd(name: .contentDisposition, value: "\(preview ? "inline" : "attachment"); filename*=UTF-8''\(filename)")
-        return Response(status: .ok, headers: headers, body: .init(data: data))
+        headers.replaceOrAdd(name: .acceptRanges, value: "bytes")
+        // Bytes are always verified as a whole (size, magic bytes, SHA-256) before any range is cut out.
+        switch ByteRange.parse(req.headers.first(name: .range), size: data.count) {
+        case .full:
+            return Response(status: .ok, headers: headers, body: .init(data: data))
+        case .partial(let range):
+            headers.replaceOrAdd(name: .contentRange, value: "bytes \(range.lowerBound)-\(range.upperBound)/\(data.count)")
+            let slice = data.subdata(in: (data.startIndex + range.lowerBound)..<(data.startIndex + range.upperBound + 1))
+            return Response(status: .partialContent, headers: headers, body: .init(data: slice))
+        case .unsatisfiable:
+            headers.replaceOrAdd(name: .contentRange, value: "bytes */\(data.count)")
+            return Response(status: .rangeNotSatisfiable, headers: headers)
+        }
     }
 }
 
@@ -71,12 +87,14 @@ struct CleanupAttachmentsCommand: AsyncCommand {
     struct Signature: CommandSignature {}
     let help = "Delete expired uploads and orphaned attachment objects."
     func run(using context: CommandContext, signature: Signature) async throws {
-        let count = try await AttachmentService(store: .fromEnvironment()).cleanup(db: context.application.db)
+        let count = try await AttachmentService(settings: context.application.settings).cleanup(db: context.application.db)
         context.console.print("Removed \(count) attachments.")
     }
 }
 
 func configureAttachments(_ app: Application) {
     app.migrations.add(CreateAttachmentSchema())
+    app.migrations.add(AddAttachmentBlobStorage())
+    app.asyncCommands.use(AttachmentsCommandGroup(), as: "attachments")
     app.asyncCommands.use(CleanupAttachmentsCommand(), as: "cleanup-uploads")
 }

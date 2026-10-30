@@ -21,9 +21,11 @@ image=${BACKEND_IMAGE:-ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-ed
 # BACKEND_IMAGE (full reference) only overrides the migration image and must match an override file
 # if the stack image is overridden too (the smoke test does this). Extra stack files (e.g. overrides) may be passed as space-separated STACK_EXTRA_FILES.
 compose_args=(-c stack.yaml)
+# Optional S3 attachment storage: only when S3_ENDPOINT is set (needs the S3 secrets, see stack.s3.yaml).
+if [[ -n "${S3_ENDPOINT:-}" ]]; then compose_args+=(-c stack.s3.yaml); fi
 for f in ${STACK_EXTRA_FILES:-}; do compose_args+=(-c "$f"); done
-# DB and S3 are external: the one-shot migration below fails (without retry) if the DB is unreachable.
-# Required: DB_HOST, S3_ENDPOINT and the external secrets (see deploy/swarm/stack.env.example).
+# The DB is external: the one-shot migration below fails (without retry) if the DB is unreachable.
+# Required: DB_HOST and the external secrets (see deploy/swarm/stack.env.example). S3 is optional.
 replicas=${BACKEND_REPLICAS:-3}
 if ! docker service inspect "${STACK}_backend" >/dev/null 2>&1; then
   BACKEND_REPLICAS=0 docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"

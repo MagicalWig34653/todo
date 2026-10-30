@@ -419,7 +419,7 @@ function renderHome(page) {
       API-Replikate (Swift, Vapor)
   gemeinsame Fachlogik und Rechteprüfung
               |
-   MariaDB + S3-kompatibler Dateispeicher</pre>
+   MariaDB (Dateien darin; S3 optional)</pre>
 <p>Modularer Monolith in Swift (Vapor, Fluent), MariaDB, SvelteKit-PWA mit statischer Auslieferung. Deployment als Docker-Image, Betrieb im Swarm. Mehr unter <a href="architektur.html">Architektur</a>.</p></section>
 <section class="sec"><h2>Dokumentation</h2><p>Alle Seiten entstehen beim Build aus <code>docs/</code> und <code>contracts/</code> des Repositorys.</p><div class="grid">${docs}</div></section>
 <section class="sec"><h2>Status</h2><p>Backend (Identität, Projekte, Aufgaben, Teams und Freigaben, Anhänge, Kommentare, Planung, OAuth/MCP, Agentenaufträge, Sync) und PWA sind vorhanden und getestet. Echte Geräte-, Browser- und Produktionsprüfungen stehen teilweise aus. Der genaue Stand steht unter <a href="status.html">Status</a>.</p></section>`;

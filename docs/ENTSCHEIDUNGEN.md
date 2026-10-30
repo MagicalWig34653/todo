@@ -13,9 +13,10 @@
 9. Mac-App kann in einem zugeordneten Projektordner selbstständig Claude starten.
 10. Genau zwei Repositories an den im Startauftrag genannten Orten; die Einrichtung darf bereits durch Codex erfolgen. Backend/PWA ist das Hauptarbeitsrepo.
 11. Sessions sind wegwerfbar. Das Repository ist die Source of Truth; seine Dokumentation bleibt während der Arbeit aktuell und ermöglicht die Fortsetzung ohne alten Chat.
-12. Als S3-kompatibler Speicher für Entwicklung und Tests dient der S3Mock von Adobe (`adobe/s3mock`). Entscheidung vom 25.10.2026.
+12. Als S3-kompatibler Speicher für Entwicklung und Tests dient der S3Mock von Adobe (`adobe/s3mock`). Entscheidung vom 25.10.2026. Seit 30.10.2026 nur noch für den optionalen S3-Speicher (Entscheidung 15).
 13. Die Timetrack-Projekte bleiben ausschließlich Lesereferenz. Kein Code wird kopiert; Passkey-, OAuth- und weitere Module werden neu geschrieben. Damit ist die Lizenzfrage zur Codeübernahme erledigt. Entscheidung vom 25.10.2026.
 14. Der Nutzer überlässt die Strukturierung der Arbeit dem Agenten; Routineentscheidungen werden selbst getroffen und dokumentiert.
+15. S3 darf nicht verpflichtend sein: Anhänge liegen standardmäßig in der Datenbank, S3 ist optional (ADR 0013). Entscheidung vom 30.10.2026.
 
 ## Arbeitsannahmen, noch keine endgültigen Nutzerentscheidungen
 

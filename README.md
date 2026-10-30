@@ -47,13 +47,13 @@ PWA / SwiftUI / MCP-Clients / Mac-Runner
           API-Replikate (Swift, Vapor)
      gemeinsame Fachlogik und Rechteprüfung
                   |
-        MariaDB + S3-kompatibler Dateispeicher
+        MariaDB (Dateien standardmäßig darin; S3 optional)
 ```
 
 - Backend: Swift 6.2, Vapor, Fluent; modularer Monolith (`Sources/TodoKit`). REST, MCP und Apps nutzen dieselben Fachregeln und dieselbe Rechteprüfung (`ProjectAccess`).
 - Datenbank: MariaDB 12.3 im Betrieb, SQLite für schnelle Tests.
 - PWA: SvelteKit 3, Tailwind, shadcn-svelte, statische Auslieferung (`web/`).
-- Dateien: S3-kompatibel (Entwicklung: Adobe S3Mock).
+- Dateien: standardmäßig in der Datenbank (`ATTACHMENT_STORAGE=database`, ADR 0013); S3-kompatibler Speicher ist optional (Tests: Adobe S3Mock über Compose-Profil `s3`).
 - Apple-Apps und Mac-Runner liegen in einem separaten Repository; API-Verträge liegen hier unter `contracts/`.
 
 Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md).
@@ -67,13 +67,13 @@ Ports der Entwicklungsumgebung:
 | Dienst | Port |
 | --- | --- |
 | MariaDB | 23306 |
-| S3Mock | 29090 |
+| S3Mock (optional, Profil `s3`) | 29090 |
 | Backend (Docker) | 28080 |
 | PWA (Vite-Dev-Server) | 25173 |
 
 ```sh
 cp .env.example .env                      # nur Dev-Platzhalter, keine echten Zugangsdaten
-docker compose up -d --wait db s3         # MariaDB (23306) und S3Mock (29090)
+docker compose up -d --wait db            # MariaDB (23306); S3 ist nicht nötig (optional: --profile s3)
 docker compose --profile app up -d --wait backend   # Backend im Container (28080)
 # alternativ lokal: swift run App serve --port 28081
 
@@ -94,7 +94,7 @@ cd web
 npm run check                             # svelte-check
 npm run build                             # statischer Build
 npm test                                  # Vitest
-npm run test:e2e                          # Playwright, braucht laufendes Backend-Image + S3Mock
+npm run test:e2e                          # Playwright, braucht laufendes Backend-Image (kein S3Mock nötig)
 ```
 
 Liegt der Checkout in einem File-Provider-Ordner (z. B. `~/Documents`), scheitert `swift test` am Codesigning; Workaround: `--scratch-path` auf einen Ordner außerhalb. Siehe [docs/STATUS.md](docs/STATUS.md).
@@ -115,7 +115,7 @@ web/                 SvelteKit-PWA (src, tests, e2e)
 contracts/           OpenAPI-Verträge je Bereich
 docs/                Projektgedächtnis: Status, Arbeitsplan, Konzepte, ADRs
 docs-site/           Statische Projektseite (GitHub Pages)
-deploy/swarm         Swarm-Stack (externe DB/S3, GHCR-Image) und stack.env.example
+deploy/swarm         Swarm-Stack (externe DB, optional S3, GHCR-Image) und stack.env.example
 scripts/             Test-, Backup- und Deploy-Skripte
 compose.yaml         Entwicklungsstack
 Dockerfile           Backend-Image

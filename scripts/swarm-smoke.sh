@@ -11,10 +11,9 @@ export STACK
 export BACKEND_IMAGE=${BACKEND_IMAGE:-todo-dev-backend:local}
 export BACKEND_REPLICAS=3 BACKEND_PORT=${BACKEND_PORT:-38080}
 export DB_PASSWORD_SECRET="${STACK}_password" BOOTSTRAP_TOKEN_SECRET="${STACK}_bootstrap"
-export S3_ACCESS_KEY_SECRET="${STACK}_s3_access" S3_SECRET_KEY_SECRET="${STACK}_s3_secret"
 # The stack has no database: the smoke starts a throwaway external MariaDB on its own attachable overlay network.
 EXT_NET="${STACK}_extdb" EXT_DB="${STACK}_extdb_mariadb"
-export DB_HOST="$EXT_DB" DB_PORT=3306 DB_NAME=todo DB_USER=todo S3_ENDPOINT=http://s3.invalid S3_BUCKET=todo-attachments
+export DB_HOST="$EXT_DB" DB_PORT=3306 DB_NAME=todo DB_USER=todo
 tmpdir=$(mktemp -d)
 ext_created=0
 cleanup() {
@@ -54,10 +53,9 @@ case "$state" in
   *) echo "Unsupported Swarm state: $state" >&2; exit 1 ;;
 esac
 [[ $(docker node ls -q | wc -l | tr -d ' ') == 1 ]] || { echo 'Smoke requires a single-node manager; refusing changes' >&2; exit 1; }
-for secret in "$BOOTSTRAP_TOKEN_SECRET" "$S3_ACCESS_KEY_SECRET" "$S3_SECRET_KEY_SECRET"; do
-  openssl rand -hex 32 | docker secret create "$secret" - >/dev/null
-  secrets+=("$secret")
-done
+# No S3 secrets: attachments use the default database store, so the smoke also proves the stack runs without S3.
+openssl rand -hex 32 | docker secret create "$BOOTSTRAP_TOKEN_SECRET" - >/dev/null
+secrets+=("$BOOTSTRAP_TOKEN_SECRET")
 # Throwaway external MariaDB (password injected from the same random secret value via a temp file).
 db_pw=$(openssl rand -hex 32)
 printf '%s' "$db_pw" | docker secret create "$DB_PASSWORD_SECRET" - >/dev/null

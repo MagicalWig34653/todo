@@ -20,7 +20,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: SharingController())
     try app.register(collection: DirectoryController())
     try app.register(collection: AgentController())
-    try app.register(collection: AttachmentController())
+    try app.register(collection: AttachmentController(maxBytes: app.settings.attachmentMaxBytes))
     try app.register(collection: ColumnController())
     try app.register(collection: SyncController())
     try app.register(collection: ProjectStateController())

@@ -14,6 +14,10 @@ public struct AppSettings: Sendable {
     public var secureCookies: Bool
     /// Apple app IDs (TeamID.BundleID) for the apple-app-site-association webcredentials entry. Empty: not served.
     public var appleAppIDs: [String]
+    /// Where new attachment bytes are written. Existing attachments keep the store recorded on their row.
+    public var attachmentStorage: AttachmentStorageKind
+    /// Upper bound for one attachment (bytes). Also bounds the PUT request body.
+    public var attachmentMaxBytes: Int
 
     public init(
         relyingPartyID: String = "localhost",
@@ -24,7 +28,9 @@ public struct AppSettings: Sendable {
         sessionLifetime: TimeInterval = 30 * 24 * 3600,
         challengeLifetime: TimeInterval = 300,
         secureCookies: Bool = false,
-        appleAppIDs: [String] = []
+        appleAppIDs: [String] = [],
+        attachmentStorage: AttachmentStorageKind = .database,
+        attachmentMaxBytes: Int = AttachmentLimits.defaultMaxBytes
     ) {
         self.relyingPartyID = relyingPartyID
         self.relyingPartyName = relyingPartyName
@@ -35,6 +41,8 @@ public struct AppSettings: Sendable {
         self.challengeLifetime = challengeLifetime
         self.secureCookies = secureCookies
         self.appleAppIDs = appleAppIDs
+        self.attachmentStorage = attachmentStorage
+        self.attachmentMaxBytes = attachmentMaxBytes
     }
 
     public static func fromEnvironment(
@@ -51,6 +59,17 @@ public struct AppSettings: Sendable {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        let storage = try RuntimeEnvironment.value("ATTACHMENT_STORAGE", get: get) ?? ""
+        if !storage.isEmpty {
+            guard let kind = AttachmentStorageKind(rawValue: storage) else { throw AttachmentConfigError.invalid("ATTACHMENT_STORAGE must be database or s3") }
+            s.attachmentStorage = kind
+        }
+        if let raw = try RuntimeEnvironment.value("ATTACHMENT_MAX_BYTES", get: get), !raw.isEmpty {
+            guard let bytes = Int(raw), (AttachmentLimits.minMaxBytes...AttachmentLimits.hardMaxBytes).contains(bytes) else {
+                throw AttachmentConfigError.invalid("ATTACHMENT_MAX_BYTES must be an integer between \(AttachmentLimits.minMaxBytes) and \(AttachmentLimits.hardMaxBytes)")
+            }
+            s.attachmentMaxBytes = bytes
+        }
         return s
     }
 }

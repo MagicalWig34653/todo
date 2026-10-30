@@ -17,9 +17,33 @@ struct UploadCapability: Content {
 }
 
 struct AttachmentService: Sendable {
-    static let maxSize = 10 * 1024 * 1024
     static let lifetime: TimeInterval = 900
-    let store: S3Store
+    let maxBytes: Int
+    /// Where new uploads go. Existing rows are read from the store recorded on the row.
+    let writeKind: AttachmentStorageKind
+    /// Test seam: replaces the store for a kind (for example an in-memory stand-in for S3).
+    private let overrides: [AttachmentStorageKind: any AttachmentStore]
+
+    init(settings: AppSettings) {
+        self.init(writeKind: settings.attachmentStorage, maxBytes: settings.attachmentMaxBytes)
+    }
+    init(writeKind: AttachmentStorageKind = .database, maxBytes: Int = AttachmentLimits.defaultMaxBytes,
+         overrides: [AttachmentStorageKind: any AttachmentStore] = [:]) {
+        self.writeKind = writeKind; self.maxBytes = maxBytes; self.overrides = overrides
+    }
+
+    /// S3 is resolved lazily from S3_* so a database-only deployment never needs it.
+    func store(_ kind: AttachmentStorageKind) throws -> any AttachmentStore {
+        if let custom = overrides[kind] { return custom }
+        switch kind {
+        case .database: return DatabaseStore()
+        case .s3: return try S3Store.fromEnvironment(maxBytes: maxBytes)
+        }
+    }
+    func store(for a: Attachment) throws -> any AttachmentStore {
+        guard let kind = AttachmentStorageKind(rawValue: a.storage) else { throw Abort(.badGateway, reason: "attachment_storage_failed") }
+        return try store(kind)
+    }
 
     static func mediaType(_ data: Data) -> String? {
         let b = Array(data.prefix(12))
@@ -36,7 +60,7 @@ struct AttachmentService: Sendable {
     }
 
     func begin(_ input: BeginAttachment, user: User, db: any Database) async throws -> UploadCapability {
-        guard input.size > 0, input.size <= Self.maxSize,
+        guard input.size > 0, input.size <= maxBytes,
               ["reference", "progress", "result"].contains(input.role),
               ["image/png", "image/jpeg", "image/webp", "application/pdf"].contains(input.mediaType),
               input.checksum.count == 64, input.checksum.allSatisfy({ "0123456789abcdef".contains($0) }),
@@ -44,8 +68,9 @@ struct AttachmentService: Sendable {
               !input.filename.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               !input.filename.contains("/"), !input.filename.contains("\\")
         else { throw Abort(.badRequest, reason: "invalid_attachment") }
+        _ = try store(writeKind)  // 503 attachment_storage_unconfigured before any row exists
         let a = Attachment()
-        a.id = UUID(); a.taskID = input.taskID; a.ownerID = try user.requireID()
+        a.id = UUID(); a.storage = writeKind.rawValue; a.taskID = input.taskID; a.ownerID = try user.requireID()
         a.filename = input.filename; a.role = input.role; a.mediaType = input.mediaType
         a.size = input.size; a.checksum = input.checksum; a.status = "pending"
         a.objectKey = "attachments/\(try a.requireID().uuidString.lowercased())"
@@ -61,12 +86,13 @@ struct AttachmentService: Sendable {
     }
 
     func validate(_ data: Data, for a: Attachment) throws {
-        guard data.count == a.size, data.count <= Self.maxSize else { throw Abort(.unprocessableEntity, reason: "attachment_size_mismatch") }
+        guard data.count == a.size, data.count <= maxBytes else { throw Abort(.unprocessableEntity, reason: "attachment_size_mismatch") }
         guard Self.mediaType(data) == a.mediaType else { throw Abort(.unsupportedMediaType, reason: "attachment_media_mismatch") }
-        guard S3Store.checksum(data) == a.checksum else { throw Abort(.unprocessableEntity, reason: "attachment_checksum_mismatch") }
+        guard AttachmentChecksum.sha256(data) == a.checksum else { throw Abort(.unprocessableEntity, reason: "attachment_checksum_mismatch") }
     }
 
-    /// Lock order is always attachment then upload session. S3 operations finish before releasing the lock.
+    /// Lock order is always attachment then upload session. Storage I/O finishes before releasing the lock;
+    /// for the database store the blob rows commit in the same transaction as the session flag.
     func upload(_ id: UUID, token: String, data: Data, db: any Database) async throws {
         try await db.transaction { db in
             try await lockRow(table: Attachment.schema, id: id, on: db)
@@ -78,7 +104,7 @@ struct AttachmentService: Sendable {
             else { throw Abort(.notFound) }
             try await Self.authorize(a, user: user, db: db, role: .edit)
             try validate(data, for: a)
-            _ = try await store.send("PUT", key: a.objectKey, data: data)
+            try await store(for: a).put(key: a.objectKey, data: data, db: db)
             try await Self.authorize(a, user: user, db: db, role: .edit)
             session.uploaded = true
             try await session.update(on: db)
@@ -93,7 +119,7 @@ struct AttachmentService: Sendable {
             if a.status == "complete" { return try AttachmentDTO(a) }
             guard let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first(),
                   session.expiresAt > Date(), session.uploaded else { throw Abort(.conflict, reason: "upload_incomplete_or_expired") }
-            try validate(try await store.send("GET", key: a.objectKey), for: a)
+            try validate(try await store(for: a).get(key: a.objectKey, db: db), for: a)
             try await Self.authorize(a, user: user, db: db, role: .edit)
             a.status = "complete"
             try await a.update(on: db)
@@ -108,28 +134,34 @@ struct AttachmentService: Sendable {
             guard let a = try await Attachment.find(id, on: db) else { throw Abort(.notFound) }
             try await Self.authorize(a, user: user, db: db, role: .edit)
             guard a.status == "pending" else { throw Abort(.conflict) }
-            _ = try await store.send("DELETE", key: a.objectKey)
+            try await store(for: a).delete(key: a.objectKey, db: db)
             try await a.delete(on: db)
         }
     }
 
     /// Also removes objects orphaned by task/account deletion; failures retain metadata for retry.
+    /// A failure for one attachment (for example an unconfigured S3) does not stop the others; the first
+    /// error is rethrown after the sweep.
     @discardableResult func cleanup(db: any Database, now: Date = Date()) async throws -> Int {
         var removed = 0
+        var firstError: (any Error)?
         for a in try await Attachment.query(on: db).all() {
             let id = try a.requireID()
-            let didRemove = try await db.transaction { db -> Bool in
-                try await lockRow(table: Attachment.schema, id: id, on: db)
-                guard let current = try await Attachment.find(id, on: db) else { return false }
-                let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first()
-                let task = try await TodoTask.find(current.taskID, on: db)
-                guard task == nil || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
-                _ = try await store.send("DELETE", key: current.objectKey)
-                try await current.delete(on: db)
-                return true
-            }
-            if didRemove { removed += 1 }
+            do {
+                let didRemove = try await db.transaction { db -> Bool in
+                    try await lockRow(table: Attachment.schema, id: id, on: db)
+                    guard let current = try await Attachment.find(id, on: db) else { return false }
+                    let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first()
+                    let task = try await TodoTask.find(current.taskID, on: db)
+                    guard task == nil || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
+                    try await store(for: current).delete(key: current.objectKey, db: db)
+                    try await current.delete(on: db)
+                    return true
+                }
+                if didRemove { removed += 1 }
+            } catch { firstError = firstError ?? error }
         }
+        if let firstError { throw firstError }
         return removed
     }
 }

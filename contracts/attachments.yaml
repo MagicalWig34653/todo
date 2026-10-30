@@ -4,7 +4,9 @@ info:
   version: 1.0.0
   description: |
     Backend upload capability, valid for 15 minutes and one successful PUT.
-    Maximum file size is 10485760 bytes. Attachments remain invisible until complete.
+    Maximum file size is 10485760 bytes by default (server setting ATTACHMENT_MAX_BYTES, 1024 to 134217728).
+    Bytes are stored in the database by default (ATTACHMENT_STORAGE=database) or optionally in S3; the REST flow
+    and the permission rules are identical for both stores. Attachments remain invisible until complete.
     All session routes apply current task and project authorization; foreign objects return 404.
     Downloads are private and must not be cached. Preview returns the original image, not a thumbnail.
 servers:
@@ -31,7 +33,7 @@ paths:
         '400': { description: Invalid filename, role, size, checksum or media type }
         '401': { description: Session required }
         '404': { description: Missing or inaccessible task or project }
-        '503': { description: Storage configuration unavailable }
+        '503': { description: Storage configuration unavailable (only possible with ATTACHMENT_STORAGE=s3 and missing S3_* settings) }
   /v1/attachments/{id}/upload:
     parameters:
       - $ref: '#/components/parameters/AttachmentID'
@@ -41,7 +43,7 @@ paths:
         - uploadCapability: []
       description: |
         Uses capability Bearer, not the session token. Current creator project access is checked.
-        Validates actual size, magic bytes and SHA-256 before writing to S3.
+        Validates actual size, magic bytes and SHA-256 before writing to the configured store (database by default, optionally S3).
         A successful PUT cannot be replayed; after an uncertain response try complete.
       requestBody:
         required: true
@@ -51,7 +53,7 @@ paths:
       responses:
         '204': { description: Stored; not yet visible }
         '404': { description: Invalid, expired or already used capability, or revoked access }
-        '413': { description: Request body exceeds limit }
+        '413': { description: Request body exceeds the configured limit (ATTACHMENT_MAX_BYTES) }
         '415': { description: Magic bytes do not match declared media type }
         '422': { description: Size or checksum mismatch }
         '502': { description: Storage failed; upload can be retried }
@@ -110,10 +112,16 @@ paths:
       operationId: downloadAttachment
       responses:
         '200':
-          description: Verified original with attachment disposition and private no-store caching
+          description: Verified original with attachment disposition and private no-store caching. Responses carry Accept-Ranges bytes.
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
+        '206':
+          description: Single byte range (Range bytes=a-b, a-, -n) cut from the verified original, with Content-Range. Multiple ranges are ignored (200).
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '416': { description: Range not satisfiable; Content-Range bytes */size }
         '401': { description: Session required }
         '404': { description: Missing, pending or inaccessible attachment }
         '502': { description: Storage failed }
@@ -124,7 +132,7 @@ paths:
       operationId: previewAttachment
       responses:
         '200':
-          description: Verified original image with inline disposition and private no-store caching
+          description: Verified original image with inline disposition and private no-store caching (Range is supported like for download)
           content:
             image/png:
               schema: { type: string, format: binary }

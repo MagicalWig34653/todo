@@ -57,7 +57,7 @@ DB-Transaktionen, Constraints und gezielte Sperren statt einer pauschalen global
 
 Auftragsausführung ist nicht pauschal „exactly once“. Nach Absturz oder Netztrennung zuerst abgleichen, was lokal tatsächlich noch läuft und welche Effekte bereits entstanden sind. Keine blinde automatische Wiederholung eines möglicherweise aktiven Coding-Laufs.
 
-Dateien liegen in einem von allen Replikaten erreichbaren Speicher. Für den Anfang eine konkrete Variante wählen; S3-kompatibler Speicher ist ein Vorschlag. Lokale Container-Dateien allein erfüllen den Mehrreplikabetrieb nicht. Metadaten, Uploadabschluss und Aufräumen abgebrochener Uploads koordinieren.
+Dateien liegen in einem von allen Replikaten erreichbaren Speicher: standardmäßig in der Datenbank (Tabelle `attachment_blobs`, Blöcke zu 1 MiB, ADR 0013), optional in einem S3-kompatiblen Bucket (`ATTACHMENT_STORAGE=s3`). Lokale Container-Dateien allein erfüllen den Mehrreplikabetrieb nicht. Metadaten, Uploadabschluss und Aufräumen abgebrochener Uploads koordinieren.
 
 ## Betrieb und Prüfung
 

@@ -1,6 +1,6 @@
 # ADR 0006 – REST-Anhänge mit Backend-Upload und gemeinsamem S3-Speicher
 
-Status: umgesetzt, Infrastrukturabnahme offen (26.10.2026).
+Status: umgesetzt, Infrastrukturabnahme offen (26.10.2026). Abschnitt „Speicher und Konfiguration“ und die S3-Pflicht sind durch [ADR 0013](0013-anhaenge-in-datenbank.md) abgelöst (Standard: Datenbank, S3 optional); Upload-Ablauf, Rechte, Sperrreihenfolge und Cleanup gelten unverändert und laufen für beide Speicher.
 
 ## Auftrag und Entscheidung
 

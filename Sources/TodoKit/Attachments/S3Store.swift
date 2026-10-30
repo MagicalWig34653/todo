@@ -5,6 +5,7 @@ import FoundationNetworking
 import Crypto
 import Vapor
 
+/// Optional S3 store (`ATTACHMENT_STORAGE=s3`, or the other side of `attachments migrate-storage`).
 /// Small path-style S3 transport. No redirects, public URLs, or process-local object state.
 struct S3Store: Sendable {
     let endpoint: URL
@@ -12,8 +13,10 @@ struct S3Store: Sendable {
     let accessKey: String?
     let secretKey: String?
     let region: String
+    /// Upper bound for a response body; set from ATTACHMENT_MAX_BYTES.
+    var maxBytes: Int = AttachmentLimits.defaultMaxBytes
 
-    static func fromEnvironment() throws -> Self {
+    static func fromEnvironment(maxBytes: Int = AttachmentLimits.defaultMaxBytes) throws -> Self {
         guard let raw = Environment.get("S3_ENDPOINT"), let url = URL(string: raw),
               ["http", "https"].contains(url.scheme), url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
@@ -27,12 +30,10 @@ struct S3Store: Sendable {
             throw Abort(.serviceUnavailable, reason: "attachment_storage_credentials_invalid")
         }
         return Self(endpoint: url, bucket: bucket, accessKey: access, secretKey: secret,
-                    region: Environment.get("S3_REGION") ?? "us-east-1")
+                    region: Environment.get("S3_REGION") ?? "us-east-1", maxBytes: maxBytes)
     }
 
-    static func checksum(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
+    static func checksum(_ data: Data) -> String { AttachmentChecksum.sha256(data) }
 
     func signedRequest(_ method: String, key: String, data: Data = Data(), now: Date = Date()) -> URLRequest {
         let url = endpoint.appendingPathComponent(bucket).appendingPathComponent(key)
@@ -68,7 +69,7 @@ struct S3Store: Sendable {
         configuration.httpMaximumConnectionsPerHost = 4
         do {
             return try await withCheckedThrowingContinuation { continuation in
-                let delegate = BoundedS3Response(method: method, continuation: continuation)
+                let delegate = BoundedS3Response(method: method, limit: maxBytes, continuation: continuation)
                 let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
                 session.dataTask(with: signedRequest(method, key: key, data: data)).resume()
             }
@@ -79,13 +80,15 @@ struct S3Store: Sendable {
 /// URLSession invokes delegate callbacks serially on its delegate queue.
 private final class BoundedS3Response: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     let method: String
+    let limit: Int
     let continuation: CheckedContinuation<Data, any Error>
     private var body = Data()
     private var accepted = false
     private var exceeded = false
 
-    init(method: String, continuation: CheckedContinuation<Data, any Error>) {
+    init(method: String, limit: Int, continuation: CheckedContinuation<Data, any Error>) {
         self.method = method
+        self.limit = limit
         self.continuation = continuation
     }
 
@@ -100,12 +103,12 @@ private final class BoundedS3Response: NSObject, URLSessionDataDelegate, @unchec
         if let http = response as? HTTPURLResponse {
             accepted = (200..<300).contains(http.statusCode) || (method == "DELETE" && http.statusCode == 404)
         }
-        exceeded = response.expectedContentLength > Int64(AttachmentService.maxSize)
+        exceeded = response.expectedContentLength > Int64(limit)
         completionHandler(accepted && !exceeded ? .allow : .cancel)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard body.count + data.count <= AttachmentService.maxSize else {
+        guard body.count + data.count <= limit else {
             exceeded = true
             dataTask.cancel()
             return

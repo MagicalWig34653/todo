@@ -84,3 +84,7 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 - [x] Projektbeschreibung/-farbe, Favoriten und Anzeigeeinstellungen je Konto, Projektreihenfolge je Konto (ADR 0012), Projektkommentare, Aktivitätsfeed, Runner-Geräte-/Auftragslisten, Spalten-Sync-Mutationen und MCP-Spaltenwerkzeuge; SQLite + MariaDB grün (siehe STATUS).
 - [ ] PWA: `localStorage`-Provisorien auf die neuen Endpunkte umstellen (Favoriten, Beschreibung, Anzeige, Sortierung per Drag-and-drop, Projektkommentare, Aktivität, Geräte-/Auftragsliste); Apple: dieselben Verträge und Board anbinden.
 - [ ] Optional: Projektkommentare/-aktivität in Sync-Feed und MCP.
+
+## Checkpoint 30.10.2026 (Anhänge in der Datenbank)
+- [x] S3 optional, Anhänge standardmäßig in der DB (ADR 0013), `migrate-storage`, Infrastruktur/Docs ohne S3-Pflicht; SQLite + MariaDB grün (siehe STATUS).
+- [ ] Offen: S3-Test und `migrate-storage` gegen S3Mock (`docker compose --profile s3 up -d s3`, `S3_ENDPOINT=http://localhost:29090 S3_BUCKET=todo-attachments`), Swarm-Smoke erneut ausführen, bei Bedarf Streaming-Download für größere Limits.

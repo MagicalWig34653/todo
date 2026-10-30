@@ -31,6 +31,8 @@ public struct DatabaseSettings: Sendable {
 public func configure(_ app: Application) async throws {
     configureContent()
     app.settings = try .fromEnvironment()
+    // S3 is optional: only an explicit ATTACHMENT_STORAGE=s3 makes the S3_* variables mandatory.
+    if app.settings.attachmentStorage == .s3 { _ = try S3Store.fromEnvironment(maxBytes: app.settings.attachmentMaxBytes) }
     try configureDatabase(app, settings: .fromEnvironment())
     configureMigrations(app)
     try routes(app)
