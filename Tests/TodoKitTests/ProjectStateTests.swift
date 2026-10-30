@@ -1,4 +1,5 @@
 import Fluent
+import SQLKit
 import XCTVapor
 @testable import TodoKit
 
@@ -406,6 +407,37 @@ final class ProjectStateTests: XCTestCase {
         try await grant(t, a.token, p2, b.id, role: "read")
         feed = try await t.json(.GET, "/v1/activity", token: b.token)
         XCTAssertEqual((feed.body?["items"] as? [[String: Any]])?.count, 2)
+    }
+
+    /// SQLite stores dates as raw doubles but reads them rounded to microseconds; the cursor must still
+    /// exclude the last item of a page (regression: CI saw a repeated item on the next page).
+    func testActivityFeedPagingNeverRepeatsItems() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await account(t, "Ada")
+        let p = try await project(t, a.token, "One")
+        for i in 0..<40 {
+            let r = try await t.json(.POST, "/v1/tasks", ["projectID": p, "title": "T\(i)"], token: a.token)
+            XCTAssertEqual(r.status, .created)
+        }
+        // Linux clocks have nanosecond resolution; emulate sub-microsecond stored values on every platform.
+        if let sql = t.app.db as? any SQLDatabase, sql.dialect.name == "sqlite" {
+            let events = try await ActivityEvent.query(on: t.app.db).all()
+            for (i, e) in events.enumerated() {
+                let shifted = (e.createdAt ?? Date()).timeIntervalSince1970 + 1e-7 * Double(1 + i % 4)
+                try await sql.raw("UPDATE \(ident: ActivityEvent.schema) SET \(ident: "created_at") = \(bind: shifted) WHERE \(ident: "id") = \(bind: e.requireID())").run()
+            }
+        }
+        var seen: [String] = []
+        var cursor: String?
+        for _ in 0..<60 {
+            let feed = try await t.json(.GET, "/v1/activity?limit=3" + (cursor.map { "&before=\($0)" } ?? ""), token: a.token)
+            seen += (feed.body?["items"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+            cursor = feed.body?["nextCursor"] as? String
+            if cursor == nil { break }
+        }
+        XCTAssertEqual(seen.count, 40)
+        XCTAssertEqual(Set(seen).count, 40)
     }
 
     // MARK: 6. Runner device / job lists

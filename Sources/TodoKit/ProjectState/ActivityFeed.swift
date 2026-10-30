@@ -62,18 +62,24 @@ struct ActivityFeedService: Sendable {
         }
         guard !projects.isEmpty else { return ActivityFeedPage(items: [], nextCursor: nil) }
         let ids = Array(projects.keys)
-        let cursorDate = cursor.map { Date(timeIntervalSince1970: $0.time) }
+        // SQLite stores dates as raw doubles but reads them back rounded to microseconds, so the cursor date can
+        // differ from the stored value by up to 0.5 microseconds. Compare with a 1 microsecond tolerance, otherwise
+        // the last item of a page may be repeated on the next one.
+        let tolerance: TimeInterval = 1e-6
+        let cursorDate = cursor.map { Date(timeIntervalSince1970: $0.time - tolerance) }
+        let cursorUpper = cursor.map { Date(timeIntervalSince1970: $0.time + tolerance) }
 
         var rows: [Row] = []
         var taskQuery = ActivityEvent.query(on: db)
             .join(TodoTask.self, on: \ActivityEvent.$taskID == \TodoTask.$id)
             .filter(TodoTask.self, \.$projectID ~~ ids)
-        if let cursor, let cursorDate {
+        if let cursor, let cursorDate, let cursorUpper {
             let cursorID = UUID(uuidString: cursor.id)!
             taskQuery = taskQuery.group(.or) { or in
                 or.filter(ActivityEvent.self, \.$createdAt < cursorDate)
                 or.group(.and) { and in
-                    and.filter(ActivityEvent.self, \.$createdAt == cursorDate)
+                    and.filter(ActivityEvent.self, \.$createdAt >= cursorDate)
+                    and.filter(ActivityEvent.self, \.$createdAt <= cursorUpper)
                     and.filter(ActivityEvent.self, \.$id < cursorID)
                 }
             }
@@ -91,12 +97,13 @@ struct ActivityFeedService: Sendable {
         }
 
         var projectQuery = ProjectActivityEvent.query(on: db).filter(\.$projectID ~~ ids)
-        if let cursor, let cursorDate {
+        if let cursor, let cursorDate, let cursorUpper {
             let cursorID = UUID(uuidString: cursor.id)!
             projectQuery = projectQuery.group(.or) { or in
                 or.filter(\.$createdAt < cursorDate)
                 or.group(.and) { and in
-                    and.filter(\.$createdAt == cursorDate)
+                    and.filter(\.$createdAt >= cursorDate)
+                    and.filter(\.$createdAt <= cursorUpper)
                     and.filter(\.$id < cursorID)
                 }
             }
