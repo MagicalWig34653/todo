@@ -240,6 +240,24 @@ await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
 await page.getByTestId('grant').first().waitFor();
 await shot('freigaben');
 
+// Projektzustand: Kommentare, Aktivität, Agenten
+await open('Küche');
+await page.getByTestId('project-comments-open').click();
+const pc = page.getByTestId('project-comments-dialog');
+await pc.getByLabel('Kommentar zum Projekt schreiben').fill('Bitte vor dem Wochenende die Küchenplanung abschließen.');
+await pc.getByRole('button', { name: 'Kommentieren' }).click();
+await pc.getByTestId('project-comment').first().waitFor();
+await shot('projektkommentare');
+await closeDialogs();
+await nav('Aktivität');
+await page.getByTestId('feed-item').first().waitFor();
+await shot('aktivitaet');
+await nav('Agenten');
+await page.getByLabel('Bezeichnung des Geräts').fill('Mac Studio');
+await page.getByRole('button', { name: 'Code erzeugen' }).click();
+await page.getByTestId('pairing-code').waitFor();
+await shot('agenten');
+
 // OAuth-Zustimmung
 const reg = await page.request.post('/oauth/register', {
 	data: { client_name: 'Claude Code (Demo)', redirect_uris: ['https://client.example/cb'], token_endpoint_auth_method: 'none' },
