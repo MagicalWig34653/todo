@@ -95,6 +95,36 @@ Stack auf externe DB/S3 umgestellt (Image `ghcr.io/magicalwig34653/todo-backend`
 
 Das Backend liefert `GET /.well-known/apple-app-site-association` und `GET /apple-app-site-association` öffentlich (ohne Authentifizierung, ohne Redirect) als `application/json`. Inhalt aus `AASA_APP_IDS` (kommagetrennte App-IDs `TeamID.BundleID`, z. B. `J2DU2P47XW.de.linolaske.todo,J2DU2P47XW.de.linolaske.todo.mac`): `{"webcredentials":{"apps":[...]}}`. Ist `AASA_APP_IDS` nicht gesetzt oder leer, antwortet der Endpunkt mit 404. Produktionsbeispiel für die Domain `todo.linolaske.de`: `RP_ID=todo.linolaske.de`, `RP_ORIGIN=https://todo.linolaske.de` (siehe `deploy/swarm/stack.env.example`). Der Reverse Proxy muss den Pfad unverändert und ohne Redirect durchreichen. Test: `AASATests` (SQLite).
 
+## Erstinstallation mit setup.sh
+
+`deploy/swarm/setup.sh` ist der geführte Assistent für einen produktiven Docker Swarm. Er läuft auf einem Swarm-Manager und führt durch alle Einstellungen des Stacks:
+
+1. Voraussetzungen: `docker`, `curl`, `openssl`; Swarm aktiv und Manager. Ist kein Swarm aktiv, bietet das Skript `docker swarm init` an (nur nach ausdrücklicher Bestätigung, mit Abfrage der Advertise-Adresse; nicht interaktiv nur mit `--swarm-init`).
+2. Stack-Name und Image-Tag (Vorschlag: neuestes `sha-<commit>`-Tag auf GHCR, gleiche Suche wie `update.sh`, gemeinsam in `deploy/swarm/lib.sh`).
+3. Öffentliche Domain, `RP_ID`, `RP_ORIGIN` (Host muss zur RP_ID passen), Apple Team ID plus Bundle-IDs (ergibt `AASA_APP_IDS`, Format `TeamID.BundleID` wird geprüft), `PASSWORD_LOGIN_ENABLED` (Standard `false`; Passkeys sind der Regelweg).
+4. Ingress-Port, Replikate, CPU-/Speicher-Limit je Replikat (`BACKEND_CPU_LIMIT`, `BACKEND_MEMORY_LIMIT`, `0` = unbegrenzt).
+5. Externe MariaDB (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`) und externer S3 (`S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`) sowie die Namen der vier Swarm-Secrets.
+6. Secrets: DB-Passwort, S3-Access-/Secret-Key (Eingabe verdeckt, doppelt) und Bootstrap-Token (zufällig per `openssl rand -hex 32`, wird genau einmal angezeigt). Vorhandene Secrets werden nie überschrieben; Swarm-Secrets sind unveränderlich, zum Rotieren einen neuen Secret-Namen wählen (`--reconfigure`).
+7. Verbindungsprüfungen (abschaltbar mit `--skip-checks`): `select 1` über einen Wegwerf-Container `mariadb:12.3` (optional im Netz `CHECK_NETWORK`) und eine Erreichbarkeitsprüfung des S3-Endpunkts samt HEAD auf den Bucket (ohne Signatur, nur Hinweis; die Schlüssel werden nicht geprüft).
+8. Zusammenfassung und Bestätigung, dann Env-Datei (`deploy/swarm/stack.env`, Modus 600, in `.gitignore`, ohne Secret-Werte; bestehende Datei wird als `.bak` gesichert), Secrets anlegen, `scripts/swarm-deploy.sh` (Migration, dann Rollout), Rollout abwarten, `/health/ready` über die Domain (sonst Fallback über den Ingress-Port des Knotens, mit Warnung) und der AASA-Endpunkt prüfen (Exit-Code 2, wenn keine Health-Prüfung gelingt).
+
+Aufrufe:
+
+```sh
+deploy/swarm/setup.sh                                   # interaktiv
+deploy/swarm/setup.sh --reconfigure                     # alle Werte erneut abfragen, vorhandene als Vorgabe
+deploy/swarm/setup.sh --dry-run --non-interactive --answers-file answers.env   # Plan, Env in Temp-Verzeichnis, keine Docker-Aufrufe
+deploy/swarm/setup.sh --non-interactive --yes --answers-file answers.env --swarm-init
+```
+
+Antwortdatei: `KEY=VALUE`-Zeilen (wird geparst, nicht ausgeführt) mit denselben Namen wie in der Env-Datei, zusätzlich `PUBLIC_DOMAIN`, `APPLE_TEAM_ID`, `APPLE_BUNDLE_IDS`, `CHECK_NETWORK`, `SWARM_ADVERTISE_ADDR` und die Secret-Werte `DB_PASSWORD`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `BOOTSTRAP_TOKEN` (alternativ `<NAME>_FILE` mit Dateipfad). Dieselben Schlüssel gehen als Umgebungsvariable mit Präfix `SETUP_`. Vorrang: Antwortdatei, `SETUP_*`, vorhandene Env-Datei, Standardwert. Eine Antwortdatei mit Secret-Werten gehört außerhalb des Repositorys und mit Modus 600 abgelegt.
+
+Wiederholter Aufruf ist idempotent: Eine vorhandene Env-Datei wird ohne `--reconfigure` unverändert wiederverwendet, vorhandene Secrets bleiben, der Deploy wird als Update ausgeführt. Vor einem Update einer laufenden Installation die Datenbank sichern (`scripts/backup-db.sh`). `update.sh` liest den Stack-Namen (`TODO_STACK`) aus derselben Env-Datei.
+
+Nicht Teil des Skripts: TLS, Reverse Proxy und DNS sind extern. Der Proxy muss auf den veröffentlichten Port der Swarm-Knoten zeigen und `/.well-known/apple-app-site-association` ohne Redirect durchreichen. Labels für einen bestimmten Proxy (z. B. Traefik) sind bewusst nicht enthalten. Nach dem Deploy: App unter `RP_ORIGIN` öffnen, erstes Administrator-Konto mit dem Bootstrap-Token anlegen (danach ist es wirkungslos; das Secret bleibt bestehen, weil `stack.yaml` es referenziert), Backups einrichten (`scripts/backup-db.sh`, Bucket-Sicherung).
+
+**Nachweise (30.10.2026):** `shellcheck` sauber für `setup.sh`, `lib.sh`, `update.sh`. Trockenläufe nicht interaktiv (Antwortdatei, Fehlerfälle für ungültige AASA-IDs und fremden Origin, Wiederverwendung einer erzeugten Env-Datei, Tag-Suche gegen GHCR) und interaktiv über ein Pseudo-Terminal. Realtest auf einem Einzelknoten-Swarm (Colima, nur für den Test initialisiert und danach wieder verlassen; Stack `todosetup`, Wegwerf-MariaDB im eigenen Overlay-Netz, Platzhalter-S3-Endpunkt, lokales Test-Image als `setup-test` getaggt): Lauf 1 legte Env-Datei (600) und vier Secrets an, DB-Test per `mariadb:12.3`-Container erfolgreich, Migration, Rollout 2/2, Bootstrap-Token einmal angezeigt. Lauf 2 (idempotent): Secrets unverändert, Env-Datei unverändert, Update-Deploy erfolgreich. Auf Colima ist der Ingress-Port vom Host aus nicht erreichbar und die Domain im Test fiktiv; daher griff die Rückfallprüfung von innen (`/health/ready` = 200, AASA 200 mit `webcredentials`) mit Warnung. Die Prüfung über echte Domain und echten Ingress-Port sowie echte S3-Schlüssel sind damit nicht getestet. Aufräumen vollständig (Stack, Secrets, Netz, DB-Container, Swarm wieder inaktiv; Timetrack- und andere Container unberührt). Die danach verkürzten Wartezeiten der Hostprüfung wurden nur per shellcheck und Trockenlauf geprüft.
+
 ## Update auf das neueste Image (27.10.2026)
 
 `deploy/swarm/update.sh [--env-file F] [--tag TAG] [--stack todo] [--dry-run] [--force] [--yes]` ermittelt den neuesten `sha-<commit>`-Tag auf GHCR (über den Tag `edge`, per Image-Label verifiziert), schreibt ihn als `TODO_IMAGE_TAG` in die Env-Datei (Sicherung als `.bak`), führt über `scripts/swarm-deploy.sh` die Migration mit dem neuen Image aus (mit Deployment-Lock) und beobachtet danach das Rolling Update und `/health/ready`. Vorher die Datenbank sichern (`scripts/backup-db.sh`). Der Trockenlauf (`--dry-run`) wurde gegen die echte Registry geprüft; ein echtes Update auf einem Swarm wurde damit nicht getestet.

@@ -83,6 +83,8 @@ npm run dev -- --port 25173               # PWA; proxyt API-Aufrufe an das Backe
 
 Die Datenbank muss vor dem Betrieb migriert werden (Compose-Profil `app` enthält einen Migrationsdienst). Das Bootstrap-Token für das erste Admin-Konto stammt aus der Umgebung (`.env.example`).
 
+Produktiver Swarm: `deploy/swarm/setup.sh` führt interaktiv (oder mit `--non-interactive --answers-file`) durch Einstellungen, Secrets, Deploy und Prüfung; siehe [Erstinstallation mit setup.sh](docs/BETRIEB.md#erstinstallation-mit-setupsh).
+
 ## Tests
 
 ```sh

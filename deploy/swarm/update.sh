@@ -20,6 +20,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STACK=todo
+STACK_SET=0
 ENV_FILE=""
 TAG=""
 DRY=0
@@ -32,7 +33,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --env-file) ENV_FILE="${2:?missing value for --env-file}"; shift 2 ;;
     --tag) TAG="${2:?missing value for --tag}"; shift 2 ;;
-    --stack) STACK="${2:?missing value for --stack}"; shift 2 ;;
+    --stack) STACK="${2:?missing value for --stack}"; STACK_SET=1; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     --force) FORCE=1; shift ;;
     --yes|-y) YES=1; shift ;;
@@ -59,58 +60,26 @@ if [ -z "$ENV_FILE" ]; then
 fi
 [ -f "$ENV_FILE" ] || die "env file not found: $ENV_FILE"
 
+# setup.sh records the stack name as TODO_STACK; --stack wins.
+if [ "$STACK_SET" = 0 ]; then
+  env_stack="$(sed -n 's/^TODO_STACK=//p' "$ENV_FILE" | tail -n 1 | tr -d "\"'")"
+  if [ -n "$env_stack" ]; then STACK="$env_stack"; fi
+  [[ "$STACK" =~ ^[a-z][a-z0-9-]*$ ]] || die "invalid stack name: $STACK"
+fi
+
 # Image repository: ghcr.io/magicalwig34653/todo-backend (the same name as in stack.yaml).
-IMAGE_BASE="$(sed -n 's/^ *image: *\(ghcr\.io\/[^:$ ]*\).*/\1/p' "$SCRIPT_DIR/stack.yaml" | head -n 1)"
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+IMAGE_BASE="$(stack_image_base)"
 [ -n "$IMAGE_BASE" ] || die "cannot read the ghcr.io image name from stack.yaml"
 REPO="${IMAGE_BASE#ghcr.io/}"
 CURRENT_TAG="$(sed -n 's/^TODO_IMAGE_TAG=//p' "$ENV_FILE" | tail -n 1 | tr -d "\"'")"
 CURRENT_TAG="${CURRENT_TAG:-latest}"
 CURRENT_IMAGE="${IMAGE_BASE}:${CURRENT_TAG}"
 
-ACCEPT='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
-
-registry_token() {
-  curl -fsS "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
-}
-# Digest of a tag (empty when the tag does not exist).
-digest_of() {
-  curl -fsSI -H "Authorization: Bearer $TOKEN" -H "Accept: $ACCEPT" "https://ghcr.io/v2/${REPO}/manifests/$1" 2>/dev/null \
-    | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:" {print $2}'
-}
-# Commit the image of a tag was built from (label org.opencontainers.image.revision); empty when it cannot be read.
-revision_of() {
-  local index manifest config
-  index="$(curl -fsS -H "Authorization: Bearer $TOKEN" -H "Accept: $ACCEPT" "https://ghcr.io/v2/${REPO}/manifests/$1")" || return 1
-  manifest="$(printf '%s' "$index" | tr -d '\n ' | grep -o '"digest":"sha256:[0-9a-f]*","size":[0-9]*,"platform":{"architecture":"\(amd64\|arm64\)"' | head -1 | grep -o 'sha256:[0-9a-f]*' || true)"
-  if [ -n "$manifest" ]; then
-    index="$(curl -fsS -H "Authorization: Bearer $TOKEN" -H "Accept: $ACCEPT" "https://ghcr.io/v2/${REPO}/manifests/${manifest}")" || return 1
-  fi
-  config="$(printf '%s' "$index" | tr -d '\n ' | grep -o '"config":{[^}]*}' | grep -o 'sha256:[0-9a-f]*' | head -1 || true)"
-  [ -n "$config" ] || return 1
-  curl -fsSL -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${REPO}/blobs/${config}" \
-    | grep -o '"org.opencontainers.image.revision":"[0-9a-f]*"' | head -1 | sed 's/.*:"\([0-9a-f]*\)"/\1/' || true
-}
-
 step "Find the newest image tag"
 if [ -z "$TAG" ]; then
-  say "Registry: ghcr.io, repository ${REPO}"
-  TOKEN="$(registry_token)"; [ -n "$TOKEN" ] || die "could not get a registry token (is the package public?)"
-  FOLLOW_DIGEST="$(digest_of "$FOLLOW_TAG")"; [ -n "$FOLLOW_DIGEST" ] || die "tag '${FOLLOW_TAG}' not found on ghcr.io"
-  say "${FOLLOW_TAG} = ${FOLLOW_DIGEST}"
-  REVISION="$(revision_of "$FOLLOW_TAG" || true)"
-  if [ -n "$REVISION" ]; then
-    candidate="sha-${REVISION:0:7}"
-    if [ "$(digest_of "$candidate")" = "$FOLLOW_DIGEST" ]; then TAG="$candidate"; say "${FOLLOW_TAG} was built from commit ${REVISION:0:7} -> ${candidate} (verified)"; fi
-  fi
-  if [ -z "$TAG" ]; then
-    say "Label lookup did not give a verified tag, comparing all sha- tags (slow with many images) ..."
-    TAGS="$(curl -fsS -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${REPO}/tags/list?n=1000" | grep -o '"sha-[0-9a-f]*"' | tr -d '"' || true)"
-    [ -n "$TAGS" ] || die "no sha- tags found"
-    for candidate in $TAGS; do
-      if [ "$(digest_of "$candidate")" = "$FOLLOW_DIGEST" ]; then TAG="$candidate"; say "  ${candidate} matches ${FOLLOW_TAG}"; break; fi
-    done
-  fi
-  [ -n "$TAG" ] || die "no sha- tag matches ${FOLLOW_TAG} (${FOLLOW_DIGEST}); pass --tag explicitly"
+  find_newest_sha_tag
 else
   say "Using the tag from --tag: ${TAG}"
 fi
@@ -147,29 +116,16 @@ cat "$TMP" > "$ENV_FILE"; rm -f "$TMP"
 say "Wrote TODO_IMAGE_TAG=${TAG} (backup: ${ENV_FILE}.bak)."
 
 step "Migrate and start the rolling update (scripts/swarm-deploy.sh)"
+set -a
 # shellcheck disable=SC1090
-set -a; . "$ENV_FILE"; set +a
+. "$ENV_FILE"
+set +a
 export TODO_IMAGE_TAG="$TAG" STACK
 "$SCRIPT_DIR/../../scripts/swarm-deploy.sh"
 
 step "Watch the rollout and check the result"
 BACKEND="${STACK}_backend"
-waited=0; last=""
-while :; do
-  ustate="$(docker service inspect "$BACKEND" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}' 2>/dev/null || true)"
-  replicas="$(docker service ls --filter "name=${BACKEND}" --format '{{.Replicas}}' | head -n 1)"
-  now="update=${ustate:-none} replicas=${replicas}"
-  if [ "$now" != "$last" ]; then say "$now"; last="$now"; fi
-  case "$ustate" in
-    completed|"") case "$replicas" in */*) [ "${replicas%%/*}" = "${replicas##*/}" ] && [ "${replicas%%/*}" != 0 ] && { say "Rollout completed."; break; } ;; esac ;;
-    paused|rollback_started|rollback_completed|rollback_paused)
-      docker service inspect "$BACKEND" --format '{{.UpdateStatus.Message}}' >&2 || true
-      docker service ps "$BACKEND" --no-trunc --format '{{.Name}} {{.CurrentState}} {{.Error}}' | head -n 6 >&2 || true
-      die "rollout did not succeed (${ustate}); Swarm rolls back automatically" ;;
-  esac
-  [ "$waited" -lt "$WAIT_SECONDS" ] || die "rollout did not finish within ${WAIT_SECONDS}s (see: docker service ps ${BACKEND})"
-  sleep 3; waited=$((waited + 3))
-done
+wait_for_rollout "$BACKEND" "$WAIT_SECONDS"
 docker service ps "$BACKEND" --filter desired-state=running --format 'table {{.Name}}\t{{.Node}}\t{{.Image}}\t{{.CurrentState}}'
 
 BASE_URL="${PUBLIC_BASE_URL:-${RP_ORIGIN:-}}"

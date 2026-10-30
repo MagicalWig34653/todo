@@ -10,3 +10,5 @@ DerivedData/
 xcuserdata/
 build/
 .swiftpm/
+deploy/swarm/stack.env
+deploy/swarm/stack.env.bak

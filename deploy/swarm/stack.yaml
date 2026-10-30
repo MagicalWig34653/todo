@@ -22,7 +22,7 @@ x-backend: &backend
     RP_ID: ${RP_ID:-localhost}
     RP_ORIGIN: ${RP_ORIGIN:-http://localhost:38080}
     AASA_APP_IDS: ${AASA_APP_IDS:-}
-    PASSWORD_LOGIN_ENABLED: 'false'
+    PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
   secrets: [db_password, bootstrap_token, s3_access_key, s3_secret_key]
 services:
   migrate:
@@ -51,6 +51,10 @@ services:
         mode: ingress
     deploy:
       replicas: ${BACKEND_REPLICAS:-3}
+      resources:
+        limits:
+          cpus: '${BACKEND_CPU_LIMIT:-0}'
+          memory: ${BACKEND_MEMORY_LIMIT:-0}
       update_config:
         parallelism: 1
         delay: 5s
