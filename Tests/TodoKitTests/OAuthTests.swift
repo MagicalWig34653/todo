@@ -13,8 +13,8 @@ struct OAuthFixture {
     let redirect = "http://127.0.0.1:54321/callback"
     let verifier = String(repeating: "a", count: 64)
 
-    static func make() async throws -> OAuthFixture {
-        let t = try await TestApp.make()
+    static func make(issuer: String? = nil) async throws -> OAuthFixture {
+        let t = try await TestApp.make(issuer: issuer)
         let u = User(displayName: "OAuth User", isAdmin: false)
         try await u.save(on: t.app.db)
         let session = AuthSupport.randomToken()
@@ -25,11 +25,11 @@ struct OAuthFixture {
         let r = try await t.json(.POST, "/oauth/register", ["client_name": "Test Client", "redirect_uris": ["http://127.0.0.1:54321/callback"]])
         return OAuthFixture(test: t, user: u, session: session, project: p, other: other, clientID: try XCTUnwrap(r.body?["client_id"] as? String))
     }
-    func authorization(scope: String = "projects:read tasks:read tasks:write", resource: String = OAuthController.resource) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
+    func authorization(scope: String = "projects:read tasks:read tasks:write", resource: String? = nil) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         var url = URLComponents(); url.path = "/oauth/authorize"
         url.queryItems = ["response_type": "code", "client_id": clientID, "redirect_uri": redirect,
-            "scope": scope, "state": "test-state", "resource": resource, "code_challenge": challenge, "code_challenge_method": "S256"].map { URLQueryItem(name: $0.key, value: $0.value) }
+            "scope": scope, "state": "test-state", "resource": resource ?? test.settings.oauthResource, "code_challenge": challenge, "code_challenge_method": "S256"].map { URLQueryItem(name: $0.key, value: $0.value) }
         return try await test.json(.GET, url.string!, token: session)
     }
     func code(scope: String = "projects:read tasks:read tasks:write") async throws -> String {
@@ -43,8 +43,8 @@ struct OAuthFixture {
         XCTAssertEqual(items.first { $0.name == "state" }?.value, "test-state")
         return try XCTUnwrap(items.first { $0.name == "code" }?.value)
     }
-    func exchange(_ code: String, verifier: String? = nil, resource: String = OAuthController.resource) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
-        try await test.json(.POST, "/oauth/token", ["grant_type": "authorization_code", "client_id": clientID, "resource": resource, "code": code, "redirect_uri": redirect, "code_verifier": verifier ?? self.verifier])
+    func exchange(_ code: String, verifier: String? = nil, resource: String? = nil) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
+        try await test.json(.POST, "/oauth/token", ["grant_type": "authorization_code", "client_id": clientID, "resource": resource ?? test.settings.oauthResource, "code": code, "redirect_uri": redirect, "code_verifier": verifier ?? self.verifier])
     }
     func tokens(scope: String = "projects:read tasks:read tasks:write") async throws -> (access: String, refresh: String) {
         let r = try await exchange(code(scope: scope))
@@ -52,7 +52,7 @@ struct OAuthFixture {
         return (try XCTUnwrap(r.body?["access_token"] as? String), try XCTUnwrap(r.body?["refresh_token"] as? String))
     }
     func refresh(_ raw: String) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
-        try await test.json(.POST, "/oauth/token", ["grant_type": "refresh_token", "client_id": clientID, "resource": OAuthController.resource, "refresh_token": raw])
+        try await test.json(.POST, "/oauth/token", ["grant_type": "refresh_token", "client_id": clientID, "resource": test.settings.oauthResource, "refresh_token": raw])
     }
     func rpc(_ method: String, _ params: [String: Any] = [:], access: String) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
         try await test.json(.POST, "/mcp", ["jsonrpc": "2.0", "id": 1, "method": method, "params": params], token: access)
@@ -64,7 +64,7 @@ final class OAuthTests: XCTestCase {
         let f = try await OAuthFixture.make()
         do {
             let metadata = try await f.test.json(.GET, "/.well-known/oauth-protected-resource/mcp")
-            XCTAssertEqual(metadata.body?["resource"] as? String, OAuthController.resource)
+            XCTAssertEqual(metadata.body?["resource"] as? String, AppSettings().oauthResource)
             let asMetadata = try await f.test.json(.GET, "/.well-known/oauth-authorization-server")
             XCTAssertEqual(asMetadata.body?["code_challenge_methods_supported"] as? [String], ["S256"])
             let wrongResource = try await f.authorization(resource: "https://foreign.example/mcp")
@@ -96,7 +96,7 @@ final class OAuthTests: XCTestCase {
             let newRefresh = try XCTUnwrap(rotated.body?["refresh_token"] as? String)
             XCTAssertNotEqual(newRefresh, tokens.refresh)
             let replica = try await f.test.replica()
-            let replay = try await replica.json(.POST, "/oauth/token", ["grant_type": "refresh_token", "client_id": f.clientID, "resource": OAuthController.resource, "refresh_token": tokens.refresh])
+            let replay = try await replica.json(.POST, "/oauth/token", ["grant_type": "refresh_token", "client_id": f.clientID, "resource": AppSettings().oauthResource, "refresh_token": tokens.refresh])
             await replica.shutdown()
             XCTAssertEqual(replay.status, .badRequest)
             let rejected = try await f.refresh(newRefresh)

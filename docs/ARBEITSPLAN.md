@@ -98,3 +98,9 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 
 ## Checkpoint 30.10.2026 (PWA im Image)
 - [x] PWA im Backend-Image ausgeliefert (ADR 0015), Tests und E2E gegen das Image grün. Offen: Rollout auf dem Server per `update.sh`.
+
+## Checkpoint 30.10.2026 (OAuth-/MCP-Issuer, ADR 0016)
+- Fehler: Produktion lieferte in der gesamten OAuth-/MCP-Discovery `http://localhost:28080`, weil `OAUTH_ISSUER` nirgends gesetzt wurde. Fix: `AppSettings.oauthIssuer`/`oauthResource` (OAUTH_ISSUER, sonst RP_ORIGIN wenn nicht loopback, sonst Dev-Standard), Logwarnung bei Loopback-Issuer in `--env production`; `stack.yaml`, `stack.env.example`, `setup.sh` angepasst; alte Env-Dateien mit nur `RP_ORIGIN` funktionieren ohne Änderung. Details und Sofortmaßnahme: ADR 0016, BETRIEB.md (Abschnitt OAuth-/MCP-Issuer).
+- Tests: `OAuthIssuerTests` (SQLite) plus bestehende Suite (161 Tests, 0 Fehler). Real geprüft: lokales Image in isoliertem Compose-Projekt `todo-issuerchk` (eigene Ports, `RP_ORIGIN=https://todo.example.test`, danach `down -v`): Discovery, `WWW-Authenticate`, DCR, authorize (PKCE S256, `resource`) mit Consent per Sitzungs-Bearer (Sitzung per SQL angelegt, kein Passkey), `iss` im Redirect, token (falsche Resource localhost: 400), `POST /mcp tools/list` mit Bearer: 29 Tools. Grenzen: kein echter MCP-Client, kein TLS/Reverse Proxy.
+- Hinweis: Docker-VM war voll (0 Byte frei); `docker builder prune` (nur Build-Cache) schaffte Platz.
+- Offen: nach Rollout des neuen Images müssen Clients neu verbinden (alte Grants tragen die localhost-Resource).

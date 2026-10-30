@@ -8,7 +8,7 @@ final class OAuthConcurrencyTests: XCTestCase {
         do {
             let tokens = try await f.tokens()
             let data = try JSONSerialization.data(withJSONObject: ["grant_type": "refresh_token", "client_id": f.clientID,
-                "resource": OAuthController.resource, "refresh_token": tokens.refresh])
+                "resource": AppSettings().oauthResource, "refresh_token": tokens.refresh])
             let statuses = try await withThrowingTaskGroup(of: HTTPStatus.self) { group in
                 for _ in 0..<2 {
                     group.addTask { try await f.test.rawStatus(.POST, "/oauth/token", body: data) }

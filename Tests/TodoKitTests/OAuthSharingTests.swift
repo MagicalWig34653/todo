@@ -45,7 +45,7 @@ final class OAuthSharingTests: XCTestCase {
             XCTAssertEqual(consent.status, .ok)
             let callback = try XCTUnwrap(consent.body?["redirect_uri"] as? String)
             let items = try XCTUnwrap(URLComponents(string: callback)?.queryItems)
-            XCTAssertEqual(items.first { $0.name == "iss" }?.value, OAuthController.issuer)
+            XCTAssertEqual(items.first { $0.name == "iss" }?.value, AppSettings().oauthIssuer)
             let ex = try await f.exchange(try XCTUnwrap(items.first { $0.name == "code" }?.value))
             let access = try XCTUnwrap(ex.body?["access_token"] as? String)
             let sid = try shared.requireID().uuidString

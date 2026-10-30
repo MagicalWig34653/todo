@@ -259,7 +259,7 @@ extension MCPController {
                 mediaType: requiredString(a, "mediaType"), size: size, checksum: requiredString(a, "checksum"),
                 buildID: requiredString(a, "buildID"), label: optionalString(a, "label"), platform: optionalString(a, "platform"), actor: actor)
             return .object(["attachmentID": .string(capability.attachmentID.uuidString),
-                "uploadURL": .string(OAuthController.issuer + capability.uploadURL), "method": .string("PUT"),
+                "uploadURL": .string(settings.oauthIssuer + capability.uploadURL), "method": .string("PUT"),
                 "token": .string(capability.token), "expiresAt": try .encoded(capability.expiresAt),
                 "buildID": .string(artifact.buildID)])
         case "complete_attachment":

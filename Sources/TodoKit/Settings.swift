@@ -5,6 +5,28 @@ public struct AppSettings: Sendable {
     public var relyingPartyID: String
     public var relyingPartyName: String
     public var relyingPartyOrigin: String
+    /// Public base URL of this server as seen by OAuth/MCP clients (issuer, endpoints, resource indicator, audience).
+    /// OAUTH_ISSUER, else RP_ORIGIN when that is not a loopback address, else the dev default.
+    public var oauthIssuer: String = AppSettings.defaultOAuthIssuer
+    public static let defaultOAuthIssuer = "http://localhost:28080"
+    /// RFC 8707 resource indicator of the MCP endpoint; also the audience every grant is bound to.
+    public var oauthResource: String { oauthIssuer + "/mcp" }
+    /// True when the issuer points to a loopback host (only sensible for development).
+    public var oauthIssuerIsLoopback: Bool {
+        guard let host = URLComponents(string: oauthIssuer)?.host?.lowercased() else { return true }
+        return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+    }
+    /// Pure derivation, see `oauthIssuer`. Trailing slashes are dropped so `issuer + "/mcp"` stays well formed.
+    static func deriveOAuthIssuer(explicit: String?, rpOrigin: String?) -> String {
+        func clean(_ v: String?) -> String? {
+            guard let t = v?.trimmingCharacters(in: .whitespaces), !t.isEmpty else { return nil }
+            return t.hasSuffix("/") ? String(t.dropLast(t.reversed().prefix { $0 == "/" }.count)) : t
+        }
+        if let e = clean(explicit) { return e }
+        if let o = clean(rpOrigin), let host = URLComponents(string: o)?.host?.lowercased(),
+           !["localhost", "127.0.0.1", "::1", "[::1]"].contains(host) { return o }
+        return defaultOAuthIssuer
+    }
     /// Server-side switch; checked on every password operation, not only hidden in the UI.
     public var passwordLoginEnabled: Bool
     /// One-time secret that authorises creating the first (admin) account.
@@ -58,6 +80,8 @@ public struct AppSettings: Sendable {
         s.relyingPartyOrigin = try RuntimeEnvironment.value("RP_ORIGIN", get: get) ?? s.relyingPartyOrigin
         s.passwordLoginEnabled = (try RuntimeEnvironment.value("PASSWORD_LOGIN_ENABLED", get: get) ?? "false") == "true"
         s.bootstrapToken = try RuntimeEnvironment.value("BOOTSTRAP_TOKEN", get: get).flatMap { $0.isEmpty ? nil : $0 }
+        s.oauthIssuer = Self.deriveOAuthIssuer(explicit: try RuntimeEnvironment.value("OAUTH_ISSUER", get: get),
+                                               rpOrigin: try RuntimeEnvironment.value("RP_ORIGIN", get: get))
         s.secureCookies = s.relyingPartyOrigin.hasPrefix("https://")
         s.appleAppIDs = (try RuntimeEnvironment.value("AASA_APP_IDS", get: get) ?? "")
             .split(separator: ",")

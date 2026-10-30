@@ -4,9 +4,7 @@ import Vapor
 
 struct OAuthController: RouteCollection {
     static let scopes = ["projects:read", "tasks:read", "tasks:write", "comments:write", "attachments:read", "attachments:write", "agents:read"]
-    // Never derive the issuer from an untrusted Host or forwarded header.
-    static var issuer: String { Environment.get("OAUTH_ISSUER") ?? "http://localhost:28080" }
-    static var resource: String { issuer + "/mcp" }
+    // The issuer comes from AppSettings.oauthIssuer (OAUTH_ISSUER, else RP_ORIGIN); never from an untrusted Host or forwarded header.
 
     func boot(routes: any RoutesBuilder) throws {
         let routes = routes.grouped(OAuthResponseMiddleware())
@@ -23,15 +21,15 @@ struct OAuthController: RouteCollection {
     }
 
     @Sendable func metadata(_ req: Request) -> [String: JSONValue] {
-        ["issuer": .string(Self.issuer), "authorization_endpoint": .string(Self.issuer + "/oauth/authorize"),
-         "token_endpoint": .string(Self.issuer + "/oauth/token"), "registration_endpoint": .string(Self.issuer + "/oauth/register"),
+        ["issuer": .string(req.application.settings.oauthIssuer), "authorization_endpoint": .string(req.application.settings.oauthIssuer + "/oauth/authorize"),
+         "token_endpoint": .string(req.application.settings.oauthIssuer + "/oauth/token"), "registration_endpoint": .string(req.application.settings.oauthIssuer + "/oauth/register"),
          "response_types_supported": .strings(["code"]), "grant_types_supported": .strings(["authorization_code", "refresh_token"]),
          "token_endpoint_auth_methods_supported": .strings(["none"]), "code_challenge_methods_supported": .strings(["S256"]),
          "scopes_supported": .strings(Self.scopes), "authorization_response_iss_parameter_supported": .bool(true),
          "client_id_metadata_document_supported": .bool(false)]
     }
     @Sendable func resourceMetadata(_ req: Request) -> [String: JSONValue] {
-        ["resource": .string(Self.resource), "authorization_servers": .strings([Self.issuer]),
+        ["resource": .string(req.application.settings.oauthResource), "authorization_servers": .strings([req.application.settings.oauthIssuer]),
          "scopes_supported": .strings(Self.scopes), "bearer_methods_supported": .strings(["header"])]
     }
     struct Registration: Content {
@@ -87,11 +85,11 @@ struct OAuthController: RouteCollection {
         let user = try await req.requireUser()
         var b = try req.query.decode(Authorization.self)
         // RFC 8707: clients should send `resource`; an absent value can only mean this server's single resource.
-        if b.resource == nil { b.resource = Self.resource }
+        if b.resource == nil { b.resource = req.application.settings.oauthResource }
         // No scope requested: offer everything this server supports; the user still decides in the consent step.
         let scope = (b.scope?.isEmpty == false ? b.scope! : Self.scopes.joined(separator: " "))
         b.scope = scope
-        guard b.response_type == "code", b.resource == Self.resource, b.code_challenge_method == "S256",
+        guard b.response_type == "code", b.resource == req.application.settings.oauthResource, b.code_challenge_method == "S256",
               b.code_challenge.count == 43, b.code_challenge.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
               Set(scope.split(separator: " ").map(String.init)).isSubset(of: Set(Self.scopes)),
               let c = try await OAuthClient.find(b.client_id, on: req.db), c.redirects.contains(b.redirect_uri)
@@ -119,11 +117,11 @@ struct OAuthController: RouteCollection {
             var url = URLComponents(string: a.redirect_uri)!
             var items = url.queryItems ?? []
             if let state = a.state { items.append(URLQueryItem(name: "state", value: state)) }
-            items.append(URLQueryItem(name: "iss", value: Self.issuer)) // RFC 9207
+            items.append(URLQueryItem(name: "iss", value: req.application.settings.oauthIssuer)) // RFC 9207
             if b.approve {
                 guard !b.project_ids.isEmpty else { throw Abort(.badRequest, reason: "projects_required") }
                 for id in b.project_ids { _ = try await ProjectAccess(user: user, db: db).project(id) }
-                let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: Self.resource,
+                let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: req.application.settings.oauthResource,
                                    scopes: (a.scope ?? "").split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)))
                 try await g.save(on: db)
                 let code = AuthSupport.randomToken()
@@ -141,9 +139,9 @@ struct OAuthController: RouteCollection {
     }
     @Sendable func token(_ req: Request) async throws -> Response {
         var decoded = try req.content.decode(TokenRequest.self)
-        if decoded.resource == nil { decoded.resource = Self.resource }
+        if decoded.resource == nil { decoded.resource = req.application.settings.oauthResource }
         let b = decoded
-        guard ["authorization_code", "refresh_token"].contains(b.grant_type), b.resource == Self.resource,
+        guard ["authorization_code", "refresh_token"].contains(b.grant_type), b.resource == req.application.settings.oauthResource,
               let raw = b.grant_type == "authorization_code" ? b.code : b.refresh_token else { return try await tokenError(req) }
         // Return errors after committing: throwing inside this transaction would undo reuse revocation.
         // Plain lookup first, then lock before the transaction's first read (see consent()).

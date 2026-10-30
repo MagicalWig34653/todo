@@ -17,12 +17,13 @@ struct TestApp {
         self.storedDatabaseSettings = databaseSettings ?? Self.databaseSettings
     }
 
-    static func make(password: Bool = false) async throws -> TestApp {
+    static func make(password: Bool = false, issuer: String? = nil) async throws -> TestApp {
         let app = try await Application.make(.testing)
         configureContent()
         var settings = AppSettings()
         settings.bootstrapToken = "bootstrap-secret"
         settings.passwordLoginEnabled = password
+        if let issuer { settings.oauthIssuer = issuer }
         app.settings = settings
         let database = databaseSettings
         try configureDatabase(app, settings: database)

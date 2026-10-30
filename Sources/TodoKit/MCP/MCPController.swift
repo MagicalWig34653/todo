@@ -15,7 +15,7 @@ struct MCPController: RouteCollection {
     static let instructions = "Todo project management for agents. FIRST call the tool get_manual (or read the resource todo://manual) and follow it: it explains the board workflow, conventions and every tool. Then call get_project_structure for the project you work in and obey its agent brief. Communicate with the user only through the board: post_progress, ask_question, add_attachment, request_review."
     static func validateOrigin(_ req: Request) throws {
         if let origin = req.headers.first(name: .origin),
-           origin != req.application.settings.relyingPartyOrigin && origin != OAuthController.issuer { throw Abort(.forbidden) }
+           origin != req.application.settings.relyingPartyOrigin && origin != req.application.settings.oauthIssuer { throw Abort(.forbidden) }
     }
     @Sendable func handle(_ req: Request) async throws -> Response {
         try Self.validateOrigin(req)
@@ -23,9 +23,9 @@ struct MCPController: RouteCollection {
               let secret = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(raw)).first(),
               secret.kind == "access", secret.expiresAt > Date(), let gid = secret.grantID,
               let grant = try await OAuthGrant.find(gid, on: req.db), !grant.revoked,
-              grant.resource == OAuthController.resource,
+              grant.resource == req.application.settings.oauthResource,
               let user = try await User.find(grant.userID, on: req.db) else {
-            return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(OAuthController.issuer)/.well-known/oauth-protected-resource/mcp\", scope=\"\(OAuthController.scopes.joined(separator: " "))\""])
+            return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(req.application.settings.oauthIssuer)/.well-known/oauth-protected-resource/mcp\", scope=\"\(OAuthController.scopes.joined(separator: " "))\""])
         }
         if let version = req.headers.first(name: "MCP-Protocol-Version"), !Self.versions.contains(version) { throw Abort(.badRequest, reason: "unsupported_protocol_version") }
         let body: JSONValue
