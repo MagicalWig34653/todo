@@ -805,6 +805,226 @@ test('agents page: pairing, device list with binding and active run, job list wi
 	await expect(page.getByTestId('feed-item').filter({ hasText: 'Auftrag für den Runner freigegeben' }).first()).toBeVisible();
 });
 
+test('command center: kanban, list, questions, reviews, updates, project scope, brief and columns', async () => {
+	const SHOTS = process.env.CC_SHOTS;
+	const origin = new URL(page.url()).origin;
+	const headers = { 'Content-Type': 'application/json', Origin: origin };
+	const post = async <T = unknown>(path: string, data: unknown): Promise<T> => {
+		const r = await page.request.post(path, { data, headers });
+		expect(r.ok(), `${path}: ${await r.text()}`).toBeTruthy();
+		return (await r.json()) as T;
+	};
+	const put = async (path: string, data: unknown) => {
+		const r = await page.request.put(path, { data, headers });
+		expect(r.ok(), `${path}: ${await r.text()}`).toBeTruthy();
+	};
+	const noOverflow = async (label: string) => {
+		const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }));
+		expect(w.doc, `${label}: page overflows`).toBeLessThanOrEqual(w.inner);
+	};
+
+	// ---- data the way an agent (or the user) would create it through the API ------------------------------------
+	const project = await post<{ id: string }>('/v1/projects', { name: 'Agentenlauf', parentID: null });
+	const mk = (title: string) => post<{ id: string; version: number }>('/v1/tasks', { projectID: project.id, title });
+	const [login, db, guide, notes, docs, legacy] = [
+		await mk('Login-Seite bauen'),
+		await mk('Datenbank wählen'),
+		await mk('Anleitung schreiben'),
+		await mk('Release-Notes'),
+		await mk('Doku prüfen'),
+		await mk('Altlasten entfernen')
+	];
+	await post(`/v1/tasks/${login.id}/claim`, { agentName: 'Claude Code' });
+	await post(`/v1/tasks/${login.id}/progress-notes`, { note: 'Grundgerüst steht, Passkey-Button fehlt noch', percent: 40 });
+	await post(`/v1/tasks/${db.id}/questions`, { prompt: 'Welche Datenbank soll das Projekt nutzen?', options: ['MariaDB', 'SQLite'], blocking: true, agentName: 'Claude Code' });
+	await post(`/v1/tasks/${guide.id}/questions`, { prompt: 'Für wen ist die Anleitung gedacht?', agentName: 'Claude Code' });
+	await post(`/v1/tasks/${notes.id}/review`, { summary: 'Entwurf der Release-Notes ist fertig', agentName: 'Claude Code' });
+	await post(`/v1/tasks/${docs.id}/review`, { summary: 'Doku ist durchgesehen', agentName: 'Claude Code' });
+	await put(`/v1/tasks/${legacy.id}/structure`, { blockedReason: 'Wartet auf Freigabe des Teams' });
+	// A build screenshot on the running card (result attachment + build registration).
+	const png = Array.from(PNG_1X1);
+	const sha = (await import('node:crypto')).createHash('sha256').update(PNG_1X1).digest('hex');
+	const cap = await post<{ attachmentID: string; uploadURL: string; token: string }>('/v1/attachments/begin', {
+		taskID: login.id, filename: 'login.png', role: 'result', mediaType: 'image/png', size: PNG_1X1.length, checksum: sha
+	});
+	const up = await page.evaluate(async ({ cap, png }) => {
+		const r = await fetch(cap.uploadURL, { method: 'PUT', credentials: 'omit', headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${cap.token}` }, body: new Uint8Array(png) });
+		return r.status;
+	}, { cap, png });
+	expect(up).toBeLessThan(300);
+	await post(`/v1/attachments/${cap.attachmentID}/complete`, {});
+	await post('/v1/builds', { attachmentID: cap.attachmentID, buildID: 'build-17', label: 'Build 17', platform: 'web' });
+
+	// ---- account scope: kanban is the default ---------------------------------------------------------------------
+	await page.setViewportSize({ width: 1360, height: 860 });
+	await page.reload();
+	await nav('Überblick');
+	await expect(page.getByTestId('view-heading')).toHaveText('Überblick');
+	await expect(page.getByTestId('cc-board')).toBeVisible();
+	await expect(page.getByTestId('cc-lane')).toHaveCount(6);
+	const lane = (k: string) => page.getByTestId('cc-lane').and(page.locator(`[data-lane="${k}"]`));
+	const cardIn = (k: string, title: string) => lane(k).getByTestId('oc-card').filter({ hasText: title });
+	await expect(lane('running').getByTestId('cc-lane-count')).toHaveText('1');
+	await expect(lane('question').getByTestId('cc-lane-count')).toHaveText('2');
+	await expect(lane('review').getByTestId('cc-lane-count')).toHaveText('2');
+	// other projects of this serial run can contain blocked cards (dependencies), so only ours is checked
+
+	const running = cardIn('running', 'Login-Seite bauen');
+	await expect(running.getByTestId('oc-progress')).toContainText('40 %');
+	await expect(running.getByTestId('oc-progress')).toContainText('Meldung des Agenten');
+	await expect(running.getByTestId('oc-agent')).toContainText('Claude Code');
+	await expect(running.getByTestId('oc-latest')).toContainText('Passkey-Button fehlt noch');
+	const shot = running.getByTestId('oc-builds').getByRole('img');
+	await expect(shot).toBeVisible();
+	await expect.poll(() => shot.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(1);
+	await expect(cardIn('blocked', 'Altlasten entfernen').getByTestId('oc-blocked')).toContainText('Wartet auf Freigabe des Teams');
+	// sidebar badge: 2 questions + 2 reviews
+	await expect(page.getByRole('button', { name: 'Überblick 4' })).toBeVisible();
+
+	if (SHOTS) {
+		await page.screenshot({ path: `${SHOTS}/ueberblick-kanban.png` });
+		// Real dark mode through the stored choice (pre-paint script), then back to the default.
+		await page.evaluate(() => localStorage.setItem('todo.theme', 'dark'));
+		await page.reload();
+		await nav('Überblick');
+		await expect(page.getByTestId('cc-board')).toBeVisible();
+		await expect(page.locator('html')).toHaveClass(/dark/);
+		await page.waitForTimeout(400);
+		await page.screenshot({ path: `${SHOTS}/ueberblick-kanban-dunkel.png` });
+		await page.evaluate(() => localStorage.removeItem('todo.theme'));
+		await page.reload();
+		await nav('Überblick');
+	}
+
+	// ---- all open questions: answer one with an option button ------------------------------------------------------
+	await page.getByTestId('cc-section-questions').click();
+	await expect(page.getByTestId('cc-questions').getByTestId('question')).toHaveCount(2);
+	if (SHOTS) await page.screenshot({ path: `${SHOTS}/ueberblick-fragen.png` });
+	const dbQuestion = page.getByTestId('cc-questions').getByTestId('question').filter({ hasText: 'Welche Datenbank' });
+	await expect(dbQuestion).toContainText('Datenbank wählen in Agentenlauf');
+	await dbQuestion.getByRole('button', { name: 'SQLite' }).click();
+	await expect(page.getByTestId('cc-questions').getByTestId('question')).toHaveCount(1);
+	const answered = (await (await page.request.get(`/v1/questions?projectID=${project.id}&state=answered`)).json()) as { prompt: string; answer: string }[];
+	expect(answered.map((q) => q.answer)).toEqual(['SQLite']);
+
+	// ---- free-text answer directly on the card -------------------------------------------------------------------------
+	await page.getByTestId('cc-section-board').click();
+	const guideCard = cardIn('question', 'Anleitung schreiben');
+	await expect(guideCard.getByTestId('question-option')).toHaveCount(0);
+	await expect(guideCard.getByTestId('question-send')).toBeDisabled();
+	await guideCard.getByTestId('question-answer').fill('Für neue Teammitglieder');
+	await guideCard.getByTestId('question-send').click();
+	await expect(lane('question').getByTestId('oc-card')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Überblick 2' })).toBeVisible();
+	const answers = (await (await page.request.get(`/v1/questions?projectID=${project.id}&state=answered`)).json()) as { answer: string }[];
+	expect(answers.map((q) => q.answer).sort()).toEqual(['Für neue Teammitglieder', 'SQLite']);
+
+	// ---- review: changes need a note, the decision moves the card -----------------------------------------------------
+	const notesCard = cardIn('review', 'Release-Notes');
+	await notesCard.getByTestId('review-changes').click();
+	await expect(notesCard.getByRole('alert')).toContainText('Bitte beschreibe');
+	await notesCard.getByTestId('review-note').fill('Bitte die Breaking Changes nach oben');
+	await notesCard.getByTestId('review-changes').click();
+	await expect(lane('review').getByTestId('oc-card').filter({ hasText: 'Release-Notes' })).toHaveCount(0);
+	await expect(cardIn('running', 'Release-Notes')).toBeVisible();
+	const reviews = (await (await page.request.get(`/v1/reviews?projectID=${project.id}&state=all`)).json()) as { state: string; decisionNote?: string }[];
+	expect(reviews.find((r) => r.state === 'changes_requested')?.decisionNote).toBe('Bitte die Breaking Changes nach oben');
+
+	// accept from the reviews section
+	await page.getByTestId('cc-section-reviews').click();
+	const docsReview = page.getByTestId('cc-reviews').getByTestId('review');
+	await expect(docsReview).toHaveCount(1);
+	await expect(docsReview).toContainText('Doku prüfen in Agentenlauf');
+	await docsReview.getByTestId('review-accept').click();
+	await expect(page.getByTestId('cc-reviews').getByTestId('review')).toHaveCount(0);
+	await expect(page.getByText('Keine fälligen Reviews')).toBeVisible();
+	await page.getByTestId('cc-section-board').click();
+	await expect(cardIn('done', 'Doku prüfen')).toBeVisible();
+	await expect(cardIn('done', 'Doku prüfen').getByTestId('oc-progress')).toContainText('100 %');
+
+	// ---- list view, remembered across reloads --------------------------------------------------------------------------
+	await page.getByTestId('cc-view-list').click();
+	await expect(page.getByTestId('cc-list')).toBeVisible();
+	await expect(page.getByTestId('cc-total')).toContainText('Einträge');
+	await page.reload();
+	await nav('Überblick');
+	await expect(page.getByTestId('cc-view-list')).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByTestId('cc-list')).toBeVisible();
+	if (SHOTS) await page.screenshot({ path: `${SHOTS}/ueberblick-liste.png` });
+	await page.getByTestId('cc-filter-lane').selectOption({ label: 'Blockiert' });
+	const blockedCard = page.getByTestId('oc-card').filter({ hasText: 'Altlasten entfernen' });
+	await expect(blockedCard).toHaveCount(1);
+	await expect(blockedCard.getByTestId('oc-lane')).toHaveText('Blockiert');
+	await expect(page.getByTestId('oc-card').filter({ hasText: 'Login-Seite bauen' })).toHaveCount(0);
+	await expect(page.getByTestId('oc-lane').filter({ hasNotText: 'Blockiert' })).toHaveCount(0);
+	await page.getByTestId('cc-filter-lane').selectOption({ label: 'Alle Spalten' });
+	await page.getByTestId('cc-view-kanban').click();
+	await expect(page.getByTestId('cc-board')).toBeVisible();
+
+	// ---- updates ---------------------------------------------------------------------------------------------------------
+	await page.getByTestId('cc-section-updates').click();
+	const updates = page.getByTestId('cc-updates');
+	await expect(updates).toContainText('Grundgerüst steht, Passkey-Button fehlt noch');
+	await expect(updates).toContainText('Welche Datenbank soll das Projekt nutzen?');
+	await expect(updates).toContainText('Bitte die Breaking Changes nach oben');
+	if (SHOTS) await page.screenshot({ path: `${SHOTS}/ueberblick-updates.png` });
+
+	// ---- detail dialog ---------------------------------------------------------------------------------------------------
+	await page.getByTestId('cc-section-board').click();
+	await cardIn('running', 'Login-Seite bauen').getByTestId('oc-title').click();
+	const detail = page.getByTestId('cc-detail-dialog');
+	await expect(detail.getByTestId('detail-notes')).toContainText('Grundgerüst steht');
+	await expect(detail.getByRole('img')).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	// ---- project scope: tab on the project page ------------------------------------------------------------------------
+	await openProject('Agentenlauf');
+	await page.getByTestId('project-tab-overview').click();
+	await expect(page.getByTestId('command-center')).toHaveAttribute('data-scope', 'project');
+	await expect(page.getByTestId('oc-card').filter({ hasText: 'Login-Seite bauen' })).toBeVisible();
+	await expect(page.getByTestId('cc-count-questions')).toHaveCount(0);
+
+	if (SHOTS) await page.screenshot({ path: `${SHOTS}/ueberblick-projekt.png` });
+	// brief: written, saved, still there after a reload
+	await page.getByTestId('cc-brief-toggle').click();
+	await expect(page.getByTestId('columns-missing')).toBeVisible();
+	await page.getByTestId('brief-text').fill('## Goals\nPasskey-Login zuerst\n\n## Agent rules\nImmer Screenshots anhängen');
+	await page.getByTestId('brief-save').click();
+	await expect(page.getByTestId('brief-status')).toContainText('Version 1');
+	const brief = (await (await page.request.get(`/v1/projects/${project.id}/agent-brief`)).json()) as { text: string; version: number };
+	expect(brief).toMatchObject({ version: 1, text: expect.stringContaining('Passkey-Login zuerst') });
+
+	// standard columns for agents
+	await page.getByTestId('columns-create').click();
+	await expect(page.getByTestId('columns-complete')).toBeVisible();
+	await expect(page.getByTestId('columns-create')).toBeDisabled();
+	const columns = (await (await page.request.get(`/v1/projects/${project.id}/columns`)).json()) as { name: string }[];
+	expect(columns.map((c) => c.name)).toEqual(['Backlog', 'Bereit', 'In Arbeit', 'Frage offen', 'Review', 'Erledigt']);
+	if (SHOTS) await page.getByTestId('brief-panel').screenshot({ path: `${SHOTS}/ueberblick-briefing.png` });
+
+	await page.reload();
+	await openProject('Agentenlauf');
+	await page.getByTestId('project-tab-overview').click();
+	await page.getByTestId('cc-brief-toggle').click();
+	await expect(page.getByTestId('brief-text')).toHaveValue(/Immer Screenshots anhängen/);
+	await expect(page.getByTestId('columns-complete')).toBeVisible();
+
+	// ---- phone: no horizontal page overflow, lanes scroll inside the board ---------------------------------------------
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.getByRole('button', { name: 'Seitenleiste öffnen' }).click();
+	await page.getByRole('navigation', { name: 'Seitenleiste' }).getByRole('button', { name: /^Überblick/ }).click();
+	await expect(page.getByTestId('cc-board')).toBeVisible();
+	await noOverflow('overview kanban');
+	if (SHOTS) await page.screenshot({ path: `${SHOTS}/ueberblick-mobil.png` });
+	await page.getByTestId('cc-view-list').click();
+	await expect(page.getByTestId('cc-list')).toBeVisible();
+	await noOverflow('overview list');
+	await page.getByTestId('cc-view-kanban').click();
+	await page.getByTestId('cc-section-questions').click();
+	await noOverflow('overview questions');
+	await page.setViewportSize({ width: 1280, height: 720 });
+});
+
 test('attachment upload with preview', async () => {
 	await openProject('Küche');
 	await setView('Liste');

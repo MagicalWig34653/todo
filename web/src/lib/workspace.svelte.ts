@@ -1,4 +1,5 @@
-import { api, type Label, type Project, type ProjectPrefs, type SavedFilter, type Task, type Team, type TeamMembership } from './api.js';
+import { api, type CommandSummary, type Label, type Project, type ProjectPrefs, type SavedFilter, type Task, type Team, type TeamMembership } from './api.js';
+import { attentionCount } from './commandCenter.js';
 import { inboxTasks, openCounts, todayTasks } from './counts.js';
 import type { Display } from './listLogic.js';
 import { KEYS, readJSON, writeJSON } from './localPrefs.js';
@@ -16,6 +17,8 @@ class Workspace {
 	filters = $state<SavedFilter[]>([]);
 	/** Stored display options per project (server, per account). Missing = defaults. */
 	prefs = $state<Record<string, ProjectPrefs>>({});
+	/** Account-wide command center counters (open questions, pending reviews) for the sidebar badge. */
+	attention = $state<CommandSummary | null>(null);
 	/** Device-local: collapsed tree nodes. */
 	collapsed = $state<Record<string, boolean>>(readJSON<Record<string, boolean>>(KEYS.collapsed, {}));
 
@@ -23,6 +26,7 @@ class Workspace {
 	inboxCount = $derived(inboxTasks(this.tasks).length);
 	todayCount = $derived(todayTasks(this.tasks).length);
 	favorites = $derived(favoriteProjects(this.projects));
+	attentionCount = $derived(attentionCount(this.attention));
 
 	#saving = new Map<string, Promise<unknown>>();
 	#imported = false;
@@ -39,6 +43,14 @@ class Workspace {
 	async reloadMeta() {
 		[this.labels, this.filters] = await Promise.all([collectAll((c) => api.listLabels(c)), collectAll((c) => api.listFilters(c))]);
 	}
+	/** Cheap list-view call: only the summary is used. Failures are ignored (the badge just stays stale). */
+	async reloadAttention() {
+		try {
+			this.attention = (await api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 })).summary;
+		} catch {
+			/* optional */
+		}
+	}
 	async reloadPrefs() {
 		const { items } = await api.listProjectPrefs();
 		this.prefs = Object.fromEntries(items.map((p) => [p.projectID, p]));
@@ -46,7 +58,7 @@ class Workspace {
 	/** Everything the sidebar shows; failures of the optional parts must not break the app. */
 	async reloadAll() {
 		await Promise.all([this.reloadProjects(), this.reloadTasks()]);
-		await Promise.allSettled([this.reloadTeams(), this.reloadMeta(), this.reloadPrefs()]);
+		await Promise.allSettled([this.reloadTeams(), this.reloadMeta(), this.reloadPrefs(), this.reloadAttention()]);
 		await this.importLegacy();
 	}
 

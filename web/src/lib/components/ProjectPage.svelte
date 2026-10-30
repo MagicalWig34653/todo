@@ -14,6 +14,7 @@
 	import Dialog from './app/Dialog.svelte';
 	import MenuItem from './app/MenuItem.svelte';
 	import Popover from './app/Popover.svelte';
+	import CommandCenter from './CommandCenter.svelte';
 	import MilestonesPanel from './MilestonesPanel.svelte';
 	import ProjectComments from './ProjectComments.svelte';
 	import ProjectBoard from './ProjectBoard.svelte';
@@ -35,6 +36,9 @@
 		onshare: (p: Project) => void;
 	}
 	let { project, trail, onselect, onshare }: Props = $props();
+
+	/** `tasks` = list/board of the project, `overview` = command center of the project (ADR 0014). */
+	let tab = $state<'tasks' | 'overview'>('tasks');
 
 	// ---- data -------------------------------------------------------------------------------------------------
 	let tasks = $state<Task[]>([]);
@@ -247,7 +251,7 @@
 	</div>
 {/snippet}
 
-<div class={display.view === 'board' ? '' : 'mx-auto max-w-3xl'}>
+<div class={display.view === 'board' || tab === 'overview' ? '' : 'mx-auto max-w-3xl'}>
 	<header class="mb-4 max-w-3xl">
 		<h2 class="text-[28px] leading-tight font-bold tracking-tight sm:text-[32px]" data-testid="task-heading">
 			{#if editingTitle}
@@ -281,7 +285,27 @@
 		></textarea>
 	</header>
 
-	{#if display.view === 'board'}
+	<div class="mb-4 flex gap-4 border-b" role="tablist" aria-label={t('cc.projectTabs')} data-testid="project-tabs">
+		{#each ['tasks', 'overview'] as const as id (id)}
+			<button
+				type="button"
+				role="tab"
+				aria-selected={tab === id}
+				data-testid="project-tab-{id}"
+				class={[
+					'-mb-px min-h-9 border-b-2 px-1 text-sm font-medium transition-colors',
+					tab === id ? 'border-ui-accent text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent'
+				]}
+				onclick={() => (tab = id)}
+			>
+				{t(id === 'tasks' ? 'cc.tab.tasks' : 'cc.tab.overview')}
+			</button>
+		{/each}
+	</div>
+
+	{#if tab === 'overview'}
+		<CommandCenter projectID={project.id} />
+	{:else if display.view === 'board'}
 		{#if board}
 			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={openDetail} />
 		{/if}

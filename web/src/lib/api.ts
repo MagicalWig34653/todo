@@ -363,6 +363,231 @@ export interface RegistrationBegin {
 }
 
 /** Error from the backend; `reason` is the machine-readable code (e.g. `version_conflict`). */
+/** contracts/command-center.yaml (ADR 0014). Dates are ISO strings. */
+export type LaneKey = 'running' | 'question' | 'review' | 'ready' | 'blocked' | 'done';
+export type ActorType = 'Person' | 'Integration' | 'Run';
+export interface Progress {
+	percent: number;
+	source: 'status' | 'subtasks' | 'criteria' | 'agent' | 'none';
+	subtasksDone: number;
+	subtasksTotal: number;
+	criteriaDone: number;
+	criteriaTotal: number;
+}
+export interface QuestionBrief {
+	id: string;
+	prompt: string;
+	options: string[];
+	blocking: boolean;
+	askedByType: ActorType;
+	askedByLabel?: string | null;
+	createdAt?: string | null;
+}
+export interface ReviewBrief {
+	id: string;
+	summary: string;
+	requestedByType: ActorType;
+	requestedByLabel?: string | null;
+	reviewerID?: string | null;
+	agentJobID?: string | null;
+	createdAt?: string | null;
+}
+export interface BuildArtifact {
+	id: string;
+	attachmentID: string;
+	taskID: string;
+	buildID: string;
+	label?: string | null;
+	platform?: string | null;
+	filename: string;
+	mediaType: string;
+	size: number;
+	/** Authenticated image endpoint (cookie), images only. */
+	previewURL: string;
+	createdAt?: string | null;
+}
+export interface CardAgent {
+	claimedLabel?: string | null;
+	claimedAt?: string | null;
+	jobID?: string | null;
+	jobState?: string | null;
+	jobProgress?: string | null;
+	runID?: string | null;
+	checkpointNextStep?: string | null;
+}
+export interface CardUpdate {
+	kind: 'note' | 'checkpoint' | 'job_progress';
+	text: string;
+	at?: string | null;
+	actorLabel?: string | null;
+}
+export interface SubtaskBrief {
+	id: string;
+	title: string;
+	status: TaskStatus;
+	lane: string;
+	progressPercent: number;
+}
+export interface CommandCard {
+	task: { id: string; title: string; status: TaskStatus; version: number; columnID?: string | null; columnName?: string | null; createdAt?: string | null; updatedAt?: string | null };
+	project: { id: string; name: string; color?: string | null; parentID?: string | null };
+	kind: 'task' | 'feature';
+	isFeature: boolean;
+	parentTaskID?: string | null;
+	lane: LaneKey;
+	progress: Progress;
+	agent?: CardAgent | null;
+	openQuestionCount: number;
+	questions: QuestionBrief[];
+	pendingReview?: ReviewBrief | null;
+	blockedReason?: string | null;
+	blockedBy: string[];
+	latestUpdate?: CardUpdate | null;
+	builds: BuildArtifact[];
+	buildCount: number;
+	nextDue?: string | null;
+	priority: number;
+	subtasks: SubtaskBrief[];
+}
+export interface CommandLane {
+	key: LaneKey;
+	title: string;
+	count: number;
+	truncated: boolean;
+	cards: CommandCard[];
+}
+export interface CommandSummary {
+	running: number;
+	question: number;
+	review: number;
+	ready: number;
+	blocked: number;
+	done: number;
+	backlog: number;
+	openQuestions: number;
+	pendingReviews: number;
+	features: number;
+	activeAgents: number;
+}
+export interface UpdateItem {
+	id: string;
+	taskID: string;
+	taskTitle: string;
+	projectID: string;
+	projectName: string;
+	/** Activity kind such as `progress.posted`, `question.asked`, `review.requested`. */
+	kind: string;
+	actorType: ActorType;
+	actorID: string;
+	actorName?: string | null;
+	subjectID?: string | null;
+	text?: string | null;
+	createdAt?: string | null;
+}
+export interface BuildGroup {
+	buildID: string;
+	label?: string | null;
+	platform?: string | null;
+	taskIDs: string[];
+	createdAt?: string | null;
+	items: BuildArtifact[];
+}
+export interface CommandCenter {
+	generatedAt: string;
+	scope: 'account' | 'project';
+	projectID?: string | null;
+	view: 'kanban' | 'list';
+	summary: CommandSummary;
+	lanes?: CommandLane[] | null;
+	items?: CommandCard[] | null;
+	total?: number | null;
+	updates: UpdateItem[];
+	builds: BuildGroup[];
+}
+export interface CommandCenterParams {
+	scope: 'account' | 'project';
+	projectID?: string;
+	view?: 'kanban' | 'list';
+	includeSubprojects?: boolean;
+	lane?: string;
+	kind?: 'task' | 'feature';
+	hasQuestion?: boolean;
+	sort?: 'attention' | 'updated' | 'due' | 'progress' | 'title';
+	includeSubtasks?: boolean;
+	laneLimit?: number;
+	updatesLimit?: number;
+	limit?: number;
+	offset?: number;
+}
+export interface Question {
+	id: string;
+	taskID: string;
+	taskTitle?: string | null;
+	projectID?: string | null;
+	projectName?: string | null;
+	askedByType: ActorType;
+	askedByLabel?: string | null;
+	askedByName?: string | null;
+	prompt: string;
+	options: string[];
+	blocking: boolean;
+	state: 'open' | 'answered' | 'withdrawn';
+	answer?: string | null;
+	answeredAt?: string | null;
+	createdAt?: string | null;
+	agentQuestionID?: string | null;
+	version: number;
+}
+export interface Review {
+	id: string;
+	taskID: string;
+	taskTitle?: string | null;
+	projectID?: string | null;
+	projectName?: string | null;
+	state: 'pending' | 'accepted' | 'changes_requested' | 'withdrawn';
+	requestedByType: ActorType;
+	requestedByLabel?: string | null;
+	reviewerID?: string | null;
+	summary: string;
+	decidedAt?: string | null;
+	decisionNote?: string | null;
+	createdAt?: string | null;
+	version: number;
+}
+export interface AgentBrief {
+	projectID: string;
+	text: string;
+	/** 0 = never written. */
+	version: number;
+	updatedAt?: string | null;
+}
+export interface ProgressNote {
+	id: string;
+	taskID: string;
+	actorType: ActorType;
+	actorLabel?: string | null;
+	note: string;
+	percent?: number | null;
+	createdAt?: string | null;
+}
+export interface TaskContext {
+	task: Task;
+	projectID: string;
+	workflow: { kind: string; isFeature: boolean; parentTaskID?: string | null; blockedReason?: string | null; claimedLabel?: string | null; claimedAt?: string | null };
+	progress: Progress;
+	progressNotes: ProgressNote[];
+	subtasks: Task[];
+	questions: Question[];
+	review?: Review | null;
+	builds: BuildArtifact[];
+}
+export interface ProjectStructure {
+	project: { id: string; name: string };
+	brief: AgentBrief;
+	columnMode: 'columns' | 'status';
+	template: { name: string; complete: boolean; missingRoles: string[] };
+}
+
 export class ApiError extends Error {
 	constructor(
 		readonly status: number,
@@ -651,6 +876,42 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		abortAttachment: (id: string) => request<void>('DELETE', `/attachments/${id}`),
 		attachmentPreviewURL: (id: string) => `${base}/attachments/${id}/preview`,
 		attachmentDownloadURL: (id: string) => `${base}/attachments/${id}/download`,
+
+		// Command center (contracts/command-center.yaml)
+		commandCenter: (p: CommandCenterParams) =>
+			request<CommandCenter>(
+				'GET',
+				`/command-center${query({
+					scope: p.scope,
+					projectID: p.projectID,
+					view: p.view,
+					includeSubprojects: p.includeSubprojects === undefined ? undefined : String(p.includeSubprojects),
+					lane: p.lane,
+					kind: p.kind,
+					hasQuestion: p.hasQuestion === undefined ? undefined : String(p.hasQuestion),
+					sort: p.sort,
+					includeSubtasks: p.includeSubtasks === undefined ? undefined : String(p.includeSubtasks),
+					laneLimit: p.laneLimit,
+					updatesLimit: p.updatesLimit,
+					limit: p.limit,
+					offset: p.offset
+				})}`
+			),
+		listQuestions: (p: { projectID?: string; state?: 'open' | 'answered' | 'all'; includeSubprojects?: boolean; limit?: number } = {}) =>
+			request<Question[]>(
+				'GET',
+				`/questions${query({ projectID: p.projectID, state: p.state ?? 'open', includeSubprojects: p.includeSubprojects === undefined ? undefined : String(p.includeSubprojects), limit: p.limit })}`
+			),
+		answerQuestion: (id: string, answer: string) => request<Question>('POST', `/questions/${id}/answer`, { answer }),
+		listReviews: (p: { projectID?: string; state?: Review['state'] | 'all'; limit?: number } = {}) =>
+			request<Review[]>('GET', `/reviews${query({ projectID: p.projectID, state: p.state ?? 'pending', limit: p.limit })}`),
+		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string) =>
+			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined }),
+		taskContext: (taskID: string) => request<TaskContext>('GET', `/tasks/${taskID}/context`),
+		projectStructure: (projectID: string) => request<ProjectStructure>('GET', `/projects/${projectID}/structure`),
+		getAgentBrief: (projectID: string) => request<AgentBrief>('GET', `/projects/${projectID}/agent-brief`),
+		putAgentBrief: (projectID: string, text: string, version: number) =>
+			request<AgentBrief>('PUT', `/projects/${projectID}/agent-brief`, { text, version }),
 
 		// Identity (contracts/identity.yaml)
 		listPasskeys: () => request<Passkey[]>('GET', '/me/passkeys'),

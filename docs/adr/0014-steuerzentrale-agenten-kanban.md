@@ -1,6 +1,6 @@
 # ADR 0014 – Steuerzentrale: Agenten arbeiten über das Kanban-Board (Handbuch, Fragen, Fortschritt, Reviews, Build-Screenshots)
 
-Status: Backend und MCP implementiert (30.10.2026); Clients (PWA, Apple) noch nicht angebunden. Vertrag: `contracts/command-center.yaml`. Handbuch für Agenten: `docs/agent-manual.md`.
+Status: Backend und MCP implementiert (30.10.2026); PWA angebunden (30.10.2026, siehe STATUS), Apple noch nicht. Vertrag: `contracts/command-center.yaml`. Handbuch für Agenten: `docs/agent-manual.md`.
 
 ## Anlass (Nutzeranforderung, Kernzweck des Produkts)
 

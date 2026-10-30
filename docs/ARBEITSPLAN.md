@@ -92,6 +92,6 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 
 ## Steuerzentrale für Agenten (30.10.2026, ADR 0014)
 - [x] Backend + MCP: Handbuch, Briefing, Fragen, Fortschritt/Features, Reviews, Build-Screenshots, `GET /v1/command-center`.
-- [ ] PWA: Seite "Überblick" (Kanban-Lanes, Listenansicht, Fragen beantworten, Review entscheiden, Briefing-Editor, Screenshot-Galerie, Vorlage anwenden).
+- [x] PWA: Seite "Überblick" (30.10.2026): Kanban/Liste, Konto- und Projektscope, Fragen/Reviews direkt entscheiden, Updates, offene Fragen, Briefing-Editor, Standard-Spalten, Build-Vorschau (Details STATUS). Offen: Galerie über alle Builds (`builds[]` der Antwort ungenutzt), Konsole für Features/Unteraufgaben-Anlage in der PWA.
 - [ ] Apple: dieselben Ansichten (Vertrag `contracts/command-center.yaml`). Consent-Oberfläche für Scope `attachments:write`.
 - [ ] Optional: Sync-Feed/Push für Fragen und Reviews; SQL-Voraggregation.

@@ -15,6 +15,7 @@
 	import InboxView from './InboxView.svelte';
 	import FiltersLabelsView from './FiltersLabelsView.svelte';
 	import AgentsView from './AgentsView.svelte';
+	import CommandCenter from './CommandCenter.svelte';
 	import ActivityView from './ActivityView.svelte';
 	import PlanningView from './PlanningView.svelte';
 	import SearchView from './SearchView.svelte';
@@ -53,6 +54,16 @@
 
 	onMount(() => {
 		attempt(() => workspace.reloadAll());
+		// Keep the sidebar badge fresh (there is no sync feed for questions and reviews).
+		const refresh = () => {
+			if (document.visibilityState === 'visible') void workspace.reloadAttention();
+		};
+		const timer = setInterval(refresh, 60_000);
+		document.addEventListener('visibilitychange', refresh);
+		return () => {
+			clearInterval(timer);
+			document.removeEventListener('visibilitychange', refresh);
+		};
 	});
 
 	function go(v: View) {
@@ -172,9 +183,11 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="mx-auto max-w-4xl">
+				<div class={['mx-auto', view === 'overview' ? 'max-w-none' : 'max-w-4xl']}>
 					{#if view === 'today' || view === 'upcoming' || view === 'upNext'}
 						<PlanningView mode={view} />
+					{:else if view === 'overview'}
+						<CommandCenter />
 					{:else if view === 'inbox'}
 						<InboxView onopen={openProject} />
 					{:else if view === 'search'}

@@ -2,6 +2,7 @@
 export type View =
 	| 'project'
 	| 'inbox'
+	| 'overview'
 	| 'today'
 	| 'upcoming'
 	| 'upNext'
@@ -47,6 +48,7 @@ export type View =
 	import Users from '@lucide/svelte/icons/users';
 	import UserRound from '@lucide/svelte/icons/user-round';
 	import Bot from '@lucide/svelte/icons/bot';
+	import Gauge from '@lucide/svelte/icons/gauge';
 	import Activity from '@lucide/svelte/icons/activity';
 	import X from '@lucide/svelte/icons/x';
 
@@ -239,6 +241,7 @@ export type View =
 
 		<ul class="flex flex-col gap-0.5" aria-label={t('nav.views')}>
 			{@render navRow('search', Search, t('nav.search'))}
+			{@render navRow('overview', Gauge, t('nav.overview'), workspace.attentionCount)}
 			{@render navRow('inbox', Inbox, t('nav.inbox'), workspace.inboxCount)}
 			{@render navRow('today', CalendarCheck, t('nav.today'), workspace.todayCount)}
 			{@render navRow('upcoming', CalendarClock, t('nav.upcoming'))}
