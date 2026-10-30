@@ -313,3 +313,9 @@ Entscheidungen: `docs/adr/0012-projektzustand-je-konto.md`. Vertrag: `contracts/
 - Migrationen (additiv, vor Betrieb `App migrate --yes`): `AddProjectDetails` (zwei `ALTER` auf `projects`, vor `CreateSyncSchema`), `CreateProjectState` (`project_user_state`, `project_comments`, `project_comment_idempotency`, `project_activity_events`, am Ende).
 - Geprüft: `ProjectStateTests` (10 Tests, davon ein MariaDB-Zweireplikat-Test mit gleichzeitigen Reorders/Favoriten und gleichem Idempotency-Key). Gesamtsuite SQLite: 130 Tests, 19 übersprungen, 0 Fehler. MariaDB (`TODO_TEST_DB=todo_test_gaps`, S3Mock, `--no-parallel`): 130 Tests, 1 übersprungen, 0 Fehler. Vertrag: YAML geparst, `ContractTests` grün. Nicht geprüft: Linux-Build lokal (CI), Clients.
 - Offen: PWA/Apple anbinden und `localStorage`-Provisorien (Favoriten, Beschreibungen, Anzeige) mit einmaligem Import ablösen; Projektkommentare/-aktivität nicht im Sync-Feed und MCP; Reorder ist O(Geschwister) unter globaler Sperre.
+
+## Checkpoint 30.10.2026 (Swarm-Setup-Skript)
+
+- `deploy/swarm/setup.sh` (Wizard: Vorprüfung, Domain/RP, AASA, DB/S3 extern, Secrets, Deploy, Rollout- und Health-Prüfung; Optionen `--dry-run`, `--reconfigure`, `--non-interactive`, `--answers-file`), gemeinsame `deploy/swarm/lib.sh` mit `update.sh`. Doku: docs/BETRIEB.md „Erstinstallation mit setup.sh“.
+- Verifiziert: shellcheck sauber; Trockenläufe; echter Single-Node-Swarm auf Colima (zwei Läufe, idempotent, Rollout 2/2, Health und AASA 200 aus dem Replikat), danach vollständig aufgeräumt.
+- Nicht verifiziert: Health über echte öffentliche Domain/Ingress, echte S3-Schlüssel, `--swarm-init`, interaktive Secret-Eingabe, verkürzte Wartezeiten auf einem Swarm.
