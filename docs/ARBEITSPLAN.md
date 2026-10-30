@@ -79,3 +79,8 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 - [x] PWA in Todoist-Struktur (Seitenleiste, Quick-Add, Projektseite, Board mit Projektspalten) – Details und Prüfstand in STATUS.
 - [ ] Backend: Favoriten, Projektbeschreibung, Projektfarbe, Projektreihenfolge; danach localStorage-Provisorien entfernen.
 - [ ] Apple: Board-Anbindung an `GET /v1/projects/{id}/board`.
+
+## Checkpoint 30.10.2026 (Backend-Lücken PWA/Apple)
+- [x] Projektbeschreibung/-farbe, Favoriten und Anzeigeeinstellungen je Konto, Projektreihenfolge je Konto (ADR 0012), Projektkommentare, Aktivitätsfeed, Runner-Geräte-/Auftragslisten, Spalten-Sync-Mutationen und MCP-Spaltenwerkzeuge; SQLite + MariaDB grün (siehe STATUS).
+- [ ] PWA: `localStorage`-Provisorien auf die neuen Endpunkte umstellen (Favoriten, Beschreibung, Anzeige, Sortierung per Drag-and-drop, Projektkommentare, Aktivität, Geräte-/Auftragsliste); Apple: dieselben Verträge und Board anbinden.
+- [ ] Optional: Projektkommentare/-aktivität in Sync-Feed und MCP.

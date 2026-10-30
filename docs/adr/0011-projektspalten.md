@@ -35,7 +35,7 @@ Todoist begrenzt die Zahl der Projekte. Der Nutzer hat deshalb ein Projekt als B
 ## Grenzen / Folgearbeit
 
 - Apple-Anbindung offen. PWA-Board umgesetzt (siehe STATUS „PWA-Umstrukturierung und Board“).
-- Sync-Mutationen für Spalten; Spalten-Aktivität im Aufgabenverlauf (aktuell nur die vorhandenen Statusereignisse).
+- Sync-Mutationen für Spalten und MCP-Schreibwerkzeuge sind seit 30.10.2026 umgesetzt (ADR 0012, `column.*`/`task.move_column`, `create_column`/`rename_column`/`delete_column`). Offen: Spalten-Aktivität im Aufgabenverlauf (aktuell nur die vorhandenen Statusereignisse).
 - Spaltenwechsel schreibt keine eigene Aktivität (nur Statuswechsel und Projektwechsel wie bisher).
 - Das alte `GET /v1/planning/board` (Status-Spalten, `task_planning.position`) und `PUT /v1/planning/board/reorder` bleiben unverändert für Statusboards bestehen; Boards mit eigenen Spalten nutzen `GET /v1/projects/{id}/board`.
 - `GET /v1/projects/{id}/board` ist unpaginiert (wie die Aufgabenliste).
