@@ -143,3 +143,15 @@ Nicht Teil des Skripts: TLS, Reverse Proxy und DNS sind extern. Der Proxy muss a
 ## Nachtrag 30.10.2026: Anhänge in der Datenbank (ADR 0013)
 
 S3 ist nicht mehr Pflicht. Stack, `stack.env.example`, `setup.sh` (S3-Fragen nur bei `ATTACHMENT_STORAGE=s3`), `compose.yaml` (`s3` nur im Profil `s3`, Backend ohne `depends_on: s3`) und `scripts/swarm-smoke.sh` (keine S3-Secrets) sind angepasst. **Rollout-Hinweis:** Die Migration `AddAttachmentBlobStorage` ist additiv (Spalte `attachments.storage` mit Default `s3` für Bestandszeilen, neue Tabelle `attachment_blobs`) und läuft wie üblich über den Migrationsdienst. Bestehende Installationen mit S3 setzen `ATTACHMENT_STORAGE=s3` (bzw. behalten die S3-Variablen in der Env-Datei; `swarm-deploy.sh` ergänzt das Overlay), damit neue Uploads dort bleiben, oder migrieren mit `attachments migrate-storage --from s3 --to database`. Ohne diese Einstellung gehen neue Uploads in die Datenbank, alte Anhänge bleiben über ihre Zeilenmarke in S3 lesbar, solange S3 konfiguriert ist.
+
+## Installation ohne Quellcode (deploy-Branch)
+
+Für den Server genügt ein Klon des Branches `deploy`. Er enthält nur die Betriebsdateien (`deploy/swarm/*` mit `setup.sh`, `update.sh`, `lib.sh`, `healthcheck.sh`, `stack.yaml`, `stack.s3.yaml`, `stack.env.example`; `scripts/swarm-deploy.sh`, `backup-db.sh`, `restore-db.sh`, `db-common.sh`; diese Datei; `.gitignore`, ein kurzes `README.md`). Das Backend-Image kommt von GHCR, es wird nichts gebaut.
+
+```sh
+git clone --branch deploy --depth 1 https://github.com/MagicalWig34653/todo.git
+cd todo && deploy/swarm/setup.sh --dry-run     # dann ohne --dry-run
+# später: git pull --ff-only && deploy/swarm/update.sh
+```
+
+Der Branch wird nicht von Hand gepflegt: Der Workflow `.github/workflows/deploy-branch.yml` schreibt ihn bei jedem Push auf `main`, der diese Dateien ändert (Pfadfilter im Workflow), mit einem Commit je Sync linear fort (Autor `github-actions[bot]`, kein Force-Push). Quelle der README und der `.gitignore` des Branches ist `deploy/branch/`. Wer eine neue Datei in den Betrieb aufnimmt (z. B. ein weiteres Skript, das `setup.sh` aufruft), muss sie in der Dateiliste und im Pfadfilter des Workflows ergänzen. Verweise in dieser Datei auf andere Dokumente (z. B. `docs/ARCHITEKTUR.md`) zeigen im Branch ins Leere, sie liegen nur auf `main`.

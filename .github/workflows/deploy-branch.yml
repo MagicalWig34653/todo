@@ -1,0 +1,66 @@
+name: Deploy branch
+
+# Keeps the source-free `deploy` branch (operations files only) in sync with main.
+# History is appended linearly, one commit per sync, never force-pushed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/swarm/**'
+      - 'deploy/branch/**'
+      - 'scripts/swarm-deploy.sh'
+      - 'scripts/backup-db.sh'
+      - 'scripts/restore-db.sh'
+      - 'scripts/db-common.sh'
+      - 'docs/BETRIEB.md'
+      - 'LICENSE'
+      - '.github/workflows/deploy-branch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-branch
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: main
+      - name: Sync files into the deploy branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SRC_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$url" deploy >/dev/null 2>&1; then
+            git clone --quiet --branch deploy "$url" deploy
+          else
+            git init --quiet -b deploy deploy
+            git -C deploy remote add origin "$url"
+          fi
+          # Replace the tree completely so removed files disappear too.
+          find deploy -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cd main
+          files="deploy/swarm/setup.sh deploy/swarm/update.sh deploy/swarm/lib.sh deploy/swarm/healthcheck.sh
+                 deploy/swarm/stack.yaml deploy/swarm/stack.s3.yaml deploy/swarm/stack.env.example
+                 scripts/swarm-deploy.sh scripts/backup-db.sh scripts/restore-db.sh scripts/db-common.sh
+                 docs/BETRIEB.md"
+          [ ! -f LICENSE ] || files="$files LICENSE"
+          for f in $files; do
+            mkdir -p "../deploy/$(dirname "$f")"
+            cp -p "$f" "../deploy/$f"
+          done
+          cp deploy/branch/README.md ../deploy/README.md
+          cp deploy/branch/gitignore ../deploy/.gitignore
+          cd ../deploy
+          git add -A
+          if git diff --cached --quiet; then echo "deploy branch already up to date"; exit 0; fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet -m "Sync deploy files from main@${SRC_SHA:0:7}"
+          git push origin HEAD:deploy
