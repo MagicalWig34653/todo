@@ -1,0 +1,16 @@
+.git
+.build
+.swiftpm
+.claude
+.code-review-graph
+.env
+.env.*
+**/node_modules
+web/build
+web/.svelte-kit
+web/test-results
+web/screenshots
+docs
+docs-site
+design
+deploy

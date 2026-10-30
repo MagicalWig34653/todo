@@ -51,4 +51,6 @@ public func routes(_ app: Application) throws {
             throw Abort(.serviceUnavailable, reason: "database unavailable")
         }
     }
+    // Last: the PWA only answers what no real route handled (see WebRootMiddleware).
+    app.registerWebRoot()
 }

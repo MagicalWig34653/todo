@@ -31,7 +31,8 @@ sw.addEventListener('fetch', (event) => {
 	if (request.method !== 'GET') return;
 	const url = new URL(request.url);
 	if (url.origin !== location.origin) return;
-	if (url.pathname.startsWith('/v1') || url.pathname.startsWith('/health')) return;
+	// Backend-owned paths (API, OAuth, MCP, well-known, health) are served by the backend, never by the shell cache.
+	if (['/v1', '/health', '/oauth', '/mcp', '/.well-known', '/apple-app-site-association'].some((p) => url.pathname.startsWith(p))) return;
 
 	if (request.mode === 'navigate') {
 		// SPA: network first, fall back to the cached shell when offline.

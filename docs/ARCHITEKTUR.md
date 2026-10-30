@@ -18,7 +18,7 @@ Mac-Runner → lokaler Projektordner → Claude-Code-Prozess
 
 Arbeitsannahme: Swift/Vapor/Fluent, MariaDB und ein modularer Monolith. Module beispielsweise Identität, Projekte, Aufgaben, Zusammenarbeit, Anhänge, Agentenaufträge, Benachrichtigungen und MCP. HTTP-Routen und MCP-Tools rufen dieselben Anwendungsdienste auf.
 
-Svelte/SvelteKit mit shadcn-svelte als PWA. Statische Auslieferung ist die Ausgangsannahme; Hosting und Routing explizit prüfen. SwiftUI-Clients teilen einen API-/Sync-Kern, erhalten aber angepasste Oberflächen. Native DTOs können gemeinsam nutzbar sein; Datenbankmodelle und Backend-Abhängigkeiten gehören nicht in den App-Kern.
+Svelte/SvelteKit mit shadcn-svelte als PWA. Statische Auslieferung: Das Backend-Image enthält den PWA-Build und liefert ihn same-origin aus (ADR 0015); API-Pfade haben Vorrang, SPA-Fallback nur für HTML-Navigation. SwiftUI-Clients teilen einen API-/Sync-Kern, erhalten aber angepasste Oberflächen. Native DTOs können gemeinsam nutzbar sein; Datenbankmodelle und Backend-Abhängigkeiten gehören nicht in den App-Kern.
 
 ## Datenmodell als Ausgangspunkt
 

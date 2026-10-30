@@ -8,8 +8,9 @@ const port = process.env.E2E_PORT ?? '25173';
 export default defineConfig({
 	testDir: 'e2e',
 	workers: 1,
-	use: { baseURL: `http://localhost:${port}`, browserName: 'chromium' },
-	webServer: {
+	use: { baseURL: process.env.E2E_BASE_URL ?? `http://localhost:${port}`, browserName: 'chromium' },
+	// E2E_BASE_URL: test an already running backend image that serves the PWA itself (no Vite).
+	webServer: process.env.E2E_BASE_URL ? undefined : {
 		command: `npm run dev -- --port ${port} --strictPort --host localhost`,
 		url: `http://localhost:${port}`,
 		reuseExistingServer: true

@@ -18,6 +18,8 @@ public struct AppSettings: Sendable {
     public var attachmentStorage: AttachmentStorageKind
     /// Upper bound for one attachment (bytes). Also bounds the PUT request body.
     public var attachmentMaxBytes: Int
+    /// Directory with the built PWA, served same-origin next to the API. nil or missing directory: API only.
+    public var webRoot: String?
 
     public init(
         relyingPartyID: String = "localhost",
@@ -30,8 +32,10 @@ public struct AppSettings: Sendable {
         secureCookies: Bool = false,
         appleAppIDs: [String] = [],
         attachmentStorage: AttachmentStorageKind = .database,
-        attachmentMaxBytes: Int = AttachmentLimits.defaultMaxBytes
+        attachmentMaxBytes: Int = AttachmentLimits.defaultMaxBytes,
+        webRoot: String? = nil
     ) {
+        self.webRoot = webRoot
         self.relyingPartyID = relyingPartyID
         self.relyingPartyName = relyingPartyName
         self.relyingPartyOrigin = relyingPartyOrigin
@@ -70,6 +74,8 @@ public struct AppSettings: Sendable {
             }
             s.attachmentMaxBytes = bytes
         }
+        // Default /srv/web is where the container image ships the PWA; absent directory means API only.
+        s.webRoot = try RuntimeEnvironment.value("WEB_ROOT", get: get) ?? "/srv/web"
         return s
     }
 }

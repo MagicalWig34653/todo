@@ -95,3 +95,6 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 - [x] PWA: Seite "Überblick" (30.10.2026): Kanban/Liste, Konto- und Projektscope, Fragen/Reviews direkt entscheiden, Updates, offene Fragen, Briefing-Editor, Standard-Spalten, Build-Vorschau (Details STATUS). Offen: Galerie über alle Builds (`builds[]` der Antwort ungenutzt), Konsole für Features/Unteraufgaben-Anlage in der PWA.
 - [ ] Apple: dieselben Ansichten (Vertrag `contracts/command-center.yaml`). Consent-Oberfläche für Scope `attachments:write`.
 - [ ] Optional: Sync-Feed/Push für Fragen und Reviews; SQL-Voraggregation.
+
+## Checkpoint 30.10.2026 (PWA im Image)
+- [x] PWA im Backend-Image ausgeliefert (ADR 0015), Tests und E2E gegen das Image grün. Offen: Rollout auf dem Server per `update.sh`.
