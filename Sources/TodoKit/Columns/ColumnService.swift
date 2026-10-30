@@ -159,7 +159,7 @@ struct ColumnService: Sendable {
         try await renumber(remaining)
     }
 
-    /// Creates the default status columns or copies another project's columns into a project that has none.
+    /// Creates the default status columns, the "agent_workflow" columns or copies another project's columns into a project that has none.
     func applyTemplate(_ projectID: UUID, source: String) async throws -> [ProjectColumn] {
         try await lockSharingGraph(on: db)
         _ = try await access.project(projectID, role: .edit)
@@ -173,6 +173,25 @@ struct ColumnService: Sendable {
             // Existing tasks keep their status and land in the matching column.
             for task in try await TodoTask.query(on: db).filter(\.$projectID == projectID).sort(\.$createdAt).sort(\.$id).all() {
                 let target = task.status == "done" ? created[2] : task.status == "open" ? created[0] : created[1]
+                task.columnID = try target.requireID()
+                task.boardPosition = try await tasks(in: projectID, column: target.requireID()).count
+                try await task.save(on: db)
+            }
+        } else if source == "agent_workflow" {
+            // Standard agent workflow board (ADR 0014): Backlog, Bereit, In Arbeit, Frage offen, Review, Erledigt.
+            for (i, s) in ColumnRole.template.enumerated() {
+                let c = ProjectColumn(projectID: projectID, name: s.name, color: nil, isDone: s.role == .done, position: i)
+                try await c.save(on: db); created.append(c)
+            }
+            func column(_ role: ColumnRole) -> ProjectColumn { created[ColumnRole.template.firstIndex { $0.role == role }!] }
+            for task in try await TodoTask.query(on: db).filter(\.$projectID == projectID).sort(\.$createdAt).sort(\.$id).all() {
+                let target: ProjectColumn
+                switch task.status {
+                case "done": target = column(.done)
+                case "in_progress": target = column(.working)
+                case "in_review": target = column(.review)
+                default: target = column(.ready)
+                }
                 task.columnID = try target.requireID()
                 task.boardPosition = try await tasks(in: projectID, column: target.requireID()).count
                 try await task.save(on: db)

@@ -3,13 +3,16 @@ import Vapor
 
 struct MCPController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
-        routes.post("mcp", use: handle)
+        // 8 MiB: base64 screenshots of add_attachment (raw limit 5 MiB, ADR 0014).
+        routes.on(.POST, "mcp", body: .collect(maxSize: "8mb"), use: handle)
         routes.get("mcp") { req -> HTTPStatus in
             try Self.validateOrigin(req)
             return .methodNotAllowed
         }
     }
     static let versions = ["2025-03-26", "2025-06-18", "2025-11-25"]
+    /// Returned in the `initialize` result (MCP `instructions`).
+    static let instructions = "Todo project management for agents. FIRST call the tool get_manual (or read the resource todo://manual) and follow it: it explains the board workflow, conventions and every tool. Then call get_project_structure for the project you work in and obey its agent brief. Communicate with the user only through the board: post_progress, ask_question, add_attachment, request_review."
     static func validateOrigin(_ req: Request) throws {
         if let origin = req.headers.first(name: .origin),
            origin != req.application.settings.relyingPartyOrigin && origin != OAuthController.issuer { throw Abort(.forbidden) }
@@ -41,16 +44,26 @@ struct MCPController: RouteCollection {
         case "initialize":
             let requested = body["params"]["protocolVersion"].string ?? ""
             result = .object(["protocolVersion": .string(Self.versions.contains(requested) ? requested : "2025-11-25"),
-                "capabilities": .object(["tools": .object(["listChanged": .bool(false)])]),
-                "serverInfo": .object(["name": .string("Todo"), "version": .string("1.0")])])
+                "capabilities": .object(["tools": .object(["listChanged": .bool(false)]),
+                    "resources": .object(["listChanged": .bool(false), "subscribe": .bool(false)])]),
+                "serverInfo": .object(["name": .string("Todo"), "version": .string("1.1")]),
+                "instructions": .string(Self.instructions)])
         case "ping": result = .object([:])
-        case "tools/list": result = .object(["tools": .array(Self.tools.filter { grant.scopes.contains($0.scope) }.map(\.definition))])
+        case "tools/list": result = .object(["tools": .array(Self.tools.filter { $0.scope.isEmpty || grant.scopes.contains($0.scope) }.map(\.definition))])
+        case "resources/list": result = .object(["resources": Self.resources])
+        case "resources/templates/list": result = .object(["resourceTemplates": Self.resourceTemplates])
+        case "resources/read":
+            guard let uri = body["params"]["uri"].string else { return try await rpcError(id: id, code: -32602, message: "Missing uri").encodeResponse(for: req) }
+            do { result = try await readResource(uri: uri, user: user, grant: grant, db: req.db) }
+            catch let error as any AbortError {
+                return try await rpcError(id: id, code: error.status == .notFound ? -32002 : -32603, message: error.status == .notFound ? "Resource not found" : error.reason).encodeResponse(for: req)
+            }
         case "tools/call":
             guard let name = body["params"]["name"].string, let tool = Self.tools.first(where: { $0.name == name }) else {
                 return try await rpcError(id: id, code: -32602, message: "Unknown tool").encodeResponse(for: req)
             }
             do {
-                guard grant.scopes.contains(tool.scope) else { throw Abort(.forbidden, reason: "insufficient_scope") }
+                guard tool.scope.isEmpty || grant.scopes.contains(tool.scope) else { throw Abort(.forbidden, reason: "insufficient_scope") }
                 let value = try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db)
                 let text = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(false)])
@@ -66,28 +79,16 @@ struct MCPController: RouteCollection {
         .object(["jsonrpc": .string("2.0"), "id": id, "error": .object(["code": .number(code), "message": .string(message)])])
     }
     struct Tool {
-        let name: String; let scope: String; let properties: [String: JSONValue]; let required: [String]
-        var definition: JSONValue { .object(["name": .string(name), "description": .string(name.replacingOccurrences(of: "_", with: " ")),
+        let name: String; let scope: String; let description: String
+        let properties: [String: JSONValue]; let required: [String]
+        init(name: String, scope: String, description: String, properties: [String: JSONValue] = [:], required: [String] = []) {
+            self.name = name; self.scope = scope; self.description = description; self.properties = properties; self.required = required
+        }
+        var definition: JSONValue { .object(["name": .string(name), "description": .string(description),
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
-    static let string: JSONValue = .object(["type": .string("string")])
-    static let tools: [Tool] = [
-        Tool(name: "list_projects", scope: "projects:read", properties: [:], required: []),
-        Tool(name: "list_tasks", scope: "tasks:read", properties: ["projectID": string], required: ["projectID"]),
-        Tool(name: "get_task", scope: "tasks:read", properties: ["id": string], required: ["id"]),
-        Tool(name: "create_task", scope: "tasks:write", properties: ["projectID": string, "title": string, "description": string], required: ["projectID", "title"]),
-        Tool(name: "update_task", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "title": string, "description": string, "status": string, "projectID": string], required: ["id", "version"]),
-        Tool(name: "list_comments", scope: "tasks:read", properties: ["taskID": string], required: ["taskID"]),
-        Tool(name: "add_comment", scope: "comments:write", properties: ["taskID": string, "body": string, "idempotencyKey": string], required: ["taskID", "body"]),
-        Tool(name: "get_progress", scope: "agents:read", properties: ["taskID": string], required: ["taskID"]),
-        Tool(name: "list_attachments", scope: "attachments:read", properties: ["taskID": string], required: ["taskID"]),
-        Tool(name: "get_attachment", scope: "attachments:read", properties: ["id": string], required: ["id"]),
-        Tool(name: "list_columns", scope: "projects:read", properties: ["projectID": string], required: ["projectID"]),
-        Tool(name: "move_task_to_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "columnID": .object(["type": .array([.string("string"), .string("null")])]), "index": .object(["type": .string("integer")])], required: ["id", "version", "columnID"]),
-        Tool(name: "create_column", scope: "tasks:write", properties: ["projectID": string, "name": string, "color": string, "isDone": .object(["type": .string("boolean")]), "index": .object(["type": .string("integer")])], required: ["projectID", "name"]),
-        Tool(name: "rename_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "name": string], required: ["id", "version", "name"]),
-        Tool(name: "delete_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "moveTo": string], required: ["id"])
-    ]
+    /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
+    static let tools: [Tool] = coreTools + workflowTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)
@@ -107,6 +108,7 @@ struct MCPController: RouteCollection {
         guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest, reason: "invalid_title") }; return value
     }
     func call(_ name: String, arguments a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
+        let a: JSONValue = a.isNull ? .object([:]) : a
         guard case .object(let args) = a, let tool = Self.tools.first(where: { $0.name == name }),
               Set(args.keys).isSubset(of: Set(tool.properties.keys)), tool.required.allSatisfy({ args[$0] != nil }) else { throw Abort(.badRequest, reason: "invalid_arguments") }
         switch name {
@@ -260,7 +262,7 @@ struct MCPController: RouteCollection {
                 try await ColumnService(user: user, db: db).delete(id, moveTo: target, expectedVersion: version)
             }
             return .object(["deleted": .bool(true)])
-        default: throw Abort(.badRequest)
+        default: return try await callWorkflow(name, a, user: user, grant: grant, db: db)
         }
     }
 

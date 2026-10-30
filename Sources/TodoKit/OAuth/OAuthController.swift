@@ -3,7 +3,7 @@ import Fluent
 import Vapor
 
 struct OAuthController: RouteCollection {
-    static let scopes = ["projects:read", "tasks:read", "tasks:write", "comments:write", "attachments:read", "agents:read"]
+    static let scopes = ["projects:read", "tasks:read", "tasks:write", "comments:write", "attachments:read", "attachments:write", "agents:read"]
     // Never derive the issuer from an untrusted Host or forwarded header.
     static var issuer: String { Environment.get("OAUTH_ISSUER") ?? "http://localhost:28080" }
     static var resource: String { issuer + "/mcp" }

@@ -137,6 +137,7 @@ struct AgentService {
                 if body.observation == "stopped" {
                     run.endedAt = Date()
                     if job.state != "cancelled" { job.state = "failed" }
+                    try await WorkflowMirror.runnerWithdrawn(jobID: job.requireID(), on: db)
                 } else {
                     guard job.state != "cancelled" else { throw Abort(.gone, reason: "stop_local_process") }
                     if body.observation == "paused" {
@@ -172,7 +173,9 @@ struct AgentService {
                     let options = body.options ?? []
                     guard options.count <= 20 else { throw Abort(.badRequest) }
                     for option in options { _ = try text(option, max: 500) }
-                    try await AgentQuestion(jobID: job.requireID(), taskID: job.taskID, prompt: text(prompt), options: options).save(on: db)
+                    let asked = try AgentQuestion(jobID: job.requireID(), taskID: job.taskID, prompt: text(prompt), options: options)
+                    try await asked.save(on: db)
+                    try await WorkflowMirror.runnerAsked(asked, runID: runID, on: db)
                     job.state = "waiting_for_answer"
                 case "resume":
                     guard job.state == "waiting_for_answer" else { throw Abort(.conflict) }
@@ -189,11 +192,13 @@ struct AgentService {
                     guard result.references.count + result.checks.count + result.limitations.count <= 100 else { throw Abort(.badRequest) }
                     for value in result.references + result.checks + result.limitations { _ = try text(value) }
                     job.result = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+                    try await WorkflowMirror.runnerSubmitted(job: job, runID: runID, summary: result.summary, on: db)
                     job.state = "awaiting_review"
                     run.endedAt = Date()
                 case "stop", "fail":
                     job.state = action == "stop" ? "cancelled" : "failed"
                     run.endedAt = Date()
+                    try await WorkflowMirror.runnerWithdrawn(jobID: job.requireID(), on: db)
                 default: throw Abort(.notFound)
                 }
             }
@@ -274,6 +279,7 @@ extension AgentService {
             if decision == "stop" {
                 guard ["queued", "claimed", "running", "waiting_for_answer"].contains(job.state) else { throw Abort(.conflict) }
                 job.state = "cancelled"
+                try await WorkflowMirror.runnerWithdrawn(jobID: jobID, on: db)
                 // Keep the slot occupied until local termination is confirmed by reconciliation.
                 for run in try await AgentRun.query(on: db).filter(\.$jobID == jobID).filter(\.$endedAt == nil).all() {
                     run.generation += 1; run.leaseUntil = Date()
@@ -282,6 +288,7 @@ extension AgentService {
             } else {
                 guard job.state == "awaiting_review" else { throw Abort(.conflict) }
                 job.state = decision == "accept" ? "succeeded" : "failed"
+                try await WorkflowMirror.runnerDecided(job: job, accepted: decision == "accept", user: user, on: db)
             }
             try await job.save(on: db)
             try await AgentService.event(job, kind: decision, detail: try user.requireID().uuidString, on: db)
@@ -303,6 +310,7 @@ extension AgentService {
                 guard job.state == "waiting_for_answer" else { throw Abort(.conflict) }
                 if !question.options.isEmpty, !question.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
                 try await AgentAnswer(questionID: questionID, authorID: user.requireID(), value: AgentService.text(value)).save(on: db)
+                try await WorkflowMirror.runnerAnswered(agentQuestionID: questionID, value: value, userID: user.requireID(), on: db)
                 try await AgentService.event(job, kind: "answered", detail: questionID.uuidString, on: db)
                 try await appendLockedActivity(taskID: job.taskID, actorType: .person, actorID: user.requireID(), kind: "agent.answered", subjectID: questionID, on: db)
             }

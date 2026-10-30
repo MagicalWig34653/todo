@@ -26,6 +26,11 @@ indirect enum JSONValue: Content, Equatable {
     var isNull: Bool { if case .null = self { return true }; return false }
     var string: String? { if case .string(let s) = self { return s }; return nil }
     static func strings(_ values: [String]) -> JSONValue { .array(values.map(Self.string)) }
-    static func encoded<T: Encodable>(_ value: T) throws -> JSONValue { try JSONDecoder().decode(Self.self, from: JSONEncoder().encode(value)) }
+    /// Dates are encoded as ISO 8601 strings, like every REST response.
+    static func encoded<T: Encodable>(_ value: T) throws -> JSONValue {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try JSONDecoder().decode(Self.self, from: encoder.encode(value))
+    }
     func decode<T: Decodable>(_ type: T.Type) throws -> T { try JSONDecoder().decode(type, from: JSONEncoder().encode(self)) }
 }

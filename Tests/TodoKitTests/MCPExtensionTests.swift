@@ -34,7 +34,8 @@ final class MCPExtensionTests: XCTestCase {
             let all = try await names("projects:read tasks:read tasks:write comments:write attachments:read agents:read")
             XCTAssertTrue(Set(["list_comments", "add_comment", "get_progress", "list_attachments", "get_attachment"]).isSubset(of: all))
             let readOnly = try await names("tasks:read")
-            XCTAssertEqual(readOnly, Set(["list_tasks", "get_task", "list_comments"]))
+            XCTAssertEqual(readOnly, Set(MCPController.tools.filter { $0.scope.isEmpty || $0.scope == "tasks:read" }.map(\.name)))
+            XCTAssertTrue(Set(["list_tasks", "get_task", "list_comments", "get_manual", "get_task_context"]).isSubset(of: readOnly))
         } catch { await f.test.shutdown(); throw error }
         await f.test.shutdown()
     }
