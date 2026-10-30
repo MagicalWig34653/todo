@@ -368,3 +368,10 @@ Ziel: `https://todo.linolaske.de/` lieferte nur JSON-404, weil das Image die PWA
 - Geprüft: `WebRootTests` (8) + AASA/Settings/Health SQLite grün; `npm run check` 0 Fehler, vitest 100; Image gebaut (508 MB), im Container `/` und `/inbox` 200 text/html, `/v1/nope` JSON-404, Traversal 400, `/_app/version.json` 200; Playwright-E2E (neu: `E2E_BASE_URL` in `web/playwright.config.ts` überspringt Vite) 19/19 gegen das Image (SQLite im Container, Port 28955). Ein früherer Lauf hatte einmal einen Fehler im Test "project comments panel" (Zeitverhalten, im Wiederholungslauf grün). Image/Container danach entfernt.
 - Nicht geprüft: MariaDB im Image-Lauf, Reverse Proxy/TLS auf dem echten Server, Docker-publish-Dauer in CI, Safari/Firefox, Service-Worker-Update im Browser.
 - Nächster Schritt: nach Docker-publish `deploy/swarm/update.sh` auf dem Server ausführen; `curl -sI https://todo.linolaske.de/` prüfen.
+
+## Checkpoint 30.10.2026 (Multi-Arch-Image)
+- Workflow `docker-publish.yml` auf amd64 + arm64 umgestellt (native Runner, Digest-Push, Merge-Job; neue Actions per SHA gepinnt: upload-artifact v4.6.2, download-artifact v4.3.0). Lauf auf `main` grün (ca. 11 min), Tag `sha-8cf77e5`; `edge` und `sha-8cf77e5` haben denselben Index-Digest mit beiden Plattformen. `update.sh --dry-run` findet den sha-Tag (lib.sh unverändert).
+- Lokal geprüft: arm64-Image startet auf Colima, `--help` und `/health/live` ok.
+- Nicht geprüft: echter Pull/Rollout auf dem gemischten Swarm, amd64-Image gestartet, Lauf mit `v*`-Tag (semver/latest), MariaDB im arm64-Container.
+- Nächster Schritt: `deploy/swarm/update.sh` auf dem Server ausführen.
+

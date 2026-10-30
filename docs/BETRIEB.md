@@ -159,3 +159,7 @@ cd todo && deploy/swarm/setup.sh --dry-run     # dann ohne --dry-run
 ```
 
 Der Branch wird nicht von Hand gepflegt: Der Workflow `.github/workflows/deploy-branch.yml` schreibt ihn bei jedem Push auf `main`, der diese Dateien ändert (Pfadfilter im Workflow), mit einem Commit je Sync linear fort (Autor `github-actions[bot]`, kein Force-Push). Quelle der README und der `.gitignore` des Branches ist `deploy/branch/`. Wer eine neue Datei in den Betrieb aufnimmt (z. B. ein weiteres Skript, das `setup.sh` aufruft), muss sie in der Dateiliste und im Pfadfilter des Workflows ergänzen. Verweise in dieser Datei auf andere Dokumente (z. B. `docs/ARCHITEKTUR.md`) zeigen im Branch ins Leere, sie liegen nur auf `main`.
+
+## Image: Multi-Arch (30.10.2026)
+Das Backend-Image wird für `linux/amd64` und `linux/arm64` gebaut (Fehler vorher auf arm64-Nodes: `no matching manifest for linux/arm64/v8`). `.github/workflows/docker-publish.yml`: Matrix-Jobs auf `ubuntu-24.04` und `ubuntu-24.04-arm` (nativ, kein QEMU), je Plattform Push per Digest (`push-by-digest`, GHA-Cache mit Scope je Plattform, Provenance/SBOM aus), danach ein Merge-Job mit `docker buildx imagetools create` für `edge`, `sha-<commit>`, `<version>`, `<major>.<minor>`. Alle Tags zeigen auf denselben Index-Digest; `deploy/swarm/lib.sh` (Label-Suche über Index, Plattform-Manifest, Config-Blob) funktionierte unverändert. Gemischte Swarm-Cluster ziehen automatisch die passende Plattform. Dauer des Laufs: ca. 11 Minuten (beide Plattformen parallel).
+
