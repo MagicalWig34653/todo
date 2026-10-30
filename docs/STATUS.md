@@ -353,3 +353,8 @@ Ziel: Backend-API der Steuerzentrale in der PWA nutzbar machen. Stand: gebaut, g
 - Nicht geprüft: Safari/Firefox, echte Geräte, Briefing-Versionskonflikt im Browser (Logik vorhanden, nur Code), Rollen ohne `manage`/`edit` im Browser, Last mit vielen Karten, Runner-Fragen/-Reviews (Spiegel) im Browser, nachträgliches Aktualisieren bei Fokus (nur Code). Beobachtet: Der Test "activity page: infinite list" schlug in einem frischen Lauf einmalig fehl (Feed blieb bei 30 Einträgen) und war in drei weiteren Läufen sowie im Lauf ohne meine Änderungen grün; vermutlich zeitabhängig, Ursache offen.
 - Nächster Schritt: Screenshots in README/docs-site einbinden; Build-Galerie aus `builds[]`; Apple-Ansichten (`contracts/command-center.yaml`); Consent-Oberfläche für Scope `attachments:write`.
 
+
+## Volle MariaDB-Suite (30.10.2026)
+- `scripts/test-mariadb.sh` (eigene DB `todo_test_mdbfull`, ohne S3): 148 Tests, 2 übersprungen (S3/optional), erster Lauf 1 Fehler, danach behoben und einzeln 3x grün.
+- Fehler: `ColumnTests.testConcurrentMovesAndColumnCreationAcrossReplicas` war ein Testfehler (der Gewinner der 8 gleichzeitigen Moves konnte in Spalte c1 landen, dann hatte c2 10 statt 11 Tasks); alle Moves zielen jetzt auf c2.
+- Echter Bug: `GET /v1/questions` und `/v1/reviews` (und `force` bei Release) lasen `req.query[Bool.self, at:] ?? default`; Vapor liefert dafür bei fehlendem Parameter `false` statt nil, der Default `includeSubprojects=true` griff nie. Jetzt `boolQuery` (nil bei fehlend, 400 `invalid_<key>` bei ungültig). Test `testQuestionsAndReviewsIncludeSubprojectsByDefault`.

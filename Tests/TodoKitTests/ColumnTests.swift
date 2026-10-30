@@ -342,11 +342,12 @@ final class ColumnTests: XCTestCase {
         let tk = try await task(a, u.token, p, "T", column: c1["id"] as? String)
         let tid = tk["id"] as! String
 
-        // Same version, eight concurrent moves from both replicas: exactly one winner.
+        // Same version, eight concurrent moves from both replicas: exactly one winner. All target c2 so the winner is
+        // deterministic for the final count (a winner moving to c1 made the c2 count 10 instead of 11).
         let statuses = try await withThrowingTaskGroup(of: HTTPStatus.self) { group -> [HTTPStatus] in
             for i in 0..<8 {
                 let app = i % 2 == 0 ? a : b
-                let body = try JSONSerialization.data(withJSONObject: ["version": 1, "columnID": i % 2 == 0 ? c2["id"]! : c1["id"]!, "index": 0])
+                let body = try JSONSerialization.data(withJSONObject: ["version": 1, "columnID": c2["id"]!, "index": 0])
                 group.addTask { try await app.rawStatus(.PUT, "/v1/tasks/\(tid)/column", body: body, token: u.token) }
             }
             return try await group.reduce(into: []) { $0.append($1) }

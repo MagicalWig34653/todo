@@ -65,11 +65,19 @@ struct CommandCenterController: RouteCollection {
         try await service(req).putBrief(id(req), req.content.decode(AgentBriefRequest.self))
     }
 
+    /// Explicit `true`/`false` only; an absent parameter is nil (Vapor's `query[Bool.self, at:]` yields false for an
+    /// absent key, which silently turned the `?? true` defaults into false).
+    private func boolQuery(_ req: Request, _ key: String) throws -> Bool? {
+        guard let v = req.query[String.self, at: key] else { return nil }
+        guard v == "true" || v == "false" else { throw Abort(.badRequest, reason: "invalid_\(key)") }
+        return v == "true"
+    }
+
     @Sendable func listQuestions(_ req: Request) async throws -> [QuestionDTO] {
         let limit = req.query[Int.self, at: "limit"] ?? 100
         return try await service(req).questions(projectID: uuidQuery(req, "projectID"), taskID: uuidQuery(req, "taskID"),
             state: req.query[String.self, at: "state"] ?? "open",
-            includeSubprojects: req.query[Bool.self, at: "includeSubprojects"] ?? true, limit: limit)
+            includeSubprojects: try boolQuery(req, "includeSubprojects") ?? true, limit: limit)
     }
     @Sendable func getQuestion(_ req: Request) async throws -> QuestionDTO { try await service(req).question(id(req)) }
     @Sendable func answerQuestion(_ req: Request) async throws -> QuestionDTO {
@@ -77,7 +85,7 @@ struct CommandCenterController: RouteCollection {
     }
     @Sendable func listReviews(_ req: Request) async throws -> [ReviewDTO] {
         try await service(req).reviews(projectID: uuidQuery(req, "projectID"), state: req.query[String.self, at: "state"] ?? "pending",
-            includeSubprojects: req.query[Bool.self, at: "includeSubprojects"] ?? true, limit: req.query[Int.self, at: "limit"] ?? 100)
+            includeSubprojects: try boolQuery(req, "includeSubprojects") ?? true, limit: req.query[Int.self, at: "limit"] ?? 100)
     }
     @Sendable func context(_ req: Request) async throws -> TaskContextDTO { try await service(req).context(id(req)) }
     @Sendable func claim(_ req: Request) async throws -> TaskContextDTO {
@@ -85,7 +93,7 @@ struct CommandCenterController: RouteCollection {
         return try await service(req).claim(id(req), agentName: body?.agentName, takeOver: body?.takeOver ?? false, actor: actor(req))
     }
     @Sendable func release(_ req: Request) async throws -> TaskContextDTO {
-        try await service(req).release(id(req), force: req.query[Bool.self, at: "force"] ?? false, actor: actor(req))
+        try await service(req).release(id(req), force: try boolQuery(req, "force") ?? false, actor: actor(req))
     }
     @Sendable func listNotes(_ req: Request) async throws -> [ProgressNoteDTO] {
         let taskID = try id(req)

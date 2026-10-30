@@ -378,4 +378,28 @@ final class CommandCenterTests: XCTestCase {
         } catch { await f.test.shutdown(); throw error }
         await f.test.shutdown()
     }
+
+    func testQuestionsAndReviewsIncludeSubprojectsByDefault() async throws {
+        let f = try await AgentFixture.make()
+        defer { Task { await f.app.shutdown() } }
+        let sub = try await f.app.json(.POST, "/v1/projects", ["name": "Sub", "parentID": f.projectID], token: f.human)
+        let subID = try XCTUnwrap(sub.body?["id"] as? String)
+        let subTask = try await f.app.json(.POST, "/v1/tasks", ["projectID": subID, "title": "Sub task"], token: f.human)
+        let subTaskID = try XCTUnwrap(UUID(uuidString: try XCTUnwrap(subTask.body?["id"] as? String)))
+        let uid = try f.user.requireID()
+        let question = TaskQuestion()
+        question.taskID = subTaskID; question.askedByType = .person; question.askedByID = uid
+        question.prompt = "Sub?"; question.options = []; question.blocking = false; question.state = "open"; question.version = 1
+        try await question.save(on: f.app.app.db)
+        let review = TaskReview()
+        review.taskID = subTaskID; review.state = "pending"; review.requestedByType = .person; review.requestedByID = uid
+        review.summary = "Sub review"; review.version = 1
+        try await review.save(on: f.app.app.db)
+        for path in ["questions", "reviews"] {
+            let base = "/v1/\(path)?projectID=\(f.projectID)"
+            try await assertEqual((try await f.app.json(.GET, base, token: f.human)).list?.count, 1)
+            try await assertEqual((try await f.app.json(.GET, base + "&includeSubprojects=true", token: f.human)).list?.count, 1)
+            try await assertEqual((try await f.app.json(.GET, base + "&includeSubprojects=false", token: f.human)).list?.count, 0)
+        }
+    }
 }
