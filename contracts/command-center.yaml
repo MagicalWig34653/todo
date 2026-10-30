@@ -68,7 +68,7 @@ paths:
     get:
       operationId: listReviews
       summary: '?projectID&state=pending|accepted|changes_requested|withdrawn|all&limit'
-      responses: {'200': {description: ReviewDTO[]}}
+      responses: {'200': {description: 'ReviewDTO[]'}}
   /v1/tasks/{id}/context:
     get:
       operationId: getTaskContext
@@ -86,7 +86,7 @@ paths:
   /v1/tasks/{id}/progress-notes:
     get:
       operationId: listProgressNotes
-      responses: {'200': {description: ProgressNoteDTO[]}}
+      responses: {'200': {description: 'ProgressNoteDTO[]'}}
     post:
       operationId: postProgressNote
       summary: '{note, percent?}'
@@ -94,7 +94,7 @@ paths:
   /v1/tasks/{id}/questions:
     get:
       operationId: listTaskQuestions
-      responses: {'200': {description: QuestionDTO[]}}
+      responses: {'200': {description: 'QuestionDTO[]'}}
     post:
       operationId: askQuestion
       summary: '{prompt, options?, blocking?, agentName?, idempotencyKey?}'
