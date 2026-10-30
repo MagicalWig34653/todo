@@ -288,7 +288,7 @@ test('sidebar: favorites, counts, quick add shortcut, notifications', async () =
 	await nav('Eingang');
 	await expect(page.getByTestId('inbox-item').filter({ hasText: 'Per Kürzel angelegt' })).toBeVisible();
 
-	// Favorite (provisional, device-local) shows up in the Favoriten section.
+	// Favorite (stored on the server per account) shows up in the Favoriten section.
 	const item = page.getByTestId('project-item').filter({ hasText: 'Küche' }).first();
 	await item.hover();
 	await item.getByRole('button', { name: 'Projektmenü: Küche' }).click();
@@ -339,7 +339,10 @@ test('recurrence, reminders, dependencies, milestones and filter changes', async
 	await openProject('Küche');
 	await setView('Liste');
 	const task = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
+	// The form adopts the stored planning when it arrives; selecting before that would be overwritten.
+	const planningLoaded = page.waitForResponse((r) => r.url().includes('/v1/planning/tasks/') && r.request().method() === 'GET');
 	await task.getByRole('button', { name: 'Details' }).click();
+	await planningLoaded;
 	const detail = task.getByTestId('task-detail');
 
 	// A recurrence needs a date: refused before any request.
@@ -484,6 +487,324 @@ test('invited person: directory search, team invitation name, author and actor n
 	}
 });
 
+/** Drag a sidebar project row; `at` is the vertical position inside the target row (0 top, 1 bottom). */
+async function dragProject(source: Locator, target: Locator, at: number) {
+	const from = source.locator('> div').first();
+	const to = target.locator('> div').first();
+	await from.scrollIntoViewIfNeeded();
+	const a = (await from.boundingBox())!;
+	const b = (await to.boundingBox())!;
+	await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(a.x + a.width / 2 + 8, a.y + a.height / 2 + 8, { steps: 3 });
+	await page.mouse.move(b.x + b.width / 2, b.y + b.height * at, { steps: 12 });
+	await page.mouse.up();
+}
+const sidebarItem = (name: string) => page.getByTestId('project-item').filter({ has: page.getByRole('button', { name, exact: true }) }).last();
+const rootOrder = async () =>
+	page.evaluate(async () => {
+		const all = (await (await fetch('/v1/projects')).json()) as { name: string; parentID?: string; position?: number; createdAt: string; id: string }[];
+		return all
+			.filter((p) => !p.parentID)
+			.sort((x, y) => (x.position ?? 1e9) - (y.position ?? 1e9) || x.createdAt.localeCompare(y.createdAt))
+			.map((p) => p.name);
+	});
+const apiProjects = () =>
+	page.evaluate(async () => (await (await fetch('/v1/projects')).json()) as { id: string; name: string; parentID?: string; description?: string; color?: string; version: number; isFavorite?: boolean }[]);
+const projectID = async (name: string) => (await apiProjects()).find((p) => p.name === name)!.id;
+
+test('project state on the server: legacy import, favorites, description, colour, display options', async () => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	// Favourite set in an earlier test lives on the server and survives a reload without any local state.
+	await page.evaluate(() => localStorage.removeItem('todo.favorites'));
+	await page.reload();
+	await expect(page.getByTestId('favorites')).toContainText('Küche');
+	const favs = await page.evaluate(async () => (await (await fetch('/v1/me/favorites')).json()) as { items: { projectID: string }[] });
+	expect(favs.items).toHaveLength(1);
+
+	// One-time import of the former device-local values (the account has no favourites and no description yet).
+	await page.evaluate(async () => {
+		for (const f of (await (await fetch('/v1/me/favorites')).json()).items) await fetch(`/v1/me/favorites/${f.projectID}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+	});
+	const haushalt = await projectID('Haushalt');
+	const garten = await page.evaluate(async (parentID) => {
+		const r = await fetch('/v1/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Garten', parentID }) });
+		return ((await r.json()) as { id: string }).id;
+	}, haushalt);
+	await page.evaluate(
+		([h, g]) => {
+			localStorage.setItem('todo.favorites', JSON.stringify([h, 'not-a-project']));
+			localStorage.setItem('todo.projectDescriptions', JSON.stringify({ [g]: 'Beete, Hecke und Rasen' }));
+			localStorage.setItem('todo.projectDisplay', JSON.stringify({ [g]: { view: 'board', sort: 'title', grouping: 'none', showDone: false } }));
+		},
+		[haushalt, garten]
+	);
+	await page.reload();
+	await expect(page.getByTestId('favorites')).toContainText('Haushalt');
+	await expect.poll(() => page.evaluate(() => ['todo.favorites', 'todo.projectDescriptions', 'todo.projectDisplay'].map((k) => localStorage.getItem(k)))).toEqual([null, null, null]);
+	expect((await apiProjects()).find((p) => p.name === 'Garten')!.description).toBe('Beete, Hecke und Rasen');
+	const gp = await page.evaluate(async (id) => (await fetch(`/v1/me/project-prefs/${id}`)).json(), garten);
+	expect(gp).toMatchObject({ view: 'board', sort: 'title', grouping: 'none', showCompleted: false });
+	await openProject('Garten');
+	await expect(page.getByTestId('project-description')).toHaveValue('Beete, Hecke und Rasen');
+	await expect(page.getByTestId('board')).toBeVisible();
+
+	// Description: inline edit saves on blur through PATCH and survives a reload.
+	await openProject('Küche');
+	const desc = page.getByTestId('project-description');
+	await desc.fill('Alles rund um die Küche');
+	await desc.evaluate((e) => (e as HTMLTextAreaElement).blur());
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Küche')!.description).toBe('Alles rund um die Küche');
+	await page.reload();
+	await openProject('Küche');
+	await expect(page.getByTestId('project-description')).toHaveValue('Alles rund um die Küche');
+	await desc.fill('');
+	await desc.evaluate((e) => (e as HTMLTextAreaElement).blur());
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Küche')!.description ?? '').toBe('');
+	await desc.fill('Alles rund um die Küche');
+	await desc.evaluate((e) => (e as HTMLTextAreaElement).blur());
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Küche')!.description).toBe('Alles rund um die Küche');
+
+	// Colour picker replaces the ID-derived colour.
+	await page.getByTestId('project-more').click();
+	await page.getByTestId('project-color-open').click();
+	await page.getByRole('button', { name: 'Farbe Blau' }).click();
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Küche')!.color).toBe('#2470E0');
+	await expect(page.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().locator('span').first()).toHaveCSS('color', 'rgb(36, 112, 224)');
+	await page.getByTestId('project-more').click();
+	await page.getByTestId('project-color-open').click();
+	await page.getByTestId('color-auto').click();
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Küche')!.color ?? '').toBe('');
+
+	// Display options per project and account; a concurrent write from another device does not lose the change.
+	const kitchen = await projectID('Küche');
+	await setView('Board');
+	await expect(page.getByTestId('board')).toBeVisible();
+	await expect.poll(async () => (await page.evaluate(async (id) => (await fetch(`/v1/me/project-prefs/${id}`)).json(), kitchen)).view).toBe('board');
+	await page.reload();
+	await openProject('Küche');
+	await expect(page.getByTestId('board')).toBeVisible();
+	const before = await page.evaluate(async (id) => (await fetch(`/v1/me/project-prefs/${id}`)).json(), kitchen);
+	await page.evaluate(async ([id, rev]) => {
+		await fetch(`/v1/me/project-prefs/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: rev, sort: 'priority' }) });
+	}, [kitchen, before.revision] as const);
+	await setView('Liste'); // the page still holds the old revision -> conflict -> retry with the fresh one
+	await expect(page.getByTestId('notice')).toHaveCount(0);
+	await expect.poll(async () => page.evaluate(async (id) => (await fetch(`/v1/me/project-prefs/${id}`)).json(), kitchen)).toMatchObject({ view: 'list', sort: 'priority', revision: before.revision + 2 });
+	await page.getByTestId('display-menu').click();
+	await page.getByTestId('show-done').uncheck();
+	await page.keyboard.press('Escape');
+	await expect.poll(async () => (await page.evaluate(async (id) => (await fetch(`/v1/me/project-prefs/${id}`)).json(), kitchen)).showCompleted).toBe(false);
+	expect(await page.evaluate(() => localStorage.getItem('todo.projectDisplay'))).toBeNull();
+	await page.getByTestId('display-menu').click();
+	await page.getByTestId('show-done').check();
+	await page.keyboard.press('Escape');
+});
+
+test('sidebar order: drag and drop, move under a parent, menu alternatives, cycle error', async () => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	for (const name of ['Alpha', 'Beta', 'Gamma']) {
+		await page.getByTestId('add-project').click();
+		await page.getByLabel('Neues Projekt').fill(name);
+		await page.getByRole('button', { name: 'Projekt anlegen' }).click();
+		await expect(sidebarItem(name)).toBeVisible();
+	}
+	// Projects created within one second have no defined mutual order yet: pin it through the position API.
+	await page.evaluate(async () => {
+		const all = (await (await fetch('/v1/projects')).json()) as { id: string; name: string }[];
+		const root = (n: string) => all.find((p) => p.name === n)!.id;
+		for (const [i, n] of ['Alpha', 'Beta', 'Gamma'].entries()) {
+			await fetch(`/v1/projects/${root(n)}/position`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: 100 + i }) });
+		}
+	});
+	await page.reload();
+	const roots = async () => (await rootOrder()).filter((n) => ['Alpha', 'Beta', 'Gamma'].includes(n));
+	expect(await roots()).toEqual(['Alpha', 'Beta', 'Gamma']);
+
+	// Drop on the upper edge of Alpha: Gamma becomes the first of the three.
+	await dragProject(sidebarItem('Gamma'), sidebarItem('Alpha'), 0.12);
+	await expect.poll(roots).toEqual(['Gamma', 'Alpha', 'Beta']);
+	const names = () => page.getByTestId('project-item').evaluateAll((els) => els.map((e) => e.querySelector('span.truncate')?.textContent ?? ''));
+	await expect.poll(async () => (await names()).filter((n) => ['Alpha', 'Beta', 'Gamma'].includes(n))).toEqual(['Gamma', 'Alpha', 'Beta']);
+
+	// The order persists across a reload (server side, per account).
+	await page.reload();
+	await expect.poll(async () => (await names()).filter((n) => ['Alpha', 'Beta', 'Gamma'].includes(n))).toEqual(['Gamma', 'Alpha', 'Beta']);
+
+	// Menu alternative: move down one place.
+	const open = async (n: string) => {
+		await sidebarItem(n).hover();
+		await sidebarItem(n).getByRole('button', { name: `Projektmenü: ${n}` }).click();
+	};
+	await open('Gamma');
+	await page.getByTestId('project-move-down').click();
+	await expect.poll(roots).toEqual(['Alpha', 'Gamma', 'Beta']);
+
+	// Drop in the middle of a row: Beta becomes a sub-project of Alpha (manage right of the owner).
+	await dragProject(sidebarItem('Beta'), sidebarItem('Alpha'), 0.5);
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Beta')!.parentID).toBe(await projectID('Alpha'));
+	await expect(sidebarItem('Alpha').getByRole('button', { name: 'Beta', exact: true })).toBeVisible();
+
+	// Menu alternative "Verschieben nach …": back to the top level, then under Gamma.
+	await open('Beta');
+	await page.getByTestId('project-move-to').click();
+	await page.getByLabel('Verschieben nach').selectOption({ label: 'Gamma' });
+	await expect.poll(async () => (await apiProjects()).find((p) => p.name === 'Beta')!.parentID).toBe(await projectID('Gamma'));
+
+	// A drop the client cannot see as a cycle but the server rejects (tree changed on another device): 422 message.
+	const alpha = await apiProjects().then((l) => l.find((p) => p.name === 'Alpha')!);
+	await page.evaluate(async ([id, ver, parent]) => {
+		await fetch(`/v1/projects/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: ver, parentID: parent }) });
+	}, [alpha.id, alpha.version, await projectID('Beta')] as const);
+	// Stale UI: Gamma and Alpha are still roots here. Dropping Gamma into Alpha would make Gamma its own descendant.
+	await dragProject(sidebarItem('Gamma'), sidebarItem('Alpha'), 0.5);
+	await expect(page.getByTestId('notice')).toContainText('nicht in sich selbst');
+	await page.getByTestId('notice').getByRole('button', { name: 'Abbrechen' }).click();
+});
+
+test('project comments panel', async () => {
+	await openProject('Haushalt');
+	await page.getByTestId('project-comments-open').click();
+	const dlg = page.getByTestId('project-comments-dialog');
+	await expect(dlg).toBeVisible();
+	await expect(dlg).toContainText('Noch keine Projektkommentare');
+	await dlg.getByLabel('Kommentar zum Projekt schreiben').fill('Wochenplan bitte bis Freitag');
+	await dlg.getByRole('button', { name: 'Kommentieren' }).click();
+	const c = dlg.getByTestId('project-comment').filter({ hasText: 'Wochenplan bitte bis Freitag' });
+	await expect(c).toBeVisible();
+	await expect(c.getByTestId('comment-author')).toHaveText('Du');
+	await c.getByRole('button', { name: 'Bearbeiten' }).click();
+	await dlg.getByLabel('Bearbeiten', { exact: true }).fill('Wochenplan bitte bis Donnerstag');
+	await dlg.getByRole('button', { name: 'Speichern' }).click();
+	await expect(dlg.getByTestId('project-comment')).toContainText('bis Donnerstag');
+
+	// A second account with comment rights: author name for the owner, no delete of foreign comments.
+	const invitation = await page.request.post('/v1/invitations', { data: {}, headers: { 'Content-Type': 'application/json' } });
+	const { token } = (await invitation.json()) as { token: string };
+	const guestCtx = await page.context().browser()!.newContext();
+	try {
+		const guest = await guestCtx.newPage();
+		const cdp = await guestCtx.newCDPSession(guest);
+		await cdp.send('WebAuthn.enable');
+		await cdp.send('WebAuthn.addVirtualAuthenticator', {
+			options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
+		});
+		await guest.goto(`/setup?token=${token}`);
+		await guest.getByLabel('Anzeigename').fill('Carla Gast');
+		await guest.getByRole('button', { name: 'Passkey erstellen' }).click();
+		await expect(guest.getByTestId('account-menu')).toBeVisible();
+		const guestID = ((await (await guest.request.get('/v1/me')).json()) as { id: string }).id;
+		const grant = await page.request.put(`/v1/projects/${await projectID('Haushalt')}/grants`, {
+			data: { principalType: 'person', principalID: guestID, role: 'comment' },
+			headers: { 'Content-Type': 'application/json' }
+		});
+		expect(grant.ok(), await grant.text()).toBeTruthy();
+		await guest.reload();
+		await guest.getByTestId('project-item').getByRole('button', { name: 'Haushalt', exact: true }).first().click();
+		await guest.getByTestId('project-comments-open').click();
+		const gd = guest.getByTestId('project-comments-dialog');
+		await expect(gd.getByTestId('comment-author').first()).toHaveText('Test Admin');
+		await expect(gd.getByRole('button', { name: 'Löschen' })).toHaveCount(0);
+		await gd.getByLabel('Kommentar zum Projekt schreiben').fill('Passt, mache ich');
+		await gd.getByRole('button', { name: 'Kommentieren' }).click();
+		await expect(gd.getByTestId('project-comment').filter({ hasText: 'Passt, mache ich' }).getByTestId('comment-author')).toHaveText('Du');
+
+		// The owner sees the guest by name and may delete the foreign comment (manage).
+		await page.reload();
+		await openProject('Haushalt');
+		await page.getByTestId('project-comments-open').click();
+		const again = page.getByTestId('project-comments-dialog');
+		const foreign = again.getByTestId('project-comment').filter({ hasText: 'Passt, mache ich' });
+		await expect(foreign.getByTestId('comment-author')).toHaveText('Carla Gast');
+		await foreign.getByRole('button', { name: 'Löschen' }).click();
+		await expect(foreign).toHaveCount(0);
+		await again.getByTestId('project-comment').getByRole('button', { name: 'Löschen' }).click();
+		await expect(again).toContainText('Noch keine Projektkommentare');
+	} finally {
+		await guestCtx.close();
+	}
+	await closeDialogs();
+});
+
+test('activity page: infinite list, project filter, labels', async () => {
+	await openProject('Küche');
+	// 35 more events in the kitchen project so that a second page is needed (page size 30).
+	await page.evaluate(async (id) => {
+		for (let i = 0; i < 35; i++) {
+			await fetch('/v1/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectID: id, title: `Feed ${i}` }) });
+		}
+	}, await projectID('Küche'));
+	await nav('Aktivität');
+	const feed = page.getByTestId('feed-item');
+	await expect(feed.first()).toBeVisible();
+	await expect(feed.first().getByTestId('feed-label')).toHaveText('Aufgabe angelegt');
+	await expect(feed.first().getByTestId('feed-actor')).toHaveText('Du');
+	// Scrolling to the end loads the following pages through the cursor.
+	await expect.poll(async () => {
+		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+		return feed.count();
+	}, { timeout: 15_000 }).toBeGreaterThan(30);
+	await expect(page.getByTestId('feed-end')).toBeVisible({ timeout: 15_000 });
+	// Project comment events carry their own German label; unknown kinds fall back, never crash.
+	await expect(page.getByTestId('feed-item').filter({ hasText: 'Projektkommentar hinzugefügt' }).first()).toBeVisible();
+	// Filter by project.
+	await page.getByTestId('activity-filter').selectOption({ label: 'Haushalt' });
+	await expect.poll(async () => feed.count()).toBeGreaterThan(0);
+	const projects = await feed.evaluateAll((els) => [...new Set(els.map((e) => e.querySelector('[data-testid="feed-project"]')?.textContent?.trim()))]);
+	expect(projects).toEqual(['in Haushalt']);
+	await page.getByTestId('activity-filter').selectOption({ label: 'Alle Projekte' });
+	await expect.poll(async () => {
+		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+		return feed.count();
+	}, { timeout: 15_000 }).toBeGreaterThan(30);
+});
+
+test('agents page: pairing, device list with binding and active run, job list with state filter', async () => {
+	await nav('Agenten');
+	await expect(page.getByText('Noch kein Gerät gekoppelt.')).toBeVisible();
+	await page.getByLabel('Bezeichnung des Geräts').fill('Mac Studio');
+	await page.getByRole('button', { name: 'Code erzeugen' }).click();
+	const code = (await page.getByTestId('pairing-code').locator('code').innerText()).trim();
+	const device = page.getByTestId('device').filter({ hasText: 'Mac Studio' });
+	await expect(device.getByTestId('device-status')).toHaveText('Wartet auf Kopplung');
+	await expect(page.getByText('Keine Aufträge.')).toBeVisible();
+
+	// The runner redeems the code (no session), the owner binds a project and releases a job.
+	const origin = new URL(page.url()).origin;
+	const paired = await page.request.post('/v1/runner/pair', { data: { code }, headers: { 'Content-Type': 'application/json', Origin: origin } });
+	expect(paired.ok(), await paired.text()).toBeTruthy();
+	const { deviceID } = (await paired.json()) as { deviceID: string };
+	const kitchen = (await apiProjects()).find((p) => p.name === 'Küche')!;
+	const bound = await page.request.post('/v1/agents/bindings', {
+		data: { projectID: kitchen.id, deviceID, repositoryKey: crypto.randomUUID(), label: 'todo-repo' },
+		headers: { 'Content-Type': 'application/json', Origin: origin }
+	});
+	expect(bound.ok(), await bound.text()).toBeTruthy();
+	const bindingID = ((await bound.json()) as { id: string }).id;
+	const tasks = (await (await page.request.get(`/v1/tasks?projectID=${kitchen.id}`)).json()) as { id: string; title: string; version: number }[];
+	const job = await page.request.post('/v1/agents/jobs', {
+		data: { id: crypto.randomUUID(), taskID: tasks[0].id, bindingID, taskRevision: tasks[0].version, mode: 'clarify', scope: 'Offene Fragen klären' },
+		headers: { 'Content-Type': 'application/json', Origin: origin }
+	});
+	expect(job.ok(), await job.text()).toBeTruthy();
+
+	await page.getByRole('button', { name: 'Aktualisieren' }).click();
+	await expect(device.getByTestId('device-status')).toHaveText('Gekoppelt');
+	await expect(device.getByTestId('binding')).toContainText('Küche');
+	await expect(device.getByTestId('binding')).toContainText('todo-repo');
+	await expect(device.getByTestId('device-active')).toHaveText('Aktive Läufe: 0');
+	const row = page.getByTestId('job').first();
+	await expect(row.getByTestId('job-state')).toHaveText('Wartet');
+	await expect(row).toContainText('Küche');
+	await page.getByTestId('job-filter').selectOption({ label: 'Erfolgreich' });
+	await expect(page.getByText('Keine Aufträge.')).toBeVisible();
+	await page.getByTestId('job-filter').selectOption({ label: 'Wartet' });
+	await expect(page.getByTestId('job')).toHaveCount(1);
+	// the feed shows the release event with its German label
+	await nav('Aktivität');
+	await expect(page.getByTestId('feed-item').filter({ hasText: 'Auftrag für den Runner freigegeben' }).first()).toBeVisible();
+});
+
 test('attachment upload with preview', async () => {
 	await openProject('Küche');
 	await setView('Liste');
@@ -623,6 +944,10 @@ test('mobile 390px: navigation drawer, board and no horizontal page scroll', asy
 	await expect(page.getByTestId('board')).toBeVisible();
 	await expect(page.getByTestId('board-lane').first()).toBeVisible();
 	await noOverflow('board');
+	await page.getByTestId('project-comments-open').click();
+	await expect(page.getByTestId('project-comments-dialog')).toBeVisible();
+	await noOverflow('project comments');
+	await closeDialogs();
 	const scroller = await page.getByTestId('board').evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, snap: getComputedStyle(e).scrollSnapType }));
 	expect(scroller.sw).toBeGreaterThan(scroller.cw);
 	expect(scroller.snap).toContain('x');
@@ -638,8 +963,8 @@ test('mobile 390px: navigation drawer, board and no horizontal page scroll', asy
 		await page.waitForTimeout(300);
 		await noOverflow(view);
 	}
-	// Drawer: Teams and Konto live under "Mehr".
-	for (const view of ['Teams', 'Konto']) {
+	// Drawer: Teams, Agenten, Aktivität and Konto live under "Mehr".
+	for (const view of ['Teams', 'Agenten', 'Aktivität', 'Konto']) {
 		await menu.click();
 		await nav.getByRole('button', { name: 'Mehr', exact: true }).click();
 		await nav.getByRole('button', { name: view, exact: true }).click();

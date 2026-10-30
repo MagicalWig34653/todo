@@ -10,6 +10,8 @@ class Ui {
 	sidebarCollapsed = $state(readJSON<boolean>(KEYS.sidebar, false));
 	/** Bumped when something outside the open page created or changed tasks (quick add), so the page reloads. */
 	changeTick = $state(0);
+	/** Project being dragged in the sidebar (HTML5 drag data is not readable during dragover). */
+	dragProjectID = $state<string | null>(null);
 
 	toggleSidebar() {
 		this.sidebarCollapsed = !this.sidebarCollapsed;

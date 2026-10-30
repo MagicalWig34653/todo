@@ -19,7 +19,7 @@ export type View =
 	import { auth } from '#lib/auth.svelte.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
-	import { buildTree, flatten } from '#lib/projectTree.js';
+	import { buildTree, flatten, type DropPlan } from '#lib/projectTree.js';
 	import { theme } from '#lib/theme.svelte.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
@@ -87,9 +87,7 @@ export type View =
 	// "Mehr" shows its entries while one of them is the current page.
 	const moreShown = $derived(moreOpen || moreViews.has(view));
 	const tree = $derived(buildTree(workspace.projects));
-	const favorites = $derived(
-		workspace.favorites.map((id) => workspace.projects.find((p) => p.id === id)).filter((p): p is Project => !!p)
-	);
+	const favorites = $derived(workspace.favorites);
 	const initials = $derived(
 		(auth.user?.displayName ?? '?')
 			.split(/\s+/)
@@ -133,6 +131,13 @@ export type View =
 	const move = (p: Project, parentID: string | null) => attempt(async () => patch(await api.moveProject(p, parentID)), reload);
 	const addSub = (parentID: string, name: string) =>
 		attempt(async () => (workspace.projects = [...workspace.projects, await api.createProject(name, parentID)]));
+	const favorite = (p: Project) => attempt(() => workspace.toggleFavorite(p.id));
+	/** Own order only unless the parent changes (then `manage` is needed and the project version is sent). */
+	const reorder = (p: Project, plan: DropPlan) =>
+		attempt(async () => {
+			await api.putProjectPosition(p, plan.index, plan.reparent ? plan.parentID : undefined);
+			await workspace.reloadProjects();
+		}, reload);
 	const remove = (p: Project) =>
 		attempt(async () => {
 			await api.deleteProject(p.id);
@@ -260,7 +265,7 @@ export type View =
 				{#if favOpen}
 					<ul>
 						{#each favorites as p (p.id)}
-							<ProjectItem node={{ project: p, children: [] }} all={workspace.projects} flat selectedID={view === 'project' ? selectedID : null} onselect={onproject} onrename={rename} onadd={addSub} onmove={move} ondelete={remove} {onshare} />
+							<ProjectItem node={{ project: p, children: [] }} all={workspace.projects} flat selectedID={view === 'project' ? selectedID : null} onselect={onproject} onrename={rename} onadd={addSub} onmove={move} ondelete={remove} {onshare} onfavorite={favorite} onreorder={reorder} />
 						{/each}
 					</ul>
 				{/if}
@@ -283,7 +288,7 @@ export type View =
 				{/if}
 				<ul>
 					{#each tree as node (node.project.id)}
-						<ProjectItem {node} all={workspace.projects} selectedID={view === 'project' ? selectedID : null} onselect={onproject} onrename={rename} onadd={addSub} onmove={move} ondelete={remove} {onshare} />
+						<ProjectItem {node} all={workspace.projects} selectedID={view === 'project' ? selectedID : null} onselect={onproject} onrename={rename} onadd={addSub} onmove={move} ondelete={remove} {onshare} onfavorite={favorite} onreorder={reorder} />
 					{/each}
 				</ul>
 			{/if}

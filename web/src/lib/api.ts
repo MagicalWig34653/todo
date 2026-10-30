@@ -21,6 +21,15 @@ export interface Project {
 	parentID: string | null;
 	name: string;
 	version: number;
+	/** contracts/openapi.yaml + project-state.yaml (ADR 0012); all optional because older servers omit them. */
+	description?: string;
+	/** `#RRGGBB`, uppercase; absent = derive a stable colour from the id. */
+	color?: string;
+	createdAt?: string;
+	/** The viewer's own order among visible siblings; absent until the viewer reordered. */
+	position?: number;
+	isFavorite?: boolean;
+	favoritePosition?: number;
 }
 export type TaskStatus = 'open' | 'in_progress' | 'in_review' | 'done';
 /** Compact planning data that `GET /tasks` attaches to every list entry. */
@@ -71,6 +80,91 @@ export interface BoardResponse {
 	mode: 'status' | 'columns';
 	columns: BoardColumn[];
 	unassigned: Task[];
+}
+/** contracts/project-state.yaml */
+export interface ProjectPrefs {
+	projectID: string;
+	view: 'list' | 'board';
+	sort: 'manual' | 'title' | 'due' | 'priority';
+	grouping: 'none' | 'column' | 'priority' | 'due';
+	showCompleted: boolean;
+	isFavorite?: boolean;
+	favoritePosition?: number;
+	/** 0 while nothing was stored (the other fields are then defaults). */
+	revision: number;
+	updatedAt?: string;
+}
+export type ProjectPrefsChange = Partial<Pick<ProjectPrefs, 'view' | 'sort' | 'grouping' | 'showCompleted'>>;
+export interface ProjectComment {
+	id: string;
+	projectID: string;
+	authorID: string;
+	authorName?: string | null;
+	body: string;
+	version: number;
+	createdAt?: string;
+}
+export interface FeedItem {
+	id: string;
+	source: 'task' | 'project';
+	projectID: string;
+	projectName: string;
+	taskID?: string | null;
+	taskTitle?: string | null;
+	sequence: number;
+	actorType: 'Person' | 'Integration' | 'Run';
+	actorID: string;
+	actorName?: string | null;
+	kind: string;
+	subjectID?: string | null;
+	createdAt?: string | null;
+}
+export interface FeedPage {
+	items: FeedItem[];
+	nextCursor?: string | null;
+}
+export interface RunnerBinding {
+	id: string;
+	projectID: string;
+	deviceID: string;
+	repositoryKey: string;
+	label: string;
+}
+export interface RunnerDevice {
+	id: string;
+	label: string;
+	paired: boolean;
+	revokedAt?: string | null;
+	activeRunCount: number;
+	bindings: RunnerBinding[];
+}
+export type JobState =
+	| 'queued'
+	| 'claimed'
+	| 'running'
+	| 'waiting_for_answer'
+	| 'awaiting_review'
+	| 'succeeded'
+	| 'failed'
+	| 'cancelled';
+export interface AgentJob {
+	id: string;
+	taskID: string;
+	projectID: string;
+	bindingID: string;
+	mode: 'clarify' | 'implement';
+	state: JobState;
+	progress: string;
+}
+export interface JobListItem {
+	job: AgentJob;
+	taskTitle: string;
+	projectName: string;
+	createdAt?: string | null;
+}
+export interface JobPage {
+	items: JobListItem[];
+	nextCursor?: string | null;
 }
 export interface Pairing {
 	deviceID: string;
@@ -279,6 +373,9 @@ export class ApiError extends Error {
 	get isConflict() {
 		return this.status === 409 && this.reason === 'version_conflict';
 	}
+	get isRevisionConflict() {
+		return this.status === 409 && this.reason === 'revision_conflict';
+	}
 	get isUnauthorized() {
 		return this.status === 401;
 	}
@@ -296,7 +393,13 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
 export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base = '/v1') {
 	/** `bearer` replaces the cookie session (recovery token); cookies are then not sent at all. */
-	async function request<T>(method: string, path: string, body?: unknown, bearer?: string): Promise<T> {
+	async function request<T>(
+		method: string,
+		path: string,
+		body?: unknown,
+		bearer?: string,
+		extraHeaders?: Record<string, string>
+	): Promise<T> {
 		let response: Response;
 		try {
 			// OAuth endpoints live outside the versioned `/v1` namespace.
@@ -307,7 +410,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				headers: {
 					'Content-Type': 'application/json',
 					Accept: 'application/json',
-					...(bearer ? { Authorization: `Bearer ${bearer}` } : {})
+					...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+					...extraHeaders
 				},
 				body: body === undefined ? undefined : JSON.stringify(body)
 			});
@@ -356,7 +460,50 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				`/projects/${p.id}`,
 				parentID === null ? { version: p.version, moveToRoot: true } : { version: p.version, parentID }
 			),
+		/** Partial update; `description: ''` / `color: ''` clear the value (contracts/openapi.yaml). */
+		updateProject: (p: Project, changes: { name?: string; description?: string; color?: string }) =>
+			request<Project>('PATCH', `/projects/${p.id}`, { version: p.version, ...changes }),
 		deleteProject: (id: string) => request<void>('DELETE', `/projects/${id}`),
+		/**
+		 * Places a project among its siblings (ADR 0012). Without `parentID` this is the viewer's own order only;
+		 * with `parentID` (`null` = top level) the shared tree changes: needs `manage` and the project version.
+		 */
+		putProjectPosition: (p: Project, index: number, parentID?: string | null) =>
+			request<Project>(
+				'PUT',
+				`/projects/${p.id}/position`,
+				parentID === undefined ? { index } : { index, parentID, version: p.version }
+			),
+
+		// Per-account project state (contracts/project-state.yaml)
+		listFavorites: () => request<{ items: { projectID: string; position: number }[] }>('GET', '/me/favorites'),
+		putFavorite: (projectID: string, index?: number) =>
+			request<{ items: { projectID: string; position: number }[] }>(
+				'PUT',
+				`/me/favorites/${projectID}`,
+				index === undefined ? undefined : { index }
+			),
+		deleteFavorite: (projectID: string) => request<void>('DELETE', `/me/favorites/${projectID}`),
+		listProjectPrefs: () => request<{ items: ProjectPrefs[] }>('GET', '/me/project-prefs'),
+		getProjectPrefs: (projectID: string) => request<ProjectPrefs>('GET', `/me/project-prefs/${projectID}`),
+		patchProjectPrefs: (projectID: string, revision: number, changes: ProjectPrefsChange) =>
+			request<ProjectPrefs>('PATCH', `/me/project-prefs/${projectID}`, { revision, ...changes }),
+		listProjectComments: (projectID: string) => request<ProjectComment[]>('GET', `/projects/${projectID}/comments`),
+		/** `idempotencyKey` makes a retry after a lost response safe (same key + same text returns the original). */
+		createProjectComment: (projectID: string, body: string, idempotencyKey?: string) =>
+			request<ProjectComment>(
+				'POST',
+				`/projects/${projectID}/comments`,
+				{ body },
+				undefined,
+				idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined
+			),
+		updateProjectComment: (c: ProjectComment, body: string) =>
+			request<ProjectComment>('PATCH', `/projects/${c.projectID}/comments/${c.id}`, { body, version: c.version }),
+		deleteProjectComment: (c: ProjectComment) =>
+			request<void>('DELETE', `/projects/${c.projectID}/comments/${c.id}`, { version: c.version }),
+		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
+			request<FeedPage>('GET', `/activity${query({ projectID: params.projectID, before: params.before, limit: params.limit })}`),
 
 		listTasks: (projectID?: string) => request<Task[]>('GET', `/tasks${query({ projectID })}`),
 		createTask: (projectID: string, title: string, extra: { description?: string; columnID?: string | null } = {}) =>
@@ -382,6 +529,12 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 
 		// Agents (contracts/agents.yaml)
 		pairDevice: (label: string) => request<Pairing>('POST', '/agents/devices', { label }),
+		listDevices: () => request<RunnerDevice[]>('GET', '/agents/devices'),
+		listJobs: (params: { state?: JobState | ''; projectID?: string; before?: string | null; limit?: number } = {}) =>
+			request<JobPage>(
+				'GET',
+				`/agents/jobs${query({ state: params.state, projectID: params.projectID, before: params.before, limit: params.limit })}`
+			),
 
 		// Planning (contracts/planning-ext.yaml)
 		getPlanning: (taskID: string) => request<PlanningTask>('GET', `/planning/tasks/${taskID}`),

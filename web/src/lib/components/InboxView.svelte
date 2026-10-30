@@ -4,7 +4,6 @@
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
-	import { projectColor } from '#lib/boardLogic.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import TaskChips from './TaskChips.svelte';
@@ -36,7 +35,7 @@
 					<span class="min-w-0 flex-1 basis-40 text-sm font-medium break-words">{task.title}</span>
 					{#if task.planning}<TaskChips pt={task.planning} status={task.status} />{/if}
 					<button class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs" onclick={() => onopen(task.projectID)}>
-						<span style:color={projectColor(task.projectID)} aria-hidden="true">#</span>{projectName(task.projectID)}
+						<span style:color={workspace.colorOf(task.projectID)} aria-hidden="true">#</span>{projectName(task.projectID)}
 					</button>
 					<Button size="sm" variant="ghost" onclick={() => (openID = openID === task.id ? null : task.id)}>{t('task.details')}<ChevronDown class={['transition-transform', openID === task.id && 'rotate-180']} aria-hidden="true" /></Button>
 				</div>

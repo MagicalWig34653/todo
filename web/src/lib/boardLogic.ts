@@ -66,8 +66,9 @@ export const PROJECT_COLORS = [
 	'#DB4D40', '#EB8A0A', '#C2A61A', '#45AE5C', '#29ABAB', '#2470E0', '#6B59D9', '#B852C7', '#E05290', '#737378'
 ] as const;
 
-/** Stable marker colour derived from the project id (the server has no project colours yet; same idea as the native app). */
-export function projectColor(id: string | null | undefined): string {
+/** Marker colour of a project: the chosen `#RRGGBB` (`color`), else a stable one derived from the id (same idea as the native app). */
+export function projectColor(id: string | null | undefined, color?: string | null): string {
+	if (color && /^#[0-9A-Fa-f]{6}$/.test(color)) return color;
 	if (!id) return PROJECT_COLORS[9];
 	let h = 0;
 	for (let i = 0; i < id.length; i++) h = (h * 131 + id.charCodeAt(i)) & 0xffffff;

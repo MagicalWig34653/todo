@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { api, type BoardResponse, type Project, type Task } from '#lib/api.js';
-	import { DEFAULT_DISPLAY, type Display, type Grouping, type Sort } from '#lib/listLogic.js';
-	import { t } from '#lib/i18n/index.js';
-	import { KEYS, readJSON, writeJSON } from '#lib/localPrefs.js';
+	import { type Display, type Grouping, type Sort } from '#lib/listLogic.js';
+	import { PROJECT_COLORS } from '#lib/boardLogic.js';
+	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { collectAll } from '#lib/planning.js';
 	import { ui } from '#lib/ui.svelte.js';
@@ -15,6 +15,7 @@
 	import MenuItem from './app/MenuItem.svelte';
 	import Popover from './app/Popover.svelte';
 	import MilestonesPanel from './MilestonesPanel.svelte';
+	import ProjectComments from './ProjectComments.svelte';
 	import ProjectBoard from './ProjectBoard.svelte';
 	import TaskDetail from './TaskDetail.svelte';
 	import TaskPanel from './TaskPanel.svelte';
@@ -69,7 +70,7 @@
 	$effect(() => {
 		void project.id;
 		void ui.changeTick;
-		void display.view;
+		void viewMode;
 		attempt(reload);
 	});
 	$effect(() => {
@@ -83,15 +84,12 @@
 		editingTitle = false;
 	});
 
-	// ---- display (per project, device-local) ------------------------------------------------------------------
-	const stored = () => readJSON<Record<string, Partial<Display>>>(KEYS.display, {});
-	let display = $state<Display>({ ...DEFAULT_DISPLAY });
-	$effect(() => {
-		display = { ...DEFAULT_DISPLAY, ...(stored()[project.id] ?? {}) };
-	});
+	// ---- display (per project and account, server-side via /v1/me/project-prefs) --------------------------------
+	const display = $derived<Display>(workspace.displayOf(project.id));
+	/** Primitive on purpose: effects that depend on the view must not rerun when only the revision changes. */
+	const viewMode = $derived(display.view);
 	function setDisplay(changes: Partial<Display>) {
-		display = { ...display, ...changes };
-		writeJSON(KEYS.display, { ...stored(), [project.id]: display });
+		attempt(() => workspace.setDisplay(project.id, changes));
 	}
 
 	// ---- title and description --------------------------------------------------------------------------------
@@ -110,18 +108,46 @@
 			workspace.projects = workspace.projects.map((p) => (p.id === updated.id ? updated : p));
 		}, () => workspace.reloadProjects());
 	}
-	const description = $derived(workspace.descriptions[project.id] ?? '');
+	let descDraft = $state('');
+	let descFocused = $state(false);
+	$effect(() => {
+		// Follow the server value (other device, reload) unless the user is typing.
+		const server = project.description ?? '';
+		if (!descFocused) descDraft = server;
+	});
 	let descEl = $state<HTMLTextAreaElement | null>(null);
 	$effect(() => {
-		void description;
+		void descDraft;
 		if (descEl) {
 			descEl.style.height = 'auto';
 			descEl.style.height = `${descEl.scrollHeight}px`;
 		}
 	});
+	/** Saves on blur only when the text changed; an empty text clears the description. */
+	async function saveDescription() {
+		descFocused = false;
+		const text = descDraft.trim();
+		if (text === (project.description ?? '').trim()) {
+			descDraft = project.description ?? '';
+			return;
+		}
+		const ok = await attempt(async () => {
+			const updated = await api.updateProject(project, { description: text });
+			workspace.projects = workspace.projects.map((x) => (x.id === updated.id ? updated : x));
+		}, () => workspace.reloadProjects());
+		if (!ok) descDraft = project.description ?? '';
+	}
+	async function setColor(color: string) {
+		await attempt(async () => {
+			await api.updateProject(project, { color });
+			await workspace.reloadProjects();
+		}, () => workspace.reloadProjects());
+	}
 
 	// ---- dialogs ----------------------------------------------------------------------------------------------
 	let milestonesOpen = $state(false);
+	let commentsOpen = $state(false);
+	let colorOpen = $state(false);
 	let detail = $state<Task | null>(null);
 	let detailOpen = $state(false);
 	$effect(() => {
@@ -131,7 +157,7 @@
 		detail = task;
 		detailOpen = true;
 	};
-	const fav = $derived(workspace.isFavorite(project.id));
+	const fav = $derived(!!project.isFavorite);
 
 	// The header toolbar belongs to this page.
 	$effect(() => {
@@ -204,19 +230,17 @@
 				</div>
 			{/snippet}
 		</Popover>
-		<Popover label={t('project.comments')} align="end" class="hover:bg-muted inline-flex size-8 items-center justify-center rounded-lg" panelClass="w-64">
-			{#snippet trigger()}<MessageSquare class="size-4" aria-hidden="true" />{/snippet}
-			{#snippet children()}
-				<p class="text-muted-foreground p-2 text-sm">{t('project.commentsHint')}</p>
-			{/snippet}
-		</Popover>
+		<Button variant="ghost" size="icon-sm" aria-label={t('project.comments')} data-testid="project-comments-open" onclick={() => (commentsOpen = true)}>
+			<MessageSquare aria-hidden="true" />
+		</Button>
 		<Popover label={t('project.more')} align="end" class="hover:bg-muted inline-flex size-8 items-center justify-center rounded-lg" testid="project-more">
 			{#snippet trigger()}<Ellipsis class="size-4" aria-hidden="true" />{/snippet}
 			{#snippet children(close)}
-				<MenuItem onclick={() => { workspace.toggleFavorite(project.id); close(); }}>
+				<MenuItem onclick={() => { attempt(() => workspace.toggleFavorite(project.id)); close(); }}>
 					<Star class="size-4" aria-hidden="true" />{fav ? t('projects.unfavorite') : t('projects.favorite')}
 				</MenuItem>
 				<MenuItem onclick={() => { close(); startTitle(); }}>{t('common.rename')}</MenuItem>
+				<MenuItem testid="project-color-open" onclick={() => { close(); colorOpen = true; }}>{t('project.color')}</MenuItem>
 				<MenuItem testid="milestones-open" onclick={() => { close(); milestonesOpen = true; }}>{t('view.milestones')}</MenuItem>
 			{/snippet}
 		</Popover>
@@ -250,8 +274,10 @@
 			placeholder={t('tasks.descriptionPlaceholder')}
 			aria-label={t('project.description')}
 			data-testid="project-description"
-			value={description}
-			oninput={(e) => workspace.setDescription(project.id, e.currentTarget.value)}
+			maxlength={10000}
+			bind:value={descDraft}
+			onfocus={() => (descFocused = true)}
+			onblur={saveDescription}
 		></textarea>
 	</header>
 
@@ -264,6 +290,25 @@
 	{/if}
 </div>
 
+<Dialog bind:open={commentsOpen} title={t('project.commentsTitle', { name: project.name })} class="max-w-xl" testid="project-comments-dialog">
+	<ProjectComments {project} />
+</Dialog>
+<Dialog bind:open={colorOpen} title={t('project.colorTitle')} testid="project-color-dialog">
+	<div class="flex flex-wrap gap-2" role="group" aria-label={t('project.colorTitle')}>
+		{#each PROJECT_COLORS as c, i (c)}
+			<button
+				type="button"
+				class={['size-9 rounded-full border-2', project.color?.toUpperCase() === c ? 'border-foreground' : 'border-transparent']}
+				style:background-color={c}
+				aria-label={t('project.colorPick', { name: t(`project.color.${i}` as MessageKey) })}
+				aria-pressed={project.color?.toUpperCase() === c}
+				data-testid="color-swatch"
+				onclick={() => { setColor(c); colorOpen = false; }}
+			></button>
+		{/each}
+		<Button variant="outline" data-testid="color-auto" aria-pressed={!project.color} onclick={() => { setColor(''); colorOpen = false; }}>{t('project.colorAuto')}</Button>
+	</div>
+</Dialog>
 <Dialog bind:open={milestonesOpen} title={t('view.milestones')} class="max-w-2xl">
 	<MilestonesPanel {project} />
 </Dialog>

@@ -1,7 +1,6 @@
 /**
- * PROVISIONAL device-local preferences (favorites, project descriptions, collapsed tree nodes).
- * `/v1/me/preferences` is strictly validated and only knows `appearance`, and projects have no description field,
- * so these live in localStorage under the `todo.` prefix until the backend schema is extended. They are not synced.
+ * Device-local UI state only (collapsed tree nodes, sidebar). Favourites, descriptions, colours, order and display
+ * options live on the server (ADR 0012); `projectState.ts` imports the old `todo.*` values once.
  */
 export function readJSON<T>(key: string, fallback: T): T {
 	try {
@@ -21,9 +20,6 @@ export function writeJSON(key: string, value: unknown): void {
 }
 
 export const KEYS = {
-	favorites: 'todo.favorites',
-	descriptions: 'todo.projectDescriptions',
 	collapsed: 'todo.collapsedProjects',
-	sidebar: 'todo.sidebarCollapsed',
-	display: 'todo.projectDisplay'
+	sidebar: 'todo.sidebarCollapsed'
 } as const;

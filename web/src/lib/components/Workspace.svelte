@@ -188,7 +188,7 @@
 					{:else if view === 'agents'}
 						<AgentsView />
 					{:else if view === 'activity'}
-						<ActivityView />
+						<ActivityView onopen={openProject} />
 					{:else if view === 'account'}
 						<AccountView />
 					{/if}

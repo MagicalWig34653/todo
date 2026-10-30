@@ -82,7 +82,8 @@ Anforderung: **Projekte unbegrenzt; projektspezifische Spalten statt Projekt-als
 
 ## Checkpoint 30.10.2026 (Backend-Lücken PWA/Apple)
 - [x] Projektbeschreibung/-farbe, Favoriten und Anzeigeeinstellungen je Konto, Projektreihenfolge je Konto (ADR 0012), Projektkommentare, Aktivitätsfeed, Runner-Geräte-/Auftragslisten, Spalten-Sync-Mutationen und MCP-Spaltenwerkzeuge; SQLite + MariaDB grün (siehe STATUS).
-- [ ] PWA: `localStorage`-Provisorien auf die neuen Endpunkte umstellen (Favoriten, Beschreibung, Anzeige, Sortierung per Drag-and-drop, Projektkommentare, Aktivität, Geräte-/Auftragsliste); Apple: dieselben Verträge und Board anbinden.
+- [x] PWA: `localStorage`-Provisorien auf die neuen Endpunkte umgestellt (Favoriten, Beschreibung, Farbe, Anzeige, Sortierung per Drag-and-drop, Projektkommentare, Aktivität, Geräte-/Auftragsliste), Altimport; Details in STATUS „PWA an Projektzustand angebunden“.
+- [ ] Apple: dieselben Verträge (`project-state.yaml`) und Board anbinden; PWA: Binding anlegen/Gerät widerrufen/Auftrag freigeben im UI.
 - [ ] Optional: Projektkommentare/-aktivität in Sync-Feed und MCP.
 
 ## Checkpoint 30.10.2026 (Anhänge in der Datenbank)

@@ -1,6 +1,6 @@
 # ADR 0012 – Projektzustand je Konto: Reihenfolge, Favoriten, Anzeigeeinstellungen; Projektkommentare; Aktivitätsfeed
 
-Status: Backend implementiert (30.10.2026); Clients (PWA, Apple) noch nicht angebunden. Vertrag: `contracts/project-state.yaml`.
+Status: Backend implementiert (30.10.2026); PWA angebunden (30.10.2026), Apple noch nicht. Vertrag: `contracts/project-state.yaml`.
 
 ## Anlass
 
@@ -26,3 +26,9 @@ Die PWA-Umstrukturierung (STATUS „PWA-Umstrukturierung und Board“) hielt Fav
 - Reorder berührt alle sichtbaren Geschwister (O(n) Schreibvorgänge unter globaler Sperre); bei sehr breiten Wurzelebenen (Tausende) wäre gebrochene Indizierung nötig. Kein Zusatzindex außer `UNIQUE(user_id, project_id)`.
 - Projekt-Kommentare und -Aktivität fehlen im Sync-Feed und in MCP; Aktivitätsfeed ist nicht paginiert nach Typ getrennt (gemeinsamer Cursor genügt).
 - Clients entfernen ihre `localStorage`-Provisorien (Favoriten, Beschreibungen, Anzeigeoptionen) erst nach Anbindung; ein einmaliger Import lokaler Werte ist Aufgabe des Clients (Konto ohne gespeicherten Zustand → hochladen).
+
+## PWA-Anbindung (30.10.2026)
+
+- Favoriten, Beschreibung, Farbe, Anzeigeoptionen (`view/sort/grouping/showCompleted` über `project-prefs` mit Revision; bei `revision_conflict` einmal mit frischer Revision wiederholt, Schreibvorgänge je Projekt serialisiert) und Reihenfolge kommen vom Server; `localStorage` hält nur noch `todo.collapsedProjects` und `todo.sidebarCollapsed`.
+- Einmaliger Import (`web/src/lib/projectState.ts`, `importLegacyState`): beim Start, wenn `todo.favorites`/`todo.projectDescriptions`/`todo.projectDisplay` existieren. Serverzustand gewinnt (Favoriten nur wenn keine vorhanden, Beschreibung nur bei leerem Feld, Anzeige nur bei `revision 0`); dauerhafte Einzelfehler (400/403/404/422) werden übersprungen, vorübergehende (Netz, 5xx) behalten die Schlüssel für den nächsten Start. Danach werden die Schlüssel gelöscht.
+- Drag-and-drop in der Seitenleiste: oberes/unteres Drittel einer Zeile = davor/danach (nur eigene Reihenfolge, `PUT …/position {index}`), mittleres Drittel = unter das Projekt hängen (`parentID` + `version`, braucht `manage`; sonst 403-Hinweis). Menü: „Nach oben/unten“, „Verschieben nach …“. Zyklus (422 `project_cycle`) zeigt eine eigene Meldung. Touch-Geräte nutzen das Menü (HTML5-DnD).
