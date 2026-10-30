@@ -7,6 +7,24 @@ info:
     sind zunächst vollständig ohne Cursor; Skalierung und Aufbewahrung sind Folgearbeit.
 paths:
   /v1/agents/devices:
+    get:
+      summary: Eigene Runner-Geräte mit Projektbindungen auflisten
+      operationId: get_agents_devices
+      security:
+      - humanSession: []
+      description: 'Nur Geräte des angemeldeten Kontos (nach Label, id). Liefert nie Token, Token-Hashes oder Kopplungscodes.
+        paired=false bis der Einmalcode eingelöst wurde; revokedAt gesetzt bei widerrufenen Geräten; activeRunCount =
+        Läufe ohne endedAt (auch abgelaufene, noch nicht abgeglichene).'
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/RunnerDevice'}
+        '401':
+          $ref: '#/components/responses/Error401'
     post:
       summary: Einmalcode zur Gerätekopplung erstellen
       operationId: post_agents_devices
@@ -157,6 +175,41 @@ paths:
         Runner konsistent gewählte lokale Repository-UUID; gleiche UUID für alle Aliase
         desselben Repositorys auf demselben Gerät. Keine Pfade übertragen.
   /v1/agents/jobs:
+    get:
+      summary: Agentenaufträge der eigenen Projekte auflisten (neueste zuerst)
+      operationId: get_agents_jobs
+      security:
+      - humanSession: []
+      description: 'Agentenausführung bleibt Eigentümerfähigkeit: gelistet werden nur Aufträge in Projekten, die dem Konto
+        gehören; projectID eines fremden, aber sichtbaren Projekts ergibt 403, eines unsichtbaren/unbekannten 404.
+        Sortierung nach Freigabezeitpunkt (Ereignis released) absteigend, dann id. Blättern mit nextCursor als before.'
+      parameters:
+      - {name: projectID, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: taskID, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: state, in: query, required: false, schema: {$ref: '#/components/schemas/JobState'}}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      - {name: before, in: query, required: false, schema: {type: string}, description: 'nextCursor der Vorseite'}
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/JobListItem'}
+                  nextCursor: {type: string}
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          description: Projekt sichtbar, aber nicht Eigentümer
+        '404':
+          $ref: '#/components/responses/Error404'
     post:
       summary: Aufgabe explizit zur Klärung oder Umsetzung freigeben
       operationId: post_agents_jobs
@@ -926,6 +979,34 @@ components:
       description: Gekoppeltes, einzeln widerrufbares Gerät; keine menschliche Sitzung
         und kein MCP-OAuth-Token.
   schemas:
+    RunnerDevice:
+      type: object
+      required: [id, label, paired, bindings, activeRunCount]
+      properties:
+        id: {type: string, format: uuid}
+        label: {type: string}
+        paired: {type: boolean}
+        revokedAt: {type: string, format: date-time}
+        activeRunCount: {type: integer}
+        bindings:
+          type: array
+          items:
+            type: object
+            required: [id, projectID, deviceID, repositoryKey, label]
+            properties:
+              id: {type: string, format: uuid}
+              projectID: {type: string, format: uuid}
+              deviceID: {type: string, format: uuid}
+              repositoryKey: {type: string}
+              label: {type: string}
+    JobListItem:
+      type: object
+      required: [job, taskTitle, projectName]
+      properties:
+        job: {$ref: '#/components/schemas/Job'}
+        taskTitle: {type: string}
+        projectName: {type: string}
+        createdAt: {type: string, format: date-time}
     JobState:
       type: string
       enum:

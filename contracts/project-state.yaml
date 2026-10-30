@@ -1,0 +1,249 @@
+openapi: 3.1.0
+info:
+  title: Todo – Projektzustand je Konto, Projektkommentare, Aktivitätsfeed
+  version: 1.0.0
+  description: 'Persönliche Projektreihenfolge, Favoriten und Anzeigeeinstellungen (je Konto, ADR 0012), Kommentare an
+    Projekten und ein aggregierter Aktivitätsfeed. Rechte ausschließlich über ProjectAccess: Lesen = read, Kommentieren =
+    comment, Umhängen (neuer Elternknoten) = manage; Unsichtbares 404, zu geringe Rolle 403, veraltete Version/Revision 409.
+    Schreibvorgänge nehmen zuerst die Sharing-Graph-Sperre (replikasicher). Projektbeschreibung und -farbe stehen in
+    openapi.yaml (Project, CreateProjectRequest, UpdateProjectRequest). Migrationen: AddProjectDetails (vor
+    CreateSyncSchema) und CreateProjectState (am Ende); vor Betrieb `App migrate --yes`.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/projects/{id}/position:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: putProjectPosition
+      summary: Projekt unter seinen Geschwistern einsortieren (eigene Reihenfolge), optional umhängen
+      description: 'Ohne parentID bleibt der Elternknoten, wie ihn der Betrachter sieht; die Änderung betrifft nur die
+        eigene Reihenfolge (keine Projektversion, kein Eingriff in fremde Sichten). Mit parentID (UUID oder null für
+        Wurzel) wird das Projekt umgehängt: Rolle manage am Projekt und am neuen Elternknoten, version Pflicht
+        (400 version_required, 409 version_conflict), Zyklus 422 project_cycle; die Projektversion steigt wie bei PATCH.
+        index ist 0-basiert, zu große Werte werden auf das Ende begrenzt, negative ergeben 400 invalid_index. Danach hat
+        jedes sichtbare Geschwister dieses Betrachters eine dichte Position 0..n-1; betroffene Projekte erscheinen im
+        Sync-Feed erneut (nur der Betrachter sieht seine Positionen).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index]
+              properties:
+                index: {type: integer, minimum: 0}
+                parentID: {type: [string, 'null'], format: uuid}
+                version: {type: integer}
+      responses:
+        '200': {description: Projekt aus Sicht des Betrachters, content: {application/json: {schema: {$ref: 'openapi.yaml#/components/schemas/Project'}}}}
+        '400': {description: invalid_index oder version_required}
+        '403': {description: Umhängen ohne manage}
+        '404': {description: Projekt oder neuer Elternknoten unsichtbar}
+        '409': {description: version_conflict}
+        '422': {description: project_cycle}
+  /v1/me/favorites:
+    get:
+      operationId: listFavorites
+      summary: Favoriten des Kontos in Reihenfolge
+      description: 'Nur derzeit sichtbare Projekte; Favoriten von Projekten, die das Konto nicht mehr sehen darf, bleiben
+        gespeichert und erscheinen nach erneuter Freigabe wieder. position ist dicht 0..n-1.'
+      responses:
+        '200': {description: Erfolg, content: {application/json: {schema: {$ref: '#/components/schemas/Favorites'}}}}
+  /v1/me/favorites/{projectID}:
+    parameters:
+    - {name: projectID, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: putFavorite
+      summary: Favorit setzen oder an eine Position verschieben (idempotent)
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, properties: {index: {type: integer, minimum: 0, description: 'Standard Ende; zu große Werte werden begrenzt'}}}}}
+      responses:
+        '200': {description: Neue Favoritenliste, content: {application/json: {schema: {$ref: '#/components/schemas/Favorites'}}}}
+        '400': {description: invalid_index}
+        '404': {description: Projekt unsichtbar}
+    delete:
+      operationId: deleteFavorite
+      summary: Favorit entfernen (idempotent)
+      responses:
+        '204': {description: Entfernt oder nie gesetzt}
+        '404': {description: Projekt unsichtbar}
+  /v1/me/project-prefs:
+    get:
+      operationId: listProjectPrefs
+      summary: Gespeicherte Anzeigeeinstellungen aller sichtbaren Projekte
+      description: 'Nur Projekte mit revision > 0 (mindestens einmal geschrieben). Alle anderen: Standardwerte
+        (view list, sort manual, grouping column, showCompleted true).'
+      responses:
+        '200': {description: Erfolg, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/ProjectPrefs'}}}}}}}
+  /v1/me/project-prefs/{projectID}:
+    parameters:
+    - {name: projectID, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getProjectPrefs
+      summary: Anzeigeeinstellungen des Kontos für ein Projekt (Standardwerte mit revision 0)
+      responses:
+        '200': {description: Erfolg, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectPrefs'}}}}
+        '404': {description: Projekt unsichtbar}
+    patch:
+      operationId: patchProjectPrefs
+      summary: Anzeigeeinstellungen teilweise ändern
+      description: 'Strikt: genau die Schlüssel revision, view, sort, grouping, showCompleted (sonst 400
+        unknown_project_prefs_key), revision ist Pflicht, ganzzahlig >= 0 und muss der gespeicherten entsprechen (sonst
+        409 revision_conflict); mindestens eine Einstellung (400 empty_project_prefs); unbekannte Werte 400
+        invalid_view|invalid_sort|invalid_grouping|invalid_showCompleted. Jeder Schreibvorgang erhöht revision um 1.
+        Körper höchstens 1 KiB.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision]
+              additionalProperties: false
+              properties:
+                revision: {type: integer, minimum: 0}
+                view: {type: string, enum: [list, board]}
+                sort: {type: string, enum: [manual, title, due, priority]}
+                grouping: {type: string, enum: [none, column, priority, due]}
+                showCompleted: {type: boolean}
+      responses:
+        '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectPrefs'}}}}
+        '400': {description: Validierungsfehler}
+        '404': {description: Projekt unsichtbar}
+        '409': {description: revision_conflict}
+  /v1/projects/{id}/comments:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listProjectComments
+      summary: Kommentare des Projekts (älteste zuerst, read)
+      responses:
+        '200': {description: Erfolg, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ProjectComment'}}}}}
+        '404': {description: Projekt unsichtbar}
+    post:
+      operationId: createProjectComment
+      summary: Kommentar anlegen (comment)
+      description: 'Optionaler Header Idempotency-Key (1..200 sichtbare ASCII-Zeichen) je Konto und Projekt: Wiederholung
+        mit gleichem Text liefert den ursprünglichen Kommentar, anderer Text 409 idempotency_conflict. Text getrimmt,
+        1..10000 Zeichen (400 invalid_text). Erzeugt das Projektereignis comment.created.'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [body], properties: {body: {type: string}}}}}
+      responses:
+        '201': {description: Angelegt, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectComment'}}}}
+        '400': {description: invalid_text oder invalid_idempotency_key}
+        '403': {description: Rolle unter comment}
+        '404': {description: Projekt unsichtbar}
+        '409': {description: idempotency_conflict}
+  /v1/projects/{id}/comments/{commentID}:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: commentID, in: path, required: true, schema: {type: string, format: uuid}}
+    patch:
+      operationId: editProjectComment
+      summary: Eigenen Kommentar ändern (comment, nur Autor)
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [body, version], properties: {body: {type: string}, version: {type: integer}}}}}
+      responses:
+        '200': {description: Geändert, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectComment'}}}}
+        '400': {description: invalid_text oder version_required}
+        '403': {description: not_comment_author}
+        '404': {description: Projekt oder Kommentar unbekannt}
+        '409': {description: version_conflict}
+    delete:
+      operationId: deleteProjectComment
+      summary: Kommentar löschen (Autor oder manage)
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [version], properties: {version: {type: integer}}}}}
+      responses:
+        '204': {description: Gelöscht}
+        '403': {description: not_comment_author}
+        '404': {description: Projekt oder Kommentar unbekannt}
+        '409': {description: version_conflict}
+  /v1/activity:
+    get:
+      operationId: listActivity
+      summary: Aggregierter Aktivitätsfeed (neueste zuerst)
+      description: 'Vereint Aufgabenereignisse (activity_events: Aufgabe angelegt/geändert/verschoben, Kommentare,
+        Kriterien, Agenten-Ereignisse) und Projektereignisse (Projektkommentare) aller für das Konto lesbaren Projekte,
+        oder nur eines Projekts (projectID; unsichtbar 404). Nie Ereignisse unsichtbarer Projekte. Sortierung nach
+        createdAt absteigend, dann id; before = nextCursor der Vorseite (undurchsichtig, sonst 400 invalid_cursor).
+        limit 1..100 (Standard 50, sonst 400 invalid_limit). actorName nur für Personen.'
+      parameters:
+      - {name: projectID, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      - {name: before, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Erfolg, content: {application/json: {schema: {$ref: '#/components/schemas/ActivityFeed'}}}}
+        '400': {description: invalid_project, invalid_limit oder invalid_cursor}
+        '404': {description: projectID unsichtbar}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: session}
+  schemas:
+    Favorites:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [projectID, position]
+            properties:
+              projectID: {type: string, format: uuid}
+              position: {type: integer, minimum: 0}
+    ProjectPrefs:
+      type: object
+      required: [projectID, view, sort, grouping, showCompleted, isFavorite, revision]
+      properties:
+        projectID: {type: string, format: uuid}
+        view: {type: string, enum: [list, board]}
+        sort: {type: string, enum: [manual, title, due, priority]}
+        grouping: {type: string, enum: [none, column, priority, due]}
+        showCompleted: {type: boolean}
+        isFavorite: {type: boolean}
+        favoritePosition: {type: integer}
+        revision: {type: integer, description: '0 solange nie geschrieben'}
+        updatedAt: {type: string, format: date-time}
+    ProjectComment:
+      type: object
+      required: [id, projectID, authorID, body, version]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        authorID: {type: string, format: uuid}
+        authorName: {type: string}
+        body: {type: string}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+    ActivityFeed:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, source, projectID, projectName, sequence, actorType, actorID, kind]
+            properties:
+              id: {type: string, format: uuid}
+              source: {type: string, enum: [task, project]}
+              projectID: {type: string, format: uuid}
+              projectName: {type: string}
+              taskID: {type: string, format: uuid}
+              taskTitle: {type: string}
+              sequence: {type: integer, description: 'Reihenfolge innerhalb der Aufgabe bzw. des Projekts'}
+              actorType: {type: string, enum: [Person, Integration, Run]}
+              actorID: {type: string, format: uuid}
+              actorName: {type: string}
+              kind: {type: string, description: 'z. B. task.created, task.updated, task.status_changed, task.moved, comment.created, comment.updated, comment.deleted, criterion.*, agent.*'}
+              subjectID: {type: string, format: uuid}
+              createdAt: {type: string, format: date-time}
+        nextCursor: {type: string}

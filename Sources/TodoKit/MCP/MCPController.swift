@@ -83,7 +83,10 @@ struct MCPController: RouteCollection {
         Tool(name: "list_attachments", scope: "attachments:read", properties: ["taskID": string], required: ["taskID"]),
         Tool(name: "get_attachment", scope: "attachments:read", properties: ["id": string], required: ["id"]),
         Tool(name: "list_columns", scope: "projects:read", properties: ["projectID": string], required: ["projectID"]),
-        Tool(name: "move_task_to_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "columnID": .object(["type": .array([.string("string"), .string("null")])]), "index": .object(["type": .string("integer")])], required: ["id", "version", "columnID"])
+        Tool(name: "move_task_to_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "columnID": .object(["type": .array([.string("string"), .string("null")])]), "index": .object(["type": .string("integer")])], required: ["id", "version", "columnID"]),
+        Tool(name: "create_column", scope: "tasks:write", properties: ["projectID": string, "name": string, "color": string, "isDone": .object(["type": .string("boolean")]), "index": .object(["type": .string("integer")])], required: ["projectID", "name"]),
+        Tool(name: "rename_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "name": string], required: ["id", "version", "name"]),
+        Tool(name: "delete_column", scope: "tasks:write", properties: ["id": string, "version": .object(["type": .string("integer")]), "moveTo": string], required: ["id"])
     ]
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
@@ -114,6 +117,7 @@ struct MCPController: RouteCollection {
                     let p = try await project(id, user: user, grant: grant, db: db)
                     result.append(.object(["id": .string(try p.requireID().uuidString), "name": .string(p.name),
                         "version": .number(Double(p.version)),
+                        "description": p.details.map { .string($0) } ?? .null, "color": p.color.map { .string($0) } ?? .null,
                         "parentID": p.parentID.flatMap { grant.projects.contains($0) ? .string($0.uuidString) : nil } ?? .null]))
                 }
                 catch let e as any AbortError where e.status == .notFound { continue }
@@ -212,8 +216,65 @@ struct MCPController: RouteCollection {
                 _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
                 return try .encoded(try await ColumnService(user: user, db: db).move(id, request))
             }
+        case "create_column":
+            let projectID = try uuid(a["projectID"])
+            guard let name = a["name"].string else { throw Abort(.badRequest, reason: "invalid_name") }
+            let color: String?
+            if a["color"].isNull { color = nil } else { guard let c = a["color"].string else { throw Abort(.badRequest, reason: "invalid_color") }; color = c }
+            let isDone: Bool?
+            if a["isDone"].isNull { isDone = nil } else { guard case .bool(let b) = a["isDone"] else { throw Abort(.badRequest, reason: "invalid_arguments") }; isDone = b }
+            let index = try intArgument(a["index"], reason: "invalid_index")
+            return try await db.transaction { db in
+                try await lockSharingGraph(on: db)
+                _ = try await project(projectID, user: user, grant: grant, db: db, role: .edit)
+                let column = try await ColumnService(user: user, db: db).create(projectID,
+                    CreateColumnRequest(name: name, color: color, isDone: isDone, index: index))
+                return try .encoded(ColumnDTO(column))
+            }
+        case "rename_column":
+            let id = try uuid(a["id"])
+            guard let version = try intArgument(a["version"], reason: "invalid_arguments"), let name = a["name"].string else {
+                throw Abort(.badRequest, reason: "invalid_arguments")
+            }
+            return try await db.transaction { db in
+                try await lockSharingGraph(on: db)
+                try await grantedColumn(id, user: user, grant: grant, db: db)
+                let column = try await ColumnService(user: user, db: db).update(id,
+                    UpdateColumnRequest(version: version, name: name, color: nil, isDone: nil, index: nil))
+                return try .encoded(ColumnDTO(column))
+            }
+        case "delete_column":
+            let id = try uuid(a["id"])
+            let version = try intArgument(a["version"], reason: "invalid_arguments")
+            var moveTo: UUID??
+            if !a["moveTo"].isNull {
+                guard let raw = a["moveTo"].string else { throw Abort(.badRequest, reason: "invalid_move_to") }
+                if raw == "none" { moveTo = .some(nil) }
+                else if let target = UUID(uuidString: raw) { moveTo = .some(target) }
+                else { throw Abort(.badRequest, reason: "invalid_move_to") }
+            }
+            let target = moveTo
+            try await db.transaction { db in
+                try await lockSharingGraph(on: db)
+                try await grantedColumn(id, user: user, grant: grant, db: db)
+                try await ColumnService(user: user, db: db).delete(id, moveTo: target, expectedVersion: version)
+            }
+            return .object(["deleted": .bool(true)])
         default: throw Abort(.badRequest)
         }
+    }
+
+    /// Optional integer argument: absent/null = nil, anything but a whole number is rejected.
+    func intArgument(_ value: JSONValue, reason: String) throws -> Int? {
+        if value.isNull { return nil }
+        guard case .number(let n) = value, n == n.rounded(), abs(n) < 1e9 else { throw Abort(.badRequest, reason: reason) }
+        return Int(n)
+    }
+
+    /// The column's project must be in the grant and editable by the user (404 otherwise).
+    func grantedColumn(_ id: UUID, user: User, grant: OAuthGrant, db: any Database) async throws {
+        guard let column = try await ProjectColumn.find(id, on: db) else { throw Abort(.notFound) }
+        _ = try await project(column.projectID, user: user, grant: grant, db: db, role: .edit)
     }
 }
 

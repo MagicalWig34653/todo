@@ -790,7 +790,26 @@ components:
           type: string
         version:
           type: integer
-      description: Absent parentID is omitted, not null. New projects start at version 1.
+        description:
+          type: string
+          description: Optional free text (at most 10 000 characters); omitted when empty.
+        color:
+          type: string
+          description: Optional #RRGGBB (uppercase); omitted when unset (clients may derive one from the ID).
+        createdAt:
+          type: string
+          format: date-time
+        position:
+          type: integer
+          description: The viewer's own order among visible siblings (ADR 0012); omitted until the viewer reordered.
+            Sort siblings by (position ?? infinity, createdAt, id).
+        isFavorite:
+          type: boolean
+          description: Favourite flag of the viewer (private to the account).
+        favoritePosition:
+          type: integer
+          description: Position among the viewer's favourites; present only for favourites.
+      description: Absent parentID is omitted, not null. New projects start at version 1. See contracts/project-state.yaml.
     CreateProjectRequest:
       type: object
       required:
@@ -804,6 +823,12 @@ components:
             - type: string
               format: uuid
             - type: 'null'
+        description:
+          type: string
+          description: Optional, trimmed, at most 10 000 characters (400 invalid_description); empty = none.
+        color:
+          type: string
+          description: Optional #RRGGBB (400 invalid_color).
     UpdateProjectRequest:
       type: object
       required:
@@ -825,6 +850,12 @@ components:
           anyOf:
             - type: boolean
             - type: 'null'
+        description:
+          type: string
+          description: Omitted = unchanged, empty string = clear, otherwise at most 10 000 characters.
+        color:
+          type: string
+          description: Omitted = unchanged, empty string = clear, otherwise #RRGGBB.
       description: Expected version is required. Every successful PATCH increments version, including
         no-op updates. moveToRoot=true takes precedence over parentID. Omitted or null parentID leaves
         the parent unchanged; use moveToRoot to clear it. Optional null fields are ignored.

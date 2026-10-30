@@ -71,8 +71,10 @@ public func configureMigrations(_ app: Application) {
     configureMaintenance(app)
     // Before the sync backfill: that migration reads tasks through the model, which now includes column_id.
     app.migrations.add(CreateProjectColumns())
+    app.migrations.add(AddProjectDetails())
     app.migrations.add(CreateSyncSchema())
     app.migrations.add(WidenLongTextColumns())
+    configureProjectState(app)
 }
 
 public func configureContent() {

@@ -6,18 +6,35 @@ struct ProjectDTO: Content {
     let parentID: UUID?
     let name: String
     let version: Int
+    /// Optional free text; omitted when empty.
+    let description: String?
+    /// Optional `#RRGGBB`; omitted when unset (clients may derive a colour from the ID).
+    let color: String?
+    let createdAt: Date?
+    /// Per-viewer sibling order (ADR 0012): `nil` = never positioned by this viewer; clients sort siblings by
+    /// `(position ?? Int.max, createdAt, id)`. Only set where the viewer is known (`ProjectAccess.dto`).
+    var position: Int? = nil
+    /// Per-viewer favourite flag and its order among the viewer's favourites.
+    var isFavorite: Bool = false
+    var favoritePosition: Int? = nil
 
     init(_ p: Project) throws {
         id = try p.requireID()
         parentID = p.parentID
         name = p.name
         version = p.version
+        description = p.details
+        color = p.color
+        createdAt = p.createdAt
     }
 }
 
 struct CreateProjectRequest: Content {
     let name: String
     let parentID: UUID?
+    /// Optional description (<= 10 000 characters) and `#RRGGBB` colour.
+    var description: String? = nil
+    var color: String? = nil
 }
 
 /// `version` is the version the client last saw; a mismatch yields 409 instead of a silent overwrite.
@@ -26,6 +43,10 @@ struct UpdateProjectRequest: Content {
     let name: String?
     let parentID: UUID??
     let moveToRoot: Bool?
+    /// `nil` = unchanged, `""` = clear.
+    var description: String? = nil
+    /// `nil` = unchanged, `""` = clear, otherwise `#RRGGBB`.
+    var color: String? = nil
 }
 
 struct TaskDTO: Content {
@@ -111,14 +132,28 @@ struct ProjectAccess {
         return result
     }
 
-    func dto(_ project: Project) async throws -> ProjectDTO {
+    /// Viewer-specific DTO: redacts a hidden parent and adds the viewer's order/favourite state. Pass `states`
+    /// (keyed by project ID, see `ProjectUserState.states`) to avoid one query per project in lists.
+    func dto(_ project: Project, states: [UUID: ProjectUserState]? = nil) async throws -> ProjectDTO {
+        var result: ProjectDTO
         if let parentID = project.parentID, let parent = try await Project.find(parentID, on: db),
             try await SharingAccess(user: user, db: db).visibility(parent).role == nil {
             let redacted = Project(ownerID: project.ownerID, parentID: nil, name: project.name)
             redacted.id = project.id; redacted.version = project.version
-            return try ProjectDTO(redacted)
+            redacted.details = project.details; redacted.color = project.color; redacted.createdAt = project.createdAt
+            result = try ProjectDTO(redacted)
+        } else {
+            result = try ProjectDTO(project)
         }
-        return try ProjectDTO(project)
+        let id = try project.requireID()
+        let state: ProjectUserState?
+        if let states { state = states[id] } else {
+            state = try await ProjectUserState.query(on: db).filter(\.$userID == user.requireID()).filter(\.$projectID == id).first()
+        }
+        result.position = state?.orderPosition
+        result.isFavorite = state?.isFavorite ?? false
+        result.favoritePosition = state?.isFavorite == true ? state?.favoritePosition : nil
+        return result
     }
 
     func requireDeletion(_ project: Project) async throws {
@@ -153,11 +188,21 @@ enum PlanningOperations {
         return name
     }
 
+    /// Project description: empty (after trimming) = none, at most 10 000 characters.
+    static func cleanDescription(_ raw: String?) throws -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.count <= 10_000 else { throw Abort(.badRequest, reason: "invalid_description") }
+        return value.isEmpty ? nil : value
+    }
+
     static func createProject(user: User, db: any Database, id: UUID? = nil, body: CreateProjectRequest) async throws -> Project {
         let access = ProjectAccess(user: user, db: db)
         if let parent = body.parentID { _ = try await access.project(parent, role: .manage) }
         let project = Project(
             ownerID: try user.requireID(), parentID: body.parentID, name: try cleanName(body.name, reason: "invalid_name"))
+        project.details = try cleanDescription(body.description)
+        project.color = try body.color.flatMap(ColumnService.cleanColor)
         project.id = id
         try await project.save(on: db)
         return project
@@ -169,6 +214,8 @@ enum PlanningOperations {
         let project = try await access.project(projectID, role: .manage)
         guard project.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
         if let name = body.name { project.name = try cleanName(name, reason: "invalid_name") }
+        if let description = body.description { project.details = try cleanDescription(description) }
+        if let color = body.color { project.color = try ColumnService.cleanColor(color) }
         if body.moveToRoot == true {
             project.parentID = nil
         } else if let newParent = body.parentID ?? nil {
@@ -241,7 +288,8 @@ struct PlanningController: RouteCollection {
         let user = try await req.requireUser()
         let access = ProjectAccess(user: user, db: req.db)
         var result: [ProjectDTO] = []
-        for project in try await access.visibleProjects() { result.append(try await access.dto(project)) }
+        let states = try await ProjectUserState.states(of: user, on: req.db)
+        for project in try await access.visibleProjects() { result.append(try await access.dto(project, states: states)) }
         return result
     }
 

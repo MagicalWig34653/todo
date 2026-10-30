@@ -54,9 +54,38 @@ struct AgentDetail: Content {
     }
 }
 
+struct RunnerDeviceDTO: Content {
+    let id: UUID
+    let label: String
+    /// False until the one-time pairing code was redeemed.
+    let paired: Bool
+    let revokedAt: Date?
+    let bindings: [BindingDTO]
+    /// Runs without `endedAt` (also expired-lease runs that were not yet reconciled).
+    let activeRunCount: Int
+}
+
+struct AgentJobListItem: Content {
+    let job: AgentJobDTO
+    let taskTitle: String
+    let projectName: String
+    /// Time of the `released` event; absent for legacy jobs without one.
+    let createdAt: Date?
+}
+
+struct AgentJobPage: Content {
+    static let states: Set<String> = ["queued", "claimed", "running", "waiting_for_answer", "awaiting_review", "succeeded", "failed", "cancelled"]
+    static let defaultLimit = 50
+    static let maxLimit = 100
+    let items: [AgentJobListItem]
+    let nextCursor: String?
+}
+
 struct AgentController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let human = routes.grouped("v1", "agents")
+        human.get("devices", use: listDevices)
+        human.get("jobs", use: listJobs)
         human.post("devices", use: createPairing)
         human.delete("devices", ":id", use: revoke)
         human.post("bindings", use: bind)
@@ -85,6 +114,83 @@ struct AgentController: RouteCollection {
               let device = try await RunnerDevice.query(on: req.db).filter(\.$tokenHash == AuthSupport.hash(token)).first(),
               device.revokedAt == nil else { throw Abort(.unauthorized) }
         return device
+    }
+
+    /// Own runner devices with their project bindings. Never exposes tokens, token hashes or pairing codes.
+    @Sendable func listDevices(_ req: Request) async throws -> [RunnerDeviceDTO] {
+        let user = try await req.requireUser()
+        let devices = try await RunnerDevice.query(on: req.db).filter(\.$ownerID == user.requireID()).sort(\.$label).sort(\.$id).all()
+        var result: [RunnerDeviceDTO] = []
+        for device in devices {
+            let id = try device.requireID()
+            let bindings = try await ProjectRunnerBinding.query(on: req.db).filter(\.$deviceID == id).sort(\.$id).all()
+            let active = try await AgentRun.query(on: req.db).filter(\.$deviceID == id).filter(\.$endedAt == nil).count()
+            result.append(RunnerDeviceDTO(id: id, label: device.label, paired: device.tokenHash != nil,
+                revokedAt: device.revokedAt, bindings: try bindings.map(BindingDTO.init), activeRunCount: active))
+        }
+        return result
+    }
+
+    /// Agent jobs of the caller's own projects (agent execution stays an owner capability, like the detail route).
+    @Sendable func listJobs(_ req: Request) async throws -> AgentJobPage {
+        let user = try await req.requireUser()
+        let access = ProjectAccess(user: user, db: req.db)
+        var projects: [Project]
+        if let raw = req.query[String.self, at: "projectID"] {
+            guard let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_project") }
+            projects = [try await access.startAgent(in: id)]
+        } else {
+            projects = try await access.visibleProjects().filter { $0.ownerID == user.id }
+        }
+        var taskID: UUID?
+        if let raw = req.query[String.self, at: "taskID"] {
+            guard let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_task") }
+            taskID = id
+        }
+        var state: String?
+        if let raw = req.query[String.self, at: "state"] {
+            guard AgentJobPage.states.contains(raw) else { throw Abort(.badRequest, reason: "invalid_state") }
+            state = raw
+        }
+        var limit = AgentJobPage.defaultLimit
+        if let raw = req.query[String.self, at: "limit"] {
+            guard let value = Int(raw), (1...AgentJobPage.maxLimit).contains(value) else { throw Abort(.badRequest, reason: "invalid_limit") }
+            limit = value
+        }
+        var cursor: (Double, String)?
+        if let raw = req.query[String.self, at: "before"] {
+            let parts = raw.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 2, let time = Double(parts[0]), time.isFinite, let id = UUID(uuidString: String(parts[1])) else {
+                throw Abort(.badRequest, reason: "invalid_cursor")
+            }
+            cursor = (time, id.uuidString)
+        }
+        guard !projects.isEmpty else { return AgentJobPage(items: [], nextCursor: nil) }
+        let names = Dictionary(uniqueKeysWithValues: try projects.map { (try $0.requireID(), $0.name) })
+        var query = AgentJob.query(on: req.db).filter(\.$projectID ~~ Array(names.keys))
+        if let taskID { query = query.filter(\.$taskID == taskID) }
+        if let state { query = query.filter(\.$state == state) }
+        let jobs = try await query.all()
+        // Jobs carry no timestamp of their own; the `released` event is the creation time.
+        let released = try await AgentEvent.query(on: req.db).filter(\.$kind == "released")
+            .filter(\.$jobID ~~ jobs.map { try $0.requireID() }).all()
+        var createdAt: [UUID: Date] = [:]
+        for event in released { createdAt[event.jobID] = min(createdAt[event.jobID] ?? event.createdAt, event.createdAt) }
+        let titles = Dictionary(uniqueKeysWithValues: try await TodoTask.query(on: req.db)
+            .filter(\.$id ~~ Array(Set(jobs.map(\.taskID)))).all().map { (try $0.requireID(), $0.title) })
+        var rows = try jobs.map { job -> (key: (Double, String), item: AgentJobListItem) in
+            let id = try job.requireID()
+            let created = createdAt[id]
+            return ((created?.timeIntervalSince1970 ?? 0, id.uuidString), AgentJobListItem(
+                job: try AgentJobDTO(job), taskTitle: titles[job.taskID] ?? "", projectName: names[job.projectID] ?? "",
+                createdAt: created))
+        }
+        rows.sort { $0.key.0 != $1.key.0 ? $0.key.0 > $1.key.0 : $0.key.1 > $1.key.1 }
+        if let cursor { rows = rows.filter { $0.key.0 < cursor.0 || ($0.key.0 == cursor.0 && $0.key.1 < cursor.1) } }
+        let hasMore = rows.count > limit
+        let page = Array(rows.prefix(limit))
+        let next = hasMore ? page.last.map { "\($0.key.0):\($0.key.1)" } : nil
+        return AgentJobPage(items: page.map(\.item), nextCursor: next)
     }
 
     @Sendable func createPairing(_ req: Request) async throws -> PairDeviceResponse {

@@ -7,7 +7,10 @@ info:
     virtuelle Statusspalten (mode "status"). Lesen: Rolle read; Spalten ändern und Aufgaben verschieben: Rolle edit.
     Unsichtbare oder fremde Objekte: 404, zu geringe Rolle: 403, veraltete Version: 409. Alle Schreibvorgänge laufen
     unter der gemeinsamen Sharing-Graph-Sperre (replikasicher). Spalten erscheinen im Sync-Feed als entityType
-    "column" (upsert mit column, delete als Tombstone). Migration: CreateProjectColumns (vor CreateSyncSchema).'
+    "column" (upsert mit column, delete als Tombstone). Migration: CreateProjectColumns (vor CreateSyncSchema).
+    Offline-Schreiben: Spalten- und Verschiebe-Mutationen über POST /v1/sync/mutations (column.create/update/delete,
+    task.move_column; contracts/sync.yaml 1.2.0). MCP: list_columns, move_task_to_column, create_column, rename_column,
+    delete_column.'
 security:
 - bearerAuth: []
 - sessionCookie: []

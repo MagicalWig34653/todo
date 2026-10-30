@@ -95,6 +95,10 @@ final class Project: Model, @unchecked Sendable {
     @Field(key: "owner_id") var ownerID: UUID
     @OptionalField(key: "parent_id") var parentID: UUID?
     @Field(key: "name") var name: String
+    /// Optional free text (TEXT column, at most 10 000 characters); `nil` = none.
+    @OptionalField(key: "description") var details: String?
+    /// Optional `#RRGGBB` project colour; `nil` = derived by the client.
+    @OptionalField(key: "color") var color: String?
     @Field(key: "version") var version: Int
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?

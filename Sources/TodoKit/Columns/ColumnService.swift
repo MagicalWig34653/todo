@@ -98,7 +98,7 @@ struct ColumnService: Sendable {
         return list
     }
 
-    func create(_ projectID: UUID, _ body: CreateColumnRequest) async throws -> ProjectColumn {
+    func create(_ projectID: UUID, _ body: CreateColumnRequest, id: UUID? = nil) async throws -> ProjectColumn {
         try await lockSharingGraph(on: db)
         _ = try await access.project(projectID, role: .edit)
         let existing = try await columns(of: projectID)
@@ -107,6 +107,7 @@ struct ColumnService: Sendable {
         let column = ProjectColumn(
             projectID: projectID, name: try Self.cleanName(body.name), color: try body.color.flatMap(Self.cleanColor),
             isDone: body.isDone ?? false, position: existing.count)
+        column.id = id
         try await column.save(on: db)
         let list = insert(column, into: existing, at: body.index)
         for (i, c) in list.enumerated() where c.position != i {

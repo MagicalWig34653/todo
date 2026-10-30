@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todo Sync
-  version: 1.1.0
+  version: 1.2.0
   description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
     ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz
     im Änderungsprotokoll bezeichnet. Cursor "c0" liefert den vollständigen sichtbaren Stand. Jede Änderung wird nach
@@ -14,7 +14,10 @@ info:
     werden aktualisiert. Clients wenden Änderungen in Sequenzreihenfolge an; kein Resync ab c0 nach Rechtewechsel nötig.
     Upserts können auch unverändert berechtigten Konten erneut geliefert werden. Mutationen verwenden dieselben Operationen und Rechteprüfungen wie die REST-Routen (Fremdes 404, zu
     geringe Rolle 403, Versionskonflikt 409). Migration: CreateSyncSchema (legt Protokolltabellen an und füllt
-    bestehende Projekte/Aufgaben als Upserts nach); explizit vor Serverstart ausführen.'
+    bestehende Projekte/Aufgaben als Upserts nach); explizit vor Serverstart ausführen.
+    1.2.0: Mutationstypen project.position, task.move_column, column.create/update/delete (Spalten-IDs wählt der Client;
+    Rechte wie REST: edit); Projekte tragen description/color/createdAt und die Betrachter-Felder position/isFavorite/
+    favoritePosition (Änderungen daran erzeugen ein Projekt-Upsert; der Feed liefert jedem Leser seinen eigenen Stand, siehe project-state.yaml).'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -145,6 +148,23 @@ components:
         parentID: {type: string, format: uuid, nullable: true}
         name: {type: string}
         version: {type: integer}
+        description: {type: string}
+        color: {type: string}
+        createdAt: {type: string, format: date-time}
+        position: {type: integer, description: 'Eigene Geschwisterreihenfolge des Betrachters (ADR 0012)'}
+        isFavorite: {type: boolean}
+        favoritePosition: {type: integer}
+    Column:
+      type: object
+      required: [id, projectID, name, isDone, position, version]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        name: {type: string}
+        color: {type: string, nullable: true}
+        isDone: {type: boolean}
+        position: {type: integer}
+        version: {type: integer}
     Task:
       type: object
       required: [id, projectID, title, description, status, version]
@@ -184,7 +204,8 @@ components:
         mutationID: {type: string, format: uuid}
         type:
           type: string
-          enum: [project.create, project.update, project.delete, task.create, task.update, task.delete]
+          enum: [project.create, project.update, project.delete, project.position, task.create, task.update, task.delete,
+            task.move_column, column.create, column.update, column.delete]
         id: {type: string, format: uuid}
         version: {type: integer, description: 'Pflicht bei update, optional bei delete (dann Versionsprüfung)'}
         name: {type: string}
@@ -194,6 +215,11 @@ components:
         title: {type: string}
         description: {type: string}
         status: {type: string}
+        color: {type: string, description: 'project.create/update und column.create/update: #RRGGBB (leer löscht). Beschreibung eines Projekts: Feld description (leer löscht).'}
+        isDone: {type: boolean, description: 'column.create/update'}
+        index: {type: integer, minimum: 0, description: 'column.create/update, task.move_column, project.position: 0-basierte Zielposition'}
+        moveTo: {type: string, description: 'column.delete: "none" oder Spalten-UUID; fehlt = erste verbleibende Spalte'}
+        columnID: {type: string, format: uuid, description: 'task.move_column: Zielspalte; fehlt = Ohne Spalte'}
     SyncMutationResult:
       type: object
       required: [mutationID, type, id, deleted, cursor]
@@ -204,4 +230,5 @@ components:
         deleted: {type: boolean}
         project: {$ref: '#/components/schemas/Project'}
         task: {$ref: '#/components/schemas/Task'}
+        column: {$ref: '#/components/schemas/Column', description: 'column.create/update'}
         cursor: {type: string}

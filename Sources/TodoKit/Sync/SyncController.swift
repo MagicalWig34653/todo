@@ -21,7 +21,8 @@ struct SyncChangesResponse: Content {
 
 struct SyncMutationRequest: Content {
     let mutationID: UUID
-    /// project.create | project.update | project.delete | task.create | task.update | task.delete
+    /// project.create | project.update | project.delete | project.position | task.create | task.update | task.delete |
+    /// task.move_column | column.create | column.update | column.delete
     let type: String
     /// Entity ID: chosen by the client for creates, the target for updates and deletes.
     let id: UUID
@@ -33,6 +34,17 @@ struct SyncMutationRequest: Content {
     let title: String?
     let description: String?
     let status: String?
+    /// project.create/update: `#RRGGBB` (empty clears; project `description` reuses the field above, empty clears).
+    /// column.create/update: column colour.
+    var color: String? = nil
+    /// column.create/update.
+    var isDone: Bool? = nil
+    /// Insert position for column.create/update, task.move_column and project.position.
+    var index: Int? = nil
+    /// column.delete: `"none"` ("Ohne Spalte") or a column UUID; omitted = first remaining column.
+    var moveTo: String? = nil
+    /// task.move_column: target column of the task's project; omitted/null = "Ohne Spalte".
+    var columnID: UUID? = nil
 }
 
 struct SyncMutationResponse: Content {
@@ -42,6 +54,8 @@ struct SyncMutationResponse: Content {
     let deleted: Bool
     let project: ProjectDTO?
     let task: TaskDTO?
+    /// Set for column.create/update.
+    var column: ColumnDTO? = nil
     let cursor: String
 }
 
@@ -187,10 +201,10 @@ struct SyncController: RouteCollection {
 
     /// Dispatches to the same operations as the REST routes, so permission checks cannot differ between paths.
     private func apply(_ m: SyncMutationRequest, user: User, on db: any Database) async throws -> (HTTPStatus, SyncMutationResponse) {
-        func result(_ status: HTTPStatus, project: ProjectDTO? = nil, task: TaskDTO? = nil, deleted: Bool = false) async throws
-            -> (HTTPStatus, SyncMutationResponse) {
+        func result(_ status: HTTPStatus, project: ProjectDTO? = nil, task: TaskDTO? = nil, column: ColumnDTO? = nil,
+                    deleted: Bool = false) async throws -> (HTTPStatus, SyncMutationResponse) {
             (status, SyncMutationResponse(mutationID: m.mutationID, type: m.type, id: m.id, deleted: deleted,
-                project: project, task: task, cursor: try await cursorNow(db)))
+                project: project, task: task, column: column, cursor: try await cursorNow(db)))
         }
         func requireVersion() throws -> Int {
             guard let version = m.version else { throw Abort(.badRequest, reason: "version_required") }
@@ -199,7 +213,8 @@ struct SyncController: RouteCollection {
         func requireFreshID() async throws {
             let projectExists = try await Project.find(m.id, on: db) != nil
             let taskExists = try await TodoTask.find(m.id, on: db) != nil
-            if projectExists || taskExists {
+            let columnExists = try await ProjectColumn.find(m.id, on: db) != nil
+            if projectExists || taskExists || columnExists {
                 throw Abort(.conflict, reason: "id_exists")
             }
             if try await SyncRecorder.wasDeleted(m.id, on: db) { throw Abort(.conflict, reason: "id_deleted") }
@@ -209,12 +224,20 @@ struct SyncController: RouteCollection {
             guard let name = m.name else { throw Abort(.badRequest, reason: "invalid_name") }
             try await requireFreshID()
             let project = try await PlanningOperations.createProject(
-                user: user, db: db, id: m.id, body: CreateProjectRequest(name: name, parentID: m.parentID))
+                user: user, db: db, id: m.id,
+                body: CreateProjectRequest(name: name, parentID: m.parentID, description: m.description, color: m.color))
             return try await result(.created, project: ProjectAccess(user: user, db: db).dto(project))
         case "project.update":
             let dto = try await PlanningOperations.updateProject(user: user, db: db, id: m.id,
                 body: UpdateProjectRequest(version: try requireVersion(), name: m.name, parentID: m.parentID.map { Optional($0) },
-                    moveToRoot: m.moveToRoot))
+                    moveToRoot: m.moveToRoot, description: m.description, color: m.color))
+            return try await result(.ok, project: dto)
+        case "project.position":
+            // Without parentID/moveToRoot the viewer's current parent is kept (pure personal reorder).
+            guard let index = m.index else { throw Abort(.badRequest, reason: "invalid_index") }
+            let dto = try await ProjectStateService(user: user, db: db).position(m.id, ProjectPositionRequest(
+                index: index, version: m.version, parentSpecified: m.moveToRoot == true || m.parentID != nil,
+                parentID: m.moveToRoot == true ? nil : m.parentID))
             return try await result(.ok, project: dto)
         case "project.delete":
             try await PlanningOperations.deleteProject(user: user, db: db, id: m.id, expectedVersion: m.version)
@@ -232,6 +255,29 @@ struct SyncController: RouteCollection {
             return try await result(.ok, task: dto)
         case "task.delete":
             try await PlanningOperations.deleteTask(user: user, db: db, id: m.id, expectedVersion: m.version)
+            return try await result(.ok, deleted: true)
+        case "task.move_column":
+            let dto = try await ColumnService(user: user, db: db).move(m.id,
+                MoveTaskRequest(version: try requireVersion(), columnID: m.columnID, index: m.index))
+            return try await result(.ok, task: dto)
+        case "column.create":
+            guard let projectID = m.projectID, let name = m.name else { throw Abort(.badRequest, reason: "invalid_name") }
+            try await requireFreshID()
+            let column = try await ColumnService(user: user, db: db).create(projectID,
+                CreateColumnRequest(name: name, color: m.color, isDone: m.isDone, index: m.index), id: m.id)
+            return try await result(.created, column: ColumnDTO(column))
+        case "column.update":
+            let column = try await ColumnService(user: user, db: db).update(m.id,
+                UpdateColumnRequest(version: try requireVersion(), name: m.name, color: m.color, isDone: m.isDone, index: m.index))
+            return try await result(.ok, column: ColumnDTO(column))
+        case "column.delete":
+            var moveTo: UUID??
+            if let raw = m.moveTo {
+                if raw == "none" { moveTo = .some(nil) }
+                else if let id = UUID(uuidString: raw) { moveTo = .some(id) }
+                else { throw Abort(.badRequest, reason: "invalid_move_to") }
+            }
+            try await ColumnService(user: user, db: db).delete(m.id, moveTo: moveTo, expectedVersion: m.version)
             return try await result(.ok, deleted: true)
         default:
             throw Abort(.badRequest, reason: "unknown_mutation_type")
