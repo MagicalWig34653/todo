@@ -1,0 +1,4 @@
+# Lokale Betriebsdaten, niemals committen
+deploy/swarm/stack.env
+deploy/swarm/stack.env.bak
+.DS_Store
