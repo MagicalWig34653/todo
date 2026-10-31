@@ -218,7 +218,7 @@ final class PushTests: XCTestCase {
         XCTAssertTrue(ok.enabled); XCTAssertEqual(ok.environment, .sandbox); XCTAssertEqual(ok.topics, ["de.linolaske.todo"])
         XCTAssertEqual(try load(good.merging(["APNS_TOPIC": "de.a.b, de.a.c"]) { $1 }).apns.topics, ["de.a.b", "de.a.c"])
         // Enabled but incomplete or broken: startup error with a message naming the problem.
-        for (drop, fragment) in [("APNS_KEY_FILE", "APNS_KEY_FILE"), ("APNS_KEY_ID", "APNS_KEY_ID"), ("APNS_TEAM_ID", "APNS_TEAM_ID")] {
+        for (drop, fragment) in [("APNS_KEY_FILE", "APNS_KEY"), ("APNS_KEY_ID", "APNS_KEY_ID"), ("APNS_TEAM_ID", "APNS_TEAM_ID")] {
             var v = good; v[drop] = nil
             XCTAssertThrowsError(try load(v)) { XCTAssertTrue("\($0)".contains(fragment), "\($0)") }
         }
@@ -227,7 +227,7 @@ final class PushTests: XCTestCase {
         XCTAssertThrowsError(try load(good.merging(["APNS_TOPIC": "nodots"]) { $1 }))
         XCTAssertThrowsError(try load(good.merging(["APNS_ENABLED": "yes"]) { $1 }))
         try "not a key".write(to: file, atomically: true, encoding: .utf8)
-        XCTAssertThrowsError(try load(good)) { XCTAssertTrue("\($0)".contains("valid APNs .p8"), "\($0)") }
+        XCTAssertThrowsError(try load(good)) { XCTAssertTrue("\($0)".contains("kein gültiger APNs-Schlüssel"), "\($0)") }
         XCTAssertThrowsError(try load(good.merging(["APNS_KEY_FILE": "/nonexistent/key"]) { $1 }))
     }
 

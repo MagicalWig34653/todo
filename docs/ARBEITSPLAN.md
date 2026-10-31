@@ -147,3 +147,7 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 ## Checkpoint 31.10.2026 (PWA: Einstellungs-Hub, Hilfe, Verwaltung)
 
 Gebaut und geprüft: siehe STATUS (gleicher Titel) und [VERWALTUNG.md](VERWALTUNG.md). Erledigt: PWA-Seite „Claude Code verbinden“ (`/hilfe/claude-code`, auch unter `/einstellungen/mcp`), Hilfemenü, Benutzermenü, Verwaltungsbereich (nur Lesen/Erzeugen, was das Backend bietet). Offen (Backend, priorisiert): 1 Kontenliste/Sperren/Löschen, 2 Einladungsliste und Datenexport/Konto löschen, 3 Profil bearbeiten, 4 Mail-/Versionsanzeige, 5 APNs/Speicher in der Oberfläche, 6 Änderungsprotokoll, persönliche API-Tokens.
+
+## Checkpoint 31.10.2026 (Konfiguration über die PWA, Backend)
+
+Siehe STATUS.md (gleicher Titel) und ADR 0025. Backend, Vertrag `contracts/admin-settings.yaml`, `docs/KONFIGURATION.md`, Deploy-Anpassungen und 16 Tests sind fertig (SQLite; MariaDB ungeprüft). **Nächster Schritt:** PWA-Verwaltungsbereich im Hub (`/einstellungen/verwaltung/<kategorie>`), generiert aus `GET /v1/admin/settings`, mit Playwright (Admin vs. Nicht-Admin, Mail-Test gegen smtp-sink) und Screenshots; danach Image-Tag prüfen und dem Nutzer die Schritte (Migration, optional Konfigurationsschlüssel, Env-Variablen entfernen, die in der PWA änderbar sein sollen) nennen.

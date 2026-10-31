@@ -54,7 +54,8 @@ final class MailWorker: LifecycleHandler, @unchecked Sendable {
     }
 
     func runIfDue() async -> Outcome {
-        guard let sql = app.db as? any SQLDatabase else { return .skipped }
+        // Mail may be switched on and off at runtime; while it is off the outbox stays untouched.
+        guard app.settings.mail.enabled, let sql = app.db as? any SQLDatabase else { return .skipped }
         do { guard try await acquire(sql) else { return .skipped } }
         catch {
             app.logger.warning("mail worker: lease check failed")
@@ -200,11 +201,12 @@ final class MailWorker: LifecycleHandler, @unchecked Sendable {
 
 func configureMailWorker(_ app: Application) throws {
     let cfg = app.settings.mail
-    guard cfg.enabled else {
-        app.logger.info("mail disabled (MAIL_ENABLED is not true)")
-        return
+    // The worker always exists: mail can be enabled later in the PWA and then needs no restart.
+    if cfg.enabled {
+        try app.reconfigureMail()
+        app.logger.info("mail enabled (SMTP \(cfg.host):\(cfg.port) \(cfg.security.rawValue), from \(cfg.from))")
+    } else {
+        app.logger.info("mail disabled (enable it in the PWA settings or with MAIL_ENABLED=true)")
     }
-    app.mailTransport = try SMTPClient(config: cfg)
     app.lifecycle.use(MailWorker(app: app))
-    app.logger.info("mail enabled (SMTP \(cfg.host):\(cfg.port) \(cfg.security.rawValue), from \(cfg.from))")
 }

@@ -48,3 +48,7 @@ Produktname, Geschäftsmodell und Komfortfunktionen blockieren kein Grundgerüst
 Gelesen wurden relevante Dokumentation und Quellstellen aus timetrack-backend und timetrack-pwa, insbesondere Package.swift, AuthSupport, RecoveryService, PlanningServices/-Persistence, OAuth/MCP und die PWA-Anmeldeseite.
 
 Erkenntnisse: Swift/Vapor/Fluent, MariaDB-Anbindung, Passkeys, Recovery, OAuth/MCP und Svelte/shadcn sind passende Referenzen. Rückfallpasswort dient Recovery; Freigaben sind zeitdatenbezogen. Ein globaler auth_lock ist vorhanden. Reale Swarm-/Mehrreplikatests und reale MCP-Client-Kompatibilität dürfen nicht aus der Referenz abgeleitet werden. Die Sichtung war kein vollständiges Audit und kein ausgeführter Funktionstest.
+
+## Konfiguration über die PWA (31.10.2026, ADR 0025)
+
+Nutzerwunsch: fast alles über die PWA einstellbar. Nutzerentscheidung zur Reihenfolge: **Umgebungsvariable vor Einstellung der PWA vor Standard**; eine gesetzte Variable sperrt die Einstellung in der PWA. Geheimnisse werden AES-GCM-verschlüsselt in der Datenbank gehalten, Schlüssel nur als Docker-Secret/Env, nie ausgeliefert. DB-Verbindung, RP_ID/RP_ORIGIN, OAUTH_ISSUER, Bootstrap-Token und der Konfigurationsschlüssel bleiben nur per Umgebung. Details und Alternativen: docs/adr/0025-konfiguration-ueber-die-pwa.md.

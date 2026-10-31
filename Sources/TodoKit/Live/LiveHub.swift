@@ -15,15 +15,7 @@ struct LiveSettings: Sendable {
     var enabled: Bool = true
 
     static func fromEnvironment() -> LiveSettings {
-        var s = LiveSettings()
-        func int(_ k: String) -> Int? { Environment.get(k).flatMap { Int($0) } }
-        if let v = int("LIVE_POLL_MS"), v >= 100 { s.pollInterval = Double(v) / 1000 }
-        if let v = int("LIVE_WAIT_MAX_SECONDS"), v >= 1 { s.maxWaitSeconds = min(v, 120); s.defaultWaitSeconds = min(25, s.maxWaitSeconds) }
-        if let v = int("LIVE_MAX_WAITERS_PER_ACCOUNT"), v >= 1 { s.maxWaitersPerAccount = v }
-        if let v = int("LIVE_MAX_WAITERS_PER_REPLICA"), v >= 1 { s.maxWaitersPerReplica = v }
-        if let v = int("LIVE_CLIENT_POLL_SECONDS"), v >= 1 { s.clientPollSeconds = v }
-        if Environment.get("LIVE_REFRESH_ENABLED") == "false" { s.enabled = false }
-        return s
+        ((try? SettingsResolver.resolve(env: { Environment.get($0) }, stored: [:])) ?? SettingValues()).liveSettings()
     }
 }
 
@@ -121,12 +113,12 @@ final class LiveHubLifecycle: LifecycleHandler, @unchecked Sendable {
 }
 
 extension Application {
-    private struct LiveSettingsKey: StorageKey { typealias Value = LiveSettings }
+    private struct LiveSettingsKey: StorageKey { typealias Value = Locked<LiveSettings> }
     private struct LiveHubKey: StorageKey { typealias Value = LiveHub }
 
     var liveSettings: LiveSettings {
-        get { storage[LiveSettingsKey.self] ?? LiveSettings.fromEnvironment() }
-        set { storage[LiveSettingsKey.self] = newValue }
+        get { lockedBox(LiveSettingsKey.self, LiveSettings.fromEnvironment()).value }
+        set { lockedBox(LiveSettingsKey.self, LiveSettings.fromEnvironment()).value = newValue }
     }
 
     var liveHub: LiveHub {

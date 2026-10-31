@@ -1,5 +1,7 @@
 # Push-Benachrichtigungen einrichten (APNs)
 
+> Alternativ in der PWA: Admins können Key-ID, Team-ID, Bundle-IDs und den .p8-Inhalt unter Einstellungen > Verwaltung > Server > Push ändern und testen, solange die `APNS_*`-Variablen nicht gesetzt sind (Umgebung hat Vorrang und sperrt; ADR 0025, `docs/KONFIGURATION.md`).
+
 Stand: 31.10.2026. Diese Anleitung ist für den Betreiber (Team `J2DU2P47XW`, App-ID `de.linolaske.todo`). Sie beschreibt, was im Apple Developer Portal und auf dem Server zu tun ist, damit die iOS-/macOS-App Push-Benachrichtigungen für Erinnerungen, Agenten-Rückfragen und Reviews erhält. Die Entscheidungen dahinter stehen in [ADR 0021](adr/0021-apns-push.md), die API in `contracts/push.yaml`.
 
 **Ehrlicher Stand:** Der Server-Code ist mit einem Test-Transport geprüft (Registrierung, Deduplizierung, Widerruf bei 410, Wiederholung, Rechteprüfung, JWT-Aufbau). Ein echter Versand an Apple wurde **noch nie ausgeführt**, weil dafür dein Schlüssel und ein Gerät nötig sind. Schritt 5 ist der erste echte Test; Abschnitt „Fehlersuche“ listet die typischen Fehlermeldungen.

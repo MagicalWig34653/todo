@@ -1,0 +1,203 @@
+openapi: 3.1.0
+info:
+  title: Todolino – Servereinstellungen in der PWA (Administration)
+  version: 1.0.0
+  description: 'ADR 0025, Betrieb: docs/KONFIGURATION.md. Alle Pfade verlangen ein Admin-Konto (Bearer oder Sitzung): 401 ohne Anmeldung,
+    403 für Nicht-Admins. Auflösung eines Werts: Umgebungsvariable (nicht leer) > Datenbank (PWA) > Standard. Ein per Umgebung gesetzter Wert
+    ist locked und nicht änderbar (409 setting_locked). Geheimnisse (secret true) werden nie ausgeliefert: value fehlt, isSet und ein
+    Fingerabdruck zeigen den Zustand; sie sind nur speicherbar, wenn der Server einen Verschlüsselungsschlüssel hat (409 encryption_key_missing).
+    Änderungen wirken auf allen Replikaten spätestens nach etwa 10 Sekunden (hotReload) oder nach einem Neustart (requiresRestart).
+    Fehlerkörper aller Pfade: {error: true, reason, message (deutsch), key?, currentVersion?}.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/admin/settings:
+    get:
+      operationId: getServerSettings
+      summary: Alle Einstellungen mit Metadaten, Herkunft und Sperrzustand
+      description: 'Liefert Kategorien, Einstellungen (Registry-Metadaten für generierte Formulare) und die nur per Umgebung einstellbaren
+        Werte (fixed, nur lesbar). Der Wert einer Einstellung ist der wirksame Wert (Umgebung, Datenbank oder Standard).'
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {$ref: '#/components/schemas/SettingsOverview'}}}}
+        '401': {description: Nicht angemeldet}
+        '403': {description: Kein Administrator}
+  /v1/admin/settings/{key}:
+    parameters:
+    - {name: key, in: path, required: true, schema: {type: string, example: mail.smtpHost}}
+    put:
+      operationId: putServerSetting
+      summary: Wert setzen
+      description: 'version ist die zuletzt gesehene Version der Einstellung (0 für eine noch nie gespeicherte). Der Wert wird je Typ
+        geprüft (422 invalid_setting), danach die entstehende Gesamtkonfiguration (422 setting_dependency / setting_required, z. B.
+        Mail einschalten ohne Server). Antwort: die Einstellung im neuen Zustand. Die Konfiguration wird auf dem antwortenden Replikat sofort
+        angewendet, auf den anderen beim nächsten Abgleich.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PutSetting'}
+      responses:
+        '200': {description: Gespeichert, content: {application/json: {schema: {$ref: '#/components/schemas/Setting'}}}}
+        '404': {description: Unbekannter Schlüssel}
+        '409': {description: 'reason setting_locked | version_conflict (currentVersion) | encryption_key_missing', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '422': {description: 'reason invalid_setting | setting_dependency | setting_required', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+    delete:
+      operationId: resetServerSetting
+      summary: Auf Umgebung beziehungsweise Standard zurücksetzen
+      parameters:
+      - {name: version, in: query, required: false, schema: {type: integer}, description: 'Optional: erwartete Version, sonst 409 version_conflict.'}
+      responses:
+        '200': {description: Zurückgesetzt (auch wenn nichts gespeichert war), content: {application/json: {schema: {$ref: '#/components/schemas/Setting'}}}}
+        '404': {description: Unbekannter Schlüssel}
+        '409': {description: 'setting_locked | version_conflict', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '422': {description: Das Zurücksetzen würde eine ungültige Gesamtkonfiguration ergeben, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/settings/audit:
+    get:
+      operationId: getServerSettingsAudit
+      summary: Änderungsprotokoll (neueste zuerst, nie mit Werten)
+      parameters:
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      - {name: key, in: query, schema: {type: string}, description: 'Nur Einträge dieses Schlüssels (Tests: test.mail, test.apns, test.storage).'}
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AuditEntry'}}}}}
+  /v1/admin/settings/test/{kind}:
+    post:
+      operationId: testServerSettings
+      summary: Konfiguration praktisch prüfen
+      description: 'mail: sendet eine Test-Mail über den geladenen Transport an to oder die eigene bestätigte Adresse. apns: signiert ein
+        Token und sendet an die eigenen Geräte. storage: prüft Datenbank und, bei S3, Schreiben/Lesen/Löschen. Technische Fehler der
+        Gegenstelle kommen als ok false mit deutscher Meldung (200); fehlende Voraussetzungen als 409 mail_disabled / push_disabled, 400
+        no_recipient. Begrenzung: 6 Tests je Konto, Art und 10 Minuten (429 rate_limited). Jeder Test steht im Audit.'
+      parameters:
+      - {name: kind, in: path, required: true, schema: {type: string, enum: [mail, apns, storage]}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MailTest'}
+      responses:
+        '200': {description: Ergebnis, content: {application/json: {schema: {$ref: '#/components/schemas/TestResult'}}}}
+        '400': {description: no_recipient}
+        '404': {description: Unbekannte Testart}
+        '409': {description: mail_disabled | push_disabled, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '429': {description: rate_limited}
+  /v1/admin/users:
+    get:
+      operationId: listAdminUsers
+      summary: Konten mit Admin-Kennzeichen
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AdminUser'}}}}}
+  /v1/admin/users/{id}/admin:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: setAdmin
+      summary: Admin-Rolle erteilen oder entziehen
+      description: 'Mindestens ein Admin muss bleiben: der Entzug beim letzten Admin ergibt 409 last_admin_required. Wird im Audit
+        (Schlüssel admin.role) festgehalten.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [isAdmin], properties: {isAdmin: {type: boolean}}}
+      responses:
+        '200': {description: Neuer Zustand, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
+        '404': {description: Konto unbekannt}
+        '409': {description: last_admin_required, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    SettingValue:
+      description: 'Typisiert: bool, int oder string (Listen: komma-getrennter String).'
+      oneOf: [{type: boolean}, {type: integer}, {type: string}]
+    Setting:
+      type: object
+      required: [key, category, label, help, type, env, secret, hotReload, requiresRestart, origin, locked, isSet, unreadable, version]
+      properties:
+        key: {type: string, example: mail.smtpHost}
+        category: {type: string, example: mail}
+        label: {type: string}
+        help: {type: string}
+        type: {type: string, enum: [bool, int, string, enum, text, stringList]}
+        env: {type: string, description: 'Name der Umgebungsvariable (auch NAME_FILE).', example: SMTP_HOST}
+        secret: {type: boolean}
+        hotReload: {type: boolean}
+        requiresRestart: {type: boolean, description: 'true: wirkt erst nach einem Neustart.'}
+        origin: {type: string, enum: [env, db, default]}
+        locked: {type: boolean, description: 'true, sobald die Umgebungsvariable gesetzt ist; nicht änderbar in der PWA.'}
+        value: {$ref: '#/components/schemas/SettingValue', description: 'Wirksamer Wert; fehlt bei Geheimnissen und ohne Wert.'}
+        defaultValue: {$ref: '#/components/schemas/SettingValue'}
+        isSet: {type: boolean, description: 'Ein Wert existiert (für Geheimnisse die einzige Auskunft).'}
+        unreadable: {type: boolean, description: 'Gespeichertes Geheimnis, das der konfigurierte Schlüssel nicht entschlüsseln kann.'}
+        fingerprint: {type: string, description: 'Nur Geheimnisse aus der Datenbank: 6 Hex-Zeichen (HMAC), kein Rückschluss auf den Wert.'}
+        version: {type: integer, description: '0 = nie gespeichert; bei PUT/DELETE mitsenden.'}
+        updatedAt: {type: string, format: date-time}
+        updatedBy: {type: string}
+        min: {type: integer}
+        max: {type: integer}
+        options: {type: array, items: {type: string}}
+        placeholder: {type: string}
+    SettingsOverview:
+      type: object
+      required: [encryptionKeyConfigured, categories, settings, fixed]
+      properties:
+        encryptionKeyConfigured: {type: boolean, description: 'false: Geheimnisse sind nicht speicherbar.'}
+        categories:
+          type: array
+          items: {type: object, required: [id, label, help], properties: {id: {type: string}, label: {type: string}, help: {type: string}}}
+        settings: {type: array, items: {$ref: '#/components/schemas/Setting'}}
+        fixed:
+          type: array
+          description: 'Nur per Umgebung/Docker-Secret einstellbar (nur lesbar). value nur für öffentliche Werte (RP_ID, RP_ORIGIN, OAUTH_ISSUER).'
+          items: {type: object, required: [name, label, help, isSet], properties: {name: {type: string}, label: {type: string}, help: {type: string}, isSet: {type: boolean}, value: {type: string}}}
+        lastError: {type: string, description: 'Die zuletzt gespeicherte Konfiguration konnte auf diesem Replikat nicht angewendet werden.'}
+    PutSetting:
+      type: object
+      required: [value]
+      properties:
+        value: {$ref: '#/components/schemas/SettingValue'}
+        version: {type: integer, default: 0}
+    AuditEntry:
+      type: object
+      required: [id, key, action, actorName]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        action: {type: string, enum: [set, reset, test, admin]}
+        actorId: {type: string, format: uuid}
+        actorName: {type: string}
+        detail: {type: string}
+        version: {type: integer}
+        at: {type: string, format: date-time}
+    MailTest:
+      type: object
+      properties:
+        to: {type: string, description: 'Empfänger; ohne Angabe die eigene bestätigte Adresse.'}
+    TestResult:
+      type: object
+      required: [ok, message]
+      properties:
+        ok: {type: boolean}
+        message: {type: string}
+        durationMs: {type: integer}
+        details: {type: object, additionalProperties: {type: string}}
+    AdminUser:
+      type: object
+      required: [id, displayName, isAdmin]
+      properties:
+        id: {type: string, format: uuid}
+        displayName: {type: string}
+        isAdmin: {type: boolean}
+        username: {type: string}
+    Problem:
+      type: object
+      required: [error, reason, message]
+      properties:
+        error: {type: boolean}
+        reason: {type: string}
+        message: {type: string}
+        key: {type: string}
+        currentVersion: {type: integer}

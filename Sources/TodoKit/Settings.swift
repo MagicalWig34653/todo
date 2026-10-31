@@ -1,7 +1,7 @@
 import Crypto
 import Vapor
 
-/// Runtime settings read from the environment. No replica-local state is needed for correctness.
+/// Runtime settings: environment first, then values stored by administrators (ADR 0025). Replicas converge by polling.
 public struct AppSettings: Sendable {
     public var relyingPartyID: String
     public var relyingPartyName: String
@@ -80,42 +80,32 @@ public struct AppSettings: Sendable {
         self.attachmentMaxBytes = attachmentMaxBytes
     }
 
+    /// Display name of this instance (`branding.instanceName`).
+    public var instanceName = "Todolino"
+    /// S3 connection for attachments; nil while endpoint/bucket are not configured.
+    var s3: S3Config?
+
+    /// Environment-only resolution (no database): what the process starts with before stored settings are merged.
     public static func fromEnvironment(
         get: (String) -> String? = { Environment.get($0) }
     ) throws -> AppSettings {
+        var s = try Self.baseFromEnvironment(get: get)
+        let values = try SettingsResolver.resolve(env: get, stored: [:])
+        try s.applyHot(values)
+        s.applyStartup(values)
+        return s
+    }
+
+    /// Fixed, environment-only values (never stored in the database, ADR 0025).
+    static func baseFromEnvironment(get: (String) -> String?) throws -> AppSettings {
         var s = AppSettings()
         s.relyingPartyID = try RuntimeEnvironment.value("RP_ID", get: get) ?? s.relyingPartyID
         s.relyingPartyName = try RuntimeEnvironment.value("RP_NAME", get: get) ?? s.relyingPartyName
         s.relyingPartyOrigin = try RuntimeEnvironment.value("RP_ORIGIN", get: get) ?? s.relyingPartyOrigin
-        s.passwordLoginEnabled = (try RuntimeEnvironment.value("PASSWORD_LOGIN_ENABLED", get: get) ?? "false") == "true"
         s.bootstrapToken = try RuntimeEnvironment.value("BOOTSTRAP_TOKEN", get: get).flatMap { $0.isEmpty ? nil : $0 }
         s.oauthIssuer = Self.deriveOAuthIssuer(explicit: try RuntimeEnvironment.value("OAUTH_ISSUER", get: get),
                                                rpOrigin: try RuntimeEnvironment.value("RP_ORIGIN", get: get))
         s.secureCookies = s.relyingPartyOrigin.hasPrefix("https://")
-        s.appleAppIDs = (try RuntimeEnvironment.value("AASA_APP_IDS", get: get) ?? "")
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        let storage = try RuntimeEnvironment.value("ATTACHMENT_STORAGE", get: get) ?? ""
-        if !storage.isEmpty {
-            guard let kind = AttachmentStorageKind(rawValue: storage) else { throw AttachmentConfigError.invalid("ATTACHMENT_STORAGE must be database or s3") }
-            s.attachmentStorage = kind
-        }
-        if let raw = try RuntimeEnvironment.value("ATTACHMENT_MAX_BYTES", get: get), !raw.isEmpty {
-            guard let bytes = Int(raw), (AttachmentLimits.minMaxBytes...AttachmentLimits.hardMaxBytes).contains(bytes) else {
-                throw AttachmentConfigError.invalid("ATTACHMENT_MAX_BYTES must be an integer between \(AttachmentLimits.minMaxBytes) and \(AttachmentLimits.hardMaxBytes)")
-            }
-            s.attachmentMaxBytes = bytes
-        }
-        func nonNegative(_ name: String, max: Int, into target: inout Int) throws {
-            guard let raw = try RuntimeEnvironment.value(name, get: get), !raw.isEmpty else { return }
-            guard let v = Int(raw), (0...max).contains(v) else { throw SettingsError.invalid("\(name) must be an integer between 0 and \(max)") }
-            target = v
-        }
-        try nonNegative("CLEANUP_INTERVAL_MINUTES", max: 10_080, into: &s.cleanupIntervalMinutes)
-        try nonNegative("SYNC_RETENTION_DAYS", max: 3_650, into: &s.syncRetentionDays)
-        s.apns = try APNsConfig.fromEnvironment(get: get)
-        s.mail = try MailConfig.fromEnvironment(get: get)
         // Default /srv/web is where the container image ships the PWA; absent directory means API only.
         s.webRoot = try RuntimeEnvironment.value("WEB_ROOT", get: get) ?? "/srv/web"
         return s
@@ -129,7 +119,7 @@ public enum APNsEnvironment: String, Sendable, Codable, CaseIterable {
 
 /// Settings for the APNs sender. The `.p8` key is read from `APNS_KEY_FILE` (a Docker secret) and validated at
 /// startup; with `APNS_ENABLED=true` a missing or unparsable key, key ID, team ID or topic is a startup error.
-public struct APNsConfig: Sendable {
+public struct APNsConfig: Sendable, Equatable {
     public var enabled = false
     /// PEM text of the `.p8` key. Never logged or returned by any endpoint.
     public var keyPEM: String?
@@ -143,44 +133,17 @@ public struct APNsConfig: Sendable {
     public init() {}
 
     static func fromEnvironment(get: (String) -> String?) throws -> APNsConfig {
-        var c = APNsConfig()
-        if let raw = try RuntimeEnvironment.value("APNS_ENVIRONMENT", get: get), !raw.isEmpty {
-            guard let env = APNsEnvironment(rawValue: raw) else { throw SettingsError.invalid("APNS_ENVIRONMENT must be sandbox or production") }
-            c.environment = env
-        }
-        if let raw = try RuntimeEnvironment.value("APNS_TOPIC", get: get), !raw.isEmpty {
-            c.topics = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        }
-        let flag = try RuntimeEnvironment.value("APNS_ENABLED", get: get) ?? "false"
-        guard ["true", "false", ""].contains(flag) else { throw SettingsError.invalid("APNS_ENABLED must be true or false") }
-        guard flag == "true" else { return c }
-        c.enabled = true
-        guard !c.topics.isEmpty, c.topics.allSatisfy({ $0.range(of: "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$", options: .regularExpression) != nil }) else {
-            throw SettingsError.invalid("APNS_TOPIC must list bundle IDs like de.example.app (comma separated)")
-        }
-        let id = "^[A-Z0-9]{10}$"
-        guard let keyID = try RuntimeEnvironment.value("APNS_KEY_ID", get: get), keyID.range(of: id, options: .regularExpression) != nil else {
-            throw SettingsError.invalid("APNS_ENABLED=true needs APNS_KEY_ID (10 characters A-Z0-9, shown next to the key in the developer portal)")
-        }
-        guard let teamID = try RuntimeEnvironment.value("APNS_TEAM_ID", get: get), teamID.range(of: id, options: .regularExpression) != nil else {
-            throw SettingsError.invalid("APNS_ENABLED=true needs APNS_TEAM_ID (10 characters A-Z0-9)")
-        }
-        guard get("APNS_KEY_FILE") != nil || get("APNS_KEY") != nil, let pem = try RuntimeEnvironment.value("APNS_KEY", get: get), !pem.isEmpty else {
-            throw SettingsError.invalid("APNS_ENABLED=true needs the .p8 key: set APNS_KEY_FILE to the path of the Docker secret (e.g. /run/secrets/apns_key)")
-        }
-        do { _ = try P256.Signing.PrivateKey(pemRepresentation: pem) }
-        catch { throw SettingsError.invalid("APNS_KEY_FILE does not contain a valid APNs .p8 key (PEM, EC P-256)") }
-        c.keyID = keyID; c.teamID = teamID; c.keyPEM = pem
-        return c
+        try SettingsResolver.resolve(env: get, stored: [:]).apnsConfig()
     }
 }
 
 extension Application {
-    private struct SettingsKey: StorageKey { typealias Value = AppSettings }
+    private struct SettingsKey: StorageKey { typealias Value = Locked<AppSettings> }
 
+    /// Replaced atomically by the settings runtime when stored settings change (hot reload).
     public var settings: AppSettings {
-        get { storage[SettingsKey.self] ?? AppSettings() }
-        set { storage[SettingsKey.self] = newValue }
+        get { lockedBox(SettingsKey.self, AppSettings()).value }
+        set { lockedBox(SettingsKey.self, AppSettings()).value = newValue }
     }
 }
 

@@ -52,18 +52,20 @@ services:
       RP_ID: ${RP_ID:-localhost}
       RP_NAME: Todolino
       RP_ORIGIN: ${RP_ORIGIN:-http://localhost:25173}
-      PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
+      PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-dev-bootstrap-only}
       # Attachments live in the database unless ATTACHMENT_STORAGE=s3; the S3_* values are then used.
-      ATTACHMENT_STORAGE: ${ATTACHMENT_STORAGE:-database}
-      ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-10485760}
+      ATTACHMENT_STORAGE: ${ATTACHMENT_STORAGE:-}
+      ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_BUCKET: ${S3_BUCKET:-todo-attachments}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-dev-only}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-dev-only}
-      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_REGION: ${S3_REGION:-}
       # APNs push is never active in the dev stack (no key, no Apple calls); see docs/PUSH-EINRICHTUNG.md for production.
-      APNS_ENABLED: "false"
+      APNS_ENABLED: ${APNS_ENABLED:-}
+      # ADR 0025: empty values stay changeable in the PWA. Optional key for secrets stored by the PWA (openssl rand -base64 32).
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
     command: ["migrate", "--yes"]
 
   backend:

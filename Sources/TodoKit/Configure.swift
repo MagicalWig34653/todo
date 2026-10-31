@@ -30,14 +30,16 @@ public struct DatabaseSettings: Sendable {
 
 public func configure(_ app: Application) async throws {
     configureContent()
-    app.settings = try .fromEnvironment()
+    try configureDatabase(app, settings: .fromEnvironment())
+    configureMigrations(app)
+    // Environment first, then settings stored by administrators (ADR 0025); replicas poll for later changes.
+    let runtime = SettingsRuntime(app: app, keyRing: try .fromEnvironment(get: { Environment.get($0) }))
+    app.settingsRuntime = runtime
+    try await runtime.bootstrap()
+    app.lifecycle.use(runtime)
     if app.environment == .production, app.settings.oauthIssuerIsLoopback {
         app.logger.warning("OAuth/MCP issuer is \(app.settings.oauthIssuer): MCP clients cannot connect. Set OAUTH_ISSUER (or RP_ORIGIN) to the public https URL.")
     }
-    // S3 is optional: only an explicit ATTACHMENT_STORAGE=s3 makes the S3_* variables mandatory.
-    if app.settings.attachmentStorage == .s3 { _ = try S3Store.fromEnvironment(maxBytes: app.settings.attachmentMaxBytes) }
-    try configureDatabase(app, settings: .fromEnvironment())
-    configureMigrations(app)
     try routes(app)
     configureMaintenanceScheduler(app)
     try configurePushWorker(app)
@@ -91,6 +93,7 @@ public func configureMigrations(_ app: Application) {
     configureProjectSync(app)
     configurePush(app)
     configureMail(app)
+    configureServerSettings(app)
     configureLive(app)
     // Last: appends label upserts to the change log (needs the sync tables and the discovery tables).
     app.migrations.add(BackfillLabelSync())

@@ -1,6 +1,6 @@
 # E-Mail-Versand einrichten (SMTP)
 
-Optional und standardmäßig aus. Entscheidung und Hintergründe: [ADR 0024](adr/0024-mailversand.md), API: `contracts/mail.yaml`.
+Optional und standardmäßig aus. Entscheidung und Hintergründe: [ADR 0024](adr/0024-mailversand.md), API: `contracts/mail.yaml`. **Alternativ in der PWA:** Admins können alle Mail-Einstellungen samt Passwort auch unter Einstellungen > Verwaltung > Server > E-Mail ändern und testen, solange die Variablen hier nicht gesetzt sind (Umgebung hat Vorrang und sperrt; ADR 0025, `docs/KONFIGURATION.md`).
 
 **Wofür der Server Mail sendet:** (1) Bestätigung einer E-Mail-Adresse (Double-Opt-In), (2) Test-Mail an die eigene bestätigte Adresse, (3) auf Wunsch des Admins der Recovery-Code eines Kontos. Mails enthalten nie Aufgabentitel oder Projektnamen. Keine Zusammenfassungen, keine Benachrichtigungsmails (noch nicht gebaut).
 

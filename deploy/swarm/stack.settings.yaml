@@ -1,0 +1,18 @@
+version: '3.8'
+# Optional overlay: encryption key for secrets that administrators store in the PWA (ADR 0025, docs/KONFIGURATION.md).
+# scripts/swarm-deploy.sh adds this file automatically when SETTINGS_KEY_ENABLED=true is set in the env file.
+# Needs the external Swarm secret todo_settings_key (32 random bytes as base64; name via SETTINGS_KEY_SECRET):
+#   openssl rand -base64 32 | tr -d '\n' | docker secret create todo_settings_key -
+# The key must not be stored in the same backup as the database. Without it the PWA cannot save secrets.
+# Rotation: see stack.settings-previous.yaml and docs/KONFIGURATION.md.
+x-settings: &settings
+  environment:
+    SETTINGS_ENCRYPTION_KEY_FILE: /run/secrets/settings_key
+  secrets: [settings_key]
+services:
+  migrate: *settings
+  backend: *settings
+secrets:
+  settings_key:
+    external: true
+    name: ${SETTINGS_KEY_SECRET:-todo_settings_key}

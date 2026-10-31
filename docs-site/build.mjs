@@ -62,6 +62,7 @@ addMd({ slug: 'berechtigungen.html', src: 'docs/BERECHTIGUNGEN.md', group: 'Tech
 addMd({ slug: 'push-an-claude-code.html', src: 'docs/PUSH-AN-CLAUDE-CODE.md', group: 'Agenten', title: 'Push an Claude Code (Recherche)' });
 addMd({ slug: 'push-einrichtung.html', src: 'docs/PUSH-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'verwaltung.html', src: 'docs/VERWALTUNG.md', group: 'Technik', title: 'Einstellungen, Hilfe, Verwaltung' });
+addMd({ slug: 'konfiguration.html', src: 'docs/KONFIGURATION.md', group: 'Technik', title: 'Konfiguration: Umgebung oder PWA' });
 addMd({ slug: 'mail-einrichtung.html', src: 'docs/MAIL-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'betrieb.html', src: 'docs/BETRIEB.md', group: 'Technik', title: 'Betrieb und Swarm' });
 addMd({ slug: 'entscheidungen.html', src: 'docs/ENTSCHEIDUNGEN.md', group: 'Entscheidungen', title: 'Entscheidungen' });

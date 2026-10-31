@@ -171,10 +171,10 @@ struct APNsSender: Sendable {
 }
 
 extension Application {
-    private struct SenderKey: StorageKey { typealias Value = APNsSender }
-    /// nil while push is disabled. Tests assign a sender with a fake transport.
+    private struct SenderKey: StorageKey { typealias Value = Locked<APNsSender?> }
+    /// nil while push is disabled. Tests assign a sender with a fake transport; the settings runtime replaces it.
     var apnsSender: APNsSender? {
-        get { storage[SenderKey.self] }
-        set { storage[SenderKey.self] = newValue }
+        get { lockedBox(SenderKey.self, nil).value }
+        set { lockedBox(SenderKey.self, nil).value = newValue }
     }
 }

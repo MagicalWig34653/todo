@@ -22,7 +22,9 @@ final class PushWorker: LifecycleHandler, @unchecked Sendable {
     }
 
     let app: Application
-    let sender: APNsSender
+    /// Tests inject a sender; in production the sender comes from `app.apnsSender` (hot-reloaded settings, ADR 0025).
+    private let fixedSender: APNsSender?
+    var sender: APNsSender? { fixedSender ?? app.apnsSender }
     /// Minimum seconds between two runs across all replicas.
     let interval: TimeInterval
     let leaseDuration: TimeInterval
@@ -32,9 +34,9 @@ final class PushWorker: LifecycleHandler, @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
 
-    init(app: Application, sender: APNsSender, interval: TimeInterval = 15, leaseDuration: TimeInterval = 120,
+    init(app: Application, sender: APNsSender? = nil, interval: TimeInterval = 15, leaseDuration: TimeInterval = 120,
          lookback: TimeInterval = 6 * 3600) {
-        self.app = app; self.sender = sender; self.interval = interval; self.leaseDuration = leaseDuration; self.lookback = lookback
+        self.app = app; self.fixedSender = sender; self.interval = interval; self.leaseDuration = leaseDuration; self.lookback = lookback
     }
 
     // MARK: Lifecycle
@@ -66,7 +68,8 @@ final class PushWorker: LifecycleHandler, @unchecked Sendable {
     // MARK: One run
 
     func runIfDue() async -> Outcome {
-        guard let sql = app.db as? any SQLDatabase else { return .skipped }
+        // Push may be switched on and off at runtime; while it is off nothing is enqueued or sent.
+        guard sender != nil, let sql = app.db as? any SQLDatabase else { return .skipped }
         do { guard try await acquire(sql) else { return .skipped } }
         catch {
             app.logger.warning("push worker: lease check failed")
@@ -91,6 +94,7 @@ final class PushWorker: LifecycleHandler, @unchecked Sendable {
         if !candidates.isEmpty {
             report.enqueued += try await PushTriggers(db: db, candidates: candidates, since: now.addingTimeInterval(-lookback), now: now).run()
         }
+        guard let sender else { return report }
         let delivery = PushDelivery(db: db, sender: sender)
         let due = try await PushOutbox.query(on: db).filter(\.$state == "pending").filter(\.$nextAttemptAt <= now)
             .sort(\.$dueAt).sort(\.$id).limit(50).all()
@@ -295,14 +299,14 @@ struct PushTriggers: Sendable {
 
 func configurePushWorker(_ app: Application) throws {
     let cfg = app.settings.apns
-    guard cfg.enabled else {
-        app.logger.info("push disabled (APNS_ENABLED is not true)")
-        return
+    // The worker always exists: push can be enabled later in the PWA and then needs no restart.
+    if cfg.enabled {
+        app.apnsSender = try APNsSender(config: cfg, transport: VaporAPNsTransport(client: app.client))
+        app.logger.info("push enabled (APNs \(cfg.environment.rawValue) default, topics \(cfg.topics.joined(separator: ",")))")
+    } else {
+        app.logger.info("push disabled (enable it in the PWA settings or with APNS_ENABLED=true)")
     }
-    let sender = try APNsSender(config: cfg, transport: VaporAPNsTransport(client: app.client))
-    app.apnsSender = sender
-    app.lifecycle.use(PushWorker(app: app, sender: sender))
-    app.logger.info("push enabled (APNs \(cfg.environment.rawValue) default, topics \(cfg.topics.joined(separator: ",")))")
+    app.lifecycle.use(PushWorker(app: app))
 }
 
 struct PushTestCommand: AsyncCommand {

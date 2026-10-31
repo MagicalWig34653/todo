@@ -10,8 +10,8 @@ x-push: &push
     APNS_KEY_FILE: /run/secrets/apns_key
     APNS_KEY_ID: ${APNS_KEY_ID:?APNS_KEY_ID required}
     APNS_TEAM_ID: ${APNS_TEAM_ID:?APNS_TEAM_ID required}
-    APNS_TOPIC: ${APNS_TOPIC:-de.linolaske.todo}
-    APNS_ENVIRONMENT: ${APNS_ENVIRONMENT:-production}
+    APNS_TOPIC: ${APNS_TOPIC:-}
+    APNS_ENVIRONMENT: ${APNS_ENVIRONMENT:-}
   secrets: [apns_key]
 services:
   # migrate loads the same settings and validates the key, so it gets the secret too.

@@ -9,6 +9,7 @@
 #                        BOOTSTRAP_TOKEN, only with ATTACHMENT_STORAGE=s3 also S3_ACCESS_KEY and S3_SECRET_KEY,
 #                        optionally APPLE_TEAM_ID/APPLE_BUNDLE_IDS, push: APNS_ENABLED=true, APNS_KEY_ID, APNS_TEAM_ID,
 #                        APNS_TOPIC, APNS_ENVIRONMENT and APNS_KEY_SOURCE (path of the .p8 file; only used to create the secret),
+#                        settings key: SETTINGS_KEY_ENABLED=true, SETTINGS_KEY_SECRET and optionally the secret value SETTINGS_KEY (else random),
 #                        mail: MAIL_ENABLED=true, SMTP_HOST, SMTP_SECURITY, SMTP_PORT, SMTP_USER, MAIL_FROM, MAIL_FROM_NAME and the
 #                        secret value SMTP_PASSWORD (or SMTP_PASSWORD_FILE),
 #                        PUBLIC_DOMAIN, CHECK_NETWORK, SWARM_ADVERTISE_ADDR); the file is parsed, never executed
@@ -422,24 +423,41 @@ if [ "$MAIL_ENABLED" = true ]; then
   ask SMTP_PASSWORD_SECRET "Name des Swarm-Secrets für das SMTP-Passwort" "${TODO_STACK}_smtp_password" valid_ident
 fi
 
+# ---------------------------------------------------------------- Step 6d: settings encryption key (optional)
+step "Konfigurationsschlüssel (optional)"
+echo "Administratoren können Einstellungen in der PWA ändern (Einstellungen > Verwaltung). Geheimnisse wie SMTP-Passwort, APNs-Schlüssel oder S3-Schlüssel"
+echo "speichert der Server dann verschlüsselt in der Datenbank. Der Schlüssel liegt als Docker-Secret (zufällig erzeugt, 32 Byte). Anleitung: docs/KONFIGURATION.md."
+SETTINGS_KEY_DEFAULT=y
+[ -z "$(get SETTINGS_KEY_ENABLED '')" ] || [ "$(get SETTINGS_KEY_ENABLED '')" = true ] || SETTINGS_KEY_DEFAULT=n
+lookup SETTINGS_KEY_ENABLED ''; settings_src="$SRC"
+if [ "$NONINTERACTIVE" = 1 ] || [ "$settings_src" = answer ] || [ "$settings_src" = env ] || { [ "$REUSE" = 1 ] && [ "$settings_src" = existing ]; }; then
+  [ "$(get SETTINGS_KEY_ENABLED 'false')" = true ] && SETTINGS_KEY_ENABLED=true || SETTINGS_KEY_ENABLED=false
+elif confirm "Konfigurationsschlüssel anlegen (Geheimnisse in der PWA speichern)?" "$SETTINGS_KEY_DEFAULT"; then SETTINGS_KEY_ENABLED=true; else SETTINGS_KEY_ENABLED=false; fi
+SETTINGS_KEY_SECRET=""
+if [ "$SETTINGS_KEY_ENABLED" = true ]; then
+  ask SETTINGS_KEY_SECRET "Name des Swarm-Secrets für den Konfigurationsschlüssel" "$(get SETTINGS_KEY_SECRET "${TODO_STACK}_settings_key")" valid_ident \
+    "Der Schlüssel gehört nicht in dasselbe Backup wie die Datenbank. Ein vorhandenes Secret bleibt unverändert."
+fi
+
 # ---------------------------------------------------------------- Step 7: secrets
 step "Secrets"
 # Per secret: status exists | create | missing; value in SV_<KEY> (never printed).
 SECRET_KEYS="DB_PASSWORD BOOTSTRAP_TOKEN"
 [ "$ATTACHMENT_STORAGE" != s3 ] || SECRET_KEYS="DB_PASSWORD S3_ACCESS_KEY S3_SECRET_KEY BOOTSTRAP_TOKEN"
 [ "$MAIL_ENABLED" != true ] || SECRET_KEYS="$SECRET_KEYS SMTP_PASSWORD"
+[ "$SETTINGS_KEY_ENABLED" != true ] || SECRET_KEYS="$SECRET_KEYS SETTINGS_KEY"
 secret_name() {
   case "$1" in
     DB_PASSWORD) echo "$DB_PASSWORD_SECRET" ;; S3_ACCESS_KEY) echo "$S3_ACCESS_KEY_SECRET" ;;
     S3_SECRET_KEY) echo "$S3_SECRET_KEY_SECRET" ;; BOOTSTRAP_TOKEN) echo "$BOOTSTRAP_TOKEN_SECRET" ;;
-    SMTP_PASSWORD) echo "$SMTP_PASSWORD_SECRET" ;;
+    SMTP_PASSWORD) echo "$SMTP_PASSWORD_SECRET" ;; SETTINGS_KEY) echo "$SETTINGS_KEY_SECRET" ;;
   esac
 }
 secret_label() {
   case "$1" in
     DB_PASSWORD) echo "Datenbank-Passwort" ;; S3_ACCESS_KEY) echo "S3 Access Key" ;;
     S3_SECRET_KEY) echo "S3 Secret Key" ;; BOOTSTRAP_TOKEN) echo "Bootstrap-Token" ;;
-    SMTP_PASSWORD) echo "SMTP-Passwort" ;;
+    SMTP_PASSWORD) echo "SMTP-Passwort" ;; SETTINGS_KEY) echo "Konfigurationsschlüssel" ;;
   esac
 }
 GENERATED_TOKEN=0
@@ -457,6 +475,9 @@ for key in $SECRET_KEYS; do
   if [ "$key" = BOOTSTRAP_TOKEN ]; then
     SECRET_VALUE="$(provided_secret "$key")"
     if [ -z "$SECRET_VALUE" ]; then SECRET_VALUE="$(openssl rand -hex 32)"; GENERATED_TOKEN=1; fi
+  elif [ "$key" = SETTINGS_KEY ]; then
+    SECRET_VALUE="$(provided_secret "$key")"
+    [ -n "$SECRET_VALUE" ] || SECRET_VALUE="$(openssl rand -base64 32 | tr -d '\n')"
   elif [ "$DRY" = 1 ] && [ -z "$(provided_secret "$key")" ]; then
     SECRET_VALUE="dry-run-placeholder"
   else
@@ -532,6 +553,7 @@ MariaDB:           $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME
 Anhänge:           $ATTACHMENT_STORAGE, Limit $ATTACHMENT_MAX_BYTES Bytes$([ "$ATTACHMENT_STORAGE" != s3 ] || echo ", S3 $S3_ENDPOINT, Bucket $S3_BUCKET, Region $S3_REGION")
 Push (APNs):      $([ "$APNS_ENABLED" = true ] && echo "an, Key-ID $APNS_KEY_ID, Team $APNS_TEAM_ID, Topic $APNS_TOPIC, Standard $APNS_ENVIRONMENT, Secret $APNS_KEY_SECRET" || echo aus)
 E-Mail:            $([ "$MAIL_ENABLED" = true ] && echo "an, $SMTP_HOST:$SMTP_PORT ($SMTP_SECURITY), Benutzer $SMTP_USER, Absender $MAIL_FROM_NAME <$MAIL_FROM>, Secret $SMTP_PASSWORD_SECRET" || echo aus)
+Konfig-Schlüssel:  $([ "$SETTINGS_KEY_ENABLED" = true ] && echo "ja, Secret $SETTINGS_KEY_SECRET (wird zufällig erzeugt)" || echo "nein (Geheimnisse nur per Docker-Secret)")
 Env-Datei:         $OUT_ENV (Modus 600)
 EOF
 for key in $SECRET_KEYS; do
@@ -568,7 +590,8 @@ write_env() {
     echo "RP_ORIGIN=$RP_ORIGIN"
     echo "OAUTH_ISSUER=$OAUTH_ISSUER"
     echo "AASA_APP_IDS=$AASA_APP_IDS"
-    echo "PASSWORD_LOGIN_ENABLED=$PASSWORD_LOGIN_ENABLED"
+    # ADR 0025: values written here lock the setting in the PWA; defaults are therefore left out.
+    [ "$PASSWORD_LOGIN_ENABLED" != true ] || echo "PASSWORD_LOGIN_ENABLED=true"
     echo "BACKEND_PORT=$BACKEND_PORT"
     echo "BACKEND_REPLICAS=$BACKEND_REPLICAS"
     echo "BACKEND_CPU_LIMIT=$BACKEND_CPU_LIMIT"
@@ -578,8 +601,8 @@ write_env() {
     echo "DB_NAME=$DB_NAME"
     echo "DB_USER=$DB_USER"
     echo "DB_PASSWORD_SECRET=$DB_PASSWORD_SECRET"
-    echo "ATTACHMENT_STORAGE=$ATTACHMENT_STORAGE"
-    echo "ATTACHMENT_MAX_BYTES=$ATTACHMENT_MAX_BYTES"
+    [ "$ATTACHMENT_STORAGE" != s3 ] || echo "ATTACHMENT_STORAGE=s3"
+    [ "$ATTACHMENT_MAX_BYTES" = 10485760 ] || echo "ATTACHMENT_MAX_BYTES=$ATTACHMENT_MAX_BYTES"
     if [ "$ATTACHMENT_STORAGE" = s3 ]; then
       echo "S3_ENDPOINT=$S3_ENDPOINT"
       echo "S3_BUCKET=$S3_BUCKET"
@@ -596,6 +619,11 @@ write_env() {
       echo "APNS_ENVIRONMENT=$APNS_ENVIRONMENT"
       echo "APNS_KEY_SECRET=$APNS_KEY_SECRET"
     fi
+    if [ "$SETTINGS_KEY_ENABLED" = true ]; then
+      echo "SETTINGS_KEY_ENABLED=true"
+      echo "SETTINGS_KEY_SECRET=$SETTINGS_KEY_SECRET"
+    fi
+    [ -z "$(get SETTINGS_KEY_PREVIOUS_SECRET '')" ] || echo "SETTINGS_KEY_PREVIOUS_SECRET=$(get SETTINGS_KEY_PREVIOUS_SECRET '')"
     if [ "$MAIL_ENABLED" = true ]; then
       echo "MAIL_ENABLED=true"
       echo "SMTP_HOST=$SMTP_HOST"

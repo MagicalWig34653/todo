@@ -16,6 +16,16 @@ struct S3Store: Sendable {
     /// Upper bound for a response body; set from ATTACHMENT_MAX_BYTES.
     var maxBytes: Int = AttachmentLimits.defaultMaxBytes
 
+    init(endpoint: URL, bucket: String, accessKey: String?, secretKey: String?, region: String, maxBytes: Int = AttachmentLimits.defaultMaxBytes) {
+        self.endpoint = endpoint; self.bucket = bucket; self.accessKey = accessKey; self.secretKey = secretKey
+        self.region = region; self.maxBytes = maxBytes
+    }
+
+    init(config: S3Config, maxBytes: Int = AttachmentLimits.defaultMaxBytes) {
+        self.init(endpoint: config.endpoint, bucket: config.bucket, accessKey: config.accessKey, secretKey: config.secretKey,
+                  region: config.region, maxBytes: maxBytes)
+    }
+
     static func fromEnvironment(maxBytes: Int = AttachmentLimits.defaultMaxBytes) throws -> Self {
         guard let raw = Environment.get("S3_ENDPOINT"), let url = URL(string: raw),
               ["http", "https"].contains(url.scheme), url.host != nil,

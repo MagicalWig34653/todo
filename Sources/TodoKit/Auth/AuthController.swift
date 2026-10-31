@@ -10,6 +10,8 @@ struct CapabilitiesResponse: Content {
     var liveRefresh: LiveRefreshCapability? = nil
     /// Additive (ADR 0023): `GET /v1/feed` ("Für dich") exists.
     var feed: Bool = true
+    /// Additive (ADR 0025): name of this instance (`branding.instanceName`).
+    var instanceName: String? = nil
 }
 
 struct RegisterBeginRequest: Content {
@@ -107,7 +109,8 @@ struct AuthController: RouteCollection {
         CapabilitiesResponse(
             passkey: true, password: req.application.settings.passwordLoginEnabled,
             bootstrapOpen: try await bootstrapOpen(req.db) && req.application.settings.bootstrapToken != nil,
-            liveRefresh: LiveController.capability(req.application.liveSettings))
+            liveRefresh: LiveController.capability(req.application.liveSettings),
+            instanceName: req.application.settings.instanceName)
     }
 
     // MARK: Registration (bootstrap or invitation)

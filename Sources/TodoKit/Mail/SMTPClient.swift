@@ -265,10 +265,10 @@ struct SMTPClient: MailTransport {
 }
 
 extension Application {
-    private struct MailTransportKey: StorageKey { typealias Value = any MailTransport }
-    /// nil while mail is disabled. Tests assign a double.
+    private struct MailTransportKey: StorageKey { typealias Value = Locked<(any MailTransport)?> }
+    /// nil while mail is disabled. Tests assign a double; the settings runtime replaces it on a hot reload.
     var mailTransport: (any MailTransport)? {
-        get { storage[MailTransportKey.self] }
-        set { storage[MailTransportKey.self] = newValue }
+        get { lockedBox(MailTransportKey.self, nil).value }
+        set { lockedBox(MailTransportKey.self, nil).value = newValue }
     }
 }

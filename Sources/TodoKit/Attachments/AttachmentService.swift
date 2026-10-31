@@ -24,20 +24,25 @@ struct AttachmentService: Sendable {
     /// Test seam: replaces the store for a kind (for example an in-memory stand-in for S3).
     private let overrides: [AttachmentStorageKind: any AttachmentStore]
 
+    /// S3 connection from the effective settings (environment or PWA); nil falls back to the environment.
+    private let s3: S3Config?
+
     init(settings: AppSettings) {
-        self.init(writeKind: settings.attachmentStorage, maxBytes: settings.attachmentMaxBytes)
+        self.init(writeKind: settings.attachmentStorage, maxBytes: settings.attachmentMaxBytes, s3: settings.s3)
     }
     init(writeKind: AttachmentStorageKind = .database, maxBytes: Int = AttachmentLimits.defaultMaxBytes,
-         overrides: [AttachmentStorageKind: any AttachmentStore] = [:]) {
-        self.writeKind = writeKind; self.maxBytes = maxBytes; self.overrides = overrides
+         overrides: [AttachmentStorageKind: any AttachmentStore] = [:], s3: S3Config? = nil) {
+        self.writeKind = writeKind; self.maxBytes = maxBytes; self.overrides = overrides; self.s3 = s3
     }
 
-    /// S3 is resolved lazily from S3_* so a database-only deployment never needs it.
+    /// S3 is resolved lazily from the effective settings (S3_* or PWA) so a database-only deployment never needs it.
     func store(_ kind: AttachmentStorageKind) throws -> any AttachmentStore {
         if let custom = overrides[kind] { return custom }
         switch kind {
         case .database: return DatabaseStore()
-        case .s3: return try S3Store.fromEnvironment(maxBytes: maxBytes)
+        case .s3:
+            if let s3 { return S3Store(config: s3, maxBytes: maxBytes) }
+            return try S3Store.fromEnvironment(maxBytes: maxBytes)
         }
     }
     func store(for a: Attachment) throws -> any AttachmentStore {

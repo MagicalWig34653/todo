@@ -46,26 +46,15 @@ struct IdentitySettings: Sendable {
     var recoverySessionLifetime: TimeInterval = 300
 
     static func fromEnvironment() -> Self {
-        func positive(_ key: String, _ fallback: Int) -> Int {
-            max(1, Environment.get(key).flatMap(Int.init) ?? fallback)
-        }
-        var s = Self()
-        s.window = positive("IDENTITY_RATE_WINDOW_SECONDS", s.window)
-        s.loginLimit = positive("IDENTITY_LOGIN_LIMIT", s.loginLimit)
-        s.passwordLimit = positive("IDENTITY_PASSWORD_LIMIT", s.passwordLimit)
-        s.registerLimit = positive("IDENTITY_REGISTER_LIMIT", s.registerLimit)
-        s.recoveryLimit = positive("IDENTITY_RECOVERY_LIMIT", s.recoveryLimit)
-        s.recoveryLifetime = TimeInterval(positive("IDENTITY_RECOVERY_SECONDS", Int(s.recoveryLifetime)))
-        s.recoverySessionLifetime = TimeInterval(positive("IDENTITY_RECOVERY_SESSION_SECONDS", Int(s.recoverySessionLifetime)))
-        return s
+        ((try? SettingsResolver.resolve(env: { Environment.get($0) }, stored: [:])) ?? SettingValues()).identitySettings()
     }
 }
 
 extension Application {
-    private struct IdentityKey: StorageKey { typealias Value = IdentitySettings }
+    private struct IdentityKey: StorageKey { typealias Value = Locked<IdentitySettings> }
     var identitySettings: IdentitySettings {
-        get { storage[IdentityKey.self] ?? .fromEnvironment() }
-        set { storage[IdentityKey.self] = newValue }
+        get { lockedBox(IdentityKey.self, IdentitySettings.fromEnvironment()).value }
+        set { lockedBox(IdentityKey.self, IdentitySettings.fromEnvironment()).value = newValue }
     }
 }
 
