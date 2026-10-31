@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Sync
-  version: 1.2.0
+  version: 1.3.0
   description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
     ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz
     im Änderungsprotokoll bezeichnet. Cursor "c0" liefert den vollständigen sichtbaren Stand. Jede Änderung wird nach
@@ -17,7 +17,13 @@ info:
     bestehende Projekte/Aufgaben als Upserts nach); explizit vor Serverstart ausführen.
     1.2.0: Mutationstypen project.position, task.move_column, column.create/update/delete (Spalten-IDs wählt der Client;
     Rechte wie REST: edit); Projekte tragen description/color/createdAt und die Betrachter-Felder position/isFavorite/
-    favoritePosition (Änderungen daran erzeugen ein Projekt-Upsert; der Feed liefert jedem Leser seinen eigenen Stand, siehe project-state.yaml).'
+    favoritePosition (Änderungen daran erzeugen ein Projekt-Upsert; der Feed liefert jedem Leser seinen eigenen Stand, siehe project-state.yaml).
+    1.3.0 (ADR 0019): Aufbewahrung. Tombstones, ersetzte Upserts und gespeicherte Mutationsergebnisse werden nach
+    SYNC_RETENTION_DAYS (Standard 90) gelöscht. Ein Cursor, der unter dem Aufbewahrungsboden liegt, ergibt 410 cursor_expired:
+    der Client verwirft seinen lokalen Cache für dieses Konto und beginnt bei c0 (liefert den vollständigen sichtbaren Stand;
+    der jeweils neueste Upsert lebender Objekte bleibt erhalten). c0 und Cursor ab dem Boden bleiben gültig. Gelöschte IDs sind
+    nur innerhalb der Aufbewahrungsfrist durch id_deleted gesperrt. Wird ein Konto gelöscht (App delete-account), erhalten die
+    übrigen Konten Tombstones für alles, was sie dadurch nicht mehr sehen.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -62,6 +68,12 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: Cursor liegt hinter dem Protokollende (cursor_ahead, z. B. nach Wiederherstellung); Client startet bei c0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: Cursor liegt unter dem Aufbewahrungsboden (cursor_expired); Tombstones könnten fehlen. Client verwirft den lokalen Cache des Kontos und holt den Stand neu ab c0
           content:
             application/json:
               schema:

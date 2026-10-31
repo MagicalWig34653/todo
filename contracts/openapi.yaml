@@ -660,6 +660,21 @@ components:
         status:
           type: string
           const: ok
+        maintenance:
+          type: object
+          description: Only /health/ready, only if the periodic cleanup is enabled. Informational, never affects readiness.
+          required:
+            - enabled
+            - lastStatus
+          properties:
+            enabled:
+              type: boolean
+            lastRunAt:
+              type: string
+              format: date-time
+            lastStatus:
+              type: string
+              enum: [ok, error, never]
     Error:
       type: object
       required:

@@ -10,11 +10,16 @@ struct ExpiredCleanup: Sendable {
     /// Rows stay this long after expiry (replay detection of consumed OAuth tokens, diagnostics).
     var grace: TimeInterval = 86_400
     var batchSize = 500
+    /// Age after which change-log tombstones, superseded upserts and stored mutation results are purged (ADR 0019).
+    /// nil keeps the sync log untouched.
+    var syncRetention: TimeInterval?
 
     struct Report: Sendable, Equatable {
         var sessions = 0, challenges = 0, invitations = 0, recoveries = 0
         var rateLimits = 0, oauthSecrets = 0, pairings = 0
-        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings }
+        var syncTombstones = 0, syncSuperseded = 0, syncMutations = 0
+        var syncTotal: Int { syncTombstones + syncSuperseded + syncMutations }
+        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + syncTotal }
     }
 
     private func purge<M: Model>(_ type: M.Type, on db: any Database, _ condition: (QueryBuilder<M>) -> QueryBuilder<M>) async throws -> Int
@@ -42,6 +47,10 @@ struct ExpiredCleanup: Sendable {
         r.oauthSecrets = try await purge(OAuthSecret.self, on: db) { $0.filter(\.$expiresAt < cutoff) }
         r.pairings = try await purge(RunnerPairing.self, on: db) { $0.filter(\.$expiresAt < cutoff) }
         r.rateLimits = try await purgeRateLimits(on: db)
+        if let retention = syncRetention {
+            let sync = try await SyncRetention(batchSize: batchSize).run(on: db, olderThan: now.addingTimeInterval(-retention))
+            r.syncTombstones = sync.tombstones; r.syncSuperseded = sync.superseded; r.syncMutations = sync.mutations
+        }
         return r
     }
 
@@ -74,17 +83,24 @@ struct CleanupExpiredCommand: AsyncCommand {
         var grace: Int?
         @Option(name: "batch-size", help: "Rows per delete batch (default 500).")
         var batch: Int?
+        @Option(name: "sync-retention-days", help: "Purge sync log entries older than this (default SYNC_RETENTION_DAYS, 90; 0 keeps them).")
+        var syncRetentionDays: Int?
     }
     let help = "Delete expired sessions, challenges, invitations, recovery grants, rate-limit rows, OAuth tokens and pairing codes."
     func run(using context: CommandContext, signature: Signature) async throws {
         var cleanup = ExpiredCleanup()
         if let g = signature.grace { guard g >= 0 else { throw Abort(.badRequest, reason: "invalid_grace") }; cleanup.grace = TimeInterval(g) }
         if let b = signature.batch { guard (1...10_000).contains(b) else { throw Abort(.badRequest, reason: "invalid_batch_size") }; cleanup.batchSize = b }
+        let days = signature.syncRetentionDays ?? context.application.settings.syncRetentionDays
+        guard days >= 0 else { throw Abort(.badRequest, reason: "invalid_sync_retention") }
+        if days > 0 { cleanup.syncRetention = TimeInterval(days) * 86_400 }
         let r = try await cleanup.run(on: context.application.db)
-        context.console.print("Removed \(r.total) expired rows (sessions \(r.sessions), challenges \(r.challenges), invitations \(r.invitations), recovery \(r.recoveries), rate limits \(r.rateLimits), OAuth tokens \(r.oauthSecrets), pairings \(r.pairings)).")
+        context.console.print("Removed \(r.total) expired rows (sessions \(r.sessions), challenges \(r.challenges), invitations \(r.invitations), recovery \(r.recoveries), rate limits \(r.rateLimits), OAuth tokens \(r.oauthSecrets), pairings \(r.pairings), sync log \(r.syncTotal)).")
     }
 }
 
 func configureMaintenance(_ app: Application) {
     app.asyncCommands.use(CleanupExpiredCommand(), as: "cleanup-expired")
+    app.asyncCommands.use(DeleteAccountCommand(), as: "delete-account")
+    app.migrations.add(CreateMaintenanceLeases())
 }

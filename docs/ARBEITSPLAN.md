@@ -41,7 +41,7 @@ Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell be
 ## MCP-Erweiterung und Cleanup (26.10.2026)
 - [x] MCP: list_comments, add_comment, get_progress (lesend), list_attachments, get_attachment; Scopes comments:write, attachments:read, agents:read; gemeinsamer CommentService mit REST
 - [x] `cleanup-expired` (replikatsicher), Tests SQLite und MariaDB (eigene DB), Vertrag, ADR 0007 Nachtrag
-- [ ] Cleanup als wiederkehrenden Job einplanen (Cron/Swarm) und in BETRIEB dokumentieren
+- [x] Cleanup als wiederkehrenden Job: In-Process-Scheduler mit DB-Lease (31.10.2026, ADR 0019, BETRIEB)
 - [ ] Consent-Oberfläche für neue Scopes; Claude-Code-Abnahme der neuen Werkzeuge
 ## Checkpoint 26.10.2026 (Backend-Lücken PWA Etappe 2)
 - [x] activity_events aus Task-/Planungs-/Agentenrouten; Kommentar-/Aktivitätsnamen; eingeschränkte Nutzersuche; Teamname in Einladungen; Planungsdaten in `GET /v1/tasks` (Details in STATUS). SQLite + MariaDB grün.
@@ -112,3 +112,10 @@ Gebaut: MCP-Prompts (setup_project, sync_project, session_start), Tabellen proje
 ## Checkpoint 31.10.2026 (Projekt-Onboarding Etappe 2: Claude-Code-Plugin)
 
 Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-plugin/` (Plugin `todolino` 1.0.0): `.mcp.json` (HTTP, URL aus `userConfig.server_url`, Standard https://todo.linolaske.de/mcp), Skills `todolino`, `setup`, `sync`, Hooks SessionStart/PostToolUse(git commit)/Stop als POSIX-sh-Skripte (kein Netz, fail-open, Stop blockiert höchstens einmal je Sitzung, `stop_hook_active` und `TODOLINO_HOOKS_OFF` beachtet), Vorlage `templates/claude-md-section.md`. Geprüft: `claude plugin validate` (Plugin und Marketplace), Installation aus dem lokalen Repo in temporärem `CLAUDE_CONFIG_DIR` (Skills 3, Hooks 3, MCP-Server `plugin:todolino:todolino` meldet "Needs authentication" gegen den echten Server), `claude-plugin/tests/test-hooks.sh` (22 Prüfungen). Nicht geprüft: Hooks im laufenden Claude-Code-Lauf (Login nötig), interaktiver OAuth-Flow der CLI.
+
+## Sync-Aufbewahrung, Kontolöschung, Cleanup-Scheduler (31.10.2026, ADR 0019)
+- [x] `SYNC_RETENTION_DAYS` (90): Tombstones/ersetzte Upserts/Mutationsergebnisse; Boden in `sync_counter`; 410 `cursor_expired`; Vertrag sync.yaml 1.3.0
+- [x] Kontolöschung mit Tombstones (`App delete-account`), Tests SQLite
+- [x] `CleanupScheduler` mit `maintenance_leases` (`CLEANUP_INTERVAL_MINUTES`, 360, 0 = aus), `/health/ready` informativ
+- [ ] MariaDB-Läufe der neuen Tests (`SyncRetentionTests`) nachholen, falls im Checkpoint offen; Client-Seite (PWA/Apple): 410 `cursor_expired` behandeln = lokalen Cache des Kontos verwerfen, ab `c0` neu laden
+- [ ] Selbstbedienungs-Route zur Kontolöschung (bisher nur CLI)

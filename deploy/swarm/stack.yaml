@@ -21,6 +21,9 @@ x-backend: &backend
     RP_ORIGIN: ${RP_ORIGIN:-http://localhost:38080}
     # Empty: the backend derives the OAuth/MCP issuer from RP_ORIGIN (older env files keep working).
     OAUTH_ISSUER: ${OAUTH_ISSUER:-}
+    # Periodic in-process cleanup (0 disables) and sync log retention in days (0 keeps everything). ADR 0019.
+    CLEANUP_INTERVAL_MINUTES: ${CLEANUP_INTERVAL_MINUTES:-360}
+    SYNC_RETENTION_DAYS: ${SYNC_RETENTION_DAYS:-90}
     AASA_APP_IDS: ${AASA_APP_IDS:-}
     PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
   secrets: [db_password, bootstrap_token]

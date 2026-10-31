@@ -93,6 +93,10 @@ struct SyncController: RouteCollection {
         guard cursor <= (try head.decode(column: "value", as: Int.self)) else { throw Abort(.conflict, reason: "cursor_ahead") }
 
         var rows = try await SyncChange.query(on: req.db).filter(\.$seq > cursor).sort(\.$seq).limit(limit + 1).all()
+        // Retention (ADR 0019): tombstones below the floor may have been purged, so a cursor below it cannot be
+        // continued. Checked after reading the rows: the floor is raised in the same transaction as the purge, so a
+        // reader that missed a purged tombstone always sees the raised floor here. `c0` (full state) is never stale.
+        if cursor > 0, cursor < (try await SyncRetention.floor(on: req.db)) { throw Abort(.gone, reason: "cursor_expired") }
         let hasMore = rows.count > limit
         if hasMore { rows.removeLast() }
         let last = rows.last?.seq ?? cursor

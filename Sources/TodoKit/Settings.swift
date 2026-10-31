@@ -42,6 +42,10 @@ public struct AppSettings: Sendable {
     public var attachmentMaxBytes: Int
     /// Directory with the built PWA, served same-origin next to the API. nil or missing directory: API only.
     public var webRoot: String?
+    /// Minutes between automatic cleanup runs (CLEANUP_INTERVAL_MINUTES); 0 disables the in-process scheduler.
+    public var cleanupIntervalMinutes: Int = 360
+    /// Days after which sync tombstones and stored mutation results are purged (SYNC_RETENTION_DAYS); 0 keeps them.
+    public var syncRetentionDays: Int = 90
 
     public init(
         relyingPartyID: String = "localhost",
@@ -98,6 +102,13 @@ public struct AppSettings: Sendable {
             }
             s.attachmentMaxBytes = bytes
         }
+        func nonNegative(_ name: String, max: Int, into target: inout Int) throws {
+            guard let raw = try RuntimeEnvironment.value(name, get: get), !raw.isEmpty else { return }
+            guard let v = Int(raw), (0...max).contains(v) else { throw SettingsError.invalid("\(name) must be an integer between 0 and \(max)") }
+            target = v
+        }
+        try nonNegative("CLEANUP_INTERVAL_MINUTES", max: 10_080, into: &s.cleanupIntervalMinutes)
+        try nonNegative("SYNC_RETENTION_DAYS", max: 3_650, into: &s.syncRetentionDays)
         // Default /srv/web is where the container image ships the PWA; absent directory means API only.
         s.webRoot = try RuntimeEnvironment.value("WEB_ROOT", get: get) ?? "/srv/web"
         return s
@@ -111,6 +122,11 @@ extension Application {
         get { storage[SettingsKey.self] ?? AppSettings() }
         set { storage[SettingsKey.self] = newValue }
     }
+}
+
+enum SettingsError: Error, CustomStringConvertible {
+    case invalid(String)
+    var description: String { if case .invalid(let m) = self { return m }; return "invalid settings" }
 }
 
 /// File values take precedence. Invalid files fail startup without exposing their contents.

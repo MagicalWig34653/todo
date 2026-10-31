@@ -39,6 +39,7 @@ public func configure(_ app: Application) async throws {
     try configureDatabase(app, settings: .fromEnvironment())
     configureMigrations(app)
     try routes(app)
+    configureMaintenanceScheduler(app)
 }
 
 public func configureDatabase(_ app: Application, settings: DatabaseSettings) throws {
@@ -78,6 +79,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreateProjectColumns())
     app.migrations.add(AddProjectDetails())
     app.migrations.add(CreateSyncSchema())
+    app.migrations.add(AddSyncRetentionSchema())
     app.migrations.add(WidenLongTextColumns())
     configureProjectState(app)
     configureCommandCenter(app)

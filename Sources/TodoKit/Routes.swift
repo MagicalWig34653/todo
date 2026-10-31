@@ -4,6 +4,8 @@ import Vapor
 
 struct HealthResponse: Content {
     let status: String
+    /// Informational only (periodic cleanup); never influences readiness.
+    var maintenance: MaintenanceStatus? = nil
 }
 
 public func routes(_ app: Application) throws {
@@ -47,7 +49,7 @@ public func routes(_ app: Application) throws {
             if let sql = req.db as? any SQLDatabase {
                 _ = try await sql.raw("SELECT 1").all()
             }
-            return HealthResponse(status: "ok")
+            return HealthResponse(status: "ok", maintenance: await CleanupScheduler.status(of: req.application))
         } catch {
             throw Abort(.serviceUnavailable, reason: "database unavailable")
         }
