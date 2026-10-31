@@ -1,0 +1,43 @@
+openapi: 3.0.3
+info:
+  title: Todolino Live-Refresh
+  version: 1.0.0
+  description: 'ADR 0022. Hinweise statt Daten: head liefert den aktuellen Änderungs-Token, wait (Long-Poll) kehrt zurück, sobald sich der Token
+    ändert. Daten holt der Client mit den bestehenden Routen (/v1/sync/changes, /v1/command-center, Aufgabendetails). Token ist undurchsichtig,
+    nur auf Gleichheit vergleichen. Er ist kontoübergreifend (ein Hinweis kann Änderungen anderer Konten bedeuten); der Client holt dann nur
+    das, was er ohnehin sehen darf. Alle Pfade verlangen Bearer oder Sitzung. Fähigkeit: GET /v1/capabilities.liveRefresh {head, wait, stream:false,
+    pollSeconds, waitMaxSeconds}; fehlt das Feld (alter Server, LIVE_REFRESH_ENABLED=false), nur Polling bestehender Routen alle 5 s.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/sync/head:
+    get:
+      operationId: liveHead
+      summary: Aktueller Änderungs-Token (billig, ETag)
+      description: 'Antwort {cursor, token}, Header ETag "<token>". If-None-Match mit dem ETag liefert 304 ohne Body. 404 wenn deaktiviert.'
+      responses:
+        '200': {description: '{cursor: "c<n>", token: "l<a>.<b>.<c>"}'}
+        '304': {description: unverändert}
+        '401': {description: nicht angemeldet}
+        '404': {description: Live-Refresh deaktiviert}
+  /v1/sync/wait:
+    get:
+      operationId: liveWait
+      summary: Long-Poll auf Token-Änderung
+      description: 'Query since=<token> (fehlt: sofortige Antwort), timeout=1..LIVE_WAIT_MAX_SECONDS (Standard 25). Antwort {token, changed, cursor, retryAfter?}.
+        changed=true: Token weicht von since ab, Daten neu holen und mit dem neuen token erneut warten. changed=false: Timeout, sofort erneut warten.
+        retryAfter gesetzt: Server fährt herunter, nach so vielen Sekunden neu verbinden. 401 beendet die Verbindung bei Sitzungsablauf/-widerruf
+        (Prüfung spätestens alle 10 s). 429 (Retry-After 5): zu viele Wartende je Konto (8) oder Replika (500). Header Cache-Control: no-store, X-Accel-Buffering: no.'
+      parameters:
+      - {name: since, in: query, required: false, schema: {type: string}}
+      - {name: timeout, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 120}}
+      responses:
+        '200': {description: '{token, changed, cursor, retryAfter?}'}
+        '401': {description: nicht angemeldet oder Sitzung beendet}
+        '404': {description: Live-Refresh deaktiviert}
+        '429': {description: Limit erreicht}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}

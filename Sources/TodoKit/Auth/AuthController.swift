@@ -6,6 +6,8 @@ struct CapabilitiesResponse: Content {
     let passkey: Bool
     let password: Bool
     let bootstrapOpen: Bool
+    /// Additive (ADR 0022); absent on older servers or when LIVE_REFRESH_ENABLED=false.
+    var liveRefresh: LiveRefreshCapability? = nil
 }
 
 struct RegisterBeginRequest: Content {
@@ -102,7 +104,8 @@ struct AuthController: RouteCollection {
     @Sendable func capabilities(_ req: Request) async throws -> CapabilitiesResponse {
         CapabilitiesResponse(
             passkey: true, password: req.application.settings.passwordLoginEnabled,
-            bootstrapOpen: try await bootstrapOpen(req.db) && req.application.settings.bootstrapToken != nil)
+            bootstrapOpen: try await bootstrapOpen(req.db) && req.application.settings.bootstrapToken != nil,
+            liveRefresh: LiveController.capability(req.application.liveSettings))
     }
 
     // MARK: Registration (bootstrap or invitation)
