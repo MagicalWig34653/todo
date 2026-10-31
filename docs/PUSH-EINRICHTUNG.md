@@ -75,6 +75,10 @@ Die `.p8`-Datei danach **nicht** im Repository, im Downloads-Ordner, in Backup-O
 
 ## 5. Test
 
+**Am einfachsten in der PWA:** *Konto > Allgemein > Benachrichtigungen*. Die Karte zeigt, ob der Server Push sendet, die registrierten Geräte (Plattform, Umgebung, zuletzt gesehen; „Gerät entfernen“ widerruft ein Gerät), die Einstellungen je Kategorie (Erinnerungen, Rückfragen, Reviews, Zuweisungen, Kommentare, Inhalte zeigen, Zähler am App-Symbol) und den Knopf **Test-Benachrichtigung senden**. Er sendet eine allgemeine Testnachricht an deine Geräte und zeigt je Gerät `Gesendet`, `Fehlgeschlagen (APNs-Grund)` oder `Token ungültig, Gerät wurde entfernt`. Nie erscheint ein Token. Ohne Gerät steht „Kein Gerät registriert“; bei `APNS_ENABLED=false` ist der Knopf gesperrt (API: `409 push_disabled`). Pro Konto ist ein Test alle 10 Sekunden möglich. Die API dahinter: `POST /v1/push/test` (`contracts/push.yaml`), sie nutzt denselben Sender wie der Worker.
+
+Alternativ von Hand:
+
 1. In der App anmelden, Push erlauben; die App registriert das Gerät. Prüfen: im Browser eingeloggt `https://DEINE-DOMAIN/v1/push/devices` öffnen (Liste ohne Tokens).
 2. Deine Konto-ID: `https://DEINE-DOMAIN/v1/me` (Feld `id`).
 3. Testnachricht an alle Geräte des Kontos:

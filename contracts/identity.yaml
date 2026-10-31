@@ -317,15 +317,31 @@ paths:
     post:
       summary: 'Admin: einmaligen Recovery-Code ausstellen; ersetzt frühere Codes
         und Recovery-Sitzungen'
+      description: 'Optional sendEmail=true: der Code wird zusätzlich als Mail an die bestätigte Adresse des Kontos in die Outbox gestellt
+        (ADR 0024, contracts/mail.yaml). Der Code steht im Klartext und als Link {RP_ORIGIN}/recover#code=… in der Mail, die Mail
+        ist kein sicherer Kanal. Ohne bestätigte Adresse oder bei MAIL_ENABLED=false geht nichts hinaus; die Antwort nennt das in mail.
+        Der Code wird in jedem Fall in der Antwort zurückgegeben.'
       security:
       - session: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sendEmail: {type: boolean}
       responses:
         '200':
-          description: Erfolgreich
+          description: Erfolgreich; mail nur, wenn sendEmail gesendet wurde (queued, no_verified_email oder mail_disabled)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecoveryToken'
+                allOf:
+                - $ref: '#/components/schemas/RecoveryToken'
+                - type: object
+                  properties:
+                    mail: {type: string, enum: [queued, no_verified_email, mail_disabled]}
         '400':
           description: Ungültige Eingabe oder Challenge
         '401':

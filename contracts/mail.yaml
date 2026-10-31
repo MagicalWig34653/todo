@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: Todolino – E-Mail (Adresse, Bestätigung, Test, Recovery-Zustellung)
+  version: 1.0.0
+  description: 'ADR 0024, Betrieb: docs/MAIL-EINRICHTUNG.md. Ausgehende Mail ist optional (MAIL_ENABLED=true). Jedes Konto hat höchstens
+    eine bestätigte Adresse (Double-Opt-In: Link per Mail, einmalig, 24 Stunden gültig); nur bestätigte Adressen erhalten Mail.
+    Anfragen verraten nicht, ob eine Adresse schon einem anderen Konto gehört (gleiche Antwort, keine Mail an die fremde Adresse).
+    Mail-Inhalte enthalten nie Aufgabentitel. Versand asynchron über eine Outbox (Worker mit Lease, Wiederholung mit Wartezeit,
+    Deduplizierung). Zusätzlich /health/ready: mail {enabled}. Recovery-Zustellung: POST /v1/identity/accounts/{id}/recovery
+    (contracts/identity.yaml) akzeptiert sendEmail und antwortet dann zusätzlich mit mail (queued, no_verified_email, mail_disabled).'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/me/email:
+    get:
+      operationId: getEmail
+      summary: Eigene Adresse, ausstehende Bestätigung, Serverstatus und letzte Mail
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {$ref: '#/components/schemas/EmailStatus'}}}}
+        '401': {description: Nicht angemeldet}
+    post:
+      operationId: setEmail
+      summary: Adresse hinterlegen und Bestätigungsmail anfordern
+      description: 'Normalisiert (getrimmt, Kleinbuchstaben) und prüft das Format. Ersetzt eine frühere ausstehende Anfrage. Die bisherige
+        bestätigte Adresse bleibt aktiv, bis die neue bestätigt ist. Antwort immer 202 mit demselben Inhalt, auch wenn die Adresse einem
+        anderen Konto gehört (dann geht keine Mail hinaus). Begrenzung: 3 Anfragen je Konto und 10 Minuten, 20 je Peer-IP.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetEmail'}
+      responses:
+        '202': {description: Bestätigungsmail wird versendet, content: {application/json: {schema: {$ref: '#/components/schemas/EmailRequested'}}}}
+        '400': {description: invalid_email}
+        '409': {description: 'reason mail_disabled'}
+        '429': {description: 'reason mail_rate_limited, Retry-After'}
+    put:
+      operationId: putEmail
+      summary: Wie POST (Alias)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetEmail'}
+      responses:
+        '202': {description: Bestätigungsmail wird versendet, content: {application/json: {schema: {$ref: '#/components/schemas/EmailRequested'}}}}
+        '400': {description: invalid_email}
+        '409': {description: 'reason mail_disabled'}
+        '429': {description: 'reason mail_rate_limited'}
+    delete:
+      operationId: removeEmail
+      summary: Bestätigte und ausstehende Adresse entfernen
+      responses:
+        '204': {description: Entfernt (auch wenn keine hinterlegt war)}
+  /v1/me/email/test:
+    post:
+      operationId: sendTestEmail
+      summary: Test-Mail an die eigene bestätigte Adresse
+      description: 'Legt die Mail in die Outbox (Versand innerhalb weniger Sekunden). Das Ergebnis steht danach in lastMail von GET /v1/me/email.
+        Begrenzung: eine Anfrage je Konto und Minute.'
+      responses:
+        '202': {description: In die Warteschlange gestellt, content: {application/json: {schema: {type: object, required: [status], properties: {status: {type: string, enum: [queued]}}}}}}
+        '409': {description: 'reason mail_disabled oder no_verified_email'}
+        '429': {description: 'reason mail_rate_limited, Retry-After 60'}
+  /v1/email/confirm:
+    post:
+      operationId: confirmEmail
+      summary: Adresse mit dem Token aus der Bestätigungsmail bestätigen
+      description: 'Öffentlich (kein Login nötig): der einmalige Token aus dem Mail-Link ist der Nachweis. Der Link der Mail lautet
+        {RP_ORIGIN}/confirm-email#token=…; die PWA liest den Token aus dem Fragment. Jeder Fehlerfall (unbekannt, benutzt, abgelaufen,
+        Adresse inzwischen vergeben) ergibt dieselbe Antwort. Begrenzung: 10 Versuche je Peer-IP und Minute.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [token], properties: {token: {type: string}}}
+      responses:
+        '204': {description: Bestätigt}
+        '400': {description: 'reason confirmation_failed'}
+        '429': {description: 'reason mail_rate_limited'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    SetEmail:
+      type: object
+      required: [email]
+      properties:
+        email: {type: string, description: 'Nur ASCII-Adressen, höchstens 254 Zeichen'}
+    EmailRequested:
+      type: object
+      required: [status, expiresAt]
+      properties:
+        status: {type: string, enum: [verification_sent]}
+        expiresAt: {type: string, format: date-time, description: 'Ablauf des Links (24 Stunden)'}
+    EmailStatus:
+      type: object
+      required: [mailEnabled]
+      properties:
+        email: {type: [string, 'null'], description: 'Bestätigte Adresse; nur der Eigentümer sieht sie'}
+        verifiedAt: {type: [string, 'null'], format: date-time}
+        pending: {type: [string, 'null'], description: 'Adresse, die auf Bestätigung wartet'}
+        pendingExpiresAt: {type: [string, 'null'], format: date-time}
+        mailEnabled: {type: boolean, description: 'MAIL_ENABLED=true auf dem Server'}
+        lastMail:
+          type: [object, 'null']
+          description: 'Letzte Bestätigungs- oder Test-Mail (Recovery-Mails werden hier nicht gezeigt)'
+          properties:
+            kind: {type: string, enum: [verify_email, test]}
+            state: {type: string, enum: [pending, sent, failed, skipped, expired]}
+            error: {type: [string, 'null'], description: 'Fehlerklasse, z. B. connect, tls_0, auth_535, recipient_550; nie Servertext oder Adresse'}
+            at: {type: [string, 'null'], format: date-time}

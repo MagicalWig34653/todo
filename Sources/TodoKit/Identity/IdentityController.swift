@@ -5,6 +5,9 @@ import WebAuthn
 struct IdentityName: Content { let name: String }
 struct RecoveryCodeRequest: Content { let code: String }
 struct RecoveryTokenResponse: Content { let token: String; let expiresAt: Date }
+struct IssueRecoveryRequest: Content { var sendEmail: Bool? }
+/// Answer of the admin recovery issue; `mail` is only present when `sendEmail` was requested.
+struct IssuedRecoveryResponse: Content { let token: String; let expiresAt: Date; let mail: String? }
 struct PasskeyInfo: Content {
     let id: UUID
     let name: String
@@ -160,7 +163,7 @@ struct IdentityController: RouteCollection {
         return .noContent
     }
 
-    @Sendable func issueRecovery(_ req: Request) async throws -> RecoveryTokenResponse {
+    @Sendable func issueRecovery(_ req: Request) async throws -> IssuedRecoveryResponse {
         _ = try await req.requireAdmin()
         let userID = try id(req)
         let code = AuthSupport.randomToken()
@@ -172,7 +175,13 @@ struct IdentityController: RouteCollection {
             try await RecoveryGrant.query(on: db).filter(\.$userID == userID).delete()
             try await RecoveryGrant(userID: userID, code: code, expiresAt: expires).save(on: db)
         }
-        return RecoveryTokenResponse(token: code, expiresAt: expires)
+        // Optional delivery to the confirmed address of the account (ADR 0024). The code is returned in any case.
+        var mail: String?
+        if (try? req.content.decode(IssueRecoveryRequest.self))?.sendEmail == true {
+            mail = try await MailService(db: req.db, settings: req.application.settings)
+                .queueRecoveryCode(userID: userID, code: code, expiresAt: expires).rawValue
+        }
+        return IssuedRecoveryResponse(token: code, expiresAt: expires, mail: mail)
     }
     @Sendable func redeemRecovery(_ req: Request) async throws -> RecoveryTokenResponse {
         let body = try req.content.decode(RecoveryCodeRequest.self)

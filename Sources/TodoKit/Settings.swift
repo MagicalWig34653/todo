@@ -49,6 +49,8 @@ public struct AppSettings: Sendable {
     public var syncRetentionDays: Int = 90
     /// APNs push configuration (ADR 0021). Disabled unless APNS_ENABLED=true.
     public var apns = APNsConfig()
+    /// Outgoing mail (ADR 0024). Disabled unless MAIL_ENABLED=true.
+    public var mail = MailConfig()
 
     public init(
         relyingPartyID: String = "localhost",
@@ -113,6 +115,7 @@ public struct AppSettings: Sendable {
         try nonNegative("CLEANUP_INTERVAL_MINUTES", max: 10_080, into: &s.cleanupIntervalMinutes)
         try nonNegative("SYNC_RETENTION_DAYS", max: 3_650, into: &s.syncRetentionDays)
         s.apns = try APNsConfig.fromEnvironment(get: get)
+        s.mail = try MailConfig.fromEnvironment(get: get)
         // Default /srv/web is where the container image ships the PWA; absent directory means API only.
         s.webRoot = try RuntimeEnvironment.value("WEB_ROOT", get: get) ?? "/srv/web"
         return s

@@ -152,3 +152,18 @@ struct PushStatus: Content, Equatable {
     var enabled: Bool
     var environment: String
 }
+
+struct PushTestDeviceResult: Content, Equatable {
+    var id: UUID
+    var platform: String
+    var environment: String
+    /// `sent` | `failed` | `revoked` (the token was rejected and the device was revoked)
+    var result: String
+    /// Short APNs reason code (for example `BadDeviceToken`) or a failure class; never a token.
+    var detail: String?
+}
+
+struct PushTestResponse: Content, Equatable {
+    var devices: [PushTestDeviceResult]
+    var sent: Int
+}

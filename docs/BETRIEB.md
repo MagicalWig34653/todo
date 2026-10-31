@@ -201,6 +201,22 @@ Optional und standardmäßig aus. Schritt-für-Schritt-Anleitung (Developer Port
 
 `scripts/swarm-deploy.sh` bindet bei `APNS_ENABLED=true` das Overlay `deploy/swarm/stack.push.yaml` ein (Secret, Variablen); `setup.sh` fragt „Push aktivieren?“ und legt das Secret aus dem `.p8`-Pfad an. Bestehende Env-Dateien ohne APNs-Variablen laufen unverändert. Migration: neue Tabellen `push_devices`, `push_prefs`, `push_outbox` (additiv). Prüfen: `GET /health/ready` zeigt informativ `push {enabled, environment}`; Test: `docker exec -it <backend-container> todo-app push-test <konto-id> --yes`. Der Worker läuft auf allen Replikaten, sendet aber per Lease (`maintenance_leases`, Name `push-worker`) nur auf einer. Abgearbeitete Outbox-Zeilen werden nach 3 Tagen, widerrufene Geräte nach 30 Tagen gelöscht. Echter Versand an Apple ist bisher nicht geprüft.
 
+## E-Mail-Versand (31.10.2026, ADR 0024)
+
+Optional und standardmäßig aus. Schritt-für-Schritt-Anleitung (SMTP-Zugang, Secret, Env, Test, Fehlerklassen): `docs/MAIL-EINRICHTUNG.md` (liegt nur auf `main`, nicht auf dem `deploy`-Branch).
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `MAIL_ENABLED` | `false` | `true` schaltet Adress-Funktionen und den Sende-Worker ein; dann sind `SMTP_HOST` und `MAIL_FROM` Pflicht, sonst bricht der Start ab. |
+| `SMTP_HOST` | - | Postausgangsserver |
+| `SMTP_SECURITY` | `starttls` | `starttls` (587), `tls` (465) oder `none` (nur ohne Zugangsdaten oder localhost) |
+| `SMTP_PORT` | 587/465/25 | je nach Verschlüsselung |
+| `SMTP_USER` | - | nur zusammen mit dem Passwort |
+| `SMTP_PASSWORD_FILE` | - | im Stack `/run/secrets/smtp_password` (Docker-Secret `todo_smtp_password`, Name über `SMTP_PASSWORD_SECRET`) |
+| `MAIL_FROM`, `MAIL_FROM_NAME` | -, `Todolino` | Absender |
+
+`scripts/swarm-deploy.sh` bindet bei `MAIL_ENABLED=true` das Overlay `deploy/swarm/stack.mail.yaml` ein; `setup.sh` fragt „E-Mail-Versand aktivieren?“ und legt das Secret aus der verdeckten Eingabe an. Bestehende Env-Dateien ohne Mail-Variablen laufen unverändert. Migration: neue Tabellen `user_emails`, `email_verifications`, `mail_outbox` (additiv). Prüfen: `GET /health/ready` zeigt informativ `mail {enabled}`; in der PWA unter Konto > E-Mail Adresse bestätigen und „Test-Mail senden“. Der Worker läuft auf allen Replikaten, sendet per Lease (`maintenance_leases`, Name `mail-worker`) nur auf einer; Wiederholung mit Wartezeit bis 1 h (6 Versuche), erledigte Zeilen werden nach 3 Tagen gelöscht, Geheimnisse (Bestätigungstoken, Recovery-Code) nach dem Versand aus der Zeile entfernt. Recovery per Mail ist kein sicherer Kanal (siehe ADR 0024). Echter Versand gegen einen SMTP-Anbieter ist bisher nicht geprüft (nur ein lokaler Fake-Server).
+
 ## Live-Refresh (31.10.2026, ADR 0022)
 
 `GET /v1/sync/head` (billig, ETag) und `GET /v1/sync/wait` (Long-Poll bis 25 s, Maximum `LIVE_WAIT_MAX_SECONDS`, Standard 25, höchstens 120). Migration `CreateLiveEvents` vor dem Rollout (`App migrate --yes`); ältere Clients bemerken nichts.

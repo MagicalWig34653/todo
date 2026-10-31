@@ -8,6 +8,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import PageHeader from './app/PageHeader.svelte';
 	import AppearanceSettings from './AppearanceSettings.svelte';
+	import EmailSettings from './EmailSettings.svelte';
+	import NotificationSettings from './NotificationSettings.svelte';
 	import OAuthGrants from './OAuthGrants.svelte';
 	import RecoveryIssue from './RecoveryIssue.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -143,3 +145,7 @@
 
 	{#if auth.user?.isAdmin}<RecoveryIssue />{/if}
 </section>
+	<NotificationSettings />
+
+	<EmailSettings />
+

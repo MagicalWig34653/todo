@@ -118,6 +118,7 @@ struct PushService: Sendable {
 struct PushController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let v1 = routes.grouped("v1")
+        v1.post("push", "test", use: test)
         v1.post("push", "devices", use: register)
         v1.get("push", "devices", use: list)
         v1.delete("push", "devices", ":id", use: revoke)
@@ -142,6 +143,34 @@ struct PushController: RouteCollection {
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
         try await service(req).revoke(id)
         return .noContent
+    }
+    /// Sends a generic test notification to the caller's own active devices. The answer names the outcome per device
+    /// and never contains a token. Dead tokens are revoked like in the worker.
+    @Sendable func test(_ req: Request) async throws -> PushTestResponse {
+        let service = try await service(req)
+        guard let sender = req.application.apnsSender, service.settings.enabled else { throw Abort(.conflict, reason: "push_disabled") }
+        let userID = try service.user.requireID()
+        guard try await IdentityRateLimit.take(scope: "push-test", subject: "user:\(userID)", limit: 1, window: 10, on: req.db) else {
+            var headers = HTTPHeaders()
+            headers.add(name: "Retry-After", value: "10")
+            throw Abort(.tooManyRequests, headers: headers, reason: "push_test_rate_limited")
+        }
+        var results: [PushTestDeviceResult] = []
+        for device in try await service.devices() {
+            let message = PushContent.testMessage(locale: device.locale)
+            let outcome = await sender.send(to: device, payload: try message.payload(), priority: message.priority, ttl: message.ttl, collapseKey: nil)
+            var entry = PushTestDeviceResult(id: try device.requireID(), platform: device.platform, environment: device.environment, result: "sent", detail: nil)
+            switch outcome {
+            case .delivered: break
+            case .revoke(let why):
+                device.revokedAt = Date(); try await device.save(on: req.db)
+                entry.result = "revoked"; entry.detail = why
+            case .retry(let why): entry.result = "failed"; entry.detail = why
+            case .permanent(let why): entry.result = "failed"; entry.detail = why
+            }
+            results.append(entry)
+        }
+        return PushTestResponse(devices: results, sent: results.filter { $0.result == "sent" }.count)
     }
     @Sendable func getPrefs(_ req: Request) async throws -> PushPrefsDTO { try await service(req).prefs() }
     @Sendable func setPrefs(_ req: Request) async throws -> PushPrefsDTO {

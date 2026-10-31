@@ -60,6 +60,7 @@ addMd({ slug: 'architektur.html', src: 'docs/ARCHITEKTUR.md', group: 'Technik' }
 addMd({ slug: 'identitaet-und-rechte.html', src: 'docs/IDENTITAET-UND-RECHTE.md', group: 'Technik' });
 addMd({ slug: 'push-an-claude-code.html', src: 'docs/PUSH-AN-CLAUDE-CODE.md', group: 'Agenten', title: 'Push an Claude Code (Recherche)' });
 addMd({ slug: 'push-einrichtung.html', src: 'docs/PUSH-EINRICHTUNG.md', group: 'Technik' });
+addMd({ slug: 'mail-einrichtung.html', src: 'docs/MAIL-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'betrieb.html', src: 'docs/BETRIEB.md', group: 'Technik', title: 'Betrieb und Swarm' });
 addMd({ slug: 'entscheidungen.html', src: 'docs/ENTSCHEIDUNGEN.md', group: 'Entscheidungen', title: 'Entscheidungen' });
 const adrFiles = fs.readdirSync(path.join(repo, 'docs/adr')).filter((f) => f.endsWith('.md')).sort();

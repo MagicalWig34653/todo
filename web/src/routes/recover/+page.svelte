@@ -3,6 +3,8 @@
 	import { PasskeyError } from '#lib/auth.svelte.js';
 	import { describeError } from '#lib/errors.js';
 	import { t } from '#lib/i18n/index.js';
+	import { onMount } from 'svelte';
+	import { fragmentParam } from '#lib/notify.js';
 	import { passkeysSupported, serializeRegistration, toCreationOptions } from '#lib/webauthn.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -15,6 +17,15 @@
 	let done = $state(false);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
+
+	// A code link from the recovery mail carries the code in the fragment; it only prefills the field.
+	onMount(() => {
+		const fromLink = fragmentParam(location.hash, 'code');
+		if (fromLink) {
+			code = fromLink;
+			history.replaceState(null, '', location.pathname);
+		}
+	});
 
 	async function run(action: () => Promise<void>) {
 		busy = true;

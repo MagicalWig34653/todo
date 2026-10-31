@@ -8,6 +8,8 @@ struct HealthResponse: Content {
     var maintenance: MaintenanceStatus? = nil
     /// Informational only: whether APNs push is configured and its default environment.
     var push: PushStatus? = nil
+    /// Informational only: whether outgoing mail is configured.
+    var mail: MailStatus? = nil
 }
 
 public func routes(_ app: Application) throws {
@@ -31,6 +33,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: CommandCenterController())
     try app.register(collection: ProjectSyncController())
     try app.register(collection: PushController())
+    try app.register(collection: MailController())
     try app.register(collection: LiveController())
     try app.register(collection: FeedController())
     // Apple app-site-association for passkeys in native apps: public, no redirect, JSON.
@@ -55,7 +58,8 @@ public func routes(_ app: Application) throws {
                 _ = try await sql.raw("SELECT 1").all()
             }
             return HealthResponse(status: "ok", maintenance: await CleanupScheduler.status(of: req.application),
-                                  push: PushStatus(enabled: req.application.settings.apns.enabled, environment: req.application.settings.apns.environment.rawValue))
+                                  push: PushStatus(enabled: req.application.settings.apns.enabled, environment: req.application.settings.apns.environment.rawValue),
+                                  mail: MailStatus(enabled: req.application.settings.mail.enabled))
         } catch {
             throw Abort(.serviceUnavailable, reason: "database unavailable")
         }

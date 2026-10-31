@@ -46,6 +46,19 @@ paths:
       responses:
         '204': {description: Widerrufen}
         '404': {description: Unbekannt, fremd oder bereits widerrufen}
+  /v1/push/test:
+    post:
+      operationId: sendPushTest
+      summary: Generische Test-Benachrichtigung an die eigenen aktiven Geräte
+      description: 'Nutzt denselben Sender wie der Worker und das CLI-Kommando push-test, aber nur für Geräte des angemeldeten Kontos.
+        Die Nachricht ist generisch (kein Aufgabeninhalt). Antwort je Gerät: sent, failed (mit APNs-Grund oder Fehlerklasse wie
+        network) oder revoked (Token tot, Gerät wurde widerrufen). Nie ein Token. Ohne aktive Geräte: 200 mit leerer Liste.
+        Begrenzung: eine Anfrage je Konto und 10 Sekunden.'
+      responses:
+        '200': {description: Ergebnis je Gerät, content: {application/json: {schema: {$ref: '#/components/schemas/PushTestResult'}}}}
+        '401': {description: Nicht angemeldet}
+        '409': {description: 'reason push_disabled (APNS_ENABLED ist nicht true)'}
+        '429': {description: 'reason push_test_rate_limited, Retry-After 10'}
   /v1/me/push-prefs:
     get:
       operationId: getPushPrefs
@@ -101,6 +114,22 @@ components:
         locale: {type: [string, 'null']}
         createdAt: {type: [string, 'null'], format: date-time}
         lastSeenAt: {type: string, format: date-time}
+    PushTestResult:
+      type: object
+      required: [devices, sent]
+      properties:
+        sent: {type: integer, description: Anzahl der Geräte mit result sent}
+        devices:
+          type: array
+          items:
+            type: object
+            required: [id, platform, environment, result]
+            properties:
+              id: {type: string, format: uuid}
+              platform: {type: string, enum: [ios, macos]}
+              environment: {type: string, enum: [sandbox, production]}
+              result: {type: string, enum: [sent, failed, revoked]}
+              detail: {type: [string, 'null'], description: 'APNs-Grund (z. B. BadDeviceToken, InvalidProviderToken) oder Fehlerklasse (network)'}
     PushPrefs:
       type: object
       required: [categories, showContent, badge]

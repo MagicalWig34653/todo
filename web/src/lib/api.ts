@@ -350,6 +350,47 @@ export interface RecoveryToken {
 export interface ConsentRequest {
 	consent_token: string;
 	client_name: string;
+/** contracts/push.yaml */
+export interface PushDevice {
+	id: string;
+	platform: 'ios' | 'macos';
+	environment: 'sandbox' | 'production';
+	bundleId: string;
+	appVersion?: string | null;
+	locale?: string | null;
+	createdAt?: string | null;
+	lastSeenAt: string;
+}
+export interface PushPrefs {
+	categories: Record<string, boolean>;
+	showContent: boolean;
+	badge: boolean;
+}
+export interface PushTestDeviceResult {
+	id: string;
+	platform: string;
+	environment: string;
+	result: 'sent' | 'failed' | 'revoked';
+	detail?: string | null;
+}
+export interface PushTestResult {
+	devices: PushTestDeviceResult[];
+	sent: number;
+}
+/** contracts/mail.yaml */
+export interface EmailStatus {
+	email?: string | null;
+	verifiedAt?: string | null;
+	pending?: string | null;
+	pendingExpiresAt?: string | null;
+	mailEnabled: boolean;
+	lastMail?: { kind: string; state: 'pending' | 'sent' | 'failed' | 'skipped' | 'expired'; error?: string | null; at?: string | null } | null;
+}
+export interface IssuedRecovery extends RecoveryToken {
+	/** Only present when the mail was requested: `queued`, `no_verified_email` or `mail_disabled`. */
+	mail?: 'queued' | 'no_verified_email' | 'mail_disabled';
+}
+
 	client_id: string;
 	redirect_uri: string;
 	scopes: string[];
@@ -970,8 +1011,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		revokeSession: (id: string) => request<void>('DELETE', `/me/sessions/${id}`),
 		revokeOtherSessions: () => request<void>('POST', '/me/sessions/revoke-others', {}),
 		/** Admin only: issues a one-time recovery code for an account (shown once, replaces older codes). */
-		issueRecovery: (accountID: string) =>
-			request<RecoveryToken>('POST', `/identity/accounts/${encodeURIComponent(accountID)}/recovery`, {}),
+		issueRecovery: (accountID: string, sendEmail = false) =>
+			request<IssuedRecovery>('POST', `/identity/accounts/${encodeURIComponent(accountID)}/recovery`, sendEmail ? { sendEmail: true } : {}),
 		redeemRecovery: (code: string) => request<RecoveryToken>('POST', '/identity/recovery/redeem', { code }),
 		recoveryPasskeyBegin: (bearer: string) =>
 			request<RegistrationBegin>('POST', '/identity/recovery/passkeys/begin', {}, bearer),
@@ -993,6 +1034,27 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				project_ids: approve ? projectIDs : []
 			}),
 		listOAuthGrants: () => request<OAuthGrant[]>('GET', '/oauth/grants'),
+		// Notifications (contracts/push.yaml) and e-mail (contracts/mail.yaml)
+		listPushDevices: () => request<PushDevice[]>('GET', '/push/devices'),
+		revokePushDevice: (id: string) => request<void>('DELETE', `/push/devices/${id}`),
+		getPushPrefs: () => request<PushPrefs>('GET', '/me/push-prefs'),
+		setPushPrefs: (body: Partial<PushPrefs>) => request<PushPrefs>('POST', '/me/push-prefs', body),
+		sendPushTest: () => request<PushTestResult>('POST', '/push/test', {}),
+		/** Public readiness probe; `push.enabled` tells whether the server can send APNs notifications at all. */
+		pushServerEnabled: async () => {
+			try {
+				const r = await fetchFn('/health/ready', { headers: { Accept: 'application/json' } });
+				return r.ok ? Boolean(((await r.json()) as { push?: { enabled?: boolean } }).push?.enabled) : false;
+			} catch {
+				return false;
+			}
+		},
+		getEmail: () => request<EmailStatus>('GET', '/me/email'),
+		setEmail: (email: string) => request<{ status: string; expiresAt: string }>('POST', '/me/email', { email }),
+		removeEmail: () => request<void>('DELETE', '/me/email'),
+		sendTestEmail: () => request<{ status: string }>('POST', '/me/email/test', {}),
+		confirmEmail: (token: string) => request<void>('POST', '/email/confirm', { token }),
+
 		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`)
 	};
 }
