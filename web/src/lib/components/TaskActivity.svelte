@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { api, type Activity } from '#lib/api.js';
 	import { de } from '#lib/i18n/de.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { personName } from '#lib/people.js';
+	import { newerThan, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	let { taskID, refreshKey = 0 }: { taskID: string; refreshKey?: number } = $props();
@@ -17,6 +19,16 @@
 		items = more ? [...items, ...page.items] : page.items;
 		next = page.nextCursor ?? null;
 	}
+	/** Silent refetch of the newest page; new entries are put in front, loaded older pages stay in place. */
+	async function refresh() {
+		const page = await api.activity(taskID, null);
+		const { fresh, gap } = newerThan(items, page.items);
+		if (gap) {
+			items = page.items;
+			next = page.nextCursor ?? null;
+		} else if (fresh.length > 0) items = [...fresh, ...items];
+	}
+	onMount(() => startLiveRefresh(refresh));
 	$effect(() => {
 		void taskID;
 		void refreshKey;

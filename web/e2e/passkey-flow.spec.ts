@@ -45,10 +45,12 @@ async function openShare() {
 }
 
 test.beforeAll(async ({ browser }) => {
+	// The virtual authenticator is driven through the Chromium DevTools protocol; Firefox and WebKit projects need another way (open).
+	test.skip(browser.browserType().name() !== 'chromium', 'passkey flow needs the Chromium CDP virtual authenticator');
 	page = await (await browser.newContext()).newPage();
 });
 test.afterAll(async () => {
-	await page.context().close();
+	await page?.context().close();
 });
 
 test('bootstrap registration, logout, passkey login, project tree and task', async () => {
@@ -726,6 +728,17 @@ test('project comments panel', async () => {
 	await closeDialogs();
 });
 
+/** Drives the infinite list until more than one page (30) is shown: scroll to the end, click "more" when it is offered. */
+async function loadFeedPastFirstPage() {
+	const feed = page.getByTestId('feed-item');
+	await expect(async () => {
+		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+		const more = page.getByTestId('feed-more');
+		if (await more.isVisible()) await more.click();
+		expect(await feed.count()).toBeGreaterThan(30);
+	}).toPass({ timeout: 20_000 });
+}
+
 test('activity page: infinite list, project filter, labels', async () => {
 	await openProject('Küche');
 	// 35 more events in the kitchen project so that a second page is needed (page size 30).
@@ -739,24 +752,28 @@ test('activity page: infinite list, project filter, labels', async () => {
 	await expect(feed.first()).toBeVisible();
 	await expect(feed.first().getByTestId('feed-label')).toHaveText('Aufgabe angelegt');
 	await expect(feed.first().getByTestId('feed-actor')).toHaveText('Du');
-	// Scrolling to the end loads the following pages through the cursor.
-	await expect.poll(async () => {
-		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-		return feed.count();
-	}, { timeout: 15_000 }).toBeGreaterThan(30);
+	// Scrolling to the end loads the following pages through the cursor. Wait on observable state (item count / end marker),
+	// not on timing: the IntersectionObserver may not fire in every engine, so the visible "more" button is the fallback.
+	await loadFeedPastFirstPage();
 	await expect(page.getByTestId('feed-end')).toBeVisible({ timeout: 15_000 });
 	// Project comment events carry their own German label; unknown kinds fall back, never crash.
 	await expect(page.getByTestId('feed-item').filter({ hasText: 'Projektkommentar hinzugefügt' }).first()).toBeVisible();
 	// Filter by project.
-	await page.getByTestId('activity-filter').selectOption({ label: 'Haushalt' });
-	await expect.poll(async () => feed.count()).toBeGreaterThan(0);
-	const projects = await feed.evaluateAll((els) => [...new Set(els.map((e) => e.querySelector('[data-testid="feed-project"]')?.textContent?.trim()))]);
-	expect(projects).toEqual(['in Haushalt']);
-	await page.getByTestId('activity-filter').selectOption({ label: 'Alle Projekte' });
-	await expect.poll(async () => {
-		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-		return feed.count();
-	}, { timeout: 15_000 }).toBeGreaterThan(30);
+	// Wait for the filtered request itself; a bare count > 0 could still see the unfiltered list before the reset.
+	await Promise.all([
+		page.waitForResponse((r) => r.url().includes('/v1/feed') && r.url().includes('projectID=') && r.ok()),
+		page.getByTestId('activity-filter').selectOption({ label: 'Haushalt' })
+	]);
+	await expect(async () => {
+		expect(await feed.count()).toBeGreaterThan(0);
+		const projects = await feed.evaluateAll((els) => [...new Set(els.map((e) => e.querySelector('[data-testid="feed-project"]')?.textContent?.trim()))]);
+		expect(projects).toEqual(['in Haushalt']);
+	}).toPass({ timeout: 15_000 });
+	await Promise.all([
+		page.waitForResponse((r) => r.url().includes('/v1/feed') && !r.url().includes('projectID=') && r.ok()),
+		page.getByTestId('activity-filter').selectOption({ label: 'Alle Projekte' })
+	]);
+	await loadFeedPastFirstPage();
 });
 
 test('agents page: pairing, device list with binding and active run, job list with state filter', async () => {
@@ -1252,4 +1269,37 @@ test('appearance settings persist locally and in the account', async () => {
 	await nav('Konto');
 	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #B45309');
 	await page.setViewportSize({ width: 1280, height: 720 });
+});
+
+// NOT YET EXECUTED (Docker VM full, no stack available): written against contracts/project-sync.yaml and agents.yaml.
+test('sync freshness chips, threshold edit, agent revoke/stop UI', async () => {
+	const origin = new URL(page.url()).origin;
+	const headers = { 'Content-Type': 'application/json', Origin: origin };
+	const projects = (await (await page.request.get('/v1/projects')).json()) as { id: string; name: string }[];
+	const kitchen = projects.find((p) => p.name === 'Küche')!;
+	// Never synced -> chip in the project overview tab and in the account overview.
+	await openProject('Küche');
+	await page.getByTestId('project-tab-overview').click();
+	await expect(page.getByTestId('cc-sync-head').getByTestId('sync-chip')).toHaveAttribute('data-state', 'never');
+	await page.getByTestId('cc-sync-toggle').click();
+	await expect(page.getByTestId('sync-detail')).toBeVisible();
+	await page.getByTestId('sync-threshold').fill('0');
+	await page.getByTestId('sync-threshold-save').click();
+	await expect(page.getByRole('alert').filter({ hasText: 'zwischen 1 und 365' })).toBeVisible();
+	await page.getByTestId('sync-threshold').fill('7');
+	await Promise.all([
+		page.waitForResponse((r) => r.url().includes(`/projects/${kitchen.id}/sync`) && r.request().method() === 'PUT' && r.ok()),
+		page.getByTestId('sync-threshold-save').click()
+	]);
+	await expect(page.getByTestId('sync-saved')).toBeVisible();
+	await nav('Überblick');
+	await expect(page.getByTestId('sync-list')).toBeVisible();
+	await page.getByTestId('sync-filter').selectOption({ label: 'Nie abgeglichen' });
+	await expect(page.getByTestId('sync-row').filter({ hasText: 'Küche' })).toBeVisible();
+	// Agents: revoke needs a second click (inline confirmation).
+	await nav('Agenten');
+	const device = page.getByTestId('device').filter({ hasText: 'Mac Studio' });
+	await device.getByTestId('device-revoke').click();
+	await device.getByTestId('device-revoke-confirm').click();
+	await expect(device.getByTestId('device-status')).toHaveText('Widerrufen');
 });

@@ -29,6 +29,9 @@
 	import CardDetail from './overview/CardDetail.svelte';
 	import OverviewCard from './overview/OverviewCard.svelte';
 	import QuestionAnswer from './overview/QuestionAnswer.svelte';
+	import SyncChip from './overview/SyncChip.svelte';
+	import SyncDetail from './overview/SyncDetail.svelte';
+	import SyncList from './overview/SyncList.svelte';
 	import ReviewDecision from './overview/ReviewDecision.svelte';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
 	import List from '@lucide/svelte/icons/list';
@@ -51,6 +54,7 @@
 	let loaded = $state(false);
 	let refreshing = $state(false);
 	let showBrief = $state(false);
+	let showSync = $state(false);
 	// List view filters.
 	let laneFilter = $state<'' | LaneKey>('');
 	let kindFilter = $state<'' | 'task' | 'feature'>('');
@@ -68,6 +72,9 @@
 	const items = $derived(cc?.items ?? []);
 	const updates = $derived(sortUpdates(cc?.updates ?? []));
 	const summary = $derived(cc?.summary);
+	const syncEntries = $derived(cc?.projects ?? []);
+	/** Project scope: the entry of the project itself (the response may also list its sub-projects). */
+	const ownSync = $derived(projectID ? syncEntries.find((e) => e.projectID === projectID) : undefined);
 
 	function params(): CommandCenterParams {
 		const base: CommandCenterParams = {
@@ -247,8 +254,29 @@
 			<span>{t('cc.summary.reviews', { count: summary.pendingReviews })}</span>
 			<span>{t('cc.summary.features', { count: summary.features })}</span>
 			<span>{t('cc.summary.backlog', { count: summary.backlog })}</span>
+			{#if scope === 'account' && summary.staleProjects}<span class="text-warning" data-testid="cc-stale-count">{t('sync.summary.stale', { count: summary.staleProjects })}</span>{/if}
 			{#if cc}<span>{t('cc.updatedAt', { when: formatWhen(cc.generatedAt) })}</span>{/if}
 		</p>
+	{/if}
+
+	{#if scope === 'project' && projectID && ownSync}
+		<div class="flex flex-col gap-2" data-testid="cc-sync-head">
+			<div class="flex flex-wrap items-center gap-2">
+				<SyncChip sync={ownSync.sync} />
+				<button
+					type="button"
+					class="text-ui-accent-ink min-h-9 text-xs underline underline-offset-2"
+					aria-expanded={showSync}
+					data-testid="cc-sync-toggle"
+					onclick={() => (showSync = !showSync)}
+				>
+					{showSync ? t('sync.hideDetails') : t('sync.details')}
+				</button>
+			</div>
+			{#if showSync}<SyncDetail {projectID} onchanged={refresh} />{/if}
+		</div>
+	{:else if scope === 'account' && section === 'board' && syncEntries.length > 0}
+		<SyncList entries={syncEntries} onchanged={refresh} />
 	{/if}
 
 	{#if scope === 'project' && showBrief && projectID}

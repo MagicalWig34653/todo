@@ -468,6 +468,28 @@ export interface CommandSummary {
 	pendingReviews: number;
 	features: number;
 	activeAgents: number;
+	/** Projects whose repository sync is stale (ADR 0018); absent on older servers. */
+	staleProjects?: number;
+}
+/** contracts/project-sync.yaml */
+export type SyncState = 'fresh' | 'stale' | 'never';
+export interface SyncBrief {
+	state: SyncState;
+	lastSyncedAt?: string | null;
+	daysSince?: number | null;
+}
+export interface ProjectSyncEntry {
+	projectID: string;
+	name: string;
+	sync: SyncBrief;
+}
+export interface ProjectSync extends SyncBrief {
+	bound: boolean;
+	repository?: string | null;
+	lastSyncedBy?: string | null;
+	staleAfterDays: number;
+	repoRef?: string | null;
+	lastSummary?: string | null;
 }
 export interface UpdateItem {
 	id: string;
@@ -503,6 +525,7 @@ export interface CommandCenter {
 	total?: number | null;
 	updates: UpdateItem[];
 	builds: BuildGroup[];
+	projects?: ProjectSyncEntry[] | null;
 }
 export interface CommandCenterParams {
 	scope: 'account' | 'project';
@@ -755,6 +778,12 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		// Agents (contracts/agents.yaml)
 		pairDevice: (label: string) => request<Pairing>('POST', '/agents/devices', { label }),
 		listDevices: () => request<RunnerDevice[]>('GET', '/agents/devices'),
+		revokeDevice: (id: string) => request<void>('DELETE', `/agents/devices/${id}`),
+		createBinding: (b: { projectID: string; deviceID: string; repositoryKey: string; label: string }) =>
+			request<RunnerBinding>('POST', '/agents/bindings', b),
+		releaseJob: (j: { id: string; taskID: string; bindingID: string; taskRevision: number; mode: 'clarify' | 'implement'; scope: string }) =>
+			request<AgentJob>('POST', '/agents/jobs', j),
+		stopJob: (id: string) => request<AgentJob>('POST', `/agents/jobs/${id}/stop`, {}),
 		listJobs: (params: { state?: JobState | ''; projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<JobPage>(
 				'GET',
@@ -876,6 +905,11 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		abortAttachment: (id: string) => request<void>('DELETE', `/attachments/${id}`),
 		attachmentPreviewURL: (id: string) => `${base}/attachments/${id}/preview`,
 		attachmentDownloadURL: (id: string) => `${base}/attachments/${id}/download`,
+
+		// Repository sync (contracts/project-sync.yaml)
+		getProjectSync: (projectID: string) => request<ProjectSync>('GET', `/projects/${projectID}/sync`),
+		putProjectSync: (projectID: string, body: { repository?: string; staleAfterDays?: number }) =>
+			request<ProjectSync>('PUT', `/projects/${projectID}/sync`, body),
 
 		// Command center (contracts/command-center.yaml)
 		commandCenter: (p: CommandCenterParams) =>

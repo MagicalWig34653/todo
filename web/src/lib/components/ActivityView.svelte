@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { onDestroy, tick, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { api, type FeedItem } from '#lib/api.js';
 	import { de } from '#lib/i18n/de.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { personName } from '#lib/people.js';
+	import { newerThan, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { buildTree, flatten } from '#lib/projectTree.js';
 	import { workspace } from '#lib/workspace.svelte.js';
@@ -23,6 +24,8 @@
 	let loading = $state(false);
 	let loadedOnce = $state(false);
 	let sentinel = $state<HTMLElement | null>(null);
+	/** New entries found while the reader is scrolled down; shown on request so the list does not jump. */
+	let pendingNew = $state<FeedItem[]>([]);
 	/** Guards against out-of-order responses after a filter change. */
 	let generation = 0;
 
@@ -45,8 +48,36 @@
 		}
 	}
 
+	/** Silent refetch of the newest page (focus, visibility, 30 s). Near the top it merges at once, further down it only counts. */
+	async function refresh() {
+		if (loading || !loadedOnce) return;
+		const my = generation;
+		const page = await api.feed({ projectID: projectID || undefined, before: null, limit: 30 });
+		if (my !== generation || loading) return;
+		const { fresh, gap } = newerThan([...pendingNew, ...items], page.items);
+		if (gap) {
+			items = page.items;
+			next = page.nextCursor ?? null;
+			pendingNew = [];
+		} else if (fresh.length > 0) {
+			const combined = [...fresh, ...pendingNew];
+			if (window.scrollY > 120) pendingNew = combined;
+			else {
+				items = [...combined, ...items];
+				pendingNew = [];
+			}
+		}
+	}
+	function showPending() {
+		items = [...pendingNew, ...items];
+		pendingNew = [];
+		window.scrollTo({ top: 0 });
+	}
+	onMount(() => startLiveRefresh(refresh));
+
 	$effect(() => {
 		void projectID;
+		pendingNew = [];
 		items = [];
 		next = null;
 		loadedOnce = false;
@@ -103,6 +134,12 @@
 
 	{#if loadedOnce && items.length === 0}
 		<EmptyState title={t('activity.title')} icon={Activity}><p>{t('activity.empty')}</p></EmptyState>
+	{/if}
+
+	{#if pendingNew.length > 0}
+		<div class="sticky top-2 z-10 flex justify-center">
+			<Button size="sm" data-testid="feed-new" onclick={showPending}>{t('activity.newEntries', { count: pendingNew.length })}</Button>
+		</div>
 	{/if}
 
 	<ol class="flex flex-col divide-y rounded-xl border" data-testid="activity-feed">

@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { api, type Project, type ProjectComment, type Role } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { personName } from '#lib/people.js';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -26,6 +28,13 @@
 		items = await api.listProjectComments(project.id);
 		loaded = true;
 	}
+	/** Silent refetch (focus, visibility, interval): keeps the list when nothing changed and never interrupts an edit. */
+	async function refresh() {
+		if (editingID) return;
+		const next = await api.listProjectComments(project.id);
+		if (!editingID && !sameList(items, next)) items = next;
+	}
+	onMount(() => startLiveRefresh(refresh));
 	$effect(() => {
 		void project.id;
 		editingID = null;

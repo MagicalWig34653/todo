@@ -41,3 +41,6 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npm test
+      # Playwright E2E is not part of CI (needs a backend stack with a fresh database). web/playwright.config.ts defines the
+      # projects chromium, firefox and webkit; a later job would run `npx playwright install --with-deps firefox webkit` and then
+      # `npx playwright test --project=<name>` once per browser against its own stack. Firefox/WebKit are unverified so far.

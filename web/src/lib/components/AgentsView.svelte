@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type JobListItem, type JobState, type Pairing, type RunnerDevice } from '#lib/api.js';
+	import { api, type JobListItem, type JobState, type Pairing, type RunnerDevice, type Task } from '#lib/api.js';
+	import { bindableDevices, bindingsForProject, canStopJob, validateBinding, validateRelease, SCOPE_MAX } from '#lib/agentsLogic.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
@@ -8,6 +9,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import PageHeader from './app/PageHeader.svelte';
 	import Panel from './app/Panel.svelte';
@@ -23,6 +25,29 @@
 	let jobsLoaded = $state(false);
 	let stateFilter = $state<JobState | ''>('');
 	let generation = 0;
+	// Two-step confirmation instead of a blocking browser dialog.
+	let confirmRevoke = $state<string | null>(null);
+	let confirmStop = $state<string | null>(null);
+	// Binding form.
+	let bindDevice = $state('');
+	let bindProject = $state('');
+	let bindKey = $state('');
+	let bindLabel = $state('');
+	let bindError = $state<'incomplete' | 'key' | null>(null);
+	// Release form. The id is the idempotency key; it stays the same until a release succeeded.
+	let relProject = $state('');
+	let relTasks = $state<Task[]>([]);
+	let relTask = $state('');
+	let relBinding = $state('');
+	let relMode = $state<'clarify' | 'implement'>('clarify');
+	let relScope = $state('');
+	let relID = crypto.randomUUID();
+	let done = $state<string | null>(null);
+
+	const bindable = $derived(bindableDevices(devices));
+	const relBindings = $derived(relProject ? bindingsForProject(devices, relProject) : []);
+	const relValid = $derived(validateRelease({ taskID: relTask, bindingID: relBinding, scope: relScope }));
+	const projectsWithBinding = $derived(workspace.projects.filter((p) => bindingsForProject(devices, p.id).length > 0));
 
 	const projectName = (id: string) => workspace.projects.find((p) => p.id === id)?.name ?? t('agents.unknownProject');
 
@@ -55,6 +80,58 @@
 		if (await attempt(async () => (pairing = await api.pairDevice(l)))) {
 			label = '';
 			await attempt(loadDevices);
+		}
+	}
+
+	async function revoke(d: RunnerDevice) {
+		if (await attempt(() => api.revokeDevice(d.id), loadDevices)) {
+			confirmRevoke = null;
+			done = t('agents.revokeDone');
+			await attempt(loadDevices);
+		}
+	}
+	async function bind(e: Event) {
+		e.preventDefault();
+		done = null;
+		bindError = validateBinding({ projectID: bindProject, deviceID: bindDevice, repositoryKey: bindKey, label: bindLabel });
+		if (bindError) return;
+		if (await attempt(() => api.createBinding({ projectID: bindProject, deviceID: bindDevice, repositoryKey: bindKey.trim(), label: bindLabel.trim() }))) {
+			bindKey = '';
+			bindLabel = '';
+			done = t('agents.bindDone');
+			await attempt(loadDevices);
+		}
+	}
+	async function pickReleaseProject() {
+		relTask = '';
+		relBinding = '';
+		relTasks = [];
+		if (!relProject) return;
+		const my = relProject;
+		const list = await api.listTasks(my);
+		if (my === relProject) relTasks = list.filter((x) => x.status !== 'done');
+	}
+	async function release(e: Event) {
+		e.preventDefault();
+		done = null;
+		const task = relTasks.find((x) => x.id === relTask);
+		if (!task || !relValid) return;
+		const ok = await attempt(() =>
+			api.releaseJob({ id: relID, taskID: task.id, bindingID: relBinding, taskRevision: task.version, mode: relMode, scope: relScope.trim() })
+		);
+		if (ok) {
+			relID = crypto.randomUUID();
+			relScope = '';
+			relTask = '';
+			done = t('agents.releaseDone');
+			await attempt(() => loadJobs());
+		}
+	}
+	async function stop(j: JobListItem) {
+		if (await attempt(() => api.stopJob(j.job.id), () => loadJobs())) {
+			confirmStop = null;
+			done = t('agents.stopDone');
+			await attempt(() => loadJobs());
 		}
 	}
 
@@ -94,6 +171,17 @@
 						<Badge variant={s === 'paired' ? 'success' : s === 'revoked' ? 'destructive' : 'default'} data-testid="device-status">{t(`agents.deviceStatus.${s}` as MessageKey)}</Badge>
 						{#if d.revokedAt}<span class="text-muted-foreground text-xs">{t('agents.revokedAt', { when: formatWhen(d.revokedAt) })}</span>{/if}
 						<span class="text-muted-foreground ml-auto text-xs" data-testid="device-active">{t('agents.activeRuns', { count: d.activeRunCount })}</span>
+						{#if !d.revokedAt}
+							{#if confirmRevoke === d.id}
+								<span class="flex flex-wrap items-center gap-1 text-xs" role="alert">
+									<span class="text-muted-foreground">{t('agents.revokeConfirm', { label: d.label })}</span>
+									<Button size="xs" variant="destructive" data-testid="device-revoke-confirm" onclick={() => revoke(d)}>{t('agents.revoke')}</Button>
+									<Button size="xs" variant="ghost" onclick={() => (confirmRevoke = null)}>{t('common.cancel')}</Button>
+								</span>
+							{:else}
+								<Button size="xs" variant="outline" data-testid="device-revoke" onclick={() => (confirmRevoke = d.id)}>{t('agents.revoke')}</Button>
+							{/if}
+						{/if}
 					</div>
 					<div class="text-sm">
 						<p class="text-muted-foreground mb-0.5 text-xs font-semibold">{t('agents.bindings')}</p>
@@ -114,6 +202,75 @@
 			{/each}
 		</ul>
 	</Panel>
+
+	<Panel title={t('agents.bindTitle')} description={t('agents.bindHint')}>
+		{#if bindable.length === 0}
+			<p class="text-muted-foreground text-sm">{t('agents.bindNoDevice')}</p>
+		{:else}
+			<form class="grid gap-2 sm:grid-cols-2" onsubmit={bind} data-testid="bind-form">
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.bindDevice')}
+					<Select bind:value={bindDevice} data-testid="bind-device">
+						<option value="">–</option>
+						{#each bindable as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
+					</Select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.bindProject')}
+					<Select bind:value={bindProject} data-testid="bind-project">
+						<option value="">–</option>
+						{#each workspace.projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+					</Select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.bindKey')}
+					<Input bind:value={bindKey} placeholder="123e4567-e89b-12d3-a456-426614174000" autocomplete="off" aria-invalid={bindError === 'key'} data-testid="bind-key" />
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.bindLabel')}
+					<Input bind:value={bindLabel} maxlength={100} data-testid="bind-label" />
+				</label>
+				<div class="sm:col-span-2"><Button type="submit" data-testid="bind-submit">{t('agents.bind')}</Button></div>
+				{#if bindError}<p class="text-destructive text-xs sm:col-span-2" role="alert">{bindError === 'key' ? t('agents.bindInvalidKey') : t('error.generic')}</p>{/if}
+			</form>
+		{/if}
+		<p class="text-muted-foreground text-xs">{t('agents.bindRevokeMissing')}</p>
+	</Panel>
+
+	<Panel title={t('agents.releaseTitle')} description={t('agents.releaseHint')}>
+		{#if projectsWithBinding.length === 0}
+			<p class="text-muted-foreground text-sm">{t('agents.releaseNoBinding')}</p>
+		{:else}
+			<form class="grid gap-2 sm:grid-cols-2" onsubmit={release} data-testid="release-form">
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.releaseProject')}
+					<Select bind:value={relProject} onchange={() => attempt(pickReleaseProject)} data-testid="release-project">
+						<option value="">–</option>
+						{#each projectsWithBinding as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+					</Select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.releaseTask')}
+					<Select bind:value={relTask} data-testid="release-task">
+						<option value="">–</option>
+						{#each relTasks as x (x.id)}<option value={x.id}>{x.title}</option>{/each}
+					</Select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.releaseBinding')}
+					<Select bind:value={relBinding} data-testid="release-binding">
+						<option value="">–</option>
+						{#each relBindings as b (b.id)}<option value={b.id}>{b.deviceLabel} · {b.label}</option>{/each}
+					</Select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium">{t('agents.releaseMode')}
+					<Select bind:value={relMode} data-testid="release-mode">
+						<option value="clarify">{t('agents.mode.clarify')}</option>
+						<option value="implement">{t('agents.mode.implement')}</option>
+					</Select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs font-medium sm:col-span-2">{t('agents.releaseScope')}
+					<Textarea bind:value={relScope} maxlength={SCOPE_MAX} placeholder={t('agents.releaseScopePlaceholder')} data-testid="release-scope" />
+				</label>
+				<div class="sm:col-span-2"><Button type="submit" disabled={!relValid} data-testid="release-submit">{t('agents.release')}</Button></div>
+			</form>
+		{/if}
+	</Panel>
+
+	{#if done}<p class="text-success text-sm" role="status" data-testid="agents-done">{done}</p>{/if}
 
 	<Panel title={t('agents.jobsTitle')}>
 		{#snippet action()}
@@ -137,6 +294,17 @@
 					</div>
 					<p class="text-muted-foreground text-xs">{j.projectName}</p>
 					{#if j.job.progress}<p class="line-clamp-2 text-[13px]">{j.job.progress}</p>{/if}
+					{#if canStopJob(j.job.state)}
+						{#if confirmStop === j.job.id}
+							<div class="flex flex-wrap items-center gap-1 text-xs" role="alert">
+								<span class="text-muted-foreground">{t('agents.stopConfirm', { title: j.taskTitle })}</span>
+								<Button size="xs" variant="destructive" data-testid="job-stop-confirm" onclick={() => stop(j)}>{t('agents.stop')}</Button>
+								<Button size="xs" variant="ghost" onclick={() => (confirmStop = null)}>{t('common.cancel')}</Button>
+							</div>
+						{:else}
+							<div><Button size="xs" variant="outline" data-testid="job-stop" onclick={() => (confirmStop = j.job.id)}>{t('agents.stop')}</Button></div>
+						{/if}
+					{/if}
 				</li>
 			{/each}
 		</ul>
