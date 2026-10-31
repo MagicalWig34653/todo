@@ -15,17 +15,19 @@ x-backend: &backend
     DB_USER: ${DB_USER:-todo}
     DB_PASSWORD_FILE: /run/secrets/db_password
     BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
-    ATTACHMENT_STORAGE: ${ATTACHMENT_STORAGE:-database}
-    ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-10485760}
+    ATTACHMENT_STORAGE: ${ATTACHMENT_STORAGE:-}
+    ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-}
     RP_ID: ${RP_ID:-localhost}
     RP_ORIGIN: ${RP_ORIGIN:-http://localhost:38080}
     # Empty: the backend derives the OAuth/MCP issuer from RP_ORIGIN (older env files keep working).
     OAUTH_ISSUER: ${OAUTH_ISSUER:-}
+    # ADR 0025: an empty value means "not set by the environment" - the setting can then be changed in the PWA
+    # (Einstellungen > Verwaltung > Server). A non-empty value locks it there. Defaults live in the application.
     # Periodic in-process cleanup (0 disables) and sync log retention in days (0 keeps everything). ADR 0019.
-    CLEANUP_INTERVAL_MINUTES: ${CLEANUP_INTERVAL_MINUTES:-360}
-    SYNC_RETENTION_DAYS: ${SYNC_RETENTION_DAYS:-90}
+    CLEANUP_INTERVAL_MINUTES: ${CLEANUP_INTERVAL_MINUTES:-}
+    SYNC_RETENTION_DAYS: ${SYNC_RETENTION_DAYS:-}
     AASA_APP_IDS: ${AASA_APP_IDS:-}
-    PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-false}
+    PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-}
   secrets: [db_password, bootstrap_token]
 services:
   migrate:

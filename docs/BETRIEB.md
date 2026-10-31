@@ -226,3 +226,14 @@ Optional und standardmäßig aus. Schritt-für-Schritt-Anleitung (SMTP-Zugang, S
 - **Einstellungen:** `LIVE_REFRESH_ENABLED` (Standard an), `LIVE_POLL_MS` (1500), `LIVE_WAIT_MAX_SECONDS` (25), `LIVE_MAX_WAITERS_PER_ACCOUNT` (8), `LIVE_MAX_WAITERS_PER_REPLICA` (500), `LIVE_CLIENT_POLL_SECONDS` (5, Hinweis an Clients).
 - **Last:** je Replika eine Token-Abfrage (3 indizierte Lesezugriffe) pro Poll-Intervall, nur solange Wartende existieren.
 - Der Workflow `deploy-branch.yml` ist nicht betroffen (neue Variablen nur dokumentiert, keine neuen Betriebsdateien).
+
+## Konfiguration über die PWA (31.10.2026, ADR 0025)
+
+Fast alle Betriebseinstellungen (Mail, Push, Anhänge/S3, Aufräumen, Live-Refresh, Limits, Passwort-Login, Instanzname, App-IDs) kann ein Administrator in der PWA ändern. Ausführlich: `docs/KONFIGURATION.md` (liegt nur auf `main`). Kurzfassung für den Betrieb:
+
+- **Reihenfolge:** Umgebungsvariable (nicht leer) > Wert aus der PWA > Standard. Was in `stack.env` oder in einem Overlay gesetzt ist, ist in der PWA gesperrt. Die Stack-Dateien setzen deshalb keine Standardwerte mehr (`${X:-}`); `setup.sh` schreibt nur noch Abweichendes in die Env-Datei. Bestehende Env-Dateien bleiben wirksam (ihre Werte sind gesperrt); zum Abgeben an die PWA die Zeile entfernen und neu ausrollen.
+- **Nur per Umgebung:** `DB_*`, `RP_ID`, `RP_ORIGIN`, `RP_NAME`, `OAUTH_ISSUER`, `WEB_ROOT`, `BOOTSTRAP_TOKEN`, `SETTINGS_ENCRYPTION_KEY`.
+- **Schlüssel für Geheimnisse:** `setup.sh` Schritt „Konfigurationsschlüssel“ legt das Swarm-Secret `todo_settings_key` an (`openssl rand -base64 32`); `scripts/swarm-deploy.sh` bindet bei `SETTINGS_KEY_ENABLED=true` das Overlay `deploy/swarm/stack.settings.yaml` ein (bei `SETTINGS_KEY_PREVIOUS_SECRET` zusätzlich `stack.settings-previous.yaml` für die Rotation). Ohne Schlüssel kann die PWA keine Geheimnisse speichern. **Der Schlüssel gehört nicht in dasselbe Backup wie die Datenbank.** Rotation: `todo-app settings rotate-key --yes` (siehe KONFIGURATION.md).
+- **Migration:** neue Tabellen `server_settings` und `server_settings_audit` (additiv, `migrate --yes` wie immer). Rollback: Tabellen werden von alten Versionen ignoriert.
+- **Replikate:** Änderungen erreichen alle Replikate nach höchstens ~10 s ohne Neustart; `attachments.maxBytes`, `maintenance.*` wirken nach Neustart. Prüfen: Log `server settings applied`, `GET /v1/admin/settings` (Feld `lastError`).
+- **Ungeprüft:** MariaDB-Lauf der neuen Tests, echter SMTP-/APNs-/S3-Test über die Oberfläche.

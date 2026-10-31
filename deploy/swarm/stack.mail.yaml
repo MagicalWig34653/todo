@@ -8,12 +8,12 @@ x-mail: &mail
   environment:
     MAIL_ENABLED: 'true'
     SMTP_HOST: ${SMTP_HOST:?SMTP_HOST required}
-    SMTP_PORT: ${SMTP_PORT:-587}
-    SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+    SMTP_PORT: ${SMTP_PORT:-}
+    SMTP_SECURITY: ${SMTP_SECURITY:-}
     SMTP_USER: ${SMTP_USER:?SMTP_USER required}
     SMTP_PASSWORD_FILE: /run/secrets/smtp_password
     MAIL_FROM: ${MAIL_FROM:?MAIL_FROM required}
-    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Todolino}
+    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
   secrets: [smtp_password]
 services:
   # migrate loads the same settings and validates them, so it gets the secret too.

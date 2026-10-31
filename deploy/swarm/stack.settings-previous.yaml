@@ -1,0 +1,17 @@
+version: '3.8'
+# Optional overlay for a key rotation (ADR 0025): the previous key stays readable while the new key is current.
+# scripts/swarm-deploy.sh adds this file when SETTINGS_KEY_PREVIOUS_SECRET is set in the env file.
+# Order: 1. create the new secret and point SETTINGS_KEY_SECRET to it, put the old secret name into
+# SETTINGS_KEY_PREVIOUS_SECRET, deploy. 2. Run once: docker exec <backend container> App settings rotate-key --yes
+# (or a one-off service with the same overlays). 3. Remove SETTINGS_KEY_PREVIOUS_SECRET, deploy, delete the old secret.
+x-settings-previous: &previous
+  environment:
+    SETTINGS_ENCRYPTION_KEY_PREVIOUS_FILE: /run/secrets/settings_key_previous
+  secrets: [settings_key_previous]
+services:
+  migrate: *previous
+  backend: *previous
+secrets:
+  settings_key_previous:
+    external: true
+    name: ${SETTINGS_KEY_PREVIOUS_SECRET:?SETTINGS_KEY_PREVIOUS_SECRET required}

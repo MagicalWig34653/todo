@@ -27,6 +27,10 @@ if [[ -n "${S3_ENDPOINT:-}" ]]; then compose_args+=(-c stack.s3.yaml); fi
 if [[ "${APNS_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.push.yaml); fi
 # Optional outgoing mail: only when MAIL_ENABLED=true (needs the smtp_password secret, see stack.mail.yaml).
 if [[ "${MAIL_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.mail.yaml); fi
+# Optional key for secrets stored in the PWA (ADR 0025): only when SETTINGS_KEY_ENABLED=true (secret settings_key, see stack.settings.yaml).
+if [[ "${SETTINGS_KEY_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.settings.yaml); fi
+# During a key rotation the previous key stays readable (stack.settings-previous.yaml).
+if [[ -n "${SETTINGS_KEY_PREVIOUS_SECRET:-}" ]]; then compose_args+=(-c stack.settings-previous.yaml); fi
 for f in ${STACK_EXTRA_FILES:-}; do compose_args+=(-c "$f"); done
 # The DB is external: the one-shot migration below fails (without retry) if the DB is unreachable.
 # Required: DB_HOST and the external secrets (see deploy/swarm/stack.env.example). S3 is optional.
