@@ -200,3 +200,13 @@ Optional und standardmäßig aus. Schritt-für-Schritt-Anleitung (Developer Port
 | `APNS_ENVIRONMENT` | `production` | Standard für Geräte ohne Umgebungsangabe (`sandbox` oder `production`); jedes Gerät meldet seine eigene. |
 
 `scripts/swarm-deploy.sh` bindet bei `APNS_ENABLED=true` das Overlay `deploy/swarm/stack.push.yaml` ein (Secret, Variablen); `setup.sh` fragt „Push aktivieren?“ und legt das Secret aus dem `.p8`-Pfad an. Bestehende Env-Dateien ohne APNs-Variablen laufen unverändert. Migration: neue Tabellen `push_devices`, `push_prefs`, `push_outbox` (additiv). Prüfen: `GET /health/ready` zeigt informativ `push {enabled, environment}`; Test: `docker exec -it <backend-container> todo-app push-test <konto-id> --yes`. Der Worker läuft auf allen Replikaten, sendet aber per Lease (`maintenance_leases`, Name `push-worker`) nur auf einer. Abgearbeitete Outbox-Zeilen werden nach 3 Tagen, widerrufene Geräte nach 30 Tagen gelöscht. Echter Versand an Apple ist bisher nicht geprüft.
+
+## Live-Refresh (31.10.2026, ADR 0022)
+
+`GET /v1/sync/head` (billig, ETag) und `GET /v1/sync/wait` (Long-Poll bis 25 s, Maximum `LIVE_WAIT_MAX_SECONDS`, Standard 25, höchstens 120). Migration `CreateLiveEvents` vor dem Rollout (`App migrate --yes`); ältere Clients bemerken nichts.
+
+- **Zoraxy/Reverse-Proxy:** Lese-/Antwort-Timeout für das Backend mindestens 60 s (Long-Poll bleibt bis ~25 s offen); Antwortpufferung für `/v1/sync/wait` aus (das Backend sendet `X-Accel-Buffering: no`, `Cache-Control: no-store`). Keine WebSocket-Konfiguration nötig. Andere vorgeschaltete Idle-Timeouts (Cloudflare 100 s, Swarm-Routing-Mesh ohne Limit) liegen darüber.
+- **Rollout:** Beim Beenden eines Replikats antworten offene Wartende mit `retryAfter: 2`; Clients verbinden neu (Routing Mesh wählt eine andere Replika).
+- **Einstellungen:** `LIVE_REFRESH_ENABLED` (Standard an), `LIVE_POLL_MS` (1500), `LIVE_WAIT_MAX_SECONDS` (25), `LIVE_MAX_WAITERS_PER_ACCOUNT` (8), `LIVE_MAX_WAITERS_PER_REPLICA` (500), `LIVE_CLIENT_POLL_SECONDS` (5, Hinweis an Clients).
+- **Last:** je Replika eine Token-Abfrage (3 indizierte Lesezugriffe) pro Poll-Intervall, nur solange Wartende existieren.
+- Der Workflow `deploy-branch.yml` ist nicht betroffen (neue Variablen nur dokumentiert, keine neuen Betriebsdateien).
