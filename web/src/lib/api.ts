@@ -342,14 +342,6 @@ export interface SessionInfo {
 	expiresAt: string;
 	current: boolean;
 }
-export interface RecoveryToken {
-	token: string;
-	expiresAt: string;
-}
-/** Response of `GET /oauth/authorize` (contracts/oauth-mcp.yaml): what the client asks for. */
-export interface ConsentRequest {
-	consent_token: string;
-	client_name: string;
 /** contracts/push.yaml */
 export interface PushDevice {
 	id: string;
@@ -390,6 +382,15 @@ export interface IssuedRecovery extends RecoveryToken {
 	/** Only present when the mail was requested: `queued`, `no_verified_email` or `mail_disabled`. */
 	mail?: 'queued' | 'no_verified_email' | 'mail_disabled';
 }
+
+export interface RecoveryToken {
+	token: string;
+	expiresAt: string;
+}
+/** Response of `GET /oauth/authorize` (contracts/oauth-mcp.yaml): what the client asks for. */
+export interface ConsentRequest {
+	consent_token: string;
+	client_name: string;
 
 	client_id: string;
 	redirect_uri: string;
