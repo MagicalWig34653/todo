@@ -189,3 +189,37 @@ test('quick add: Q opens, chips appear live, Enter keeps the field open, Esc clo
 	expect(planning).toMatchObject({ priority: 3, recurrence: { frequency: 'daily' } });
 	await expect(page.getByTestId('board-card').filter({ hasText: 'Nummer heraussuchen' })).toBeVisible();
 });
+
+test('url routing: reload keeps the view, deep link, back button, unknown ids', async () => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/');
+	await expect(page).toHaveURL(/\/heute$/);
+	await page.getByTestId('project-item').getByRole('button', { name: 'Menüprojekt', exact: true }).first().click();
+	await expect(page).toHaveURL(/\/projekt\/[0-9A-Fa-f-]+\/(liste|board)$/);
+	await page.getByTestId('display-menu').click();
+	await page.getByRole('dialog', { name: 'Anzeige' }).getByRole('button', { name: 'Board' }).click();
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(/\/board$/);
+	const boardURL = page.url();
+	await page.reload();
+	await expect(page).toHaveURL(boardURL);
+	await expect(page.getByTestId('board')).toBeVisible();
+	// Deep link in a fresh navigation, then history.
+	await page.goto('/eingang');
+	await expect(page.getByTestId('view-heading')).toHaveText('Eingang');
+	await page.goto(boardURL);
+	await expect(page.getByTestId('board')).toBeVisible();
+	await page.getByRole('button', { name: 'Anstehend', exact: true }).first().click();
+	await expect(page).toHaveURL(/\/anstehend$/);
+	await page.goBack();
+	await expect(page).toHaveURL(boardURL);
+	await expect(page.getByTestId('board')).toBeVisible();
+	// Friendly 404s.
+	await page.goto('/projekt/00000000-0000-0000-0000-000000000000/liste');
+	await expect(page.getByTestId('not-found')).toContainText('Projekt nicht gefunden');
+	await page.goto('/gibt-es-nicht');
+	await expect(page.getByTestId('not-found')).toContainText('Seite nicht gefunden');
+	// Backend-owned prefixes keep their JSON 404 (no SPA fallback).
+	const api = await page.request.get('/v1/gibt-es-nicht');
+	expect(api.headers()['content-type']).toContain('json');
+});

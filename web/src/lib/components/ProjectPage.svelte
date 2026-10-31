@@ -6,6 +6,7 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { collectAll } from '#lib/planning.js';
+	import type { ProjectSub } from '#lib/routing.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -29,13 +30,17 @@
 	import PanelLeft from '@lucide/svelte/icons/panel-left';
 
 	interface Props {
+		/** URL state (see routing.ts): sub path and open task, reported back through `onroute`. */
+		sub?: ProjectSub;
+		taskID?: string;
+		onroute?: (sub: ProjectSub | undefined, taskID: string | undefined) => void;
 		project: Project;
 		/** Names and ids of the ancestors, outermost first. */
 		trail: { id: string; name: string }[];
 		onselect: (id: string) => void;
 		onshare: (p: Project) => void;
 	}
-	let { project, trail, onselect, onshare }: Props = $props();
+	let { project, trail, onselect, onshare, sub, taskID, onroute }: Props = $props();
 
 	/** `tasks` = list/board of the project, `overview` = command center of the project (ADR 0014). */
 	let tab = $state<'tasks' | 'overview'>('tasks');
@@ -173,6 +178,30 @@
 	let detailOpen = $state(false);
 	$effect(() => {
 		if (!detailOpen) detail = null;
+	});
+	// ---- URL state: /projekt/<id>/<liste|board|ueberblick|kommentare>?task=<id> -------------------------------------
+	let routeApplied = $state(false);
+	$effect(() => {
+		if (routeApplied || !workspace.prefsLoaded) return;
+		routeApplied = true;
+		if (sub === 'ueberblick') tab = 'overview';
+		else if (sub === 'kommentare') commentsOpen = true;
+		else if ((sub === 'board' || sub === 'liste') && (sub === 'board') !== (display.view === 'board')) setDisplay({ view: sub === 'board' ? 'board' : 'list' });
+	});
+	let taskApplied = $state(false);
+	$effect(() => {
+		if (taskApplied || !loaded || !taskID) return;
+		taskApplied = true;
+		const found = tasks.find((x) => x.id === taskID);
+		if (found) openDetail(found);
+	});
+	$effect(() => {
+		if (!routeApplied) return;
+		const current: ProjectSub = commentsOpen ? 'kommentare' : tab === 'overview' ? 'ueberblick' : display.view === 'board' ? 'board' : 'liste';
+		const task = detailOpen ? detail?.id : undefined;
+		// Deep link to a task still loading: keep ?task= until it was applied or is known to be missing.
+		const keep = taskID && !taskApplied ? taskID : task;
+		onroute?.(current, keep);
 	});
 	const openDetail = (task: Task) => {
 		detail = task;

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import type { Component } from 'svelte';
 	import type { Project } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
+	import { buildPath, parseRoute, ROUTE_TITLES, type ProjectSub, type Route } from '#lib/routing.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -32,7 +33,10 @@
 
 	type Icon = Component<{ class?: string; 'aria-hidden'?: 'true' | boolean }>;
 
-	let view = $state<View>('today');
+	let view = $state<View | 'notfound'>('today');
+	let routeSub = $state<ProjectSub | undefined>();
+	let routeTask = $state<string | undefined>();
+	let routeArea = $state<string | undefined>();
 	let selectedID = $state<string | null>(null);
 	let drawerOpen = $state(false);
 	let searchInitial = $state<{ labelID?: string; filterID?: string }>({});
@@ -52,7 +56,52 @@
 		return out;
 	});
 
+	function applyRoute(r: Route) {
+		view = r.view;
+		selectedID = r.view === 'project' ? (r.projectID ?? null) : selectedID;
+		routeSub = r.sub;
+		routeTask = r.taskID;
+		routeArea = r.area;
+		if (r.view === 'search') {
+			searchInitial = { labelID: r.labelID, filterID: r.filterID };
+			searchKey++;
+		}
+		drawerOpen = false;
+	}
+	const currentRoute = (): Route => ({
+		view: view === 'notfound' ? 'today' : view,
+		projectID: view === 'project' ? (selectedID ?? undefined) : undefined,
+		sub: view === 'project' ? routeSub : undefined,
+		taskID: routeTask,
+		area: view === 'account' ? routeArea : undefined,
+		labelID: view === 'search' ? searchInitial.labelID : undefined,
+		filterID: view === 'search' ? searchInitial.filterID : undefined
+	});
+	/** push = new history entry (navigation); replace = state change within the same view. */
+	function syncUrl(push: boolean) {
+		const path = buildPath(currentRoute());
+		if (path === location.pathname + location.search) return;
+		if (push) history.pushState(null, '', path);
+		else history.replaceState(null, '', path);
+	}
+	/** Called by the project page when its tab, layout or open task changes. */
+	function projectRoute(sub: ProjectSub | undefined, taskID: string | undefined) {
+		routeSub = sub;
+		routeTask = taskID;
+		syncUrl(false);
+	}
+	$effect(() => {
+		const name = view === 'project' ? (selected?.name ?? ROUTE_TITLES.project) : ROUTE_TITLES[view];
+		document.title = `${name} · Todolino`;
+	});
+
 	onMount(() => {
+		const initial = parseRoute(location.pathname, location.search);
+		applyRoute(initial);
+		if (initial.view !== 'notfound') syncUrl(false);
+		const pop = () => applyRoute(parseRoute(location.pathname, location.search));
+		window.addEventListener('popstate', pop);
+		onDestroy(() => window.removeEventListener('popstate', pop));
 		attempt(() => workspace.reloadAll());
 		// Keep the sidebar badge fresh (there is no sync feed for questions and reviews).
 		const refresh = () => {
@@ -69,17 +118,26 @@
 	function go(v: View) {
 		if (v !== 'search') searchInitial = {};
 		view = v;
+		routeSub = undefined;
+		routeTask = undefined;
+		routeArea = undefined;
 		drawerOpen = false;
+		syncUrl(true);
 	}
 	function openProject(id: string) {
 		selectedID = id;
 		view = 'project';
+		routeSub = undefined;
+		routeTask = undefined;
 		drawerOpen = false;
+		syncUrl(true);
 	}
 	function openSearch(initial: { labelID?: string; filterID?: string }) {
 		searchInitial = initial;
 		searchKey++;
 		view = 'search';
+		routeTask = undefined;
+		syncUrl(true);
 	}
 	function share(p: Project) {
 		shareProject = p;
@@ -128,7 +186,7 @@
 		></button>
 	{/if}
 
-	<Sidebar {view} {selectedID} {drawerOpen} onview={go} onproject={openProject} onshare={share} onclose={() => (drawerOpen = false)} />
+	<Sidebar view={view === 'notfound' ? 'today' : view} {selectedID} {drawerOpen} onview={go} onproject={openProject} onshare={share} onclose={() => (drawerOpen = false)} />
 
 	<div class={['flex min-h-dvh min-w-0 flex-col', !ui.sidebarCollapsed && 'menu:pl-72']}>
 		<header class="bg-background/85 sticky top-0 z-20 flex h-12 items-center gap-1 border-b px-3 backdrop-blur menu:px-5">
@@ -173,15 +231,22 @@
 			{#if view === 'project'}
 				{#if selected}
 					{#key selected.id}
-						<ProjectPage project={selected} {trail} onselect={openProject} onshare={share} />
+						<ProjectPage project={selected} {trail} onselect={openProject} onshare={share} sub={routeSub} taskID={routeTask} onroute={projectRoute} />
 					{/key}
 				{:else}
-					<div class="mx-auto max-w-3xl">
-						<EmptyState title={t('nav.noProjectTitle')} icon={FolderOpen}>
-							<p>{t('nav.noProjectHint')}</p>
+					<div class="mx-auto max-w-3xl" data-testid="not-found">
+						<EmptyState title={selectedID && workspace.projects.length > 0 ? t('route.projectMissing') : t('nav.noProjectTitle')} icon={FolderOpen}>
+							<p>{selectedID && workspace.projects.length > 0 ? t('route.projectMissingHint') : t('nav.noProjectHint')}</p>
 						</EmptyState>
 					</div>
 				{/if}
+			{:else if view === 'notfound'}
+				<div class="mx-auto max-w-3xl" data-testid="not-found">
+					<EmptyState title={t('route.notFound')} icon={FolderOpen}>
+						<p>{t('route.notFoundHint')}</p>
+						<Button class="mt-3" onclick={() => go('today')}>{t('nav.today')}</Button>
+					</EmptyState>
+				</div>
 			{:else}
 				<div class={['mx-auto', view === 'overview' ? 'max-w-none' : 'max-w-4xl']}>
 					{#if view === 'today' || view === 'upcoming' || view === 'upNext'}

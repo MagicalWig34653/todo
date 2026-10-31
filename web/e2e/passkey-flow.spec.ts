@@ -124,7 +124,8 @@ test('bootstrap registration, logout, passkey login, project tree and task', asy
 	// Tick off and reload: state is persisted by the backend.
 	await task.getByRole('checkbox').check();
 	await page.reload();
-	await page.getByRole('button', { name: 'Küche', exact: true }).click();
+	// The URL keeps the project: reload stays on it.
+	await expect(page.getByTestId('task-heading')).toHaveText('Küche');
 	await expect(page.getByTestId('task-item').getByRole('checkbox')).toBeChecked();
 });
 
@@ -728,7 +729,9 @@ test('project comments panel', async () => {
 
 		// The owner sees the guest by name and may delete the foreign comment (manage).
 		await page.reload();
-		await openProject('Haushalt');
+		// /kommentare in the URL reopens the dialog after a reload.
+		await expect(page.getByTestId('project-comments-dialog')).toBeVisible();
+		await closeDialogs();
 		await page.getByTestId('project-comments-open').click();
 		const again = page.getByTestId('project-comments-dialog');
 		const foreign = again.getByTestId('project-comment').filter({ hasText: 'Passt, mache ich' });
