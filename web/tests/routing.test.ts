@@ -4,7 +4,7 @@ import { buildPath, loginRedirectTarget, parseRoute, safeRedirect } from '../src
 const id = '0DCBB03D-997B-4C08-80CB-9FBD69226644';
 describe('routing', () => {
 	it('maps simple views both ways', () => {
-		for (const p of ['/heute', '/eingang', '/anstehend', '/suche', '/ueberblick', '/aktivitaet', '/agenten', '/teams', '/filter', '/konto']) {
+		for (const p of ['/heute', '/eingang', '/anstehend', '/suche', '/ueberblick', '/aktivitaet', '/agenten', '/teams', '/filter', '/einstellungen', '/hilfe']) {
 			expect(buildPath(parseRoute(p))).toBe(p);
 		}
 		expect(parseRoute('/')).toEqual({ view: 'forYou' });
@@ -19,7 +19,7 @@ describe('routing', () => {
 	it('label, filter, account area, task deep link', () => {
 		expect(parseRoute(`/labels/${id}`)).toEqual({ view: 'search', labelID: id });
 		expect(buildPath({ view: 'search', filterID: id })).toBe(`/filter/${id}`);
-		expect(parseRoute('/konto/passkeys').area).toBe('passkeys');
+		expect(parseRoute('/einstellungen/passkeys').area).toBe('passkeys');
 		expect(parseRoute(`/aufgabe/${id}`).taskID).toBe(id);
 	});
 	it('unknown or malformed paths are notfound', () => {

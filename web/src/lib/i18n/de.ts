@@ -1,8 +1,10 @@
 // German UI strings. Components must only reference keys, never literal text.
 import { deNotify } from './de-notify.js';
+import { deSettings } from './de-settings.js';
 
 export const de = {
 	...deNotify,
+	...deSettings,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',
@@ -137,7 +139,7 @@ export const de = {
 	'nav.upNext': 'Als Nächstes',
 	'nav.search': 'Suche',
 	'nav.teams': 'Teams',
-	'nav.account': 'Konto',
+	'nav.account': 'Einstellungen',
 	'nav.openMenu': 'Menü',
 	'nav.closeNav': 'Navigation schließen',
 	'nav.main': 'Hauptnavigation',

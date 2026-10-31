@@ -149,19 +149,20 @@ test('raising the role to "Bearbeiten" lets B create tasks', async () => {
 
 test('overview and teams show the sharing from both sides', async () => {
 	await b.goto('/konto/berechtigungen');
-	await expect(b.getByTestId('account-tab-access')).toHaveAttribute('aria-selected', 'true');
+	await expect(b).toHaveURL(/\/einstellungen\/berechtigungen$/);
+	await expect(b.getByTestId('settings-link-berechtigungen')).toHaveAttribute('aria-current', 'page');
 	const incoming = b.getByTestId('access-incoming').filter({ hasText: 'Hausbau' });
 	await expect(incoming).toContainText('von Anna Eigentum');
 	await expect(incoming).toContainText('Bearbeiten');
 	await expect(b.getByTestId('access-apps')).toBeVisible();
 
-	await a.goto('/konto/berechtigungen');
+	await a.goto('/einstellungen/berechtigungen');
 	await expect(a.getByTestId('access-outgoing').filter({ hasText: 'Hausbau' })).toContainText('Ben Gast');
 	// Admin area: recovery code and account ID live here.
-	await a.getByTestId('account-tab-admin').click();
+	await a.getByTestId('settings-link-verwaltung-konten').click();
 	await expect(a.getByTestId('recovery-issue')).toBeVisible();
 	await expect(a.getByTestId('admin-gaps')).toBeVisible();
-	await b.getByTestId('account-tab-admin').click();
+	await b.goto('/einstellungen/verwaltung-konten');
 	await expect(b.getByTestId('admin-denied')).toBeVisible();
 	await expect(b.getByTestId('recovery-issue')).toHaveCount(0);
 });

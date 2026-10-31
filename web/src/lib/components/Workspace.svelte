@@ -25,7 +25,11 @@
 	import SearchView from './SearchView.svelte';
 	import TeamsView from './TeamsView.svelte';
 	import SharingPanel from './SharingPanel.svelte';
-	import AccountView from './AccountView.svelte';
+	import SettingsView from './SettingsView.svelte';
+	import HelpView from './HelpView.svelte';
+	import HelpMenu from './HelpMenu.svelte';
+	import UserMenu from './UserMenu.svelte';
+	import ShortcutList from './help/ShortcutList.svelte';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import CalendarCheck from '@lucide/svelte/icons/calendar-check';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
@@ -47,6 +51,7 @@
 	let searchKey = $state(0);
 	let shareProject = $state<Project | null>(null);
 	let shareOpen = $state(false);
+	let shortcutsOpen = $state(false);
 
 	const selected = $derived(workspace.projects.find((p) => p.id === selectedID) ?? null);
 	/** Ancestors of the selected project, outermost first, for the breadcrumb. */
@@ -77,7 +82,7 @@
 		projectID: view === 'project' ? (selectedID ?? undefined) : undefined,
 		sub: view === 'project' ? routeSub : undefined,
 		taskID: routeTask,
-		area: view === 'account' ? routeArea : undefined,
+		area: view === 'account' || view === 'help' ? routeArea : undefined,
 		labelID: view === 'search' ? searchInitial.labelID : undefined,
 		filterID: view === 'search' ? searchInitial.filterID : undefined
 	});
@@ -151,8 +156,24 @@
 		routeTask = undefined;
 		syncUrl(true);
 	}
+	function openAccountArea(area?: string) {
+		view = 'account';
+		routeSub = undefined;
+		routeTask = undefined;
+		routeArea = area;
+		drawerOpen = false;
+		syncUrl(true);
+	}
 	function accountArea(area: string | undefined) {
 		routeArea = area;
+		syncUrl(true);
+	}
+	function openHelp(page?: string) {
+		view = 'help';
+		routeSub = undefined;
+		routeTask = undefined;
+		routeArea = page;
+		drawerOpen = false;
 		syncUrl(true);
 	}
 	function accountNav(target: 'teams' | 'agents' | 'general' | 'project', projectID?: string) {
@@ -168,12 +189,13 @@
 
 	/** `q` opens quick add unless the user is typing or a dialog is open. */
 	function onkeydown(e: KeyboardEvent) {
-		if (e.key !== 'q' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+		if ((e.key !== 'q' && e.key !== '?') || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
 		const el = e.target as HTMLElement | null;
 		if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
 		if (document.querySelector('[aria-modal="true"]')) return;
 		e.preventDefault();
-		ui.quickAdd = true;
+		if (e.key === '?') shortcutsOpen = true;
+		else ui.quickAdd = true;
 	}
 </script>
 
@@ -232,6 +254,10 @@
 			{:else}
 				<span class="flex-1"></span>
 			{/if}
+			<div class="ml-auto flex shrink-0 items-center gap-1">
+				<HelpMenu onpage={openHelp} onall={() => openHelp()} />
+				<UserMenu onsettings={openAccountArea} onhelp={() => openHelp()} />
+			</div>
 		</header>
 
 		{#if notice.text}
@@ -291,7 +317,9 @@
 					{:else if view === 'activity'}
 						<ActivityView onopen={openProject} />
 					{:else if view === 'account'}
-						<AccountView area={routeArea} onarea={accountArea} onnav={accountNav} />
+						<SettingsView area={routeArea} onarea={accountArea} onnav={accountNav} />
+					{:else if view === 'help'}
+						<HelpView area={routeArea} onarea={openHelp} onsettings={() => openAccountArea()} />
 					{/if}
 				</div>
 			{/if}
@@ -321,6 +349,10 @@
 </div>
 
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
+
+<Dialog bind:open={shortcutsOpen} title={t('help.keys.overlay')} testid="shortcuts-overlay">
+	<ShortcutList />
+</Dialog>
 
 <Dialog bind:open={shareOpen} title={t('share.dialogTitle', { name: shareProject?.name ?? '' })} class="max-w-2xl" testid="share-dialog">
 	{#if shareProject}

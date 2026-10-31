@@ -12,18 +12,17 @@ export type View =
 	| 'teams'
 	| 'agents'
 	| 'activity'
-	| 'account';
+	| 'account'
+	| 'help';
 </script>
 
 <script lang="ts">
 	import type { Component } from 'svelte';
 	import { api, type Project, type TeamMembership } from '#lib/api.js';
-	import { auth } from '#lib/auth.svelte.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { buildTree, flatten, type DropPlan } from '#lib/projectTree.js';
 	import { isOwner } from '#lib/access.js';
-	import { theme } from '#lib/theme.svelte.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -31,19 +30,16 @@ export type View =
 	import { Select } from '#lib/components/ui/select/index.js';
 	import Dialog from './app/Dialog.svelte';
 	import Popover from './app/Popover.svelte';
-	import MenuItem from './app/MenuItem.svelte';
 	import ProjectItem from './ProjectItem.svelte';
 	import Bell from '@lucide/svelte/icons/bell';
 	import CalendarCheck from '@lucide/svelte/icons/calendar-check';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import CircleHelp from '@lucide/svelte/icons/circle-help';
 	import CirclePlus from '@lucide/svelte/icons/circle-plus';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Inbox from '@lucide/svelte/icons/inbox';
 	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
-	import LogOut from '@lucide/svelte/icons/log-out';
 	import PanelLeft from '@lucide/svelte/icons/panel-left';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Search from '@lucide/svelte/icons/search';
@@ -82,12 +78,10 @@ export type View =
 	let projectsOpen = $state(true);
 	let teamsOpen = $state(true);
 	let sharedOpen = $state(true);
-	let helpOpen = $state(false);
 	let addOpen = $state(false);
 	let addName = $state('');
 	let addParent = $state('');
 	let bellOpen = $state(false);
-	let accountOpen = $state(false);
 
 	// "Mehr" shows its entries while one of them is the current page.
 	const moreShown = $derived(moreOpen || moreViews.has(view));
@@ -96,14 +90,6 @@ export type View =
 	const tree = $derived(fullTree.filter((n) => isOwner(n.project)));
 	const sharedTree = $derived(fullTree.filter((n) => !isOwner(n.project)));
 	const favorites = $derived(workspace.favorites);
-	const initials = $derived(
-		(auth.user?.displayName ?? '?')
-			.split(/\s+/)
-			.filter(Boolean)
-			.slice(0, 2)
-			.map((s) => s[0]!.toUpperCase())
-			.join('')
-	);
 	const parents = $derived(flatten(fullTree));
 
 	const row =
@@ -190,19 +176,7 @@ export type View =
 >
 	<!-- Account menu, notifications, sidebar toggle -->
 	<div class="flex items-center gap-1 px-3 pt-3 pb-1">
-		<Popover label={t('nav.accountMenu')} bind:open={accountOpen} testid="account-menu" class="hover:bg-muted flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1.5 text-left">
-			{#snippet trigger()}
-				<span class="bg-ui-accent text-ui-accent-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold" aria-hidden="true">{initials}</span>
-				<span class="truncate text-sm font-semibold" data-testid="signed-in-as">{auth.user?.displayName ?? ''}</span>
-				<ChevronDown class="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
-			{/snippet}
-			{#snippet children(close)}
-				<p class="text-muted-foreground px-2.5 py-1.5 text-xs">{t('nav.signedInAs', { name: auth.user?.displayName ?? '' })}</p>
-				<MenuItem onclick={() => { onview('account'); close(); }}><UserRound class="size-4" aria-hidden="true" />{t('nav.account')}</MenuItem>
-				<MenuItem onclick={() => theme.cycle()}>{t(`nav.theme.${theme.mode}` as MessageKey)}</MenuItem>
-				<MenuItem onclick={() => auth.logout()}><LogOut class="size-4" aria-hidden="true" />{t('nav.logout')}</MenuItem>
-			{/snippet}
-		</Popover>
+		<span class="flex-1 truncate px-1.5 text-sm font-semibold">{t('app.name')}</span>
 		<Popover
 			label={t('notifications.title')}
 			align="end"
@@ -346,11 +320,6 @@ export type View =
 		{/if}
 	</div>
 
-	<div class="border-t px-3 py-2">
-		<button class="text-muted-foreground hover:bg-muted flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm" onclick={() => (helpOpen = true)}>
-			<CircleHelp class="size-[18px] shrink-0" aria-hidden="true" />{t('help.title')}
-		</button>
-	</div>
 </nav>
 
 <Dialog bind:open={addOpen} title={t('projects.addProject')} testid="add-project-dialog">
@@ -370,22 +339,3 @@ export type View =
 	</form>
 </Dialog>
 
-<Dialog bind:open={helpOpen} title={t('help.title')} testid="help-dialog">
-	<div class="flex flex-col gap-3 text-sm">
-		<section>
-			<h3 class="mb-1 font-semibold">{t('help.shortcuts')}</h3>
-			<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-				<dt><kbd class="bg-muted rounded border px-1.5 text-xs">q</kbd></dt>
-				<dd>{t('help.shortcut.q')}</dd>
-				<dt><kbd class="bg-muted rounded border px-1.5 text-xs">Esc</kbd></dt>
-				<dd>{t('help.shortcut.esc')}</dd>
-			</dl>
-		</section>
-		<section>
-			<h3 class="mb-1 font-semibold">{t('help.resources')}</h3>
-			<ul class="list-disc pl-5">
-				<li><a class="text-ui-accent-ink underline underline-offset-2" href="https://magicalwig34653.github.io/todo/" target="_blank" rel="noopener noreferrer">{t('help.docs')}</a></li>
-			</ul>
-		</section>
-	</div>
-</Dialog>

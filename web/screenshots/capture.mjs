@@ -337,7 +337,7 @@ await guest.getByTestId('team-invitation').getByRole('button', { name: 'Einladun
 await guest.getByTestId('teams-info').waitFor();
 
 // Konto: Berechtigungen & Zugriff (Eigentümerin und geteilte Person)
-await page.goto('/konto/berechtigungen');
+await page.goto('/einstellungen/berechtigungen');
 await page.getByTestId('access-shared-by-me').getByTestId('access-outgoing').first().waitFor();
 await page.setViewportSize({ width: 1360, height: 1100 });
 await shot('berechtigungen');
@@ -346,11 +346,14 @@ await page.waitForTimeout(500);
 await shot('berechtigungen-dunkel');
 await page.emulateMedia({ colorScheme: 'light' });
 await desktop();
-await guest.goto('/konto/berechtigungen');
+await guest.goto('/einstellungen/berechtigungen');
 await guest.getByTestId('access-incoming').first().waitFor();
 await guest.setViewportSize({ width: 1360, height: 1100 });
 await guestShot('berechtigungen-gast');
 await guest.setViewportSize(DESKTOP);
+await page.goto('/einstellungen/verwaltung-konten');
+await page.getByTestId('recovery-issue').waitFor();
+await shot('verwaltung');
 await page.goto('/');
 await page.getByTestId('account-menu').waitFor();
 
@@ -420,8 +423,8 @@ await page.reload();
 
 // Konto
 await page.goto('/');
-await nav('Konto');
-await page.getByText('Konto und Sicherheit').first().waitFor();
+await nav('Einstellungen');
+await page.getByTestId('settings-landing').waitFor();
 await shot('konto', { fullPage: true });
 
 // Mobil
@@ -443,8 +446,8 @@ const mt = page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledi
 if (!(await mt.getByTestId('task-detail').isVisible().catch(() => false))) await mt.getByRole('button', { name: 'Details' }).click();
 await mt.getByTestId('task-detail').scrollIntoViewIfNeeded();
 await shot('aufgabendetail-mobil');
-for (const [name, file] of [['Heute', 'heute-mobil'], ['Suche', 'suche-mobil'], ['Teams', 'teams-mobil'], ['Konto', 'konto-mobil']]) {
-	if (['Teams', 'Konto'].includes(name)) {
+for (const [name, file] of [['Heute', 'heute-mobil'], ['Suche', 'suche-mobil'], ['Teams', 'teams-mobil'], ['Einstellungen', 'konto-mobil']]) {
+	if (['Teams', 'Einstellungen'].includes(name)) {
 		await menu.click();
 		const entry = drawer.getByRole('button', { name, exact: true });
 		if (!(await entry.isVisible())) await drawer.getByRole('button', { name: 'Mehr', exact: true }).click();
@@ -474,7 +477,7 @@ await page.getByTestId('share-open').click();
 await page.getByTestId('who-row').first().waitFor();
 await shot('freigaben-mobil');
 await closeDialogs();
-await page.goto('/konto/berechtigungen');
+await page.goto('/einstellungen/berechtigungen');
 await page.getByTestId('access-shared-by-me').waitFor();
 await shot('berechtigungen-mobil', { fullPage: true });
 

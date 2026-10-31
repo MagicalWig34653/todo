@@ -61,6 +61,7 @@ addMd({ slug: 'identitaet-und-rechte.html', src: 'docs/IDENTITAET-UND-RECHTE.md'
 addMd({ slug: 'berechtigungen.html', src: 'docs/BERECHTIGUNGEN.md', group: 'Technik', title: 'Berechtigungen und Teilen' });
 addMd({ slug: 'push-an-claude-code.html', src: 'docs/PUSH-AN-CLAUDE-CODE.md', group: 'Agenten', title: 'Push an Claude Code (Recherche)' });
 addMd({ slug: 'push-einrichtung.html', src: 'docs/PUSH-EINRICHTUNG.md', group: 'Technik' });
+addMd({ slug: 'verwaltung.html', src: 'docs/VERWALTUNG.md', group: 'Technik', title: 'Einstellungen, Hilfe, Verwaltung' });
 addMd({ slug: 'mail-einrichtung.html', src: 'docs/MAIL-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'betrieb.html', src: 'docs/BETRIEB.md', group: 'Technik', title: 'Betrieb und Swarm' });
 addMd({ slug: 'entscheidungen.html', src: 'docs/ENTSCHEIDUNGEN.md', group: 'Entscheidungen', title: 'Entscheidungen' });
@@ -390,6 +391,16 @@ const shots = {
   berechtigungenMobil: [
     ['freigaben-mobil', 'Teilen-Fenster'], ['geteilt-mit-mir-mobil', 'Mit mir geteilt'], ['berechtigungen-mobil', 'Berechtigungen & Zugriff'],
   ],
+  einstellungen: [
+    ['einstellungen', 'Einstellungen: Gruppen links, Beschreibung je Bereich'],
+    ['benutzermenue', 'Benutzermenü oben rechts'],
+    ['benutzermenue-dunkel', 'Benutzermenü im dunklen Design'],
+    ['hilfemenue', 'Hilfemenü'],
+    ['hilfe', 'Hilfebereich'],
+    ['claude-code-verbinden', 'Claude Code verbinden: Befehle mit der Adresse dieses Servers und Verbindungsprüfung'],
+    ['claude-code-verbinden-dunkel', 'Claude Code verbinden (dunkel)'],
+    ['verwaltung', 'Verwaltung (nur Administratoren): ehrliche Hinweise auf fehlende Backend-Funktionen'],
+  ],
   fuerdich: [
     ['fuer-dich', 'Für dich (Startansicht): „Braucht dich“ mit Rückfragen und Fristen, darunter Neuigkeiten mit Fortschritt'],
     ['fuer-dich-dunkel', 'Für dich im dunklen Design'],
@@ -413,7 +424,7 @@ const shots = {
     ['ueberblick-mobil', 'Steuerzentrale'], ['aufgaben-mobil', 'Aufgabenliste'], ['board-mobil', 'Board'], ['aufgabendetail-mobil', 'Aufgabendetail'],
     ['heute-mobil', 'Heute'], ['projekte-mobil', 'Projektnavigation'], ['suche-mobil', 'Suche'],
     ['teams-mobil', 'Teams'], ['konto-mobil', 'Konto'], ['login-mobil', 'Anmeldung'],
-    ['fuer-dich-mobil', 'Für dich (erster Tab)'], ['menue-mobil', 'Anzeige-Menü bleibt im Viewport'],
+    ['fuer-dich-mobil', 'Für dich (erster Tab)'], ['einstellungen-mobil', 'Einstellungen: Liste, dann Detail'], ['claude-code-mobil', 'Claude Code verbinden'], ['hilfemenue-mobil', 'Hilfemenü bleibt im Viewport'], ['menue-mobil', 'Anzeige-Menü bleibt im Viewport'],
   ],
   ios: [
     ['ios-heute', 'Heute'], ['ios-anstehend', 'Anstehend'], ['ios-projekt', 'Projekt'],
@@ -431,6 +442,7 @@ function renderShots(page) {
   const body = `<article class="doc"><h1>Screenshots</h1><p>Echte Aufnahmen mit Demo-Daten: PWA (Chromium mit virtuellem Passkey) und native Apps (Simulator).</p>
 <h2 id="pwa-desktop">PWA am Desktop</h2>${g(shots.desktop, 'wideshots')}
 <h2 id="berechtigungen">Berechtigungen und Teilen</h2><p>Erklärung des Modells unter <a href="berechtigungen.html">Berechtigungen und Teilen</a>.</p>${g(shots.berechtigungen, 'wideshots')}${g(shots.berechtigungenMobil, 'phone')}
+<h2 id="einstellungen">Einstellungen, Hilfe und Verwaltung</h2><p>Mehr dazu unter <a href="verwaltung.html">Einstellungen, Hilfe, Verwaltung</a>.</p>${g(shots.einstellungen, 'wideshots')}
 <h2 id="fuer-dich">Für dich</h2><p>Die Startansicht (<code>/</code> öffnet <code>/fuer-dich</code>): was dich braucht und was in deinen Projekten passiert.</p>${g(shots.fuerdich, 'wideshots')}
 <h2 id="modi">Klassisch und Projektmanagement</h2><p>Je Projekt wählbar über „Anzeige“.</p>${g(shots.modi, 'wideshots')}
 <h2 id="steuerzentrale">Steuerzentrale und Agenten (PWA)</h2><p>Mehr dazu unter <a href="steuerzentrale.html">Steuerzentrale und Agenten-Kanban</a>.</p>${g(shots.agents, 'wideshots')}

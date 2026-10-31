@@ -1,6 +1,8 @@
 /** Pure URL <-> view mapping for the PWA (stable, shareable paths). */
+import { normalizeArea } from './settingsNav.js';
+
 export type RouteView =
-	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account';
+	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account' | 'help';
 
 export type ProjectSub = 'liste' | 'board' | 'ueberblick' | 'kommentare';
 
@@ -11,7 +13,7 @@ export interface Route {
 	taskID?: string;
 	labelID?: string;
 	filterID?: string;
-	/** `/konto/<bereich>` */
+	/** `/einstellungen/<bereich>` (account) or `/hilfe/<seite>` (help). */
 	area?: string;
 }
 
@@ -21,7 +23,7 @@ const SIMPLE: Record<string, RouteView> = {
 };
 const PATH_OF: Partial<Record<RouteView, string>> = {
 	forYou: '/fuer-dich', today: '/heute', inbox: '/eingang', upcoming: '/anstehend', upNext: '/als-naechstes', search: '/suche',
-	overview: '/ueberblick', activity: '/aktivitaet', agents: '/agenten', teams: '/teams', filters: '/filter', account: '/konto'
+	overview: '/ueberblick', activity: '/aktivitaet', agents: '/agenten', teams: '/teams', filters: '/filter', account: '/einstellungen', help: '/hilfe'
 };
 const SUBS: ProjectSub[] = ['liste', 'board', 'ueberblick', 'kommentare'];
 const ID = /^[A-Za-z0-9-]{8,64}$/;
@@ -40,7 +42,9 @@ export function parseRoute(pathname: string, search = ''): Route {
 		return { view: 'project', projectID: b, sub: c as ProjectSub | undefined, taskID };
 	}
 	if (a === 'aufgabe' && b && ID.test(b) && seg.length === 2) return { view: 'today', taskID: b };
-	if (a === 'konto' && seg.length <= 2) return { view: 'account', area: b };
+	// `/konto/...` is the old path of the settings hub; the normalised area makes the app replace the URL (redirect).
+	if ((a === 'einstellungen' || a === 'konto') && seg.length <= 2) return { view: 'account', area: normalizeArea(b) };
+	if (a === 'hilfe' && seg.length <= 2) return { view: 'help', area: b };
 	if (a === 'filter' && seg.length === 1) return { view: 'filters' };
 	if (a === 'filter' && b && ID.test(b) && seg.length === 2) return { view: 'search', filterID: b };
 	if (a === 'labels' && b && ID.test(b) && seg.length === 2) return { view: 'search', labelID: b };
@@ -52,14 +56,15 @@ export function buildPath(r: Route): string {
 	if (r.view === 'project' && r.projectID) path = `/projekt/${encodeURIComponent(r.projectID)}${r.sub ? `/${r.sub}` : ''}`;
 	else if (r.view === 'search' && r.filterID) path = `/filter/${encodeURIComponent(r.filterID)}`;
 	else if (r.view === 'search' && r.labelID) path = `/labels/${encodeURIComponent(r.labelID)}`;
-	else if (r.view === 'account') path = `/konto${r.area ? `/${encodeURIComponent(r.area)}` : ''}`;
+	else if (r.view === 'account') path = `/einstellungen${r.area ? `/${encodeURIComponent(r.area)}` : ''}`;
+	else if (r.view === 'help') path = `/hilfe${r.area ? `/${encodeURIComponent(r.area)}` : ''}`;
 	else path = PATH_OF[r.view as RouteView] ?? '/heute';
 	return r.taskID ? `${path}?task=${encodeURIComponent(r.taskID)}` : path;
 }
 
 export const ROUTE_TITLES: Record<RouteView | 'notfound', string> = {
 	project: 'Projekt', forYou: 'Für dich', inbox: 'Eingang', overview: 'Überblick', today: 'Heute', upcoming: 'Anstehend', upNext: 'Als Nächstes',
-	search: 'Suche', filters: 'Filter und Labels', teams: 'Teams', agents: 'Agenten', activity: 'Aktivität', account: 'Konto', notfound: 'Nicht gefunden'
+	search: 'Suche', filters: 'Filter und Labels', teams: 'Teams', agents: 'Agenten', activity: 'Aktivität', account: 'Einstellungen', help: 'Hilfe', notfound: 'Nicht gefunden'
 };
 
 /** Same-origin, path-only redirect targets; everything else (absolute URLs, `//host`, backslashes, API paths) falls back. */

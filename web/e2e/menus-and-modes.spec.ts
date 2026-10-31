@@ -87,13 +87,18 @@ for (const vp of viewports) {
 			await expect(page.locator('div[role="dialog"]:not([aria-modal])')).toHaveCount(0);
 		}
 
-		// Sidebar: account menu, notifications, project menu.
-		nav = await openDrawerIfNeeded();
-		for (const id of ['account-menu', 'notifications']) {
-			await nav.getByTestId(id).click();
+		// Header (top right): user menu and help menu.
+		for (const id of ['account-menu', 'help-menu']) {
+			await page.getByTestId(id).click();
 			await expectInViewport(popover(), `${id} @${vp.name}`);
 			await page.keyboard.press('Escape');
 		}
+
+		// Sidebar: notifications, project menu.
+		nav = await openDrawerIfNeeded();
+		await nav.getByTestId('notifications').click();
+		await expectInViewport(popover(), `notifications @${vp.name}`);
+		await page.keyboard.press('Escape');
 		const item = nav.getByTestId('project-item').filter({ hasText: 'Menüprojekt' }).first();
 		await item.hover();
 		await item.getByRole('button', { name: 'Projektmenü: Menüprojekt' }).click();

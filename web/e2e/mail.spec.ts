@@ -43,7 +43,7 @@ test.afterAll(async () => {
 test('notifications card: push status, test button and result per device', async () => {
 	test.setTimeout(90_000);
 	await page.setViewportSize({ width: 1280, height: 900 });
-	await page.goto('/konto');
+	await page.goto('/einstellungen/benachrichtigungen');
 	const card = page.getByTestId('notify-settings');
 	await expect(card).toBeVisible();
 	await expect(card.getByTestId('notify-server')).toHaveAttribute('data-enabled', 'true');
@@ -66,7 +66,7 @@ test('notifications card: push status, test button and result per device', async
 		data: { token: 'ab'.repeat(32), platform: 'ios', environment: 'sandbox', bundleId: 'de.linolaske.todo', appVersion: '1.0' }
 	});
 	expect(reg.status()).toBe(201);
-	await page.goto('/konto');
+	await page.goto('/einstellungen/benachrichtigungen');
 	await expect(page.getByTestId('notify-device')).toHaveCount(1);
 	await expect(page.getByTestId('notify-device')).not.toContainText('abab');
 	await page.waitForTimeout(10_500); // rate limit: one test per 10 s
@@ -83,7 +83,7 @@ test('notifications card: push status, test button and result per device', async
 
 test('email: double opt-in, test mail, recovery mail with link', async () => {
 	test.setTimeout(150_000); // the mail worker runs every few seconds
-	await page.goto('/konto');
+	await page.goto('/einstellungen/email');
 	const card = page.getByTestId('email-settings');
 	await expect(card.getByTestId('email-server')).toHaveAttribute('data-enabled', 'true');
 	let seen = mails().length;
@@ -102,14 +102,14 @@ test('email: double opt-in, test mail, recovery mail with link', async () => {
 	await page.goto(url.pathname + url.hash);
 	await expect(page.getByTestId('confirm-email-done')).toBeVisible();
 	expect(page.url()).not.toContain('token=');
-	await page.goto('/konto');
+	await page.goto('/einstellungen/email');
 	await expect(page.getByTestId('email-current')).toHaveText('tester@example.org');
 
 	// Link is single-use.
 	await page.goto(url.pathname + url.hash);
 	await expect(page.getByTestId('confirm-email-error')).toContainText('ungültig');
 
-	await page.goto('/konto');
+	await page.goto('/einstellungen/email');
 	seen = mails().length;
 	await page.getByTestId('email-test').click();
 	await expect(page.getByTestId('email-info')).toContainText('Test-Mail');
@@ -119,7 +119,7 @@ test('email: double opt-in, test mail, recovery mail with link', async () => {
 	await page.screenshot({ path: 'screenshots/email-card.png', fullPage: true });
 
 	// Admin issues a recovery code and sends it by mail.
-	await page.goto('/konto/verwaltung');
+	await page.goto('/einstellungen/verwaltung-konten');
 	const me = await (await page.request.get('/v1/me')).json();
 	seen = mails().length;
 	await page.getByTestId('recovery-issue').getByPlaceholder('Konto-ID').fill(me.id);
@@ -138,7 +138,7 @@ test('email: double opt-in, test mail, recovery mail with link', async () => {
 
 test('mobile: cards fit at 390 px without horizontal scroll', async () => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto('/konto');
+	await page.goto('/einstellungen/benachrichtigungen');
 	await expect(page.getByTestId('notify-settings')).toBeVisible();
 	const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 	expect(overflow).toBeLessThanOrEqual(0);

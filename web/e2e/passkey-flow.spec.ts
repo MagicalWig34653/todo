@@ -487,6 +487,7 @@ test('invited person: directory search, team invitation name, author and actor n
 		await expect(page.getByTestId('grant')).toHaveCount(1);
 
 		await guest.reload();
+		// Shared projects carry the owner's name in the sidebar row ("Mit mir geteilt").
 		await guest.getByTestId('project-item').getByRole('button', { name: /^Haushalt/ }).first().click();
 		const guestTask = guest.getByTestId('task-item').filter({ hasText: 'Wochenplan' });
 		await guestTask.getByRole('button', { name: 'Details' }).click();
@@ -1111,8 +1112,7 @@ test('oauth consent page and grant management', async () => {
 	await expect(page.getByTestId('consent-invalid')).toBeVisible();
 
 	// Grant list and revoke.
-	await page.goto('/');
-	await nav('Konto');
+	await page.goto('/einstellungen/verbindungen');
 	const grant = page.getByTestId('oauth-grant').filter({ hasText: clientID });
 	await expect(grant).toContainText('Projekte lesen, Aufgaben lesen');
 	await expect(grant).toContainText('Haushalt');
@@ -1124,7 +1124,7 @@ test('oauth consent page and grant management', async () => {
 });
 
 test('account: passkeys, sessions and recovery', async () => {
-	await nav('Konto');
+	await page.goto('/einstellungen/passkeys');
 	await expect(page.getByTestId('passkey-item')).toHaveCount(1);
 	await page.getByLabel('Name des neuen Passkeys').fill('Zweiter');
 	await page.getByRole('button', { name: 'Passkey hinzufügen' }).click();
@@ -1137,11 +1137,13 @@ test('account: passkeys, sessions and recovery', async () => {
 	await second.getByRole('button', { name: 'Widerrufen' }).last().click();
 	await expect(second).toContainText('Widerrufen');
 
+	await page.getByTestId('settings-link-sitzungen').click();
 	await expect(page.getByTestId('session-item').filter({ hasText: 'Diese Sitzung' })).toHaveCount(1);
 
 	// Admin issues a recovery code in the UI (shown once); the user redeems it on /recover.
+	await page.getByTestId('settings-link-profil').click();
 	const ownAccountID = (await page.getByTestId('account-id').innerText()).trim();
-	await page.getByTestId('account-tab-admin').click();
+	await page.getByTestId('settings-link-verwaltung-konten').click();
 	await page.getByLabel('Konto-ID', { exact: true }).fill(ownAccountID);
 	await page.getByRole('button', { name: 'Code ausstellen' }).click();
 	const token = (await page.getByTestId('recovery-code').innerText()).trim();
@@ -1223,7 +1225,7 @@ test('mobile 390px: navigation drawer, board and no horizontal page scroll', asy
 		await noOverflow(view);
 	}
 	// Drawer: Teams is a main entry; Agenten, Aktivität and Konto live under "Mehr" (which stays open while one of them is shown).
-	for (const view of ['Teams', 'Agenten', 'Aktivität', 'Konto']) {
+	for (const view of ['Teams', 'Agenten', 'Aktivität', 'Einstellungen']) {
 		await menu.click();
 		const target = nav.getByRole('button', { name: view, exact: true });
 		if (!(await target.isVisible())) await nav.getByRole('button', { name: 'Mehr', exact: true }).click();
@@ -1242,7 +1244,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.evaluate(() => localStorage.clear());
 	await page.reload();
-	await nav('Konto');
+	await page.goto('/einstellungen/darstellung');
 	const html = page.locator('html');
 	await expect(page.getByTestId('appearance')).toBeVisible();
 	await expect(page.getByTestId('appearance-sync')).toHaveAttribute('data-state', 'saved');
@@ -1280,7 +1282,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await expect(html).toHaveAttribute('data-glow', 'strong');
 
 	if (SHOTS) {
-		await nav('Konto');
+		await page.goto('/einstellungen/darstellung');
 		await page.locator('section:has(> [data-testid="appearance"])').screenshot({ path: `${SHOTS}/darstellung-dunkel.png` });
 	}
 
@@ -1289,7 +1291,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await page.reload();
 	await expect(html).toHaveClass(/dark/, { timeout: 10_000 });
 	await expect(html).toHaveAttribute('data-glow', 'strong');
-	await nav('Konto');
+	await page.goto('/einstellungen/darstellung');
 	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #B45309');
 	await page.setViewportSize({ width: 1280, height: 720 });
 });
