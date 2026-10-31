@@ -60,6 +60,10 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 
 ---
 
+## Volle MariaDB-Suite 31.10.2026
+
+`scripts/test-mariadb.sh` gegen todo-dev-db-1 (Port 23306), eigene DB `todo_test_full1` (danach gedroppt), main bei cb5ead7 plus uncommittete Arbeitskopie: 199 Tests, 2 übersprungen (S3Mock ohne S3_ENDPOINT; SQLite-Fixture-Test), 0 Fehler. Grün: SyncRetentionTests, SyncPlanningLabelTests, ProjectSyncTests, CommandCenterTests, WebRootTests, OAuthIssuerTests, PushTests, ProjectStateTests (Modus). Keine MariaDB-spezifischen Bugs gefunden. Log-Rauschen: "cleanup scheduler: Table sync_mutations doesn't exist" gegen eine Test-App ohne Migration (kein Testfehler). Nicht eigens geprüft: S3-Test, Playwright.
+
 ## Checkpoint 31.10.2026 (APNs-Push, ADR 0021)
 
 **Ziel:** serverseitige Push-Zustellung für iOS/macOS (kein Web-Push); der Nutzer richtet die Apple-Schlüssel selbst ein.

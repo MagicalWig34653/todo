@@ -49,7 +49,7 @@ Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell be
 
 ## Sync-Strang (26.10.2026)
 - [x] Backend: Änderungsfeed mit Cursor, Tombstones, idempotente Mutationen mit 409 (ADR 0009, `contracts/sync.yaml`); SQLite und MariaDB grün (88 Tests).
-- [x] Zugriffsänderungen (Freigabe/Entzug/Verschieben) als Feedereignisse (27.10.2026, SQLite geprüft; MariaDB-Nachprüfung offen).
+- [x] Zugriffsänderungen (Freigabe/Entzug/Verschieben) als Feedereignisse (27.10.2026, SQLite geprüft; MariaDB 31.10.2026 grün).
 - [ ] Aufbewahrung/Kompaktierung.
 - [ ] PWA-Offline-Cache und Apple-Client an Sync anbinden; Merge des Branches in `main`.
 
@@ -62,7 +62,7 @@ Claude-CLI gegen den MCP-Endpunkt: Discovery/401 und Tool-Aufrufe mit manuell be
 - [x] Effektive Sichtbarkeit transaktional vergleichen und Upserts/Entzug-Tombstones einschließlich Altbestand persistieren; erneute Freigabe, alternative Rechte und Elternredaktion berücksichtigen.
 - [x] SyncTests: 10 Tests, 1 MariaDB-Test übersprungen, 0 Fehler; separater nativer Swift-Build erfolgreich, YAML geparst, Diff-Whitespace geprüft. Reproduzierbarer Sandbox-Aufruf und Grenzen in STATUS.md.
 - [x] Vertrag 1.1.0 und ADR 0009 aktualisiert; keine neue Schema-Migration, interner `revoke`-Typ erfordert neue Leser auf allen Replikaten. `main`/`5bec1c5`, uncommitted; keine eigenen Jobs, kein Docker/Commit, fremde web/- und Screenshot-Änderungen erhalten.
-- [ ] Nächster Schritt: MariaDB-Konkurrenzabnahme, danach Clients anbinden und Vergleichskosten messen. Linux und echte Clients in diesem Auftrag ungeprüft.
+- [x] (MariaDB-Volllauf 31.10.2026 grün) Nächster Schritt: MariaDB-Konkurrenzabnahme, danach Clients anbinden und Vergleichskosten messen. Linux und echte Clients in diesem Auftrag ungeprüft.
 
 ### Darstellung und Account-Preferences (29.10.2026)
 - [x] Backend `GET/PUT /v1/me/preferences` (Vertrag, Migration, Tests SQLite+MariaDB); PWA-Bereich "Darstellung" unter Konto mit Farbschema, Akzent (Presets/eigen), Leuchteffekt, Transparenz, Pre-Paint, Abgleich; Screenshots hell/dunkel. Details und Grenzen in STATUS.md.
@@ -117,7 +117,7 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 - [x] `SYNC_RETENTION_DAYS` (90): Tombstones/ersetzte Upserts/Mutationsergebnisse; Boden in `sync_counter`; 410 `cursor_expired`; Vertrag sync.yaml 1.3.0
 - [x] Kontolöschung mit Tombstones (`App delete-account`), Tests SQLite
 - [x] `CleanupScheduler` mit `maintenance_leases` (`CLEANUP_INTERVAL_MINUTES`, 360, 0 = aus), `/health/ready` informativ
-- [ ] MariaDB-Läufe der neuen Tests (`SyncRetentionTests`) nachholen, falls im Checkpoint offen; Client-Seite (PWA/Apple): 410 `cursor_expired` behandeln = lokalen Cache des Kontos verwerfen, ab `c0` neu laden
+- [x] (31.10.2026 MariaDB-Volllauf grün, Rest siehe Text) MariaDB-Läufe der neuen Tests (`SyncRetentionTests`) nachholen, falls im Checkpoint offen; Client-Seite (PWA/Apple): 410 `cursor_expired` behandeln = lokalen Cache des Kontos verwerfen, ab `c0` neu laden
 - [ ] Selbstbedienungs-Route zur Kontolöschung (bisher nur CLI)
 
 ## Checkpoint 31.10.2026 (Dokumentation und Projektseite konsolidiert)
@@ -126,10 +126,10 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 
 ## Sync: Planung und Labels (31.10.2026, ADR 0020)
 - [x] `task.planning`, `label.*`, `task.label_add/remove`, Feed-Planung und Entität `label`, sync.yaml 1.4.0, Tests SQLite
-- [ ] MariaDB-Lauf `SyncPlanningLabelTests` nachholen (Docker-Platz); Apple-Outbox auf die neuen Mutationen umstellen
+- [x] (31.10.2026 MariaDB-Volllauf grün, Rest siehe Text) MariaDB-Lauf `SyncPlanningLabelTests` nachholen (Docker-Platz); Apple-Outbox auf die neuen Mutationen umstellen
 
 ## APNs-Push (31.10.2026, ADR 0021)
 - [x] Backend: Geräte, Einstellungen, Outbox, Worker mit Lease, ES256-JWT, Sender mit Backoff/Widerruf, Trigger Erinnerung/Frage/Review/Kommentar, `push-test`, Health-Info, Vertrag `contracts/push.yaml`, Tests SQLite (14), Deploy-Overlay/`setup.sh`/Doku (`docs/PUSH-EINRICHTUNG.md`).
 - [ ] Nutzer: APNs-Schlüssel anlegen, Secret `todo_apns_key`, `stack.env`, `update.sh --force`, `push-test` (erster echter Apple-Versand, bisher ungeprüft).
 - [ ] Apple-Client: `POST /v1/push/devices` bei jedem Start (Umgebung sandbox bei Debug, production bei TestFlight/App Store), Entitlement, Berechtigungsabfrage, Deep-Links, Einstellungen (`/v1/me/push-prefs`), optional Notification Service Extension.
-- [ ] MariaDB-Lauf `PushTests` nachholen (Docker-Platz). Später: Web-Push (VAPID), Zuweisungs-Push, Ruhezeiten.
+- [x] (31.10.2026 MariaDB-Volllauf grün, Rest siehe Text) MariaDB-Lauf `PushTests` nachholen (Docker-Platz). Später: Web-Push (VAPID), Zuweisungs-Push, Ruhezeiten.
