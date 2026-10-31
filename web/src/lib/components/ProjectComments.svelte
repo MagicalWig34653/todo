@@ -31,12 +31,15 @@
 	/** Silent refetch (focus, visibility, interval): keeps the list when nothing changed and never interrupts an edit. */
 	async function refresh() {
 		if (editingID) return;
+		const before = items;
 		const next = await api.listProjectComments(project.id);
-		if (!editingID && !sameList(items, next)) items = next;
+		if (!editingID && items === before && !sameList(items, next)) items = next;
 	}
 	onMount(() => startLiveRefresh(refresh));
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const projectKey = $derived(project.id);
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		editingID = null;
 		attempt(load);
 		// Role decides which buttons appear; the server enforces the rules either way.

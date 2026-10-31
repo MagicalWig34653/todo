@@ -22,8 +22,9 @@
 	/** Silent refetch (focus, visibility, interval): keeps the list when nothing changed and never interrupts an edit. */
 	async function refresh() {
 		if (editingID) return;
+		const before = items;
 		const next = await api.listComments(taskID);
-		if (!editingID && !sameList(items, next)) items = next;
+		if (!editingID && items === before && !sameList(items, next)) items = next;
 	}
 	onMount(() => startLiveRefresh(refresh));
 	$effect(() => {

@@ -4,6 +4,7 @@ import { inboxTasks, openCounts, todayTasks } from './counts.js';
 import type { Display } from './listLogic.js';
 import { KEYS, readJSON, writeJSON } from './localPrefs.js';
 import { collectAll } from './planning.js';
+import { sameList } from './liveRefresh.js';
 import { projectColor } from './boardLogic.js';
 import { descendantIDs, modeOfPrefs, MAX_APPLY_SUBPROJECTS, defaultPrefs, displayChangeToPrefs, favoriteProjects, hasLegacyState, importLegacyState, prefsToDisplay, applyPrefsChange, savePrefs } from './projectState.js';
 
@@ -49,6 +50,38 @@ class Workspace {
 			this.attention = (await api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 })).summary;
 		} catch {
 			/* optional */
+		}
+	}
+	/**
+	 * Silent live refresh of everything the sidebar and the list views show. Each part is only assigned when it changed,
+	 * so unchanged data causes no re-render; failures keep the cached values.
+	 */
+	async refreshLive() {
+		const was = { p: this.projects, t: this.tasks, m: this.teams, i: this.invitations };
+		const [projects, tasks, teams, summary] = await Promise.allSettled([
+			api.listProjects(),
+			api.listTasks(),
+			Promise.all([api.listTeams(), api.teamInvitations()]),
+			api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 })
+		]);
+		if (projects.status === 'fulfilled' && this.projects === was.p && !sameList(this.projects, projects.value)) this.projects = projects.value;
+		if (tasks.status === 'fulfilled' && this.tasks === was.t && !sameList(this.tasks, tasks.value)) this.tasks = tasks.value;
+		if (teams.status === 'fulfilled' && this.teams === was.m && this.invitations === was.i) {
+			if (!sameList(this.teams, teams.value[0])) this.teams = teams.value[0];
+			if (!sameList(this.invitations, teams.value[1])) this.invitations = teams.value[1];
+		}
+		if (summary.status === 'fulfilled' && JSON.stringify(this.attention) !== JSON.stringify(summary.value.summary)) this.attention = summary.value.summary;
+		await this.refreshPrefsIfChanged();
+	}
+	private async refreshPrefsIfChanged() {
+		if (this.#inflight > 0) return;
+		try {
+			const { items } = await api.listProjectPrefs(true);
+			if (this.#inflight > 0) return;
+			const next = Object.fromEntries(items.map((p) => [p.projectID, p]));
+			if (JSON.stringify(next) !== JSON.stringify(this.prefs)) this.prefs = next;
+		} catch {
+			/* keep the cached prefs */
 		}
 	}
 	/** Re-reads prefs (derived modes change when agents/bindings appear) unless a local write is still in flight. */

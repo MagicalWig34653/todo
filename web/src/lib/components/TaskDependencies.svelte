@@ -17,8 +17,10 @@
 	async function load() {
 		[prerequisites, projectTasks] = await Promise.all([api.dependencies(task.id), api.listTasks(task.projectID)]);
 	}
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const taskKey = $derived(task.id);
 	$effect(() => {
-		void task.id;
+		void taskKey;
 		pick = '';
 		attempt(load);
 	});

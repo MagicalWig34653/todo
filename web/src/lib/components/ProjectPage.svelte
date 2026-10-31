@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { api, type BoardResponse, type Project, type ProjectMode, type Task } from '#lib/api.js';
 	import { type Display, type Grouping, type Sort } from '#lib/listLogic.js';
 	import { PROJECT_COLORS } from '#lib/boardLogic.js';
@@ -48,8 +49,10 @@
 	const mode = $derived(workspace.modeOf(project.id));
 	const management = $derived(mode === 'management');
 	const subprojects = $derived(workspace.subprojectsForMode(project.id));
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const projectKey = $derived(project.id);
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		void workspace.refreshPrefs();
 	});
 	$effect(() => {
@@ -87,15 +90,27 @@
 		}
 	}
 
+	/** Live refresh: refetch silently and replace only what changed (no label reload, no flicker, scroll position stays). */
+	async function refreshQuiet() {
+		if (!loaded) return;
+		const my = seq;
+		const id = project.id;
+		const was = tasks;
+		const [ts, b] = await Promise.all([api.listTasks(id), api.projectBoard(id)]);
+		if (my !== seq || id !== project.id || tasks !== was) return;
+		if (!sameList(tasks, ts)) tasks = ts;
+		if (JSON.stringify(board) !== JSON.stringify(b)) board = b;
+	}
+	onMount(() => startLiveRefresh(refreshQuiet, { guardEditing: true }));
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		void ui.changeTick;
 		void viewMode;
 		attempt(reload);
 	});
 	$effect(() => {
 		// A different project: start from a clean state (no flash of the previous project's tasks).
-		void project.id;
+		void projectKey;
 		loaded = false;
 		tasks = [];
 		board = null;

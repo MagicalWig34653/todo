@@ -4,6 +4,7 @@
 	import { auth } from '#lib/auth.svelte.js';
 	import { describeError } from '#lib/errors.js';
 	import { t } from '#lib/i18n/index.js';
+	import { loginRedirectTarget } from '#lib/routing.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import AuthShell from '#lib/components/app/AuthShell.svelte';
@@ -28,6 +29,9 @@
 	async function run(action: () => Promise<void>) {
 		busy = true;
 		error = null;
+		// After sign-in the workspace opens the URL in the address bar; `?redirect=` (same origin only) names where to go.
+		const target = loginRedirectTarget(location.search);
+		if (target) history.replaceState(null, '', target);
 		try {
 			await action();
 		} catch (e) {

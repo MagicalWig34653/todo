@@ -4,6 +4,8 @@
 	import { ATTACHMENT_ROLES, checkFile, formatSize, isImage, sha256Hex } from '#lib/attachments.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { onMount } from 'svelte';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	let { taskID, onchanged }: { taskID: string; onchanged?: () => unknown } = $props();
@@ -21,6 +23,13 @@
 		void taskID;
 		attempt(load);
 	});
+	onMount(() =>
+		startLiveRefresh(async () => {
+			const before = items;
+			const next = await api.listAttachments(taskID);
+			if (items === before && !sameList(items, next)) items = next;
+		}, { guardEditing: true })
+	);
 
 	async function upload(e: Event) {
 		e.preventDefault();

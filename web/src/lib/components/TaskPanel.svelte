@@ -40,8 +40,10 @@
 	let addTitles = $state<Record<string, string>>({});
 
 	// Reset transient state when another project is shown.
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const projectKey = $derived(project.id);
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		editingID = null;
 		deletingID = null;
 		detailID = null;

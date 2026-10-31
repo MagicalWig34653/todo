@@ -21,8 +21,10 @@
 		[items, projectTasks] = await Promise.all([api.milestones(project.id), api.listTasks(project.id)]);
 		loaded = true;
 	}
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const projectKey = $derived(project.id);
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		loaded = false;
 		deletingID = null;
 		picks = {};

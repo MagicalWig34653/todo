@@ -5,6 +5,7 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -67,6 +68,18 @@
 
 	onMount(() => {
 		attempt(loadDevices);
+		// Live refresh: devices and the first job page, replaced only when changed (loaded "more" pages stay untouched).
+		return startLiveRefresh(async () => {
+			const my = generation;
+			const devicesBefore = devices;
+			const [d, page] = await Promise.all([api.listDevices(), api.listJobs({ state: stateFilter, before: null, limit: 20 })]);
+			if (my !== generation || devices !== devicesBefore) return;
+			if (!sameList(devices, d)) devices = d;
+			if (jobsNext === null || jobs.length <= page.items.length) {
+				if (!sameList(jobs, page.items)) jobs = page.items;
+				jobsNext = page.nextCursor ?? null;
+			}
+		});
 	});
 	$effect(() => {
 		void stateFilter;

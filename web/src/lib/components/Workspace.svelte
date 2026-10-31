@@ -3,6 +3,8 @@
 	import type { Component } from 'svelte';
 	import type { Project } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
+	import { auth } from '#lib/auth.svelte.js';
+	import { liveRefresh } from '#lib/liveRefresh.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
 	import { buildPath, parseRoute, ROUTE_TITLES, type ProjectSub, type Route } from '#lib/routing.js';
 	import { ui } from '#lib/ui.svelte.js';
@@ -103,15 +105,15 @@
 		window.addEventListener('popstate', pop);
 		onDestroy(() => window.removeEventListener('popstate', pop));
 		attempt(() => workspace.reloadAll());
-		// Keep the sidebar badge fresh (there is no sync feed for questions and reviews).
-		const refresh = () => {
-			if (document.visibilityState === 'visible') void workspace.reloadAttention();
+		// Central live refresh (long-poll with hints, 5 s polling as fallback): sidebar counters, lists and the badge.
+		const unsubscribe = liveRefresh.subscribe(() => workspace.refreshLive());
+		liveRefresh.onUnauthorized = () => {
+			auth.user = null;
 		};
-		const timer = setInterval(refresh, 60_000);
-		document.addEventListener('visibilitychange', refresh);
+		liveRefresh.start();
 		return () => {
-			clearInterval(timer);
-			document.removeEventListener('visibilitychange', refresh);
+			unsubscribe();
+			liveRefresh.stop();
 		};
 	});
 

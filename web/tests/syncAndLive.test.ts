@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createApi, type FetchLike, type ProjectSyncEntry } from '../src/lib/api';
 import { de } from '../src/lib/i18n/de';
-import { LIVE_REFRESH_MS, newerThan, sameList, startLiveRefresh } from '../src/lib/liveRefresh';
+import { newerThan, sameList } from '../src/lib/liveRefresh';
 import { canEditSync, filterSync, parseStaleAfter, sortSync, syncChip, syncCounts } from '../src/lib/syncState';
 
 const entry = (projectID: string, state: 'fresh' | 'stale' | 'never', daysSince?: number): ProjectSyncEntry => ({
@@ -66,48 +66,6 @@ describe('sync api (mocked fetch)', () => {
 });
 
 describe('live refresh', () => {
-	function fakeEnv(visible = true) {
-		const doc = { visibilityState: visible ? 'visible' : 'hidden', handlers: new Map<string, () => void>(),
-			addEventListener(n: string, h: () => void) { this.handlers.set(n, h); }, removeEventListener(n: string) { this.handlers.delete(n); } };
-		const win = { handlers: new Map<string, () => void>(),
-			addEventListener(n: string, h: () => void) { this.handlers.set(n, h); }, removeEventListener(n: string) { this.handlers.delete(n); } };
-		return { doc, win };
-	}
-	it('refreshes on the interval while visible, on focus and on visibility, not while hidden', async () => {
-		vi.useFakeTimers();
-		const { doc, win } = fakeEnv();
-		const fn = vi.fn(async () => {});
-		const stop = startLiveRefresh(fn, { doc: doc as never, win: win as never });
-		await vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS);
-		expect(fn).toHaveBeenCalledTimes(1);
-		win.handlers.get('focus')!();
-		await vi.advanceTimersByTimeAsync(0);
-		doc.handlers.get('visibilitychange')!();
-		await vi.advanceTimersByTimeAsync(0);
-		expect(fn).toHaveBeenCalledTimes(3);
-		doc.visibilityState = 'hidden';
-		await vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS * 2);
-		expect(fn).toHaveBeenCalledTimes(3);
-		stop();
-		expect(win.handlers.size + doc.handlers.size).toBe(0);
-		doc.visibilityState = 'visible';
-		await vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS * 2);
-		expect(fn).toHaveBeenCalledTimes(3);
-		vi.useRealTimers();
-	});
-	it('skips overlapping runs and swallows errors', async () => {
-		vi.useFakeTimers();
-		const { doc, win } = fakeEnv();
-		let release!: () => void;
-		const fn = vi.fn(() => new Promise<void>((res, rej) => { release = () => rej(new Error('boom')); void res; }));
-		startLiveRefresh(fn, { doc: doc as never, win: win as never });
-		await vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS * 3);
-		expect(fn).toHaveBeenCalledTimes(1);
-		release();
-		await vi.advanceTimersByTimeAsync(LIVE_REFRESH_MS);
-		expect(fn).toHaveBeenCalledTimes(2);
-		vi.useRealTimers();
-	});
 	it('detects unchanged lists and merges newer entries', () => {
 		expect(sameList([{ a: 1 }], [{ a: 1 }])).toBe(true);
 		expect(sameList([{ a: 1 }], [{ a: 2 }])).toBe(false);

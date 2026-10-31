@@ -38,8 +38,10 @@
 			} else throw e;
 		}
 	}
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const projectKey = $derived(project.id);
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		checked = null;
 		attempt(load);
 	});

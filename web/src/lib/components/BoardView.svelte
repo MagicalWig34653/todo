@@ -17,8 +17,10 @@
 		const lists = await Promise.all(STATUSES.map((s) => api.board(project.id, s)));
 		cols = { open: lists[0], in_progress: lists[1], in_review: lists[2], done: lists[3] };
 	}
+	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
+	const projectKey = $derived(project.id);
 	$effect(() => {
-		void project.id;
+		void projectKey;
 		attempt(load);
 	});
 

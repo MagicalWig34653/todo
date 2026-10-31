@@ -74,3 +74,11 @@ export function safeRedirect(target: string | null | undefined, fallback = '/'):
 		return fallback;
 	}
 }
+
+/** Target from `?redirect=<path>` on the login page; only same-origin paths survive `safeRedirect`, otherwise null (stay on the URL). */
+export function loginRedirectTarget(search: string): string | null {
+	const raw = new URLSearchParams(search).get('redirect');
+	if (!raw) return null;
+	const target = safeRedirect(raw, '');
+	return target === '' || target === '/' ? null : target;
+}

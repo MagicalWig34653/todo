@@ -752,7 +752,8 @@ async function loadFeedPastFirstPage() {
 	await expect(async () => {
 		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
 		const more = page.getByTestId('feed-more');
-		if (await more.isVisible()) await more.click();
+		// The observer may load the page first and remove the button; a short click timeout keeps the loop from waiting on it.
+		if (await more.isVisible()) await more.click({ timeout: 1_000 }).catch(() => undefined);
 		expect(await feed.count()).toBeGreaterThan(30);
 	}).toPass({ timeout: 20_000 });
 }
@@ -779,7 +780,7 @@ test('activity page: infinite list, project filter, labels', async () => {
 	// Filter by project.
 	// Wait for the filtered request itself; a bare count > 0 could still see the unfiltered list before the reset.
 	await Promise.all([
-		page.waitForResponse((r) => r.url().includes('/v1/feed') && r.url().includes('projectID=') && r.ok()),
+		page.waitForResponse((r) => new URL(r.url()).pathname === '/v1/activity' && r.url().includes('projectID=') && r.ok()),
 		page.getByTestId('activity-filter').selectOption({ label: 'Haushalt' })
 	]);
 	await expect(async () => {
@@ -788,7 +789,7 @@ test('activity page: infinite list, project filter, labels', async () => {
 		expect(projects).toEqual(['in Haushalt']);
 	}).toPass({ timeout: 15_000 });
 	await Promise.all([
-		page.waitForResponse((r) => r.url().includes('/v1/feed') && !r.url().includes('projectID=') && r.ok()),
+		page.waitForResponse((r) => new URL(r.url()).pathname === '/v1/activity' && !r.url().includes('projectID=') && r.ok()),
 		page.getByTestId('activity-filter').selectOption({ label: 'Alle Projekte' })
 	]);
 	await loadFeedPastFirstPage();

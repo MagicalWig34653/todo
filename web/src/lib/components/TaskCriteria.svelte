@@ -3,6 +3,8 @@
 	import { api, type Criterion } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { onMount } from 'svelte';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 
@@ -19,6 +21,14 @@
 		void taskID;
 		attempt(load);
 	});
+	onMount(() =>
+		startLiveRefresh(async () => {
+			const before = items;
+			const next = await api.listCriteria(taskID);
+			// A local change during the fetch makes the answer stale; the next hint reloads.
+			if (items === before && !sameList(items, next)) items = next;
+		}, { guardEditing: true })
+	);
 
 	async function add(e: Event) {
 		e.preventDefault();

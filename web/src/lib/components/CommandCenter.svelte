@@ -3,7 +3,6 @@
 	import { api, ApiError, type CommandCard, type CommandCenter, type CommandCenterParams, type LaneKey, type Question, type Review } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import {
-		REFRESH_MS,
 		attentionCount,
 		cardsOf,
 		isEmptyOverview,
@@ -17,6 +16,7 @@
 	} from '#lib/commandCenter.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -111,9 +111,9 @@
 			section === 'reviews' ? api.listReviews({ projectID, state: 'pending' }) : Promise.resolve(null)
 		]);
 		if (my !== seq) return;
-		cc = center;
-		if (qs) questions = qs;
-		if (rs) reviews = rs;
+		if (!sameList([cc], [center])) cc = center;
+		if (qs && !sameList(questions, qs)) questions = qs;
+		if (rs && !sameList(reviews, rs)) reviews = rs;
 		loaded = true;
 		if (scope === 'account') workspace.attention = center.summary;
 	}
@@ -150,21 +150,7 @@
 		void reload();
 	});
 
-	onMount(() => {
-		const timer = setInterval(() => {
-			if (document.visibilityState === 'visible') void refresh();
-		}, REFRESH_MS);
-		const onVisible = () => {
-			if (document.visibilityState === 'visible') void refresh();
-		};
-		window.addEventListener('focus', onVisible);
-		document.addEventListener('visibilitychange', onVisible);
-		return () => {
-			clearInterval(timer);
-			window.removeEventListener('focus', onVisible);
-			document.removeEventListener('visibilitychange', onVisible);
-		};
-	});
+	onMount(() => startLiveRefresh(refresh));
 
 	function setView(v: OverviewView) {
 		view = v;

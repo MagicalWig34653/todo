@@ -4,6 +4,8 @@
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { collectAll } from '#lib/planning.js';
+	import { onMount } from 'svelte';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 
 	let { taskID }: { taskID: string } = $props();
 
@@ -23,6 +25,13 @@
 		void taskID;
 		attempt(load);
 	});
+	onMount(() =>
+		startLiveRefresh(async () => {
+			const before = assigned;
+			const next = await api.taskLabels(taskID).then((p) => p.items);
+			if (assigned === before && !sameList(assigned, next)) assigned = next;
+		}, { guardEditing: true })
+	);
 
 	async function add() {
 		if (!pick) return;
