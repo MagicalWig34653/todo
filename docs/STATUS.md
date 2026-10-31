@@ -1,5 +1,63 @@
 # Status
 
+## Aktueller Stand (31.10.2026)
+
+Kompakte Zusammenfassung für den Einstieg ohne alten Chat. Alle Details, Testnachweise und Entscheidungen stehen unverändert in den chronologischen Checkpoints weiter unten; bei Widerspruch gilt der jüngere Checkpoint. Produktname Todolino (ADR 0017), noch nicht für den Produktivbetrieb freigegeben.
+
+### Komponenten
+
+| Komponente | Stand | Wo |
+| --- | --- | --- |
+| Backend (Swift 6.2, Vapor, Fluent) | Identität/Passkeys/Recovery, verschachtelte Projekte mit eigenen Spalten (ADR 0011/0012), Aufgaben, Teams/Freigaben (ADR 0005), Planung, Labels/Suche, Kommentare/Aktivität, Anhänge in der Datenbank (ADR 0013), OAuth/MCP (ADR 0007, Issuer ADR 0016), Agentenaufträge/Runner-API (ADR 0008), Steuerzentrale (ADR 0014), Projekt-Onboarding (ADR 0018), Sync mit Aufbewahrung, Kontolöschung und Cleanup-Scheduler (ADR 0009/0019) | `Sources/TodoKit`, `contracts/` (14 Verträge) |
+| PWA (SvelteKit 3) | Login/Setup, Projektbaum, Listen und Board mit projektspezifischen Spalten, Planung, Teams/Freigaben, Konto/Darstellung, Steuerzentrale „Überblick“, Agenten-Seite (koppeln, binden, freigeben, stoppen), Aktivität und Projektkommentare mit Live-Refresh, Sync-Aktualität, Icons; wird vom Backend-Image ausgeliefert (ADR 0015) | `web/` |
+| Apple-App (SwiftUI) | Eigenes Repository `todo-apple` mit eigenem Status: iOS/iPadOS/macOS/watchOS, Sync-Engine (behandelt 410 `cursor_expired`), Steuerzentrale im Simulator, TestFlight-Uploads (iOS und macOS) | `MagicalWig34653/todo-apple` |
+| Mac-Runner | Im Apple-Repository (`TodoRunner`): Kopplung, Ordner-Allowlist, Lease/Generation, Fortschritt, Ruhezustandserkennung, CLI, LaunchAgent-Ausgabe; Anleitung `docs/RUNNER.md` dort | [todo-apple/docs/RUNNER.md](https://github.com/MagicalWig34653/todo-apple/blob/main/docs/RUNNER.md) |
+| Claude-Code-Plugin | Marketplace `todolino`, Plugin mit MCP-Server, 3 Skills, 3 Hooks, Anleitung [CLAUDE-CODE-EINRICHTUNG.md](CLAUDE-CODE-EINRICHTUNG.md), Agentenhandbuch 1.1.0 | `claude-plugin/`, `.claude-plugin/` |
+| Deploy | Quellfreier Branch `deploy` (automatisch erzeugt), `setup.sh`/`update.sh`, Swarm-Stack, Backup/Restore, Multi-Arch-Image (amd64/arm64) mit PWA, Cleanup-/Retention-Variablen | `deploy/`, `.github/workflows/`, [BETRIEB.md](BETRIEB.md) |
+| Projektseite | GitHub Pages aus `docs-site/` (Seiten für Steuerzentrale, Onboarding/Plugin, Sync-Aufbewahrung, Runner, Installation, Screenshots) | `docs-site/` |
+
+### Was real geprüft ist
+
+| Bereich | Nachweis (Datum, Umfang) |
+| --- | --- |
+| Backend SQLite | `swift test` grün (161 Tests am 30.10.; danach neue `SyncRetentionTests` (8), `ProjectSyncTests` und Gesamtsuite am 31.10. grün) |
+| Backend MariaDB 12.3 | Volllauf 148 Tests am 30.10. grün (nach Fix eines Testfehlers und des Bool-Query-Bugs); gezielte Läufe für ADR 0014/0018 auf eigenen Datenbanken grün |
+| PWA | `npm run check` 0 Fehler, `npm run build`, vitest 125 Tests (31.10.); Playwright 22/22 in Chromium gegen isolierten Stack und gegen das gebaute Image (30.10.) |
+| Image/Betrieb | Image gebaut, `/` und `/inbox` ausgeliefert; arm64-Image startet; Swarm-Smoke und Backup/Restore-Smoke auf Colima-Einzelknoten (26.10.); `setup.sh`/`update.sh` im Trockenlauf aus frischem Klon des `deploy`-Branches; OAuth-Issuer im isolierten Compose-Projekt inkl. `tools/list` mit 29 Tools |
+| OAuth/MCP | Discovery, PKCE, Resource Indicators, MCP-Aufrufe mit Bearer real geprüft; Claude-CLI gegen den Endpunkt (Discovery/401, Tools mit manuell beschafftem Token) |
+| Plugin | `claude plugin validate`, lokale Installation in temporärem Config-Verzeichnis, 22 Hook-Prüfungen, `scripts/onboarding-e2e.sh` im SQLite-Modus 22/22 |
+| Apple/Runner | TodoCore 129 Tests (17 Live übersprungen), Runner 65 Tests plus Live gegen echte `claude`-CLI und natives Backend; TestFlight-Uploads; Passkey auf echtem Gerät laut Nutzerangabe erledigt (Nachweis im Apple-Status nachtragen) |
+| Dokumentation | docs-site-Build ohne Warnungen, relative Links in `docs/` und README geprüft, YAML-Verträge laden (31.10.) |
+
+### Bekannte Lücken
+
+| Lücke | Auswirkung |
+| --- | --- |
+| Docker-VM voll: Playwright-Läufe und MariaDB-Läufe der jüngsten Änderungen nicht ausgeführt (`SyncRetentionTests` auf MariaDB, neue E2E „sync freshness chips, threshold edit, agent revoke/stop UI“ und überarbeiteter „activity page: infinite list“) | Neue PWA-Flows und Retention auf MariaDB ungeprüft; Flake-Fix im Aktivitätstest unbestätigt |
+| Firefox/WebKit-Playwright-Projekte konfiguriert, nie gelaufen | Safari/Firefox-Verhalten unbekannt |
+| Plugin nie in echter Claude-Code-Sitzung (Hooks im Lauf, interaktiver OAuth-Flow der CLI); Verhalten bei Account-Wechsel nur Annahme | Durchsetzung/Alltag unbelegt |
+| `scripts/onboarding-e2e.sh` nur im Modus `sqlite`; `compose`/`devdb` ungeprüft | MariaDB-Pfad des Onboardings ungeprüft |
+| Mehrknoten-Swarm, Rollout/Rollback, Lastverteilung, Server-Klon des `deploy`-Branches, echter Server-Restore, TLS/Reverse Proxy | Produktionsreife unbelegt |
+| Keine Selbstbedienungs-Kontolöschung, keine Push-Zustellung für Fragen/Reviews, keine Erinnerungszustellung, Listen teils unpaginiert, keine Bindungs-Widerrufs-API, Repository-Plätze widerrufener Geräte nicht administrativ freigebbar | Funktionslücken |
+| Steuerzentrale: Build-Galerie aus `builds[]` fehlt, Aggregat lädt alle offenen Aufgaben (kein SQL-Voraggregat) | Komfort/Skalierung |
+| Apple: Live-Läufe gegen aktuelles Backend, Verarbeitung der TestFlight-Builds in App Store Connect, Runner-Kopplung gegen echten Server | Apple-Pfad nicht Ende-zu-Ende belegt |
+
+### Nächste Schritte
+
+| Nr. | Schritt | Voraussetzung |
+| --- | --- | --- |
+| 1 | Docker-Platz schaffen, dann MariaDB-Volllauf (`scripts/test-mariadb.sh`) und `scripts/onboarding-e2e.sh` im Modus `compose` | Docker-VM mit freiem Platz |
+| 2 | Playwright-Suite in Chromium gegen frischen Stack, danach `--project=firefox` und `--project=webkit` einzeln | wie 1, `npx playwright install firefox webkit` |
+| 3 | Plugin in einer echten Claude-Code-Sitzung testen (Installation aus Marketplace, OAuth, Hooks, `setup_project`) und Verhalten beim Account-Wechsel prüfen; Anleitung anpassen | Nutzerkonto, erreichbarer Server |
+| 4 | TestFlight-Build prüfen bzw. neu bauen und an interne Tester verteilen; Passkey-Nachweis im Apple-Status festhalten | App Store Connect |
+| 5 | `deploy/swarm/update.sh` auf dem Server ausführen, Rollout prüfen (`/`, Discovery, `/health/ready` mit `maintenance`), danach Clients neu verbinden (OAuth-Issuer) | Serverzugang |
+| 6 | Empfehlung: Widgets und App Intents (Heute, Schnellerfassung, Fragen beantworten) für die Apple-Apps planen | Produktentscheidung |
+| 7 | Backend-Lücken: Bindungen widerrufen, Selbstbedienungs-Kontolöschung, Push für Fragen/Reviews, Build-Galerie | Priorisierung |
+
+---
+
+## Historische Checkpoints (chronologisch, unverändert)
+
 Stand 25.10.2026 – Etappe 0 teilweise erledigt.
 
 ## Tatsächlich vorhanden (Hauptrepository, unversioniert, noch keine Commits)

@@ -184,4 +184,4 @@ x-mcp-tools:
   get_progress: {scope: 'agents:read', required: [taskID], arguments: {taskID: UUID}, result: 'Liste {job: AgentJobDTO, runs: [{id, generation, leaseUntil, endedAt, checkpoint: {contextRevision, sessionReference, nextStep}}]}', notes: 'Nur lesend. Nur Projekteigentümer (wie GET /v1/agents/jobs/{id}); Bearbeiter erhalten einen Fehler. Schreiben von Fortschritt/Checkpoints bleibt der Runner-API mit Geräte-Token und Generationsprüfung vorbehalten.'}
   list_attachments: {scope: 'attachments:read', required: [taskID], arguments: {taskID: UUID}, result: AttachmentDTO-Liste, notes: 'Nur Metadaten abgeschlossener Anhänge; keine Dateiinhalte, kein Objektschlüssel.'}
   get_attachment: {scope: 'attachments:read', required: [id], arguments: {id: UUID}, result: AttachmentDTO, notes: 'Nur Metadaten; ausstehende, fremde und unbekannte Anhänge sind not_found.'}
-x-oauth-scopes: [projects:read, tasks:read, tasks:write, comments:write, attachments:read, agents:read]
+x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']

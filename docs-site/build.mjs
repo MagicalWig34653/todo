@@ -25,7 +25,7 @@ const slugify = (s) =>
 
 // ---------- page registry ----------
 const pages = []; // {slug (output path), title, group, kind}
-const groups = ['Einstieg', 'Technik', 'Entscheidungen', 'API', 'Apple', 'Projekt'];
+const groups = ['Einstieg', 'Agenten', 'Technik', 'Entscheidungen', 'API', 'Apple', 'Projekt'];
 const mdBySource = new Map(); // basename -> slug for link rewriting
 
 function addMd({ slug, src, group, title, text, nav = true }) {
@@ -47,11 +47,17 @@ addMd({
   slug: 'schnellstart.html', group: 'Einstieg', title: 'Schnellstart',
   text: `# Schnellstart\n\nDieser Abschnitt stammt aus der README des Repositorys.\n\n${sect('Schnellstart')}\n${sect('Tests')}\n${sect('CI und Veröffentlichung')}\n${sect('Repository-Struktur')}`,
 });
+addMd({ slug: 'installation.html', src: 'docs-site/content/installation.md', group: 'Einstieg' });
 addMd({ slug: 'produkt.html', src: 'docs/PRODUKT.md', group: 'Einstieg' });
+addMd({ slug: 'steuerzentrale.html', src: 'docs-site/content/steuerzentrale.md', group: 'Agenten' });
+addMd({ slug: 'projekt-onboarding.html', src: 'docs-site/content/projekt-onboarding.md', group: 'Agenten' });
+addMd({ slug: 'claude-code-einrichtung.html', src: 'docs/CLAUDE-CODE-EINRICHTUNG.md', group: 'Agenten' });
+addMd({ slug: 'runner.html', src: 'docs-site/content/runner.md', group: 'Agenten' });
+addMd({ slug: 'agenten-und-mcp.html', src: 'docs/AGENTEN-UND-MCP.md', group: 'Agenten' });
+addMd({ slug: 'agent-manual.html', src: 'docs/agent-manual.md', group: 'Agenten', title: 'Agentenhandbuch (englisch)' });
+addMd({ slug: 'sync-aufbewahrung.html', src: 'docs-site/content/sync-aufbewahrung.md', group: 'Technik' });
 addMd({ slug: 'architektur.html', src: 'docs/ARCHITEKTUR.md', group: 'Technik' });
 addMd({ slug: 'identitaet-und-rechte.html', src: 'docs/IDENTITAET-UND-RECHTE.md', group: 'Technik' });
-addMd({ slug: 'agenten-und-mcp.html', src: 'docs/AGENTEN-UND-MCP.md', group: 'Technik' });
-addMd({ slug: 'claude-code-einrichtung.html', src: 'docs/CLAUDE-CODE-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'betrieb.html', src: 'docs/BETRIEB.md', group: 'Technik', title: 'Betrieb und Swarm' });
 addMd({ slug: 'entscheidungen.html', src: 'docs/ENTSCHEIDUNGEN.md', group: 'Entscheidungen', title: 'Entscheidungen' });
 const adrFiles = fs.readdirSync(path.join(repo, 'docs/adr')).filter((f) => f.endsWith('.md')).sort();
@@ -122,6 +128,7 @@ function relTo(from, to) {
 function resolveHref(href, dir, page) {
   if (!href || /^(https?:|mailto:|#)/.test(href)) return href;
   const [file, hash] = href.split('#');
+  if (page.src?.startsWith('docs-site/content/') && file.endsWith('.html')) return href; // site-internal page link
   const base = path.posix.basename(file);
   if (file.endsWith('.md') && mdBySource.has(base)) return relTo(page.slug, mdBySource.get(base)) + (hash ? `#${hash}` : '');
   const c = file.match(/contracts\/([\w-]+)\.yaml$/);
@@ -136,6 +143,7 @@ function resolveHref(href, dir, page) {
 const topNav = [
   ['schnellstart.html', 'Schnellstart'],
   ['architektur.html', 'Architektur'],
+  ['steuerzentrale.html', 'Agenten'],
   ['betrieb.html', 'Betrieb'],
   ['adr/index.html', 'ADRs'],
   ['api/index.html', 'API'],
@@ -356,8 +364,19 @@ const shots = {
     ['darstellung-dunkel', 'Darstellung (dunkel)'],
     ['login', 'Anmeldung per Passkey'],
   ],
+  agents: [
+    ['ueberblick-kanban', 'Steuerzentrale: Kanban mit Läuft, Frage offen, Review fällig'],
+    ['ueberblick-fragen', 'Offene Fragen der Agenten direkt beantworten (dunkles Design)'],
+    ['ueberblick-liste', 'Steuerzentrale als Liste mit Filtern'],
+    ['ueberblick-updates', 'Updates: Fortschritt und Builds'],
+    ['ueberblick-projekt', 'Überblick eines Projekts mit Unterprojekten'],
+    ['ueberblick-briefing', 'Projekt-Briefing und Standard-Spalten für Agenten'],
+    ['agenten', 'Agenten: Runner koppeln, Geräte, Aufträge'],
+    ['aktivitaet', 'Aktivitätsfeed aller Projekte'],
+    ['projektkommentare', 'Projektkommentare'],
+  ],
   mobil: [
-    ['aufgaben-mobil', 'Aufgabenliste'], ['board-mobil', 'Board'], ['aufgabendetail-mobil', 'Aufgabendetail'],
+    ['ueberblick-mobil', 'Steuerzentrale'], ['aufgaben-mobil', 'Aufgabenliste'], ['board-mobil', 'Board'], ['aufgabendetail-mobil', 'Aufgabendetail'],
     ['heute-mobil', 'Heute'], ['projekte-mobil', 'Projektnavigation'], ['suche-mobil', 'Suche'],
     ['teams-mobil', 'Teams'], ['konto-mobil', 'Konto'], ['login-mobil', 'Anmeldung'],
   ],
@@ -376,6 +395,7 @@ function renderShots(page) {
   const g = (list, cls) => `<div class="shots ${cls}">${list.map((s) => fig('', s)).join('')}</div>`;
   const body = `<article class="doc"><h1>Screenshots</h1><p>Echte Aufnahmen mit Demo-Daten: PWA (Chromium mit virtuellem Passkey) und native Apps (Simulator).</p>
 <h2 id="pwa-desktop">PWA am Desktop</h2>${g(shots.desktop, 'wideshots')}
+<h2 id="steuerzentrale">Steuerzentrale und Agenten (PWA)</h2><p>Mehr dazu unter <a href="steuerzentrale.html">Steuerzentrale und Agenten-Kanban</a>.</p>${g(shots.agents, 'wideshots')}
 <h2 id="pwa-mobil">PWA auf dem Smartphone</h2>${g(shots.mobil, 'phone')}
 <h2 id="iphone">iPhone (SwiftUI)</h2>${g(shots.ios, 'phone')}
 <h2 id="ipad">iPad (SwiftUI)</h2>${g(shots.ipad, 'tablet')}</article>`;
@@ -384,11 +404,13 @@ function renderShots(page) {
 
 function renderHome(page) {
   const cards = [
-    ['Projekte beliebig tief', 'Projekte und Unterprojekte gehören Personen oder Teams; Rechte werden vererbt und lassen sich je Projekt freigeben.'],
+    ['Projekte beliebig tief', 'Unbegrenzt verschachtelte Projekte, jedes mit eigenen Kanban-Spalten. Sie gehören Personen oder Teams; Rechte werden vererbt und lassen sich je Projekt freigeben.'],
+    ['Steuerzentrale für Agenten', 'Laufende Features, offene Fragen, Reviews und Build-Screenshots der Agenten an einem Ort, als Kanban oder Liste. Entscheiden statt im Chat nachfragen.'],
     ['Passkey zuerst', 'Anmeldung per WebAuthn, mehrere benannte Passkeys, einsehbare Sitzungen, getrennte Wiederherstellung.'],
     ['PWA und SwiftUI', 'Web-App (SvelteKit) und native Apps für iOS, iPadOS, macOS und watchOS teilen sich eine API und dieselben Fachregeln.'],
     ['MCP und OAuth', 'Externe Agenten sprechen über einen MCP-Endpunkt mit OAuth 2.1 (PKCE, Resource Indicators) mit der App.'],
     ['Lokale Mac-Runner', 'Ein Runner startet Claude Code im lokalen Projektordner. Aufträge und Checkpoints liegen in der App, nicht in einer Chat-Sitzung.'],
+    ['Claude-Code-Plugin', 'Einmal installieren, dann „Richte das Projekt in Todolino ein“: Aufgaben werden importiert und das Board bleibt aktuell.'],
     ['Rückfragen an der Aufgabe', 'Fragen, Fortschritt, Abnahmekriterien, Screenshots und Anhänge hängen direkt an der Aufgabe.'],
     ['Teams und Freigaben', 'Lesen, kommentieren, bearbeiten, verwalten: Rechte pro Projekt, vererbt über den Projektbaum.'],
     ['Planung', 'Fälligkeit und geplante Bearbeitung getrennt, Erinnerungen, Wiederholungen, Meilensteine, Abhängigkeiten, Board.'],
@@ -396,6 +418,11 @@ function renderHome(page) {
   ].map(([t, d]) => `<div class="card"><h3>${esc(t)}</h3><p>${esc(d)}</p></div>`).join('');
   const docs = [
     ['schnellstart.html', 'Schnellstart', 'Entwicklungsumgebung, Ports, Tests, CI'],
+    ['installation.html', 'Installation ohne Quellcode', 'Branch deploy, setup.sh, update.sh'],
+    ['steuerzentrale.html', 'Steuerzentrale', 'Agenten-Kanban, Fragen, Reviews, Builds'],
+    ['projekt-onboarding.html', 'Projekt-Onboarding', 'Claude-Code-Plugin, Hooks, Aktualität'],
+    ['runner.html', 'Runner', 'Claude Code auf dem eigenen Mac'],
+    ['sync-aufbewahrung.html', 'Sync-Aufbewahrung', 'Retention, 410, Cleanup-Scheduler'],
     ['architektur.html', 'Architektur', 'Modularer Monolith, Swarm, Konsistenz'],
     ['betrieb.html', 'Betrieb und Swarm', 'Stack, Secrets, Updates, Prüfungen'],
     ['adr/index.html', 'ADRs', 'Architekturentscheidungen mit Begründung'],
@@ -403,6 +430,7 @@ function renderHome(page) {
     ['apple.html', 'Apple und TestFlight', 'iOS, macOS, Passkey-Domain'],
     ['status.html', 'Status', 'Tatsächlicher Stand und Checkpoints'],
     ['agenten-und-mcp.html', 'Agenten und MCP', 'Aufträge, Runner, OAuth'],
+    ['claude-code-einrichtung.html', 'Claude Code einrichten', 'Plugin oder globaler MCP-Server'],
   ].map(([s, t, d]) => `<a class="card link" href="${s}"><h3>${esc(t)}</h3><p>${esc(d)}</p></a>`).join('');
   const body = `<section class="hero"><div class="in">
 <p class="eyebrow">In aktiver Entwicklung</p>
@@ -411,8 +439,8 @@ function renderHome(page) {
 <p class="cta"><a class="btn primary" href="schnellstart.html">Schnellstart</a> <a class="btn" href="screenshots.html">Screenshots</a> <a class="btn" href="${GH}" rel="noopener">GitHub</a></p>
 </div><div class="heroimg"><a href="screenshots/projekte-aufgaben.png"><img src="screenshots/projekte-aufgaben.png" alt="Projektbaum mit frei verschachtelten Projekten und Aufgabenliste (Desktop)"></a></div></section>
 <section class="sec"><h2>Funktionen im Überblick</h2><div class="grid">${cards}</div></section>
-<section class="sec"><h2>Screenshots</h2><div class="shots wideshots">${shots.desktop.slice(1, 5).map((s) => fig('', s)).join('')}</div>
-<div class="shots phone small">${shots.ios.slice(0, 4).map((s) => fig('', s)).join('')}</div>
+<section class="sec"><h2>Screenshots</h2><div class="shots wideshots">${[shots.agents[0], shots.desktop[2], shots.desktop[1], shots.agents[1], shots.desktop[10], shots.desktop[0]].map((s) => fig('', s)).join('')}</div>
+<div class="shots phone small">${shots.mobil.slice(0, 4).map((s) => fig('', s)).join('')}</div>
 <p><a href="screenshots.html">Alle Screenshots: PWA, iPhone, iPad</a></p></section>
 <section class="sec"><h2>Architektur in Kürze</h2>
 <pre>PWA / SwiftUI / MCP-Clients / Mac-Runner
@@ -423,7 +451,7 @@ function renderHome(page) {
    MariaDB (Dateien darin; S3 optional)</pre>
 <p>Modularer Monolith in Swift (Vapor, Fluent), MariaDB, SvelteKit-PWA mit statischer Auslieferung. Deployment als Docker-Image, Betrieb im Swarm. Mehr unter <a href="architektur.html">Architektur</a>.</p></section>
 <section class="sec"><h2>Dokumentation</h2><p>Alle Seiten entstehen beim Build aus <code>docs/</code> und <code>contracts/</code> des Repositorys.</p><div class="grid">${docs}</div></section>
-<section class="sec"><h2>Status</h2><p>Backend (Identität, Projekte, Aufgaben, Teams und Freigaben, Anhänge, Kommentare, Planung, OAuth/MCP, Agentenaufträge, Sync) und PWA sind vorhanden und getestet. Echte Geräte-, Browser- und Produktionsprüfungen stehen teilweise aus. Der genaue Stand steht unter <a href="status.html">Status</a>.</p></section>`;
+<section class="sec"><h2>Status (31.10.2026)</h2><p>Backend (Identität, verschachtelte Projekte mit eigenen Spalten, Aufgaben, Teams und Freigaben, Anhänge, Kommentare, Planung, OAuth/MCP, Agentenaufträge, Steuerzentrale, Sync mit Aufbewahrung), PWA, Claude-Code-Plugin und Deploy-Branch sind vorhanden und getestet; die Apple-Apps und der Mac-Runner liegen in einem eigenen Repository. Noch nicht belegt: Playwright-Läufe und der MariaDB-Volllauf der jüngsten Änderungen (Docker-VM voll), Firefox und WebKit, das Plugin in einer echten Claude-Code-Sitzung und ein produktiver Mehrknotenbetrieb. Das Produkt ist noch nicht für den Produktivbetrieb freigegeben. Der genaue Stand steht unter <a href="status.html">Status</a>.</p></section>`;
   return layout(page, body, { sidebar: false, wide: true });
 }
 

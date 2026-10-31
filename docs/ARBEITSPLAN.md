@@ -7,7 +7,7 @@
 - [x] PWA-Grundgerüst (SvelteKit, shadcn-svelte, npm), erreicht Backend
 - [x] Apple-Grundgerüst im zweiten Repository (gemeinsamer API-Kern, iOS/macOS/watchOS bauen)
 - [x] Runner-Machbarkeit: Claude Code nichtinteraktiv starten und fortsetzen (ADR 0004)
-- [ ] README: Start aus frischem Checkout dokumentieren
+- [x] README: Start aus frischem Checkout dokumentieren (README überarbeitet 31.10.2026)
 
 ## Etappe 1 – Persönlicher vertikaler Schnitt
 Backend-Teil erledigt (siehe STATUS). Parallele Arbeitsströme (getrennte Worktrees) laufen für: PWA-Login/-Listen, Apple-Client, OpenAPI-Vertrag, Teams/Freigaben, Anhänge (S3Mock), MCP/OAuth, Agentenaufträge/Runner-API.
@@ -119,3 +119,7 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 - [x] `CleanupScheduler` mit `maintenance_leases` (`CLEANUP_INTERVAL_MINUTES`, 360, 0 = aus), `/health/ready` informativ
 - [ ] MariaDB-Läufe der neuen Tests (`SyncRetentionTests`) nachholen, falls im Checkpoint offen; Client-Seite (PWA/Apple): 410 `cursor_expired` behandeln = lokalen Cache des Kontos verwerfen, ab `c0` neu laden
 - [ ] Selbstbedienungs-Route zur Kontolöschung (bisher nur CLI)
+
+## Checkpoint 31.10.2026 (Dokumentation und Projektseite konsolidiert)
+- [x] README neu gegliedert (Überblick, Schnellstart, Betrieb mit `deploy`-Branch, Claude-Code-Einrichtung, Status und Grenzen, Links). docs-site: neue Seiten Steuerzentrale, Projekt-Onboarding/Plugin, Sync-Aufbewahrung, Runner (Link ins Apple-Repository), Installation ohne Quellcode, Agentenhandbuch; Startseite und Screenshots-Seite mit den Steuerzentrale-Bildern. `docs/STATUS.md` beginnt mit der Zusammenfassung „Aktueller Stand (31.10.2026)“. `contracts/oauth-mcp.yaml`: Scope-Liste quotiert, damit auch YAML-1.1-Parser (Ruby) die Datei laden.
+- [ ] Nächste Schritte stehen in der Tabelle in STATUS.md: Docker-Platz, MariaDB-Volllauf und Playwright-Läufe, Plugin in echter Claude-Code-Sitzung, Account-Wechsel prüfen, TestFlight, Rollout per `update.sh`, Empfehlung Widgets/App Intents.
