@@ -81,14 +81,13 @@ struct FeedService: Sendable {
 
         if !classic {
             for chunk in chunks(ids) {
-                // Open questions (people answering their own question is refused by the answer rules).
+                // Open questions. The answer rules only forbid an integration answering its own question, which a person never is.
                 let questions = try await TaskQuestion.query(on: db)
                     .join(TodoTask.self, on: \TaskQuestion.$taskID == \TodoTask.$id)
                     .filter(TodoTask.self, \.$projectID ~~ chunk).filter(TaskQuestion.self, \.$state == "open").all()
                 for q in questions {
                     let task = try q.joined(TodoTask.self)
-                    guard (roles[task.projectID]?.rank ?? -1) >= ProjectRole.comment.rank,
-                        !(q.askedByType == .person && q.askedByID == userID) else { continue }
+                    guard (roles[task.projectID]?.rank ?? -1) >= ProjectRole.comment.rank else { continue }
                     let qid = try q.requireID()
                     let actions: [FeedActionDTO] = q.options.isEmpty
                         ? [FeedActionDTO(key: "answer", label: "Antworten", method: "POST", path: "/v1/questions/\(qid)/answer", body: nil, requiresInput: true, inputField: "answer")]
@@ -106,8 +105,7 @@ struct FeedService: Sendable {
                 for r in reviews {
                     let task = try r.joined(TodoTask.self)
                     guard (roles[task.projectID]?.rank ?? -1) >= ProjectRole.edit.rank,
-                        r.reviewerID == nil || r.reviewerID == userID,
-                        !(r.requestedByType == .person && r.requestedByID == userID) else { continue }
+                        r.reviewerID == nil || r.reviewerID == userID else { continue }
                     let rid = try r.requireID(), tid = try task.requireID()
                     let path = "/v1/tasks/\(tid)/review/decision"
                     ranked.append((2, r.createdAt ?? now, FeedNeedsYouDTO(

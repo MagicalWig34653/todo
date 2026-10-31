@@ -19,8 +19,8 @@ paths:
         {generatedAt, mode, projectID, needsYou[], needsYouTotal, posts[], nextCursor}. needsYou (nur ohne cursor, sonst []): Elemente
         {id, kind=question|review|blocked|overdue|due, projectID, projectName, taskID, taskTitle, taskVersion, title, detail, options[], blocking,
         questionID, reviewID, dueAt, actor, createdAt, actions[]}. Reihenfolge: blockierende Fragen, Fragen, Reviews, blockierte Aufgaben, überfällig,
-        fällig (innerhalb 24 h, nur eigene Aufgaben; es gibt noch keine Zuweisung). Fragen: Rolle >= comment, nicht die eigene; Reviews: Rolle >= edit,
-        benannter Reviewer nur er, nicht die eigene Anforderung; blockiert: Rolle >= edit. action {key, label, method, path, body, requiresInput,
+        fällig (innerhalb 24 h, nur eigene Aufgaben; es gibt noch keine Zuweisung). Fragen: Rolle >= comment; Reviews: Rolle >= edit,
+        benannter Reviewer nur er; blockiert: Rolle >= edit. action {key, label, method, path, body, requiresInput,
         inputField}: body unverändert an path senden (bei requiresInput den Text in body[inputField] ergänzen). answer -> POST /v1/questions/{id}/answer
         {answer}; accept/request_changes -> POST /v1/tasks/{id}/review/decision {decision, note?}; complete -> PATCH /v1/tasks/{id} {status:done, version}.
         posts[]: {id (Aktivitätsereignis), kind=progress|build|done|review|question|comment|agent_run, event, state, projectID, projectName, taskID,

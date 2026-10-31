@@ -117,10 +117,6 @@ final class FeedTests: XCTestCase {
         let hard = TaskQuestion(); hard.taskID = tid; hard.askedByType = .integration; hard.askedByID = UUID(); hard.prompt = "hard"; hard.options = []
         hard.blocking = true; hard.state = "open"; hard.version = 1
         try await hard.save(on: w.db)
-        // Own question is not "needs you".
-        let mine = TaskQuestion(); mine.taskID = tid; mine.askedByType = .person; mine.askedByID = try w.f.user.requireID(); mine.prompt = "mine"; mine.options = []
-        mine.blocking = true; mine.state = "open"; mine.version = 1
-        try await mine.save(on: w.db)
         let review = TaskReview(); review.taskID = tid; review.state = "pending"; review.requestedByType = .integration; review.requestedByID = UUID()
         review.summary = "please review"; review.version = 1
         try await review.save(on: w.db)
