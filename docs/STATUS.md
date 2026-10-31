@@ -72,6 +72,10 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 
 `scripts/test-mariadb.sh` gegen todo-dev-db-1 (Port 23306), eigene DB `todo_test_full1` (danach gedroppt), main bei cb5ead7 plus uncommittete Arbeitskopie: 199 Tests, 2 übersprungen (S3Mock ohne S3_ENDPOINT; SQLite-Fixture-Test), 0 Fehler. Grün: SyncRetentionTests, SyncPlanningLabelTests, ProjectSyncTests, CommandCenterTests, WebRootTests, OAuthIssuerTests, PushTests, ProjectStateTests (Modus). Keine MariaDB-spezifischen Bugs gefunden. Log-Rauschen: "cleanup scheduler: Table sync_mutations doesn't exist" gegen eine Test-App ohne Migration (kein Testfehler). Nicht eigens geprüft: S3-Test, Playwright.
 
+## Recherche 31.10.2026 (Push an laufende Claude-Code-Sitzung)
+
+Ergebnis in `docs/PUSH-AN-CLAUDE-CODE.md`: Remote-HTTP-MCP kann nach heutigem Beleg nicht allein wecken; Channels (stdio, Research Preview) und Monitor/asyncRewake/Stop-Hook sind die belegten Wege. Empfehlung: zuerst MCP-Tool `wait_for_events` (auf LiveHub), dann Stop-Hook-Warten, dann Spike Wecker-Token/Monitor/Channel; Resource-Subscriptions nicht bauen. Noch nichts implementiert.
+
 ## Checkpoint 31.10.2026 (Live-Refresh, ADR 0022)
 
 **Gebaut (`Sources/TodoKit/Live/`):** `GET /v1/sync/head` (cursor+token, ETag/304), `GET /v1/sync/wait` (Long-Poll, 429-Limits, Sitzungswiderruf -> 401, Shutdown `retryAfter`), `live_events` (Insert-only Hinweislog, Middleware auf Kommentare/Fragen/Reviews/Fortschritt/Anhänge/Agenten u. a.), `LiveHub` je Replika, `capabilities.liveRefresh`. Vertrag `contracts/live-refresh.yaml`, Betrieb BETRIEB.md. **Geprüft:** `LiveRefreshTests` (SQLite, 6 Tests: Auth/304/Capability, Token steigt bei Task/Planung/Kommentar/Frage/Fortschritt/Review, Timeout, Wake über zweite App-Instanz, Limit, Widerruf, Deaktivierung), volle Suite grün. **Ungeprüft:** MariaDB, Zoraxy/Mesh real, Last. **Nächster Schritt:** PWA/Apple-Clients binden `wait` an (Anleitung im Bericht/ADR 0022), Rollout mit `migrate`.
