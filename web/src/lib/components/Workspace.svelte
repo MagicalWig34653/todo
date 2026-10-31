@@ -151,6 +151,15 @@
 		routeTask = undefined;
 		syncUrl(true);
 	}
+	function accountArea(area: string | undefined) {
+		routeArea = area;
+		syncUrl(true);
+	}
+	function accountNav(target: 'teams' | 'agents' | 'general' | 'project', projectID?: string) {
+		if (target === 'project' && projectID) openProject(projectID);
+		else if (target === 'general') accountArea(undefined);
+		else go(target);
+	}
 	function share(p: Project) {
 		shareProject = p;
 		shareOpen = true;
@@ -282,7 +291,7 @@
 					{:else if view === 'activity'}
 						<ActivityView onopen={openProject} />
 					{:else if view === 'account'}
-						<AccountView />
+						<AccountView area={routeArea} onarea={accountArea} onnav={accountNav} />
 					{/if}
 				</div>
 			{/if}
@@ -313,9 +322,9 @@
 
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
 
-<Dialog bind:open={shareOpen} title={t('project.shareTitle', { name: shareProject?.name ?? '' })} class="max-w-2xl" testid="share-dialog">
+<Dialog bind:open={shareOpen} title={t('share.dialogTitle', { name: shareProject?.name ?? '' })} class="max-w-2xl" testid="share-dialog">
 	{#if shareProject}
 		{@const p = workspace.projects.find((x) => x.id === shareProject!.id) ?? shareProject}
-		<SharingPanel project={p} onchanged={() => workspace.reloadProjects()} />
+		<SharingPanel project={p} onchanged={() => workspace.reloadProjects()} onopen={openProject} onclose={() => (shareOpen = false)} />
 	{/if}
 </Dialog>

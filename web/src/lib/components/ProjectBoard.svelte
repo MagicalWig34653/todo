@@ -8,6 +8,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
+	import { can, roleOf } from '#lib/access.js';
 	import Dialog from './app/Dialog.svelte';
 	import MenuItem from './app/MenuItem.svelte';
 	import { parseQuickAdd } from '#lib/quickAdd.js';
@@ -32,6 +33,8 @@
 		onopen: (task: Task) => void;
 	}
 	let { project, board, tasks, labelsByTask, showDone, reload, onopen }: Props = $props();
+	const canEdit = $derived(can(roleOf(project), 'addTask'));
+	const needEdit = $derived(canEdit ? undefined : t('access.need', { role: t('sharing.role.edit') }));
 
 	let lanes = $state<Lane[]>([]);
 	$effect(() => {
@@ -290,7 +293,7 @@
 		data-card
 		data-id={task.id}
 		data-testid="board-card"
-		draggable={real}
+		draggable={real && canEdit}
 		ondragstart={(e) => startDrag(e, 'task', task.id)}
 		ondragend={endDrag}
 	>
@@ -301,6 +304,8 @@
 				aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
 				aria-pressed={task.status === 'done'}
 				data-testid="board-card-check"
+				disabled={!canEdit}
+				title={needEdit}
 				onclick={() => toggleTask(task)}
 			>
 				{#if task.status === 'done'}<Check class="size-3" aria-hidden="true" />{/if}
@@ -332,12 +337,12 @@
 			{#snippet children(close)}
 				<MenuItem onclick={() => { close(); onopen(task); }}>{t('board.openTask')}</MenuItem>
 				{#if real}
-					<MenuItem onclick={() => { close(); moveByMenu(task, lane, -1); }}>{t('board.moveUp')}</MenuItem>
-					<MenuItem onclick={() => { close(); moveByMenu(task, lane, 1); }}>{t('board.moveDown')}</MenuItem>
+					<MenuItem disabled={!canEdit} title={needEdit} onclick={() => { close(); moveByMenu(task, lane, -1); }}>{t('board.moveUp')}</MenuItem>
+					<MenuItem disabled={!canEdit} title={needEdit} onclick={() => { close(); moveByMenu(task, lane, 1); }}>{t('board.moveDown')}</MenuItem>
 					<p class="text-muted-foreground px-2.5 pt-2 pb-1 text-xs font-semibold" id="move-{task.id}">{t('board.moveTo')}</p>
 					<div role="group" aria-labelledby="move-{task.id}">
 						{#each lanes.filter((l) => l.laneKey !== lane.laneKey) as target (target.laneKey)}
-							<MenuItem onclick={() => { close(); moveTask(task.id, target.laneKey, visible(target).filter((x) => x.id !== task.id).length); }}>{laneTitle(target)}</MenuItem>
+							<MenuItem disabled={!canEdit} title={needEdit} onclick={() => { close(); moveTask(task.id, target.laneKey, visible(target).filter((x) => x.id !== task.id).length); }}>{laneTitle(target)}</MenuItem>
 						{/each}
 						{#if lane.id && !lanes.some((l) => l.laneKey === 'none')}
 							<MenuItem onclick={() => { close(); moveToNoColumn(task); }}>{t('board.noColumn')}</MenuItem>
@@ -396,7 +401,7 @@
 		>
 			<header
 				class={['group/head relative flex items-center gap-1.5 px-1', lane.id && real && 'cursor-grab']}
-				draggable={!!lane.id && real && renamingID !== lane.id}
+				draggable={!!lane.id && real && canEdit && renamingID !== lane.id}
 				ondragstart={(e) => lane.id && startDrag(e, 'column', lane.id)}
 				ondragend={endDrag}
 			>
@@ -468,6 +473,8 @@
 						class="placeholder:text-muted-foreground h-8 min-w-0 flex-1 rounded-md bg-transparent px-1 text-sm outline-none focus-visible:ring-2"
 						placeholder={t('board.addTask')}
 						aria-label={t('board.addTaskIn', { name: laneTitle(lane) })}
+						disabled={!canEdit}
+						title={needEdit}
 						value={addTitles[lane.laneKey] ?? ''}
 						oninput={(e) => (addTitles[lane.laneKey] = e.currentTarget.value)}
 					/>
@@ -491,6 +498,8 @@
 				type="button"
 				class="text-muted-foreground hover:bg-muted flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm"
 				data-testid="add-column"
+				disabled={!canEdit}
+				title={needEdit}
 				onclick={() => (addingColumn = true)}
 			>
 				<Plus class="size-4" aria-hidden="true" />{t('board.addColumn')}

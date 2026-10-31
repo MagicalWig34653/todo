@@ -4,6 +4,9 @@
 	import { api, type BoardResponse, type Project, type ProjectMode, type Task } from '#lib/api.js';
 	import { type Display, type Grouping, type Sort } from '#lib/listLogic.js';
 	import { PROJECT_COLORS } from '#lib/boardLogic.js';
+	import { can, isOwner, missingRole, roleOf } from '#lib/access.js';
+	import RoleChip from './RoleChip.svelte';
+	import ShareButton from './ShareButton.svelte';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { collectAll } from '#lib/planning.js';
@@ -26,7 +29,7 @@
 	import List from '@lucide/svelte/icons/list';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
-	import UserPlus from '@lucide/svelte/icons/user-plus';
+	import Eye from '@lucide/svelte/icons/eye';
 	import Star from '@lucide/svelte/icons/star';
 	import PanelLeft from '@lucide/svelte/icons/panel-left';
 
@@ -49,6 +52,10 @@
 	const mode = $derived(workspace.modeOf(project.id));
 	const management = $derived(mode === 'management');
 	const subprojects = $derived(workspace.subprojectsForMode(project.id));
+	const role = $derived(roleOf(project));
+	const canEditTasks = $derived(can(role, 'addTask'));
+	const canEditProject = $derived(can(role, 'editProject'));
+	const needText = (action: 'addTask' | 'editProject') => t('access.need', { role: t(`sharing.role.${missingRole(role, action) ?? 'manage'}` as MessageKey) });
 	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
 	const projectKey = $derived(project.id);
 	$effect(() => {
@@ -233,7 +240,7 @@
 
 {#snippet toolbar()}
 	<nav class="text-muted-foreground flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm" aria-label={t('project.breadcrumb')} data-testid="breadcrumb">
-		<span class="shrink-0">{t('projects.mine')}</span>
+		<span class="shrink-0">{isOwner(project) ? t('projects.mine') : t('sidebar.shared')}</span>
 		{#each trail as a (a.id)}
 			<span aria-hidden="true">/</span>
 			<button class="hover:text-foreground truncate" onclick={() => onselect(a.id)}>{a.name}</button>
@@ -241,9 +248,6 @@
 		<span aria-hidden="true">/</span>
 	</nav>
 	<div class="flex shrink-0 items-center gap-0.5">
-		<Button variant="ghost" size="sm" data-testid="share-open" aria-label={t('project.share')} onclick={() => onshare(project)}>
-			<UserPlus aria-hidden="true" /><span class="hidden sm:inline">{t('project.share')}</span>
-		</Button>
 		<Popover
 			label={t('display.title')}
 			align="end"
@@ -321,8 +325,8 @@
 				<MenuItem onclick={() => { attempt(() => workspace.toggleFavorite(project.id)); close(); }}>
 					<Star class="size-4" aria-hidden="true" />{fav ? t('projects.unfavorite') : t('projects.favorite')}
 				</MenuItem>
-				<MenuItem onclick={() => { close(); startTitle(); }}>{t('common.rename')}</MenuItem>
-				<MenuItem testid="project-color-open" onclick={() => { close(); colorOpen = true; }}>{t('project.color')}</MenuItem>
+				<MenuItem disabled={!canEditProject} title={canEditProject ? undefined : needText('editProject')} onclick={() => { close(); startTitle(); }}>{t('common.rename')}</MenuItem>
+				<MenuItem testid="project-color-open" disabled={!canEditProject} title={canEditProject ? undefined : needText('editProject')} onclick={() => { close(); colorOpen = true; }}>{t('project.color')}</MenuItem>
 				{#if management}
 					<MenuItem testid="milestones-open" onclick={() => { close(); milestonesOpen = true; }}>{t('view.milestones')}</MenuItem>
 				{/if}
@@ -348,7 +352,7 @@
 					onblur={saveTitle}
 				/>
 			{:else}
-				<button class="text-left" title={t('project.renameHint')} onclick={startTitle}>{project.name}</button>
+				<button class="text-left" title={canEditProject ? t('project.renameHint') : needText('editProject')} disabled={!canEditProject} onclick={startTitle}>{project.name}</button>
 			{/if}
 		</h2>
 		<textarea
@@ -359,11 +363,27 @@
 			aria-label={t('project.description')}
 			data-testid="project-description"
 			maxlength={10000}
+			readonly={!canEditProject}
+			title={canEditProject ? undefined : needText('editProject')}
 			bind:value={descDraft}
 			onfocus={() => (descFocused = true)}
 			onblur={saveDescription}
 		></textarea>
+		<div class="mt-2 flex flex-wrap items-center gap-2" data-testid="project-access">
+			<ShareButton {project} onshare={onshare} />
+			<RoleChip {project} />
+		</div>
 	</header>
+
+	{#if !canEditTasks}
+		<div class="bg-muted/60 mb-4 flex max-w-3xl items-start gap-2 rounded-xl border p-3 text-sm" data-testid="access-banner">
+			<Eye class="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" />
+			<p>
+				{t('access.banner', { role: t(`sharing.role.${role}` as MessageKey), help: t(`access.roleHelp.${role}` as MessageKey) })}
+				{t('access.bannerShare')}
+			</p>
+		</div>
+	{/if}
 
 	{#if management}
 	<div class="mb-4 flex gap-4 border-b" role="tablist" aria-label={t('cc.projectTabs')} data-testid="project-tabs">

@@ -8,6 +8,10 @@
 	import { memberLabel } from '#lib/people.js';
 	import PersonPicker from './PersonPicker.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { loadManagedGrants, projectsOfTeam } from '#lib/accessOverview.js';
+	import { workspace } from '#lib/workspace.svelte.js';
+	import { ui } from '#lib/ui.svelte.js';
+	import type { ProjectGrant } from '#lib/api.js';
 	import PageHeader from './app/PageHeader.svelte';
 	import Panel from './app/Panel.svelte';
 	import EmptyState from './app/EmptyState.svelte';
@@ -22,6 +26,11 @@
 	let newName = $state('');
 	let inviteID = $state('');
 	let pickerKey = $state(0);
+	let grants = $state<Map<string, ProjectGrant[]>>(new Map());
+	let confirm = $state<{ kind: 'remove' | 'leave' | 'decline'; id: string } | null>(null);
+	let info = $state<string | null>(null);
+	const me = $derived(auth.user?.id);
+	const teamProjects = $derived(selectedID ? projectsOfTeam(workspace.projects, grants, selectedID) : []);
 
 	const selected = $derived(teams.find((x) => x.id === selectedID) ?? null);
 	const iAmAdmin = $derived(members.some((m) => m.userID === auth.user?.id && m.isAdmin && m.accepted));
@@ -40,6 +49,10 @@
 		void selectedID;
 		attempt(loadMembers);
 	});
+	$effect(() => {
+		void selectedID;
+		if (selectedID) loadManagedGrants(workspace.projects).then((g) => (grants = g));
+	});
 
 	async function create(e: Event) {
 		e.preventDefault();
@@ -47,7 +60,21 @@
 		if (!name) return;
 		if (await attempt(async () => { const team = await api.createTeam(name); await load(); selectedID = team.id; })) newName = '';
 	}
-	const accept = (m: TeamMembership) => attempt(async () => { await api.acceptTeam(m.teamID); await load(); });
+	const refreshAll = async () => {
+		await Promise.all([load(), workspace.reloadTeams(), workspace.reloadProjects()]);
+		ui.accessTick++;
+	};
+	const accept = (m: TeamMembership) =>
+		attempt(async () => { await api.acceptTeam(m.teamID); await refreshAll(); info = t('teams.accepted'); }, refreshAll);
+	/** Declining an invitation and leaving a team are the same call: withdraw the own membership. */
+	const withdraw = (m: { teamID: string; userID: string }, text: string) =>
+		attempt(async () => {
+			await api.removeTeamMember(m.teamID, m.userID);
+			confirm = null;
+			await refreshAll();
+			if (selectedID === m.teamID) selectedID = null;
+			info = text;
+		}, refreshAll);
 	async function invite(e: Event) {
 		e.preventDefault();
 		const id = inviteID.trim();
@@ -60,11 +87,13 @@
 	const setAdmin = (m: TeamMembership, isAdmin: boolean) =>
 		attempt(async () => { await api.putTeamMember(m.teamID, m.userID, isAdmin); await loadMembers(); }, loadMembers);
 	const remove = (m: TeamMembership) =>
-		attempt(async () => { await api.removeTeamMember(m.teamID, m.userID); await loadMembers(); }, loadMembers);
+		attempt(async () => { await api.removeTeamMember(m.teamID, m.userID); confirm = null; await loadMembers(); ui.accessTick++; }, loadMembers);
 </script>
 
 <section class="flex flex-col gap-4">
 	<PageHeader title={t('teams.title')} testid="view-heading" />
+	<p class="text-muted-foreground max-w-2xl text-sm">{t('teams.intro')}</p>
+	{#if info}<p class="bg-success-soft text-success rounded-lg px-3 py-2 text-sm" role="status" data-testid="teams-info">{info}</p>{/if}
 
 	{#if invitations.length > 0}
 		<Panel title={t('teams.invitations')}>
@@ -72,6 +101,7 @@
 				<div class="flex items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="team-invitation">
 					<span class="flex-1">{t('teams.invitedTo', { name: m.teamName ?? teams.find((x) => x.id === m.teamID)?.name ?? t('teams.unknownTeam') })}</span>
 					<Button size="sm" onclick={() => accept(m)}>{t('teams.accept')}</Button>
+					<Button size="sm" variant="ghost" data-testid="team-decline" onclick={() => withdraw(m, t('teams.declined'))}>{t('teams.decline')}</Button>
 				</div>
 			{/each}
 		</Panel>
@@ -106,17 +136,45 @@
 									{m.isAdmin ? t('teams.removeAdmin') : t('teams.makeAdmin')}
 								</Button>
 							{/if}
-							<Button size="xs" variant="destructive" onclick={() => remove(m)}>{t('teams.removeMember')}</Button>
+							<Button size="xs" variant="destructive" onclick={() => (confirm = { kind: 'remove', id: m.userID })}>{t('teams.removeMember')}</Button>
+						{/if}
+						{#if confirm?.kind === 'remove' && confirm.id === m.userID}
+							<div class="bg-muted/60 flex basis-full flex-wrap items-center gap-2 rounded-md p-2" data-testid="team-remove-confirm">
+								<span class="flex-1">{t('teams.removeConfirm', { name: memberLabel(m, me, t('teams.you')) })}</span>
+								<Button size="sm" variant="destructive" onclick={() => remove(m)}>{t('teams.removeYes')}</Button>
+								<Button size="sm" variant="ghost" onclick={() => (confirm = null)}>{t('common.cancel')}</Button>
+							</div>
 						{/if}
 					</li>
 				{/each}
 			</ul>
+			<p class="text-muted-foreground text-xs" data-testid="team-role-help">{t('teams.roleYou')}: <strong>{iAmAdmin ? t('teams.roleAdmin') : t('teams.roleMember')}</strong>. {t('teams.roleHelp')}</p>
 			{#if iAmAdmin}
 				<form class="flex items-start gap-2" onsubmit={invite}>
 					{#key pickerKey}<PersonPicker bind:value={inviteID} idLabel={t('teams.memberID')} />{/key}
 					<Button type="submit" variant="outline" disabled={!inviteID.trim()}><UserPlus aria-hidden="true" />{t('teams.invite')}</Button>
 				</form>
 			{/if}
+			{#if me && selected.founderID !== me}
+				{#if confirm?.kind === 'leave'}
+					<div class="bg-muted/60 flex flex-wrap items-center gap-2 rounded-md p-2 text-sm" data-testid="team-leave-confirm">
+						<span class="flex-1">{t('teams.leaveConfirm', { name: selected.name })}</span>
+						<Button size="sm" variant="destructive" onclick={() => withdraw({ teamID: selected.id, userID: me }, t('teams.declined'))}>{t('teams.leaveYes')}</Button>
+						<Button size="sm" variant="ghost" onclick={() => (confirm = null)}>{t('common.cancel')}</Button>
+					</div>
+				{:else}
+					<div><Button size="sm" variant="outline" data-testid="team-leave" onclick={() => (confirm = { kind: 'leave', id: selected.id })}>{t('teams.leave')}</Button></div>
+				{/if}
+			{/if}
+		</Panel>
+		<Panel title={t('teams.projects')}>
+			{#if teamProjects.length === 0}<p class="text-muted-foreground text-sm">{t('teams.noProjects')}</p>{/if}
+			<ul class="flex flex-col gap-1" data-testid="team-projects">
+				{#each teamProjects as tp (tp.project.id)}
+					<li class="flex items-center gap-2 text-sm"><span class="flex-1 truncate">{tp.project.name}</span>{#if tp.via === 'owner'}<Badge>{t('share.owner')}</Badge>{:else if tp.role}<Badge variant="accent">{t(`sharing.role.${tp.role}`)}</Badge>{/if}</li>
+				{/each}
+			</ul>
+			<p class="text-muted-foreground text-xs">{t('teams.projectsHint')}</p>
 		</Panel>
 	{:else if teams.length > 0}
 		<p class="text-muted-foreground text-sm">{t('teams.select')}</p>

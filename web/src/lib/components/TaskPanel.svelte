@@ -4,6 +4,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { groupTasks, type Display } from '#lib/listLogic.js';
 	import { workspace } from '#lib/workspace.svelte.js';
+	import { can, roleOf } from '#lib/access.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -49,6 +50,9 @@
 		detailID = null;
 	});
 
+	/** Roles below Bearbeiten may read and comment but not change tasks; the controls stay visible, disabled, with the reason. */
+	const canEdit = $derived(can(roleOf(project), 'addTask'));
+	const needEdit = $derived(canEdit ? undefined : t('access.need', { role: t('sharing.role.edit') }));
 	const shown = $derived(display.showDone ? tasks : tasks.filter((x) => x.status !== 'done'));
 	const groups = $derived(groupTasks(shown, display.grouping, board?.mode === 'columns' ? board.columns : [], display.sort));
 	const realColumns = $derived(board?.mode === 'columns');
@@ -100,6 +104,8 @@
 			oninput={(e) => (addTitles[key] = e.currentTarget.value)}
 			placeholder={t('board.addTask')}
 			aria-label={label}
+			disabled={!canEdit}
+			title={needEdit}
 		/>
 	</form>
 {/snippet}
@@ -126,6 +132,8 @@
 								class="size-5"
 								checked={task.status === 'done'}
 								aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
+								disabled={!canEdit}
+								title={needEdit}
 								onchange={() => toggle(task)}
 							/>
 							<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
@@ -134,6 +142,8 @@
 							<Select
 								class="w-32 [&_select]:h-8 [&_select]:text-xs"
 								aria-label={t('tasks.status')}
+								disabled={!canEdit}
+								title={needEdit}
 								value={task.status}
 								onchange={(e) => setStatus(task, e.currentTarget.value as TaskStatus)}
 							>
@@ -148,7 +158,7 @@
 								onclick={() => (detailID = detailID === task.id ? null : task.id)}
 								>{t('task.details')}<ChevronDown class={['transition-transform', detailID === task.id && 'rotate-180']} aria-hidden="true" /></Button
 							>
-							<Button size="sm" variant="ghost" onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
+							<Button size="sm" variant="ghost" disabled={!canEdit} title={needEdit} onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
 								<Pencil aria-hidden="true" />{t('tasks.edit')}
 							</Button>
 						</div>

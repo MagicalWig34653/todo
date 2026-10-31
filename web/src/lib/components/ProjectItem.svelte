@@ -14,6 +14,8 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Star from '@lucide/svelte/icons/star';
+	import Users from '@lucide/svelte/icons/users';
+	import { can, isOwner, roleOf } from '#lib/access.js';
 
 	interface Props {
 		node: ProjectNode;
@@ -43,6 +45,11 @@
 	const collapsed = $derived(!!workspace.collapsed[project.id]);
 	const count = $derived(workspace.counts.get(project.id) ?? 0);
 	const fav = $derived(!!project.isFavorite);
+	const mine = $derived(isOwner(project));
+	const role = $derived(roleOf(project));
+	/** Disabled menu entries explain which role is missing instead of vanishing. */
+	const needManage = $derived(can(role, 'editProject') ? undefined : t('access.need', { role: t('sharing.role.manage') }));
+	const needOwner = $derived(mine ? undefined : t('share.transferNotAllowed'));
 	const up = $derived(planStep(all, project.id, -1));
 	const down = $derived(planStep(all, project.id, 1));
 	let zone = $state<DropZone | null>(null);
@@ -144,6 +151,12 @@
 		<button class="flex min-h-9 min-w-0 flex-1 items-center gap-2 py-1 text-left text-sm" aria-current={selectedID === project.id ? 'page' : undefined} onclick={() => onselect(project.id)}>
 			<span class="w-3.5 shrink-0 text-center text-[17px] leading-none font-semibold" style:color={workspace.colorOf(project.id)} aria-hidden="true">#</span>
 			<span class="truncate">{project.name}</span>
+			{#if !mine && depth === 0}
+				<span class="text-muted-foreground ml-auto flex min-w-0 shrink items-center gap-1 text-xs" title={t('sidebar.sharedIcon', { name: project.ownerName ?? '' })} data-testid="shared-marker">
+					<Users class="size-3.5 shrink-0" aria-hidden="true" />
+					{#if project.ownerName}<span class="max-w-20 truncate">{project.ownerName}</span>{/if}
+				</span>
+			{/if}
 		</button>
 		{#if count > 0}<span class="text-muted-foreground group-hover:hidden group-focus-within:hidden pr-1.5 text-xs" data-tabular data-testid="project-count">{count}</span>{/if}
 		<Popover
@@ -157,13 +170,13 @@
 				<MenuItem onclick={() => { onfavorite(project); close(); }}>
 					<Star class="size-4" aria-hidden="true" />{fav ? t('projects.unfavorite') : t('projects.favorite')}
 				</MenuItem>
-				<MenuItem onclick={() => { open('rename'); close(); }}>{t('common.rename')}</MenuItem>
-				<MenuItem onclick={() => { open('sub'); close(); }}>{t('projects.addSub')}</MenuItem>
+				<MenuItem disabled={!!needManage} title={needManage} onclick={() => { open('rename'); close(); }}>{t('common.rename')}</MenuItem>
+				<MenuItem disabled={!!needManage} title={needManage} onclick={() => { open('sub'); close(); }}>{t('projects.addSub')}</MenuItem>
 				<MenuItem disabled={!up} testid="project-move-up" onclick={() => { if (up) onreorder(project, up); close(); }}>{t('projects.moveUp')}</MenuItem>
 				<MenuItem disabled={!down} testid="project-move-down" onclick={() => { if (down) onreorder(project, down); close(); }}>{t('projects.moveDown')}</MenuItem>
-				<MenuItem testid="project-move-to" onclick={() => { open('move'); close(); }}>{t('projects.moveToMenu')}</MenuItem>
+				<MenuItem testid="project-move-to" disabled={!!needManage} title={needManage} onclick={() => { open('move'); close(); }}>{t('projects.moveToMenu')}</MenuItem>
 				<MenuItem onclick={() => { onshare(project); close(); }}>{t('project.share')}</MenuItem>
-				<MenuItem danger onclick={() => { open('delete'); close(); }}>{t('common.delete')}</MenuItem>
+				<MenuItem danger disabled={!!needOwner} title={needOwner} onclick={() => { open('delete'); close(); }}>{t('common.delete')}</MenuItem>
 			{/snippet}
 		</Popover>
 	</div>

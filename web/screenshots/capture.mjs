@@ -252,20 +252,107 @@ await page.getByLabel('Name des Filters').fill('Kontaktformular').catch(() => {}
 await page.getByRole('button', { name: 'Als Filter speichern' }).click().catch(() => {});
 await shot('suche');
 
-// Team und Freigaben
+// Zweites Konto (eingeladen) für Teams, Freigaben und die Sicht der geteilten Person
+const accountID = async (p) => (await (await p.request.get('/v1/me')).json()).id;
+const invitation = await page.request.post('/v1/invitations', { data: {}, headers: { 'Content-Type': 'application/json' } });
+const guestToken = (await invitation.json()).token;
+const guestCtx = await browser.newContext({ baseURL: BASE, viewport: DESKTOP, locale: 'de-DE', timezoneId: 'Europe/Berlin' });
+const guest = await guestCtx.newPage();
+guest.setDefaultTimeout(15000);
+const guestCdp = await guestCtx.newCDPSession(guest);
+await guestCdp.send('WebAuthn.enable');
+await guestCdp.send('WebAuthn.addVirtualAuthenticator', {
+	options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
+});
+await guest.goto(`/setup?token=${guestToken}`);
+await guest.getByLabel('Anzeigename').fill('Berta Beispiel');
+await guest.getByRole('button', { name: 'Passkey erstellen' }).click();
+await guest.getByTestId('account-menu').waitFor();
+const guestID = await accountID(guest);
+const guestShot = async (name, opts = {}) => {
+	await guest.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+	await guest.waitForTimeout(400);
+	await guest.screenshot({ path: `${OUT}/${name}.png`, ...opts });
+	console.log('shot', name);
+};
+
+// Team: anlegen, Berta einladen
 await nav('Teams');
 await page.getByLabel('Neues Team').fill('Familie');
 await page.getByRole('button', { name: 'Team anlegen' }).click();
 await page.getByTestId('team-item').filter({ hasText: 'Familie' }).waitFor();
+await page.getByLabel('Konto-ID der Person').fill(guestID);
+await page.getByRole('button', { name: 'Einladen', exact: true }).click();
+await page.getByTestId('team-member').filter({ hasText: 'Berta Beispiel' }).waitFor();
 await shot('teams');
+
+// Freigaben: Haushalt mit dem Team (Bearbeiten) und Berta (Lesen); Küche erbt
 await open('Haushalt');
 await page.getByTestId('share-open').click();
 await page.getByTestId('share-dialog').waitFor();
 await page.getByLabel('Empfänger').selectOption('team');
 await page.getByLabel('Team', { exact: true }).selectOption({ label: 'Familie' });
-await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
+await page.getByLabel('Rolle', { exact: true }).selectOption('edit');
+await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
 await page.getByTestId('grant').first().waitFor();
+await page.getByLabel('Empfänger').selectOption('person');
+await page.getByLabel('Konto-ID der Person').fill(guestID);
+await page.getByLabel('Rolle', { exact: true }).selectOption('read');
+await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
+await page.getByTestId('grant').filter({ hasText: 'Berta Beispiel' }).waitFor();
+await page.getByTestId('who-row').first().waitFor();
+await page.setViewportSize({ width: 1360, height: 1500 });
 await shot('freigaben');
+await page.emulateMedia({ colorScheme: 'dark' });
+await page.waitForTimeout(500);
+await shot('freigaben-dunkel');
+await page.emulateMedia({ colorScheme: 'light' });
+await closeDialogs();
+await desktop();
+await open('Küche');
+await page.getByTestId('share-open').click();
+await page.getByTestId('grant-inherited').first().waitFor();
+await page.setViewportSize({ width: 1360, height: 1300 });
+await shot('freigaben-geerbt');
+await closeDialogs();
+await desktop();
+
+// Sicht der geteilten Person: Einladung, "Mit mir geteilt", deaktivierte Aktionen mit Erklärung
+await guest.goto('/teams');
+await guest.getByTestId('team-invitation').waitFor();
+await guestShot('teams-einladung');
+await guest.goto('/');
+await guest.getByTestId('sidebar-shared').waitFor();
+await guest.getByTestId('sidebar-shared').getByRole('button', { name: /^Haushalt/ }).click();
+await guest.getByTestId('access-banner').waitFor();
+await guestShot('geteilt-mit-mir');
+await guest.setViewportSize(MOBILE);
+await guest.goto('/');
+await guest.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Menü' }).click();
+await guest.getByTestId('sidebar-shared').waitFor();
+await guestShot('geteilt-mit-mir-mobil');
+await guest.setViewportSize(DESKTOP);
+await guest.goto('/teams');
+await guest.getByTestId('team-invitation').getByRole('button', { name: 'Einladung annehmen' }).click();
+await guest.getByTestId('teams-info').waitFor();
+
+// Konto: Berechtigungen & Zugriff (Eigentümerin und geteilte Person)
+await page.goto('/konto/berechtigungen');
+await page.getByTestId('access-shared-by-me').getByTestId('access-outgoing').first().waitFor();
+await page.setViewportSize({ width: 1360, height: 1100 });
+await shot('berechtigungen');
+await page.emulateMedia({ colorScheme: 'dark' });
+await page.waitForTimeout(500);
+await shot('berechtigungen-dunkel');
+await page.emulateMedia({ colorScheme: 'light' });
+await desktop();
+await guest.goto('/konto/berechtigungen');
+await guest.getByTestId('access-incoming').first().waitFor();
+await guest.setViewportSize({ width: 1360, height: 1100 });
+await guestShot('berechtigungen-gast');
+await guest.setViewportSize(DESKTOP);
+await page.goto('/');
+await page.getByTestId('account-menu').waitFor();
 
 // Projektzustand: Kommentare, Aktivität, Agenten
 await open('Küche');
@@ -359,8 +446,9 @@ await shot('aufgabendetail-mobil');
 for (const [name, file] of [['Heute', 'heute-mobil'], ['Suche', 'suche-mobil'], ['Teams', 'teams-mobil'], ['Konto', 'konto-mobil']]) {
 	if (['Teams', 'Konto'].includes(name)) {
 		await menu.click();
-		await drawer.getByRole('button', { name: 'Mehr', exact: true }).click();
-		await drawer.getByRole('button', { name, exact: true }).click();
+		const entry = drawer.getByRole('button', { name, exact: true });
+		if (!(await entry.isVisible())) await drawer.getByRole('button', { name: 'Mehr', exact: true }).click();
+		await entry.click();
 	} else {
 		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name, exact: true }).click();
 	}
@@ -378,5 +466,16 @@ await page.getByTestId('display-menu').click();
 await page.getByRole('dialog', { name: 'Anzeige' }).waitFor();
 await shot('menue-mobil');
 await page.keyboard.press('Escape');
+
+// Mobil: Teilen-Fenster und Berechtigungen
+const haushaltID = (await (await page.request.get('/v1/projects')).json()).find((x) => x.name === 'Haushalt').id;
+await page.goto(`/projekt/${haushaltID}`);
+await page.getByTestId('share-open').click();
+await page.getByTestId('who-row').first().waitFor();
+await shot('freigaben-mobil');
+await closeDialogs();
+await page.goto('/konto/berechtigungen');
+await page.getByTestId('access-shared-by-me').waitFor();
+await shot('berechtigungen-mobil', { fullPage: true });
 
 await browser.close();

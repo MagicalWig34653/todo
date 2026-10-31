@@ -58,6 +58,7 @@ addMd({ slug: 'agent-manual.html', src: 'docs/agent-manual.md', group: 'Agenten'
 addMd({ slug: 'sync-aufbewahrung.html', src: 'docs-site/content/sync-aufbewahrung.md', group: 'Technik' });
 addMd({ slug: 'architektur.html', src: 'docs/ARCHITEKTUR.md', group: 'Technik' });
 addMd({ slug: 'identitaet-und-rechte.html', src: 'docs/IDENTITAET-UND-RECHTE.md', group: 'Technik' });
+addMd({ slug: 'berechtigungen.html', src: 'docs/BERECHTIGUNGEN.md', group: 'Technik', title: 'Berechtigungen und Teilen' });
 addMd({ slug: 'push-an-claude-code.html', src: 'docs/PUSH-AN-CLAUDE-CODE.md', group: 'Agenten', title: 'Push an Claude Code (Recherche)' });
 addMd({ slug: 'push-einrichtung.html', src: 'docs/PUSH-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'mail-einrichtung.html', src: 'docs/MAIL-EINRICHTUNG.md', group: 'Technik' });
@@ -115,6 +116,13 @@ function makeMarked(page) {
         const text = this.parser.parseInline(tokens);
         const t = title ? ` title="${esc(title)}"` : '';
         return `<a href="${esc(resolveHref(href, dir, page))}"${t}${/^https?:/.test(href) ? ' rel="noopener"' : ''}>${text}</a>`;
+      },
+      image({ href, title, text }) {
+        // Screenshots are linked repo-relative in the Markdown sources (GitHub view); the site serves them from /screenshots/.
+        const m = href.match(/(?:^|\/)screenshots\/([\w.-]+)$/);
+        const src = m ? `${'../'.repeat(page.slug.split('/').length - 1)}screenshots/${m[1]}` : href;
+        const t = title ? ` title="${esc(title)}"` : '';
+        return `<img src="${esc(src)}" alt="${esc(text)}"${t} loading="lazy">`;
       },
       html({ text }) {
         return esc(text); // docs are plain Markdown; never pass raw HTML through
@@ -368,6 +376,20 @@ const shots = {
     ['darstellung-dunkel', 'Darstellung (dunkel)'],
     ['login', 'Anmeldung per Passkey'],
   ],
+  berechtigungen: [
+    ['freigaben', 'Teilen-Fenster: Eigentümer, Personen und Teams mit Rolle, Hinzufügen, „Wer kann was sehen?“'],
+    ['freigaben-dunkel', 'Teilen-Fenster im dunklen Design'],
+    ['freigaben-geerbt', 'Unterprojekt: geerbte Zugriffe („geerbt von Haushalt“) mit Link zum Elternprojekt'],
+    ['geteilt-mit-mir', 'Sicht der geteilten Person (Rolle Lesen): „Mit mir geteilt“, Hinweis, deaktivierte Aktionen'],
+    ['teams', 'Teams: Mitglieder, offene Einladung, eigene Rolle'],
+    ['teams-einladung', 'Teameinladung annehmen oder ablehnen, Zähler an „Teams“'],
+    ['berechtigungen', 'Konto: Berechtigungen & Zugriff (Eigentümerin)'],
+    ['berechtigungen-gast', 'Konto: Berechtigungen & Zugriff (geteilte Person)'],
+    ['berechtigungen-dunkel', 'Berechtigungen & Zugriff im dunklen Design'],
+  ],
+  berechtigungenMobil: [
+    ['freigaben-mobil', 'Teilen-Fenster'], ['geteilt-mit-mir-mobil', 'Mit mir geteilt'], ['berechtigungen-mobil', 'Berechtigungen & Zugriff'],
+  ],
   fuerdich: [
     ['fuer-dich', 'Für dich (Startansicht): „Braucht dich“ mit Rückfragen und Fristen, darunter Neuigkeiten mit Fortschritt'],
     ['fuer-dich-dunkel', 'Für dich im dunklen Design'],
@@ -408,6 +430,7 @@ function renderShots(page) {
   const g = (list, cls) => `<div class="shots ${cls}">${list.map((s) => fig('', s)).join('')}</div>`;
   const body = `<article class="doc"><h1>Screenshots</h1><p>Echte Aufnahmen mit Demo-Daten: PWA (Chromium mit virtuellem Passkey) und native Apps (Simulator).</p>
 <h2 id="pwa-desktop">PWA am Desktop</h2>${g(shots.desktop, 'wideshots')}
+<h2 id="berechtigungen">Berechtigungen und Teilen</h2><p>Erklärung des Modells unter <a href="berechtigungen.html">Berechtigungen und Teilen</a>.</p>${g(shots.berechtigungen, 'wideshots')}${g(shots.berechtigungenMobil, 'phone')}
 <h2 id="fuer-dich">Für dich</h2><p>Die Startansicht (<code>/</code> öffnet <code>/fuer-dich</code>): was dich braucht und was in deinen Projekten passiert.</p>${g(shots.fuerdich, 'wideshots')}
 <h2 id="modi">Klassisch und Projektmanagement</h2><p>Je Projekt wählbar über „Anzeige“.</p>${g(shots.modi, 'wideshots')}
 <h2 id="steuerzentrale">Steuerzentrale und Agenten (PWA)</h2><p>Mehr dazu unter <a href="steuerzentrale.html">Steuerzentrale und Agenten-Kanban</a>.</p>${g(shots.agents, 'wideshots')}

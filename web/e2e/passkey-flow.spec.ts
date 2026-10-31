@@ -347,9 +347,10 @@ test('teams, sharing and visibility', async () => {
 	await expect(page.getByTestId('my-role')).toHaveText('Verwalten');
 	await page.getByLabel('Empfänger').selectOption('team');
 	await page.getByLabel('Team', { exact: true }).selectOption({ label: 'Familie' });
-	await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
+	await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
 	await expect(page.getByTestId('grant')).toContainText('Familie');
-	await page.getByTestId('grant').getByRole('button', { name: 'Entziehen' }).click();
+	await page.getByTestId('grant-remove').click();
+	await page.getByTestId('grant-remove-confirm').getByRole('button', { name: 'Zugriff entziehen' }).click();
 	await expect(page.getByTestId('grant')).toHaveCount(0);
 });
 
@@ -481,12 +482,12 @@ test('invited person: directory search, team invitation name, author and actor n
 		await openShare();
 		await page.getByLabel('Person suchen (Name)').fill('Berta');
 		await page.getByTestId('person-results').getByRole('button', { name: 'Berta Beispiel' }).click();
-		await page.getByLabel('Deine Rolle').selectOption('comment');
-		await page.getByRole('button', { name: 'Freigabe hinzufügen' }).click();
+		await page.getByLabel('Rolle', { exact: true }).selectOption('comment');
+		await page.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
 		await expect(page.getByTestId('grant')).toHaveCount(1);
 
 		await guest.reload();
-		await guest.getByTestId('project-item').getByRole('button', { name: 'Haushalt', exact: true }).first().click();
+		await guest.getByTestId('project-item').getByRole('button', { name: /^Haushalt/ }).first().click();
 		const guestTask = guest.getByTestId('task-item').filter({ hasText: 'Wochenplan' });
 		await guestTask.getByRole('button', { name: 'Details' }).click();
 		await guestTask.getByLabel('Kommentar schreiben').fill('Hallo vom Gast');
@@ -718,7 +719,7 @@ test('project comments panel', async () => {
 		});
 		expect(grant.ok(), await grant.text()).toBeTruthy();
 		await guest.reload();
-		await guest.getByTestId('project-item').getByRole('button', { name: 'Haushalt', exact: true }).first().click();
+		await guest.getByTestId('project-item').getByRole('button', { name: /^Haushalt/ }).first().click();
 		await guest.getByTestId('project-comments-open').click();
 		const gd = guest.getByTestId('project-comments-dialog');
 		await expect(gd.getByTestId('comment-author').first()).toHaveText('Test Admin');
@@ -1139,7 +1140,9 @@ test('account: passkeys, sessions and recovery', async () => {
 	await expect(page.getByTestId('session-item').filter({ hasText: 'Diese Sitzung' })).toHaveCount(1);
 
 	// Admin issues a recovery code in the UI (shown once); the user redeems it on /recover.
-	await page.getByLabel('Konto-ID').fill((await page.getByTestId('account-id').innerText()).trim());
+	const ownAccountID = (await page.getByTestId('account-id').innerText()).trim();
+	await page.getByTestId('account-tab-admin').click();
+	await page.getByLabel('Konto-ID', { exact: true }).fill(ownAccountID);
 	await page.getByRole('button', { name: 'Code ausstellen' }).click();
 	const token = (await page.getByTestId('recovery-code').innerText()).trim();
 	expect(token.length).toBeGreaterThan(20);
@@ -1219,11 +1222,12 @@ test('mobile 390px: navigation drawer, board and no horizontal page scroll', asy
 		await page.waitForTimeout(300);
 		await noOverflow(view);
 	}
-	// Drawer: Teams, Agenten, Aktivität and Konto live under "Mehr".
+	// Drawer: Teams is a main entry; Agenten, Aktivität and Konto live under "Mehr" (which stays open while one of them is shown).
 	for (const view of ['Teams', 'Agenten', 'Aktivität', 'Konto']) {
 		await menu.click();
-		await nav.getByRole('button', { name: 'Mehr', exact: true }).click();
-		await nav.getByRole('button', { name: view, exact: true }).click();
+		const target = nav.getByRole('button', { name: view, exact: true });
+		if (!(await target.isVisible())) await nav.getByRole('button', { name: 'Mehr', exact: true }).click();
+		await target.click();
 		await expect(nav).toBeHidden();
 		await expect(page.getByTestId('view-heading')).toBeVisible();
 		await page.waitForTimeout(300);

@@ -8,13 +8,15 @@
 		active = false,
 		children,
 		testid,
-		disabled = false
-	}: { onclick: () => void; danger?: boolean; active?: boolean; children: Snippet; testid?: string; disabled?: boolean } = $props();
+		disabled = false,
+		title
+	}: { onclick: () => void; danger?: boolean; active?: boolean; children: Snippet; testid?: string; disabled?: boolean; title?: string } = $props();
 </script>
 
 <button
 	type="button"
 	{disabled}
+	{title}
 	data-testid={testid}
 	class={cn(
 		'flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50',

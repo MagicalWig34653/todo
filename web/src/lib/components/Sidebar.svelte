@@ -22,6 +22,7 @@ export type View =
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { buildTree, flatten, type DropPlan } from '#lib/projectTree.js';
+	import { isOwner } from '#lib/access.js';
 	import { theme } from '#lib/theme.svelte.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
@@ -70,7 +71,6 @@ export type View =
 
 	const MORE: { v: View; icon: Icon }[] = [
 		{ v: 'upNext', icon: ListChecks },
-		{ v: 'teams', icon: Users },
 		{ v: 'agents', icon: Bot },
 		{ v: 'activity', icon: Activity },
 		{ v: 'account', icon: UserRound }
@@ -81,6 +81,7 @@ export type View =
 	let favOpen = $state(true);
 	let projectsOpen = $state(true);
 	let teamsOpen = $state(true);
+	let sharedOpen = $state(true);
 	let helpOpen = $state(false);
 	let addOpen = $state(false);
 	let addName = $state('');
@@ -90,7 +91,10 @@ export type View =
 
 	// "Mehr" shows its entries while one of them is the current page.
 	const moreShown = $derived(moreOpen || moreViews.has(view));
-	const tree = $derived(buildTree(workspace.projects));
+	const fullTree = $derived(buildTree(workspace.projects));
+	/** Own roots stay under "Meine Projekte"; roots owned by other people form "Mit mir geteilt". */
+	const tree = $derived(fullTree.filter((n) => isOwner(n.project)));
+	const sharedTree = $derived(fullTree.filter((n) => !isOwner(n.project)));
 	const favorites = $derived(workspace.favorites);
 	const initials = $derived(
 		(auth.user?.displayName ?? '?')
@@ -100,7 +104,7 @@ export type View =
 			.map((s) => s[0]!.toUpperCase())
 			.join('')
 	);
-	const parents = $derived(flatten(tree));
+	const parents = $derived(flatten(fullTree));
 
 	const row =
 		'flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-medium text-foreground/85 transition-colors hover:bg-muted aria-[current=page]:bg-ui-accent-soft aria-[current=page]:text-ui-accent-ink aria-[current=page]:glow-accent';
@@ -155,12 +159,16 @@ export type View =
 		});
 </script>
 
-{#snippet navRow(v: View, Ic: Icon, label: string, count = 0, cls = '')}
+{#snippet navRow(v: View, Ic: Icon, label: string, count = 0, cls = '', badge = false)}
 	<li>
 		<button class={[row, cls]} aria-current={view === v ? 'page' : undefined} onclick={go(v)}>
 			<Ic class="size-[18px] shrink-0 opacity-80" aria-hidden="true" />
 			<span class="truncate">{label}</span>
-			{#if count > 0}<span class="text-muted-foreground ml-auto text-xs font-normal" data-tabular>{count}</span>{/if}
+			{#if count > 0 && badge}
+				<span class="bg-ui-accent text-ui-accent-foreground ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold" data-tabular data-testid="nav-badge-{v}" title={t('sidebar.teamsBadge', { count })}>{count}</span>
+			{:else if count > 0}
+				<span class="text-muted-foreground ml-auto text-xs font-normal" data-tabular>{count}</span>
+			{/if}
 		</button>
 	</li>
 {/snippet}
@@ -249,6 +257,7 @@ export type View =
 			{@render navRow('today', CalendarCheck, t('nav.today'), workspace.todayCount)}
 			{@render navRow('upcoming', CalendarClock, t('nav.upcoming'))}
 			{@render navRow('filters', LayoutGrid, t('nav.filters'))}
+			{@render navRow('teams', Users, t('sidebar.teamsEntry'), workspace.invitations.length, '', true)}
 			<li>
 				<button class={row} aria-expanded={moreShown} onclick={() => (moreOpen = !moreShown)}>
 					<Ellipsis class="size-[18px] shrink-0 opacity-80" aria-hidden="true" />
@@ -299,6 +308,22 @@ export type View =
 				</ul>
 			{/if}
 		</section>
+
+		{#if sharedTree.length > 0}
+			<section aria-label={t('sidebar.shared')} data-testid="sidebar-shared">
+				<div class={sectionHead}>
+					<h2>{t('sidebar.shared')}</h2>
+					{@render sectionToggle(sharedOpen, () => (sharedOpen = !sharedOpen), t('sidebar.shared'))}
+				</div>
+				{#if sharedOpen}
+					<ul>
+						{#each sharedTree as node (node.project.id)}
+							<ProjectItem {node} all={workspace.projects} selectedID={view === 'project' ? selectedID : null} onselect={onproject} onrename={rename} onadd={addSub} onmove={move} ondelete={remove} {onshare} onfavorite={favorite} onreorder={reorder} />
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/if}
 
 		{#if workspace.teams.length > 0}
 			<section aria-label={t('sidebar.teams')} data-testid="sidebar-teams">

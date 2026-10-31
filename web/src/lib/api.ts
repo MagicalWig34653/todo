@@ -31,6 +31,12 @@ export interface Project {
 	position?: number;
 	isFavorite?: boolean;
 	favoritePosition?: number;
+	/** The viewer's effective role, ownership and the owner (contracts/openapi.yaml, sharing.yaml); older servers omit them. */
+	role?: Role;
+	isOwner?: boolean;
+	ownerType?: PrincipalType;
+	ownerID?: string;
+	ownerName?: string;
 }
 export type TaskStatus = 'open' | 'in_progress' | 'in_review' | 'done';
 /** Compact planning data that `GET /tasks` attaches to every list entry. */
@@ -215,6 +221,8 @@ export interface ProjectGrant {
 	principalType: PrincipalType;
 	principalID: string;
 	role: Role;
+	/** Display name of the person or name of the team. */
+	principalName?: string | null;
 }
 export interface EffectiveVisibility {
 	projectID: string;
@@ -930,6 +938,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('DELETE', `/projects/${projectID}/grants/${grantID}`),
 		setInheritance: (p: Project, inherits: boolean) =>
 			request<EffectiveVisibility>('PUT', `/projects/${p.id}/inheritance`, { version: p.version, inherits }),
+		transferOwner: (p: Project, ownerType: PrincipalType, ownerID: string) =>
+			request<EffectiveVisibility>('PUT', `/projects/${p.id}/owner`, { version: p.version, ownerType, ownerID }),
 		visibility: (projectID: string, userID?: string) =>
 			request<EffectiveVisibility>('GET', `/projects/${projectID}/visibility${query({ userID })}`),
 

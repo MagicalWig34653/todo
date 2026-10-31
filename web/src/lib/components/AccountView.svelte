@@ -12,7 +12,17 @@
 	import NotificationSettings from './NotificationSettings.svelte';
 	import OAuthGrants from './OAuthGrants.svelte';
 	import RecoveryIssue from './RecoveryIssue.svelte';
+	import AccessOverview from './AccessOverview.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
+
+	/** `area` comes from the URL: nothing = general, `berechtigungen`, `verwaltung`. */
+	let { area, onarea, onnav }: { area?: string; onarea: (a: string | undefined) => void; onnav: (target: 'teams' | 'agents' | 'general' | 'project', projectID?: string) => void } = $props();
+	const TABS = [
+		{ id: undefined, label: 'account.tab.general', testid: 'general' },
+		{ id: 'berechtigungen', label: 'account.tab.access', testid: 'access' },
+		{ id: 'verwaltung', label: 'account.tab.admin', testid: 'admin' }
+	] as const;
+	const current = $derived(area === 'berechtigungen' || area === 'verwaltung' ? area : undefined);
 
 	let passkeys = $state<Passkey[]>([]);
 	let sessions = $state<SessionInfo[]>([]);
@@ -74,6 +84,39 @@
 <section class="flex flex-col gap-4">
 	<PageHeader title={t('account.title')} testid="view-heading" />
 
+	<div class="flex gap-4 overflow-x-auto border-b" role="tablist" aria-label={t('account.tabs')} data-testid="account-tabs">
+		{#each TABS as tab (tab.testid)}
+			<button
+				type="button"
+				role="tab"
+				aria-selected={current === tab.id}
+				data-testid="account-tab-{tab.testid}"
+				class={['-mb-px min-h-9 shrink-0 border-b-2 px-1 text-sm font-medium transition-colors', current === tab.id ? 'border-ui-accent text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent']}
+				onclick={() => onarea(tab.id)}
+			>
+				{t(tab.label)}
+			</button>
+		{/each}
+	</div>
+
+	{#if current === 'berechtigungen'}
+		<AccessOverview {onnav} />
+	{:else if current === 'verwaltung'}
+		<div class="flex flex-col gap-4" data-testid="admin-area">
+			<h3 class="text-base font-semibold">{t('access.admin.title')}</h3>
+			{#if auth.user?.isAdmin}
+				<p class="text-muted-foreground text-sm">{t('access.admin.intro')}</p>
+				<div class="bg-card flex flex-col gap-2 rounded-xl border p-4 shadow-card sm:p-5 text-sm">
+					<h3 class="text-base font-semibold">{t('access.admin.accountID')}</h3>
+					<code class="bg-muted w-fit rounded px-2 py-1 text-xs break-all">{auth.user?.id}</code>
+				</div>
+				<RecoveryIssue />
+				<p class="text-muted-foreground text-xs" data-testid="admin-gaps">{t('access.admin.gaps')}</p>
+			{:else}
+				<p class="bg-muted/60 rounded-lg px-3 py-2 text-sm" data-testid="admin-denied">{t('access.admin.denied')}</p>
+			{/if}
+		</div>
+	{:else}
 	<div class="bg-card flex flex-col gap-3 rounded-xl border p-4 shadow-card sm:p-5 text-sm">
 		<h3 class="text-base font-semibold">{t('account.id')}</h3>
 		<code class="bg-muted w-fit rounded px-2 py-1 text-xs break-all" data-testid="account-id">{auth.user?.id}</code>
@@ -139,13 +182,12 @@
 		{/if}
 	</div>
 
-	<AppearanceSettings />
-
-	<OAuthGrants />
-
-	{#if auth.user?.isAdmin}<RecoveryIssue />{/if}
-</section>
 	<NotificationSettings />
 
 	<EmailSettings />
 
+	<AppearanceSettings />
+
+	<OAuthGrants />
+	{/if}
+</section>

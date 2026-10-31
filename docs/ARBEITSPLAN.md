@@ -16,6 +16,10 @@ Datenmodell/Migrationen → Bootstrap und Passkey → Capability-Endpunkt und Pa
 ## Checkpoints
 Nach jedem Teilschritt STATUS.md und diesen Plan aktualisieren. Bisher nichts committet; Commit nur auf Nutzerwunsch.
 
+## Berechtigungen in der PWA auffindbar (31.10.2026)
+
+Erledigt: Teilen-Schaltfläche und eigene Rolle im Projektkopf, neues Teilen-Fenster, Teams in der Seitenleiste, "Mit mir geteilt", Konto "Berechtigungen & Zugriff", deaktivierte Aktionen mit Erklärung, [BERECHTIGUNGEN.md](BERECHTIGUNGEN.md). Details und Prüfstand: STATUS.md "Checkpoint 31.10.2026 (Berechtigungen auffindbar und verständlich)". Offen (Vorschläge, nicht beschlossen): Zuweisungen, feinere Rollen, Nutzerverwaltung, `GET /v1/me/access`, Rolle/Eigentümer in den Apple-Clients.
+
 ## Etappe 5 – Labels/Suche (26.10.2026)
 - [x] Bestand/Rechte gelesen; Discovery-Schema und API-Schnitt implementiert (siehe STATUS, Abschnitt Labels/Suche).
 - [ ] Vertrag und Tests für private Metadaten, Rechteentzug, Wildcards, Cursor und gespeicherte Kriterien abschließen.
