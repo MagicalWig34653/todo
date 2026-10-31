@@ -1,0 +1,39 @@
+openapi: 3.1.0
+info:
+  title: Todolino – Repository-Bindung und Aktualität (Project Sync)
+  version: 1.0.0
+  description: 'ADR 0018. Ein Projekt kann an eine Repository-Kennung gebunden werden (normalisierte Git-Remote oder freier Schlüssel);
+    record_sync hält fest, wann Board und Repository zuletzt abgeglichen wurden. Zustand: fresh (innerhalb staleAfterDays, Standard 3),
+    stale, never. Unsichtbare/fremde Projekte: 404, zu geringe Rolle: 403, Konflikte: 409 (repository_already_bound). Die Steuerzentrale
+    (GET /v1/command-center) liefert zusätzlich projects[{projectID,name,sync}] und summary.staleProjects. MCP-Werkzeuge:
+    find_project_by_repository, create_project (Scope projects:write), bind_repository, record_sync, get_sync_status, get_stale_projects,
+    import_plan (idempotent per externalKey, höchstens 300 Einträge, Unteraufgaben eine Ebene), list_plan_keys, set_agent_brief.
+    MCP-Prompts: setup_project, sync_project, session_start. Details: docs/agent-manual.md.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/projects/{id}/sync:
+    get:
+      operationId: getProjectSync
+      summary: Sync-Zustand eines Projekts
+      description: 'Antwort: {bound, repository, state fresh|stale|never, lastSyncedAt, lastSyncedBy, daysSince, staleAfterDays, repoRef, lastSummary}.'
+      responses:
+        '200': {description: Erfolgreich}
+        '404': {description: Projekt fehlt oder unsichtbar}
+    put:
+      operationId: putProjectSync
+      summary: Projekt an ein Repository binden oder Schwelle ändern
+      description: 'Body: {repository?, staleAfterDays? (1-365)}. Edit-Recht nötig. Eine andere Repository-Kennung setzt die Sync-Historie zurück.'
+      responses:
+        '200': {description: Erfolgreich}
+        '400': {description: invalid_repository, repository_required, invalid_stale_after_days}
+        '409': {description: repository_already_bound}
+  /v1/projects/by-repository:
+    get:
+      operationId: findProjectsByRepository
+      summary: Projekte finden, die an ein Repository gebunden sind
+      description: 'Query: repository. Antwort: {repository, found, matches[{projectID,name,sync}], outsideGrant, hint}.'
+      responses:
+        '200': {description: Erfolgreich}
+        '400': {description: invalid_repository}

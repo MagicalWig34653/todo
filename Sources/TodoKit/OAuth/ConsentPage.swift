@@ -24,6 +24,7 @@ enum ConsentPage {
       el('h2', 'Berechtigungen');
       const ul = el('ul'); d.scopes.forEach(s => el('li', s, ul));
       el('h2', 'Projekte (nur ausdrücklich gewählte werden freigegeben)');
+      if (d.scopes.includes('projects:write')) el('p', 'Projekte, die über diese Verbindung neu angelegt werden, sind automatisch freigegeben.');
       const boxes = [];
       if (d.projects.length === 0) el('p', 'Keine eigenen Projekte vorhanden.');
       d.projects.forEach(p => {
@@ -34,7 +35,7 @@ enum ConsentPage {
       const msg = el('p');
       async function send(approve) {
         const ids = boxes.filter(b => b.checked).map(b => b.value);
-        if (approve && ids.length === 0) { msg.textContent = 'Bitte mindestens ein Projekt wählen.'; return; }
+        if (approve && ids.length === 0 && !d.scopes.includes('projects:write')) { msg.textContent = 'Bitte mindestens ein Projekt wählen.'; return; }
         const res = await fetch('/oauth/consent', { method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ consent_token: d.consent_token, approve: approve, project_ids: approve ? ids : [] }) });

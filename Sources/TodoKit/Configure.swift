@@ -81,6 +81,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(WidenLongTextColumns())
     configureProjectState(app)
     configureCommandCenter(app)
+    configureProjectSync(app)
 }
 
 public func configureContent() {

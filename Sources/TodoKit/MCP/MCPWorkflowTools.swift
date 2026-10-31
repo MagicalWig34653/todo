@@ -266,7 +266,7 @@ extension MCPController {
             return try .encoded(try await service.completeBuild(attachmentID: uuid(a["attachmentID"]), actor: actor))
         case "list_builds":
             return try .encoded(try await service.builds(taskID: uuid(a["taskID"])))
-        default: throw Abort(.badRequest)
+        default: return try await callSync(name, a, user: user, grant: grant, db: db, settings: settings, actor: actor)
         }
     }
 

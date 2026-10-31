@@ -12,7 +12,7 @@ struct MCPController: RouteCollection {
     }
     static let versions = ["2025-03-26", "2025-06-18", "2025-11-25"]
     /// Returned in the `initialize` result (MCP `instructions`).
-    static let instructions = "Todo project management for agents. FIRST call the tool get_manual (or read the resource todo://manual) and follow it: it explains the board workflow, conventions and every tool. Then call get_project_structure for the project you work in and obey its agent brief. Communicate with the user only through the board: post_progress, ask_question, add_attachment, request_review."
+    static let instructions = "Todo project management for agents. FIRST call the tool get_manual (or read the resource todo://manual) and follow it: it explains the board workflow, conventions and every tool. Then call find_project_by_repository for the repository you work in (or list_projects), get_project_structure for the project and obey its agent brief. Communicate with the user only through the board: post_progress, ask_question, add_attachment, request_review. Keep Todolino current: at the end of a session post progress and call record_sync. Prompts setup_project, sync_project and session_start guide onboarding and reconciliation."
     static func validateOrigin(_ req: Request) throws {
         if let origin = req.headers.first(name: .origin),
            origin != req.application.settings.relyingPartyOrigin && origin != req.application.settings.oauthIssuer { throw Abort(.forbidden) }
@@ -45,11 +45,19 @@ struct MCPController: RouteCollection {
             let requested = body["params"]["protocolVersion"].string ?? ""
             result = .object(["protocolVersion": .string(Self.versions.contains(requested) ? requested : "2025-11-25"),
                 "capabilities": .object(["tools": .object(["listChanged": .bool(false)]),
+                    "prompts": .object(["listChanged": .bool(false)]),
                     "resources": .object(["listChanged": .bool(false), "subscribe": .bool(false)])]),
                 "serverInfo": .object(["name": .string("Todolino"), "version": .string("1.1")]),
                 "instructions": .string(Self.instructions)])
         case "ping": result = .object([:])
         case "tools/list": result = .object(["tools": .array(Self.tools.filter { $0.scope.isEmpty || grant.scopes.contains($0.scope) }.map(\.definition))])
+        case "prompts/list": result = .object(["prompts": MCPPrompts.list])
+        case "prompts/get":
+            guard let name = body["params"]["name"].string else { return try await rpcError(id: id, code: -32602, message: "Missing prompt name").encodeResponse(for: req) }
+            guard let prompt = MCPPrompts.get(name, arguments: body["params"]["arguments"], origin: req.application.settings.oauthIssuer) else {
+                return try await rpcError(id: id, code: -32602, message: "Unknown prompt or invalid arguments").encodeResponse(for: req)
+            }
+            result = prompt
         case "resources/list": result = .object(["resources": Self.resources])
         case "resources/templates/list": result = .object(["resourceTemplates": Self.resourceTemplates])
         case "resources/read":
@@ -88,7 +96,7 @@ struct MCPController: RouteCollection {
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
     /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
-    static let tools: [Tool] = coreTools + workflowTools
+    static let tools: [Tool] = coreTools + workflowTools + syncTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)

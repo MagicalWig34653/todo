@@ -28,8 +28,8 @@ paths:
       summary: Kanban-/Listenübersicht (Steuerzentrale)
       description: 'Query: scope=account|project, projectID, includeSubprojects(true), view=kanban|list, lane=a,b, kind=task|feature, hasQuestion,
         includeSubtasks(list), sort=attention|updated|due|progress|title, doneWithinDays(7), laneLimit(50), updatesLimit(20), limit(50), offset.
-        Antwort: {generatedAt, scope, projectID, view, summary{running,question,review,ready,blocked,done,backlog,openQuestions,pendingReviews,features,activeAgents},
-        lanes[{key,title,count,truncated,cards[]}] (kanban) | items[], total (list), updates[], builds[]}. Karte: {task,project,kind,isFeature,parentTaskID,lane,
+        Antwort: {generatedAt, scope, projectID, view, summary{running,question,review,ready,blocked,done,backlog,openQuestions,pendingReviews,features,activeAgents,staleProjects},
+        lanes[{key,title,count,truncated,cards[]}] (kanban) | items[], total (list), updates[], builds[], projects[{projectID,name,sync}] (project-sync.yaml)}. Karte: {task,project,kind,isFeature,parentTaskID,lane,
         progress{percent,source,subtasks*,criteria*},agent,openQuestionCount,questions[3],pendingReview,blockedReason,blockedBy,latestUpdate,builds[3],buildCount,nextDue,priority,subtasks[]}.'
       responses:
         '200': {description: Erfolgreich}

@@ -145,6 +145,8 @@ struct SummaryDTO: Content {
     let pendingReviews: Int
     let features: Int
     let activeAgents: Int
+    /// Bound projects whose last repository sync is older than their threshold or missing (ADR 0018).
+    let staleProjects: Int
 }
 
 struct UpdateItem: Content {
@@ -185,6 +187,8 @@ struct CommandCenterResponse: Content {
     let total: Int?
     let updates: [UpdateItem]
     let builds: [BuildGroup]
+    /// Repository sync state per project of the scope (ADR 0018).
+    let projects: [ProjectSyncEntry]
 }
 
 struct CommandCenterQuery: Sendable {
@@ -443,10 +447,11 @@ struct CommandCenterService: Sendable {
             else if let id = c.agent?.runID { activeAgents.insert(id.uuidString) }
         }
         func count(_ lane: String) -> Int { topCards.filter { $0.lane == lane }.count }
+        let syncEntries = try await ProjectSyncService.entries(scope: scope, on: db, now: now, includeSummary: false)
         let summary = SummaryDTO(running: count("running"), question: count("question"), review: count("review"), ready: count("ready"),
             blocked: count("blocked"), done: count("done"), backlog: backlog,
             openQuestions: questions.count, pendingReviews: reviews.count, features: topCards.filter { $0.isFeature && $0.lane != "done" }.count,
-            activeAgents: activeAgents.count)
+            activeAgents: activeAgents.count, staleProjects: syncEntries.filter { $0.sync.bound && $0.sync.state != "fresh" }.count)
 
         let updates = q.updatesLimit == 0 ? [] : try await self.updates(scope: scope, limit: q.updatesLimit)
         let buildGroups = Self.groups(builds, limit: 10)
@@ -490,7 +495,7 @@ struct CommandCenterService: Sendable {
             let ordered = sorted(pool, by: q.sort, lane: nil)
             let page = Array(ordered.dropFirst(q.offset).prefix(q.limit))
             return CommandCenterResponse(generatedAt: now, scope: q.projectID == nil ? "account" : "project", projectID: q.projectID,
-                view: "list", summary: summary, lanes: nil, items: page, total: ordered.count, updates: updates, builds: buildGroups)
+                view: "list", summary: summary, lanes: nil, items: page, total: ordered.count, updates: updates, builds: buildGroups, projects: syncEntries)
         }
 
         var lanes: [LaneDTO] = []
@@ -503,7 +508,7 @@ struct CommandCenterService: Sendable {
                 cards: Array(ordered.prefix(q.laneLimit))))
         }
         return CommandCenterResponse(generatedAt: now, scope: q.projectID == nil ? "account" : "project", projectID: q.projectID,
-            view: "kanban", summary: summary, lanes: lanes, items: nil, total: nil, updates: updates, builds: buildGroups)
+            view: "kanban", summary: summary, lanes: lanes, items: nil, total: nil, updates: updates, builds: buildGroups, projects: syncEntries)
     }
 
     static func groups(_ builds: [UUID: [BuildArtifactDTO]], limit: Int) -> [BuildGroup] {

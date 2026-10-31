@@ -14,7 +14,7 @@ final class AgentManualTests: XCTestCase {
         let file = try String(contentsOf: root.appendingPathComponent("docs/agent-manual.md"), encoding: .utf8)
         XCTAssertEqual(file.trimmingCharacters(in: .whitespacesAndNewlines), AgentManual.markdown.trimmingCharacters(in: .whitespacesAndNewlines),
                        "docs/agent-manual.md changed: run scripts/embed-agent-manual.sh")
-        XCTAssertEqual(AgentManual.version, "1.0.0")
+        XCTAssertEqual(AgentManual.version, "1.1.0")
     }
 
     func testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed() {
@@ -42,7 +42,7 @@ final class AgentManualTests: XCTestCase {
             let call = try await f.rpc("tools/call", ["name": "get_manual", "arguments": ["section": "board-columns"]], access: t.access)
             let text = try XCTUnwrap(((call.body?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String)
             let manual = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
-            XCTAssertEqual(manual["version"] as? String, "1.0.0")
+            XCTAssertEqual(manual["version"] as? String, "1.1.0")
             XCTAssertTrue((manual["content"] as? String ?? "").contains("Frage offen"))
             XCTAssertNotNil((manual["conventions"] as? [String: Any])?["lanes"])
             // No arguments at all.
@@ -61,7 +61,7 @@ final class AgentManualTests: XCTestCase {
             // REST is public.
             let rest = try await f.test.json(.GET, "/v1/manual")
             XCTAssertEqual(rest.status, .ok)
-            XCTAssertEqual(rest.body?["version"] as? String, "1.0.0")
+            XCTAssertEqual(rest.body?["version"] as? String, "1.1.0")
             let unknown = try await f.test.json(.GET, "/v1/manual?section=nope")
             XCTAssertEqual(unknown.status, .notFound)
         } catch { await f.test.shutdown(); throw error }

@@ -3,7 +3,7 @@ import Fluent
 import Vapor
 
 struct OAuthController: RouteCollection {
-    static let scopes = ["projects:read", "tasks:read", "tasks:write", "comments:write", "attachments:read", "attachments:write", "agents:read"]
+    static let scopes = ["projects:read", "projects:write", "tasks:read", "tasks:write", "comments:write", "attachments:read", "attachments:write", "agents:read"]
     // The issuer comes from AppSettings.oauthIssuer (OAUTH_ISSUER, else RP_ORIGIN); never from an untrusted Host or forwarded header.
 
     func boot(routes: any RoutesBuilder) throws {
@@ -119,7 +119,9 @@ struct OAuthController: RouteCollection {
             if let state = a.state { items.append(URLQueryItem(name: "state", value: state)) }
             items.append(URLQueryItem(name: "iss", value: req.application.settings.oauthIssuer)) // RFC 9207
             if b.approve {
-                guard !b.project_ids.isEmpty else { throw Abort(.badRequest, reason: "projects_required") }
+                // A grant that may create projects (projects:write) can start without existing projects: create_project extends it.
+                let mayCreateProjects = (a.scope ?? "").split(separator: " ").contains("projects:write")
+                guard !b.project_ids.isEmpty || mayCreateProjects else { throw Abort(.badRequest, reason: "projects_required") }
                 for id in b.project_ids { _ = try await ProjectAccess(user: user, db: db).project(id) }
                 let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: req.application.settings.oauthResource,
                                    scopes: (a.scope ?? "").split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)))
