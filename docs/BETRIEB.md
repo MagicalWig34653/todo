@@ -168,3 +168,21 @@ Discovery (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protec
 - Sofortmaßnahme ohne Update des Images: `OAUTH_ISSUER=https://todo.linolaske.de` in die Env-Datei (`stack.env`) eintragen und neu deployen; das alte Image liest die Variable bereits, die alte `stack.yaml` reicht sie aber nicht durch. Dann `docker service update --env-add OAUTH_ISSUER=https://todo.linolaske.de <stack>_backend` verwenden (oder `stack.yaml` des Updates einspielen).
 - Prüfen: `curl -s https://<host>/.well-known/oauth-protected-resource/mcp` enthält `"resource":"https://<host>/mcp"`; `curl -si -X POST https://<host>/mcp` liefert `WWW-Authenticate: Bearer resource_metadata="https://<host>/.well-known/oauth-protected-resource/mcp"`.
 - Tests: `OAuthIssuerTests` (SQLite: Ableitung, Discovery ohne localhost, Dev-Standard unverändert, Flow mit Audience-Bindung).
+
+## Periodischer Cleanup und Sync-Aufbewahrung (31.10.2026, ADR 0019)
+
+Jedes Backend-Replikat führt bei `serve` einen Cleanup-Task aus; eine Zeile in `maintenance_leases` stellt sicher, dass pro Intervall nur ein Replikat arbeitet. Er löscht abgelaufene Sitzungen, Challenges, Einladungen, Recovery-Grants, Rate-Limit-Zeilen, OAuth-Tokens, Kopplungscodes und alte Sync-Protokolleinträge.
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `CLEANUP_INTERVAL_MINUTES` | `360` | Minuten zwischen Läufen; `0` schaltet den Scheduler ab (dann `App cleanup-expired` selbst per Cron/Swarm-Job planen). Gültig 0 bis 10080. |
+| `SYNC_RETENTION_DAYS` | `90` | Tombstones, ersetzte Upserts und gespeicherte Mutationsergebnisse älter als diese Tage werden gelöscht; `0` behält alles. Gültig 0 bis 3650. |
+
+Ungültige Werte verhindern den Start. Beide Variablen stehen in `deploy/swarm/stack.yaml` und `stack.env.example`.
+
+- **Rollout:** zuerst die Migration (`migrate --yes`, Teil des normalen Deploy-Skripts: Indizes, `maintenance_leases`, Bodenzeile). Ältere Replikate bleiben kompatibel. Das erste Replikat führt 20–60 s nach dem Start den ersten Lauf aus; bei den folgenden Neustarts bleibt es beim Intervall (Zeit steht in der Datenbank). Der erste Lauf auf einer großen Instanz löscht in Batches à 500 und kann einige Minuten dauern.
+- **Clients:** Ein Client, dessen Sync-Cursor älter als die Aufbewahrung ist, erhält `410 cursor_expired` und lädt seinen Stand ab `c0` neu (siehe `contracts/sync.yaml`). Bei zu kurzer Frist müssen selten online gehende Geräte öfter komplett neu synchronisieren.
+- **Prüfen:** `GET /health/ready` enthält `maintenance: {enabled, lastRunAt, lastStatus}` (`ok`, `error`, `never`). Das Feld ist rein informativ; ein Fehler ändert den Readiness-Status nie. Details in den Logs (`cleanup scheduler: …`) und in `maintenance_leases.last_message`.
+- **Deaktivieren:** `CLEANUP_INTERVAL_MINUTES=0` und neu deployen. Rein die Sync-Aufbewahrung abschalten: `SYNC_RETENTION_DAYS=0`.
+- **Manuell:** `App cleanup-expired [--sync-retention-days N] [--grace-seconds N] [--batch-size N]` (Standardwerte aus der Umgebung); parallel zu laufenden Replikaten gefahrlos.
+- **Konto löschen:** `App delete-account <user-id> --yes` (kein Selbstbedienungsweg). Andere Konten erhalten Tombstones für alles, was sie dadurch nicht mehr sehen; gelingt etwas nicht (z. B. Agentendaten), wird alles zurückgerollt. Vorher sichern.
