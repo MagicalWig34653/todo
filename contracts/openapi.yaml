@@ -824,6 +824,22 @@ components:
         favoritePosition:
           type: integer
           description: Position among the viewer's favourites; present only for favourites.
+        role:
+          type: string
+          enum: [read, comment, edit, manage]
+          description: Effective role of the viewer in this project (contracts/sharing.yaml); set on list and detail responses.
+        isOwner:
+          type: boolean
+          description: True if the viewer owns the project (directly or as administrator of the owning team).
+        ownerType:
+          type: string
+          enum: [person, team]
+        ownerID:
+          type: string
+          format: uuid
+        ownerName:
+          type: string
+          description: Display name of the owning person or name of the owning team; omitted if the account no longer exists.
       description: Absent parentID is omitted, not null. New projects start at version 1. See contracts/project-state.yaml.
     CreateProjectRequest:
       type: object

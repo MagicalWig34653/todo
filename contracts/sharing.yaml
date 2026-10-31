@@ -213,7 +213,7 @@ paths:
         schema: *id001
   /v1/teams/{teamID}/members/{userID}:
     delete:
-      summary: Mitgliedschaft oder Einladung widerrufen; Teamadministration erforderlich
+      summary: Mitgliedschaft oder Einladung widerrufen; Teamadministration erforderlich, außer für die eigene Mitgliedschaft (Team verlassen, Einladung ablehnen; nicht die Gründung)
       operationId: deleteTeamsTeamidMembersUserid
       responses:
         '204':

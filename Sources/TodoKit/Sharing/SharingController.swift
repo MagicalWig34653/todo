@@ -128,7 +128,16 @@ struct SharingController: RouteCollection {
     @Sendable func removeMember(_ req: Request) async throws -> HTTPStatus {
         let tid = try id(req, "teamID"), uid = try id(req, "userID")
         return try await write(req) { access in
-            let team = try await access.requireTeam(tid, admin: true)
+            // Everyone may withdraw their own membership (leave a team, decline an invitation); others need team admin.
+            let team: Team
+            if uid == (try access.user.requireID()) {
+                guard let own = try await Team.find(tid, on: access.db),
+                    try await TeamMembership.query(on: access.db).filter(\.$teamID == tid).filter(\.$userID == uid).first() != nil
+                else { throw Abort(.notFound) }
+                team = own
+            } else {
+                team = try await access.requireTeam(tid, admin: true)
+            }
             guard uid != team.founderID else { throw Abort(.conflict, reason: "team_founder_required") }
             guard let member = try await TeamMembership.query(on: access.db).filter(\.$teamID == tid)
                 .filter(\.$userID == uid).first() else { throw Abort(.notFound) }

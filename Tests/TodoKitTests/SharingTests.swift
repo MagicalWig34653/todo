@@ -220,6 +220,42 @@ final class SharingTests: XCTestCase {
         XCTAssertFalse(teamList.list?.contains { $0["id"] as? String == personal } ?? true)
     }
 
+    func testProjectListShowsRoleAndOwnerAndMembersMayWithdrawThemselves() async throws {
+        let t = try await make()
+        defer { Task { await t.shutdown() } }
+        let owner = try await account(t), guest = try await account(t)
+        let pid = try await project(t, owner.token)
+        try await grant(t, owner.token, pid, guest.id, role: "comment")
+        let mine = try await t.json(.GET, "/v1/projects", token: owner.token)
+        let own = try XCTUnwrap(mine.list?.first { $0["id"] as? String == pid })
+        XCTAssertEqual(own["role"] as? String, "manage")
+        XCTAssertEqual(own["isOwner"] as? Bool, true)
+        XCTAssertEqual(own["ownerType"] as? String, "person")
+        XCTAssertEqual(own["ownerID"] as? String, owner.id)
+        XCTAssertEqual(own["ownerName"] as? String, "Test")
+        let theirs = try await t.json(.GET, "/v1/projects", token: guest.token)
+        let shared = try XCTUnwrap(theirs.list?.first { $0["id"] as? String == pid })
+        XCTAssertEqual(shared["role"] as? String, "comment")
+        XCTAssertEqual(shared["isOwner"] as? Bool, false)
+        XCTAssertEqual(shared["ownerID"] as? String, owner.id)
+        // Declining an invitation and leaving a team need no team administration.
+        let team = try await t.json(.POST, "/v1/teams", ["name": "Team"], token: owner.token)
+        let tid = try XCTUnwrap(team.body?["id"] as? String)
+        _ = try await t.json(.PUT, "/v1/teams/\(tid)/members", ["userID": guest.id, "isAdmin": false], token: owner.token)
+        let decline = try await t.json(.DELETE, "/v1/teams/\(tid)/members/\(guest.id)", token: guest.token)
+        XCTAssertEqual(decline.status, .noContent)
+        let none = try await t.json(.GET, "/v1/team-invitations", token: guest.token)
+        XCTAssertEqual(none.list?.count, 0)
+        _ = try await t.json(.PUT, "/v1/teams/\(tid)/members", ["userID": guest.id, "isAdmin": false], token: owner.token)
+        _ = try await t.json(.POST, "/v1/teams/\(tid)/accept", token: guest.token)
+        let leave = try await t.json(.DELETE, "/v1/teams/\(tid)/members/\(guest.id)", token: guest.token)
+        XCTAssertEqual(leave.status, .noContent)
+        let founderLeave = try await t.json(.DELETE, "/v1/teams/\(tid)/members/\(owner.id)", token: owner.token)
+        XCTAssertEqual(founderLeave.status, .conflict)
+        let stranger = try await t.json(.DELETE, "/v1/teams/\(tid)/members/\(guest.id)", token: guest.token)
+        XCTAssertEqual(stranger.status, .notFound)
+    }
+
     func testOwnershipTransferRemovesCreatorAccessAndProtectsSubtree() async throws {
         let t = try await make()
         defer { Task { await t.shutdown() } }

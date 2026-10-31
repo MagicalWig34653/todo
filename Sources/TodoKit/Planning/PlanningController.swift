@@ -17,6 +17,13 @@ struct ProjectDTO: Content {
     /// Per-viewer favourite flag and its order among the viewer's favourites.
     var isFavorite: Bool = false
     var favoritePosition: Int? = nil
+    /// Viewer-specific access summary (contracts/sharing.yaml): effective role, whether the viewer owns the project
+    /// and who does. Only set where the viewer is known (`ProjectAccess.dto`).
+    var role: ProjectRole? = nil
+    var isOwner: Bool? = nil
+    var ownerType: String? = nil
+    var ownerID: UUID? = nil
+    var ownerName: String? = nil
 
     init(_ p: Project) throws {
         id = try p.requireID()
@@ -153,6 +160,16 @@ struct ProjectAccess {
         result.position = state?.orderPosition
         result.isFavorite = state?.isFavorite ?? false
         result.favoritePosition = state?.isFavorite == true ? state?.favoritePosition : nil
+        let access = SharingAccess(user: user, db: db)
+        let visibility = try await access.visibility(project)
+        let ownerRow = try await ProjectSharing.query(on: db).filter(\.$projectID == id).first()
+        let ownerType = ownerRow?.ownerType ?? "person"
+        let ownerID = ownerRow?.ownerID ?? project.ownerID
+        result.role = visibility.role
+        result.isOwner = visibility.canTransferOwnership
+        result.ownerType = ownerType
+        result.ownerID = ownerID
+        result.ownerName = ownerType == "team" ? try await Team.find(ownerID, on: db)?.name : try await User.find(ownerID, on: db)?.displayName
         return result
     }
 
