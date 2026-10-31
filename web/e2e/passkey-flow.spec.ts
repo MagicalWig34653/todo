@@ -1300,6 +1300,12 @@ test('sync freshness chips, threshold edit, agent revoke/stop UI', async () => {
 	await openProject('Küche');
 	await page.getByTestId('project-tab-overview').click();
 	await expect(page.getByTestId('cc-sync-head').getByTestId('sync-chip')).toHaveAttribute('data-state', 'never');
+	// The threshold can only be saved for a bound project (400 repository_required otherwise).
+	const bound = await page.request.put(`/v1/projects/${kitchen.id}/sync`, {
+		headers,
+		data: { repository: 'github.com/example/kueche' }
+	});
+	expect(bound.ok()).toBeTruthy();
 	await page.getByTestId('cc-sync-toggle').click();
 	await expect(page.getByTestId('sync-detail')).toBeVisible();
 	await page.getByTestId('sync-threshold').fill('0');

@@ -25,6 +25,15 @@ final class LiveRefreshTests: XCTestCase {
         XCTAssertTrue((200..<300).contains(Int(r.status.code)), "\(type): \(r.status)")
     }
 
+    /// Deterministic sync: blocks until the hub has registered `count` waiters (bounded, fails otherwise).
+    private func waitForWaiters(_ t: TestApp, _ count: Int) async throws {
+        for _ in 0..<500 {
+            if await t.app.liveHub.waiterCount >= count { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("waiters not registered")
+    }
+
     func testHeadAuthEtagAndCapabilities() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
@@ -111,7 +120,7 @@ final class LiveRefreshTests: XCTestCase {
         let cur = try await token(t, a.token)
         async let w1 = t.json(.GET, "/v1/sync/wait?since=\(cur)&timeout=10", token: a.token)
         async let w2 = t.json(.GET, "/v1/sync/wait?since=\(cur)&timeout=10", token: b.token)
-        try await Task.sleep(nanoseconds: 400_000_000)
+        try await waitForWaiters(t, 2)
         // The write goes through the other app instance (own hub, own connection pool, same database).
         try await mutate(other, b.token, "project.create", id: UUID().uuidString, ["name": "X"])
         let (r1, r2) = try await (w1, w2)
@@ -129,7 +138,7 @@ final class LiveRefreshTests: XCTestCase {
         let a = try await account(t)
         let cur = try await token(t, a.token)
         async let first = t.json(.GET, "/v1/sync/wait?since=\(cur)&timeout=10", token: a.token)
-        try await Task.sleep(nanoseconds: 300_000_000)
+        try await waitForWaiters(t, 1)
         let second = try await t.json(.GET, "/v1/sync/wait?since=\(cur)&timeout=1", token: a.token)
         XCTAssertEqual(second.status, .tooManyRequests)
         try await UserSession.query(on: t.app.db).delete()
