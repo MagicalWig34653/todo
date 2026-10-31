@@ -186,3 +186,17 @@ Ungültige Werte verhindern den Start. Beide Variablen stehen in `deploy/swarm/s
 - **Deaktivieren:** `CLEANUP_INTERVAL_MINUTES=0` und neu deployen. Rein die Sync-Aufbewahrung abschalten: `SYNC_RETENTION_DAYS=0`.
 - **Manuell:** `App cleanup-expired [--sync-retention-days N] [--grace-seconds N] [--batch-size N]` (Standardwerte aus der Umgebung); parallel zu laufenden Replikaten gefahrlos.
 - **Konto löschen:** `App delete-account <user-id> --yes` (kein Selbstbedienungsweg). Andere Konten erhalten Tombstones für alles, was sie dadurch nicht mehr sehen; gelingt etwas nicht (z. B. Agentendaten), wird alles zurückgerollt. Vorher sichern.
+
+## Push-Benachrichtigungen (APNs, 31.10.2026, ADR 0021)
+
+Optional und standardmäßig aus. Schritt-für-Schritt-Anleitung (Developer Portal, Docker-Secret, Test, Fehlersuche, Schlüsselrotation): `docs/PUSH-EINRICHTUNG.md` (liegt nur auf `main`, nicht auf dem `deploy`-Branch).
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `APNS_ENABLED` | `false` | `true` schaltet Registrierung mit Themenprüfung und den Sende-Worker ein; dann sind Schlüssel, Key-ID und Team-ID Pflicht, sonst bricht der Start ab. |
+| `APNS_KEY_FILE` | - | Pfad zur `.p8`-Datei; im Stack immer `/run/secrets/apns_key` (Docker-Secret `todo_apns_key`, Name über `APNS_KEY_SECRET`). |
+| `APNS_KEY_ID`, `APNS_TEAM_ID` | - | je 10 Zeichen A-Z0-9, kein Standardwert. |
+| `APNS_TOPIC` | `de.linolaske.todo` | Erlaubte Bundle-IDs (kommagetrennt); die erste ist Standard. |
+| `APNS_ENVIRONMENT` | `production` | Standard für Geräte ohne Umgebungsangabe (`sandbox` oder `production`); jedes Gerät meldet seine eigene. |
+
+`scripts/swarm-deploy.sh` bindet bei `APNS_ENABLED=true` das Overlay `deploy/swarm/stack.push.yaml` ein (Secret, Variablen); `setup.sh` fragt „Push aktivieren?“ und legt das Secret aus dem `.p8`-Pfad an. Bestehende Env-Dateien ohne APNs-Variablen laufen unverändert. Migration: neue Tabellen `push_devices`, `push_prefs`, `push_outbox` (additiv). Prüfen: `GET /health/ready` zeigt informativ `push {enabled, environment}`; Test: `docker exec -it <backend-container> todo-app push-test <konto-id> --yes`. Der Worker läuft auf allen Replikaten, sendet aber per Lease (`maintenance_leases`, Name `push-worker`) nur auf einer. Abgearbeitete Outbox-Zeilen werden nach 3 Tagen, widerrufene Geräte nach 30 Tagen gelöscht. Echter Versand an Apple ist bisher nicht geprüft.

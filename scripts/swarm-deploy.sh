@@ -23,6 +23,8 @@ image=${BACKEND_IMAGE:-ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-ed
 compose_args=(-c stack.yaml)
 # Optional S3 attachment storage: only when S3_ENDPOINT is set (needs the S3 secrets, see stack.s3.yaml).
 if [[ -n "${S3_ENDPOINT:-}" ]]; then compose_args+=(-c stack.s3.yaml); fi
+# Optional APNs push: only when APNS_ENABLED=true (needs the apns_key secret, see stack.push.yaml).
+if [[ "${APNS_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.push.yaml); fi
 for f in ${STACK_EXTRA_FILES:-}; do compose_args+=(-c "$f"); done
 # The DB is external: the one-shot migration below fails (without retry) if the DB is unreachable.
 # Required: DB_HOST and the external secrets (see deploy/swarm/stack.env.example). S3 is optional.
