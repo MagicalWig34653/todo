@@ -17,6 +17,19 @@ const ctx = await browser.newContext({ baseURL: BASE, viewport: DESKTOP, locale:
 const page = await ctx.newPage();
 page.setDefaultTimeout(15000);
 
+// Neue Projekte sind im Modus "Klassisch"; Kriterien, Abhängigkeiten und Überblick gibt es nur im Projektmanagement-Modus.
+// Bis zur Gegenüberstellung unten meldet der Mock jedes Projekt als `management` (wie e2e/passkey-flow.spec.ts).
+let forceManagement = true;
+await page.route('**/v1/me/project-prefs*', async (route) => {
+	if (!forceManagement || route.request().method() !== 'GET') return route.continue();
+	const res = await route.fetch();
+	const body = await res.json();
+	const fix = (p) => Object.assign(p, { mode: 'management' });
+	if (Array.isArray(body.items)) body.items.forEach(fix);
+	else fix(body);
+	await route.fulfill({ response: res, json: body });
+});
+
 const cdp = await ctx.newCDPSession(page);
 await cdp.send('WebAuthn.enable');
 await cdp.send('WebAuthn.addVirtualAuthenticator', {
@@ -192,6 +205,20 @@ await put('Gewürzregal sortieren', 'Ideen');
 await put('Wocheneinkauf erledigen', 'Geplant');
 await put('Backofen reinigen', 'In Arbeit');
 await put('Spülmaschine ausräumen', 'Erledigt');
+// Für-dich-Feed: Rückfragen und Fortschritt an Aufgaben (Demo-Daten, über die Nutzer-API angelegt)
+const byTitle = (title) => kTasks.find((x) => x.title === title);
+await apiJSON('POST', `/tasks/${byTitle('Backofen reinigen').id}/questions`, {
+	prompt: 'Soll ich den Backofen mit Backofenreiniger oder per Dampfreiniger säubern?',
+	options: ['Backofenreiniger', 'Dampfreiniger'],
+	blocking: true
+});
+await apiJSON('POST', `/tasks/${byTitle('Neue Kaffeemaschine vergleichen').id}/questions`, {
+	prompt: 'Welches Budget gilt für die neue Kaffeemaschine?',
+	options: ['bis 150 Euro', 'bis 300 Euro', 'egal'],
+	blocking: false
+});
+await apiJSON('POST', `/tasks/${byTitle('Backofen reinigen').id}/progress-notes`, { note: 'Bleche eingeweicht, Innenraum ist als Nächstes dran.', percent: 40 });
+await apiJSON('POST', `/tasks/${byTitle('Gewürzregal sortieren').id}/progress-notes`, { note: 'Erste zwei Regalböden sind sortiert und beschriftet.', percent: 60 });
 await page.reload();
 await open('Küche');
 await page.getByTestId('project-description').fill('Alles rund um die Küche: Einkauf, Reinigung und Anschaffungen.');
@@ -272,6 +299,38 @@ await page.getByText('Zugriff erlauben?').first().waitFor();
 await page.getByLabel('Website-Relaunch').check().catch(() => {});
 await shot('zustimmung');
 
+// Für dich (Startansicht), hell und dunkel
+await page.goto('/');
+await page.getByTestId('needs-card').first().waitFor();
+await page.getByTestId('post-card').first().waitFor();
+await page.setViewportSize({ width: 1360, height: 1400 });
+await shot('fuer-dich');
+await page.emulateMedia({ colorScheme: 'dark' });
+await page.waitForTimeout(500);
+await shot('fuer-dich-dunkel');
+await page.emulateMedia({ colorScheme: 'light' });
+await page.waitForTimeout(300);
+await desktop();
+
+// Projektansicht: Klassisch (nur Aufgaben) gegenüber Projektmanagement (Reiter, Meilensteine, Überblick)
+forceManagement = false;
+await page.reload();
+await open('Küche');
+await setView('Liste');
+await page.getByTestId('task-item').filter({ hasText: 'Wocheneinkauf erledigen' }).waitFor();
+await shot('projekt-klassisch');
+await page.getByTestId('display-menu').click();
+await page.getByTestId('mode-management').click();
+await page.keyboard.press('Escape');
+await page.getByTestId('project-tabs').waitFor();
+await shot('projekt-management');
+await page.getByTestId('display-menu').click();
+await page.getByTestId('mode-classic').click();
+await page.keyboard.press('Escape');
+await page.getByTestId('project-tabs').waitFor({ state: 'detached' });
+forceManagement = true;
+await page.reload();
+
 // Konto
 await page.goto('/');
 await nav('Konto');
@@ -307,5 +366,17 @@ for (const [name, file] of [['Heute', 'heute-mobil'], ['Suche', 'suche-mobil'], 
 	}
 	await shot(file);
 }
+
+// Mobil: Für dich als erster Tab und geöffnetes Menü innerhalb des Viewports
+await page.goto('/');
+await page.getByTestId('needs-card').first().waitFor();
+await shot('fuer-dich-mobil');
+await menu.click();
+await drawer.getByTestId('project-item').getByRole('button', { name: 'Küche', exact: true }).first().click();
+await page.getByTestId('task-heading').filter({ hasText: 'Küche' }).waitFor();
+await page.getByTestId('display-menu').click();
+await page.getByRole('dialog', { name: 'Anzeige' }).waitFor();
+await shot('menue-mobil');
+await page.keyboard.press('Escape');
 
 await browser.close();

@@ -367,6 +367,14 @@ const shots = {
     ['darstellung-dunkel', 'Darstellung (dunkel)'],
     ['login', 'Anmeldung per Passkey'],
   ],
+  fuerdich: [
+    ['fuer-dich', 'Für dich (Startansicht): „Braucht dich“ mit Rückfragen und Fristen, darunter Neuigkeiten mit Fortschritt'],
+    ['fuer-dich-dunkel', 'Für dich im dunklen Design'],
+  ],
+  modi: [
+    ['projekt-klassisch', 'Projekt im Modus „Klassisch“: reine Aufgabenliste'],
+    ['projekt-management', 'Projekt im Modus „Projektmanagement“: zusätzlich Reiter und Überblick'],
+  ],
   agents: [
     ['ueberblick-kanban', 'Steuerzentrale: Kanban mit Läuft, Frage offen, Review fällig'],
     ['ueberblick-fragen', 'Offene Fragen der Agenten direkt beantworten (dunkles Design)'],
@@ -382,6 +390,7 @@ const shots = {
     ['ueberblick-mobil', 'Steuerzentrale'], ['aufgaben-mobil', 'Aufgabenliste'], ['board-mobil', 'Board'], ['aufgabendetail-mobil', 'Aufgabendetail'],
     ['heute-mobil', 'Heute'], ['projekte-mobil', 'Projektnavigation'], ['suche-mobil', 'Suche'],
     ['teams-mobil', 'Teams'], ['konto-mobil', 'Konto'], ['login-mobil', 'Anmeldung'],
+    ['fuer-dich-mobil', 'Für dich (erster Tab)'], ['menue-mobil', 'Anzeige-Menü bleibt im Viewport'],
   ],
   ios: [
     ['ios-heute', 'Heute'], ['ios-anstehend', 'Anstehend'], ['ios-projekt', 'Projekt'],
@@ -398,6 +407,8 @@ function renderShots(page) {
   const g = (list, cls) => `<div class="shots ${cls}">${list.map((s) => fig('', s)).join('')}</div>`;
   const body = `<article class="doc"><h1>Screenshots</h1><p>Echte Aufnahmen mit Demo-Daten: PWA (Chromium mit virtuellem Passkey) und native Apps (Simulator).</p>
 <h2 id="pwa-desktop">PWA am Desktop</h2>${g(shots.desktop, 'wideshots')}
+<h2 id="fuer-dich">Für dich</h2><p>Die Startansicht (<code>/</code> öffnet <code>/fuer-dich</code>): was dich braucht und was in deinen Projekten passiert.</p>${g(shots.fuerdich, 'wideshots')}
+<h2 id="modi">Klassisch und Projektmanagement</h2><p>Je Projekt wählbar über „Anzeige“.</p>${g(shots.modi, 'wideshots')}
 <h2 id="steuerzentrale">Steuerzentrale und Agenten (PWA)</h2><p>Mehr dazu unter <a href="steuerzentrale.html">Steuerzentrale und Agenten-Kanban</a>.</p>${g(shots.agents, 'wideshots')}
 <h2 id="pwa-mobil">PWA auf dem Smartphone</h2>${g(shots.mobil, 'phone')}
 <h2 id="iphone">iPhone (SwiftUI)</h2>${g(shots.ios, 'phone')}

@@ -193,7 +193,7 @@ test('quick add: Q opens, chips appear live, Enter keeps the field open, Esc clo
 test('url routing: reload keeps the view, deep link, back button, unknown ids', async () => {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/');
-	await expect(page).toHaveURL(/\/heute$/);
+	await expect(page).toHaveURL(/\/fuer-dich$/);
 	await page.getByTestId('project-item').getByRole('button', { name: 'Menüprojekt', exact: true }).first().click();
 	await expect(page).toHaveURL(/\/projekt\/[0-9A-Fa-f-]+\/(liste|board)$/);
 	await page.getByTestId('display-menu').click();
