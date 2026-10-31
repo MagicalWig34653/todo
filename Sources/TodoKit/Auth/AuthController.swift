@@ -8,6 +8,8 @@ struct CapabilitiesResponse: Content {
     let bootstrapOpen: Bool
     /// Additive (ADR 0022); absent on older servers or when LIVE_REFRESH_ENABLED=false.
     var liveRefresh: LiveRefreshCapability? = nil
+    /// Additive (ADR 0023): `GET /v1/feed` ("Für dich") exists.
+    var feed: Bool = true
 }
 
 struct RegisterBeginRequest: Content {

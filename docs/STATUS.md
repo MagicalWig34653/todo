@@ -76,6 +76,10 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 
 Ergebnis in `docs/PUSH-AN-CLAUDE-CODE.md`: Remote-HTTP-MCP kann nach heutigem Beleg nicht allein wecken; Channels (stdio, Research Preview) und Monitor/asyncRewake/Stop-Hook sind die belegten Wege. Empfehlung: zuerst MCP-Tool `wait_for_events` (auf LiveHub), dann Stop-Hook-Warten, dann Spike Wecker-Token/Monitor/Channel; Resource-Subscriptions nicht bauen. Noch nichts implementiert.
 
+## Checkpoint 31.10.2026 (Feed "Für dich", ADR 0023, Etappe 1 Backend)
+
+**Gebaut (`Sources/TodoKit/Feed/`):** `GET /v1/feed?cursor&limit&projectID&mode=all|classic|management` mit `needsYou` (max. 10, Aktionen auf bestehenden Endpunkten) und `posts` (Fortschritt, Build-Screenshots mit previewURL, Erledigt, Review, beantwortete Frage, Kommentar, Agentenlauf), exakter (createdAt,id)-Cursor, `capabilities.feed`. Vertrag `contracts/feed.yaml`, keine Migration. **Geprüft:** `FeedTests` (SQLite, 5 Tests: Auth/Parameter, Fremdes/Bilder, Reihenfolge/Cap/Aktionen, Cursor ohne Verlust bei gleichen Zeitstempeln, Filter/Klassisch), volle Suite 0 Fehler. **Ungeprüft:** MariaDB. **Nächster Schritt:** Etappe 2 Apple (erster Tab), Etappe 3 PWA nach Push des PWA-Agenten (web/ hat fremde uncommittete Änderungen).
+
 ## Checkpoint 31.10.2026 (Live-Refresh, ADR 0022)
 
 **Gebaut (`Sources/TodoKit/Live/`):** `GET /v1/sync/head` (cursor+token, ETag/304), `GET /v1/sync/wait` (Long-Poll, 429-Limits, Sitzungswiderruf -> 401, Shutdown `retryAfter`), `live_events` (Insert-only Hinweislog, Middleware auf Kommentare/Fragen/Reviews/Fortschritt/Anhänge/Agenten u. a.), `LiveHub` je Replika, `capabilities.liveRefresh`. Vertrag `contracts/live-refresh.yaml`, Betrieb BETRIEB.md. **Geprüft:** `LiveRefreshTests` (SQLite, 6 Tests: Auth/304/Capability, Token steigt bei Task/Planung/Kommentar/Frage/Fortschritt/Review, Timeout, Wake über zweite App-Instanz, Limit, Widerruf, Deaktivierung), volle Suite grün. **Ungeprüft:** MariaDB, Zoraxy/Mesh real, Last. **Nächster Schritt:** PWA/Apple-Clients binden `wait` an (Anleitung im Bericht/ADR 0022), Rollout mit `migrate`.

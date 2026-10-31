@@ -32,6 +32,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: ProjectSyncController())
     try app.register(collection: PushController())
     try app.register(collection: LiveController())
+    try app.register(collection: FeedController())
     // Apple app-site-association for passkeys in native apps: public, no redirect, JSON.
     for path in [[".well-known", "apple-app-site-association"], ["apple-app-site-association"]] {
         app.get(path.map { PathComponent(stringLiteral: $0) }) { req async throws -> Response in

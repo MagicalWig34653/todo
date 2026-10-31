@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: Todolino Feed "Für dich"
+  version: 1.0.0
+  description: 'ADR 0023. Kontoweite Startansicht: oben needsYou (was dich braucht, höchstens 10, mit direkt ausführbaren Aktionen auf bestehenden
+    Endpunkten), darunter posts (chronologisch, neueste zuerst). Reine Lesesicht über bestehende Tabellen (activity_events, task_progress_notes,
+    task_questions, task_reviews, build_artifacts, attachments, comments, task_workflow, task_planning); keine Migration. Rechte wie überall:
+    nur sichtbare Projekte (inkl. Teilprojekte), unsichtbares projectID = 404, Bilder nur lesbarer Aufgaben. Fähigkeit: GET /v1/capabilities.feed=true.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/feed:
+    get:
+      operationId: getFeed
+      summary: Feed "Für dich" (needsYou + posts)
+      description: 'Query: cursor (opak, aus nextCursor), limit (1..100, Standard 30), projectID (inkl. Teilprojekte), mode=all|classic|management
+        (all = management). classic: posts nur comment und done, needsYou nur fällig/überfällig; keine Agent-Posts, Fragen, Reviews. Antwort
+        {generatedAt, mode, projectID, needsYou[], needsYouTotal, posts[], nextCursor}. needsYou (nur ohne cursor, sonst []): Elemente
+        {id, kind=question|review|blocked|overdue|due, projectID, projectName, taskID, taskTitle, taskVersion, title, detail, options[], blocking,
+        questionID, reviewID, dueAt, actor, createdAt, actions[]}. Reihenfolge: blockierende Fragen, Fragen, Reviews, blockierte Aufgaben, überfällig,
+        fällig (innerhalb 24 h, nur eigene Aufgaben; es gibt noch keine Zuweisung). Fragen: Rolle >= comment, nicht die eigene; Reviews: Rolle >= edit,
+        benannter Reviewer nur er, nicht die eigene Anforderung; blockiert: Rolle >= edit. action {key, label, method, path, body, requiresInput,
+        inputField}: body unverändert an path senden (bei requiresInput den Text in body[inputField] ergänzen). answer -> POST /v1/questions/{id}/answer
+        {answer}; accept/request_changes -> POST /v1/tasks/{id}/review/decision {decision, note?}; complete -> PATCH /v1/tasks/{id} {status:done, version}.
+        posts[]: {id (Aktivitätsereignis), kind=progress|build|done|review|question|comment|agent_run, event, state, projectID, projectName, taskID,
+        taskTitle, actor{type,id,name}, text, detail, percent, images[], createdAt}. images[]: {attachmentID, buildArtifactID, filename, mediaType,
+        previewURL (/v1/attachments/{id}/preview, authentifiziert), buildID, label, platform}; Screenshots derselben Build-ID einer Aufgabe werden innerhalb
+        einer Seite zu einem Post zusammengefasst. Sortierung (createdAt, id) absteigend, total. Cursor: exakt (Bitmuster des Zeitstempels + Ereignis-ID),
+        daher keine Rundungsfehler; Datenbank schränkt nur grob (+1 s Toleranz) ein, genaue Grenze und Gleichstandsreihenfolge werden auf den geladenen Werten
+        entschieden. Eine Seite kann weniger als limit Posts haben (ausgeblendete Ereignisse); nextCursor=null beendet den Feed. Der Feed ändert sich
+        mit dem Live-Token (live-refresh.yaml): bei Änderung Seite 1 neu holen.'
+      parameters:
+      - {name: cursor, in: query, schema: {type: string}}
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 30}}
+      - {name: projectID, in: query, schema: {type: string, format: uuid}}
+      - {name: mode, in: query, schema: {type: string, enum: [all, classic, management]}}
+      responses:
+        '200': {description: FeedResponse}
+        '400': {description: invalid_mode, invalid_limit, invalid_cursor, invalid_projectID}
+        '401': {description: nicht angemeldet}
+        '404': {description: projectID unsichtbar oder unbekannt}
