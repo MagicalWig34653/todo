@@ -1,4 +1,5 @@
 import type { AuthenticationPayload, CreationOptionsJSON, RegistrationPayload, RequestOptionsJSON } from './webauthn.js';
+import type { ForYouPage } from './forYou.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -755,6 +756,9 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<ProjectComment>('PATCH', `/projects/${c.projectID}/comments/${c.id}`, { body, version: c.version }),
 		deleteProjectComment: (c: ProjectComment) =>
 			request<void>('DELETE', `/projects/${c.projectID}/comments/${c.id}`, { version: c.version }),
+		forYou: (params: { cursor?: string | null; limit?: number; projectID?: string; mode?: string } = {}) =>
+			request<ForYouPage>('GET', `/feed${query(params)}`),
+		performAction: (method: string, path: string, body: unknown) => request<unknown>(method, path, body),
 		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<FeedPage>('GET', `/activity${query({ projectID: params.projectID, before: params.before, limit: params.limit })}`),
 

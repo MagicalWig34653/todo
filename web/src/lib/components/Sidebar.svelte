@@ -1,6 +1,7 @@
 <script lang="ts" module>
 export type View =
 	| 'project'
+	| 'forYou'
 	| 'inbox'
 	| 'overview'
 	| 'today'
@@ -49,6 +50,7 @@ export type View =
 	import UserRound from '@lucide/svelte/icons/user-round';
 	import Bot from '@lucide/svelte/icons/bot';
 	import Gauge from '@lucide/svelte/icons/gauge';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Activity from '@lucide/svelte/icons/activity';
 	import X from '@lucide/svelte/icons/x';
 
@@ -240,6 +242,7 @@ export type View =
 		</button>
 
 		<ul class="flex flex-col gap-0.5" aria-label={t('nav.views')}>
+			{@render navRow('forYou', Sparkles, t('nav.forYou'), workspace.attentionCount)}
 			{@render navRow('search', Search, t('nav.search'))}
 			{@render navRow('overview', Gauge, t('nav.overview'), workspace.attentionCount)}
 			{@render navRow('inbox', Inbox, t('nav.inbox'), workspace.inboxCount)}

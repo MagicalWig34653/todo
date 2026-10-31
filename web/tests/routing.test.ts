@@ -7,7 +7,8 @@ describe('routing', () => {
 		for (const p of ['/heute', '/eingang', '/anstehend', '/suche', '/ueberblick', '/aktivitaet', '/agenten', '/teams', '/filter', '/konto']) {
 			expect(buildPath(parseRoute(p))).toBe(p);
 		}
-		expect(parseRoute('/')).toEqual({ view: 'today' });
+		expect(parseRoute('/')).toEqual({ view: 'forYou' });
+		expect(parseRoute('/fuer-dich')).toEqual({ view: 'forYou' });
 	});
 	it('project with sub path and task query', () => {
 		const r = parseRoute(`/projekt/${id}/board`, `?task=${id}`);

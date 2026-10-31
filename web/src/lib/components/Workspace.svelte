@@ -19,12 +19,14 @@
 	import FiltersLabelsView from './FiltersLabelsView.svelte';
 	import AgentsView from './AgentsView.svelte';
 	import CommandCenter from './CommandCenter.svelte';
+	import ForYouView from './ForYouView.svelte';
 	import ActivityView from './ActivityView.svelte';
 	import PlanningView from './PlanningView.svelte';
 	import SearchView from './SearchView.svelte';
 	import TeamsView from './TeamsView.svelte';
 	import SharingPanel from './SharingPanel.svelte';
 	import AccountView from './AccountView.svelte';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import CalendarCheck from '@lucide/svelte/icons/calendar-check';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
@@ -35,7 +37,7 @@
 
 	type Icon = Component<{ class?: string; 'aria-hidden'?: 'true' | boolean }>;
 
-	let view = $state<View | 'notfound'>('today');
+	let view = $state<View | 'notfound'>('forYou');
 	let routeSub = $state<ProjectSub | undefined>();
 	let routeTask = $state<string | undefined>();
 	let routeArea = $state<string | undefined>();
@@ -71,7 +73,7 @@
 		drawerOpen = false;
 	}
 	const currentRoute = (): Route => ({
-		view: view === 'notfound' ? 'today' : view,
+		view: view === 'notfound' ? 'forYou' : view,
 		projectID: view === 'project' ? (selectedID ?? undefined) : undefined,
 		sub: view === 'project' ? routeSub : undefined,
 		taskID: routeTask,
@@ -134,6 +136,14 @@
 		drawerOpen = false;
 		syncUrl(true);
 	}
+	function openTask(projectID: string, taskID: string) {
+		selectedID = projectID;
+		view = 'project';
+		routeSub = undefined;
+		routeTask = taskID;
+		drawerOpen = false;
+		syncUrl(true);
+	}
 	function openSearch(initial: { labelID?: string; filterID?: string }) {
 		searchInitial = initial;
 		searchKey++;
@@ -188,7 +198,7 @@
 		></button>
 	{/if}
 
-	<Sidebar view={view === 'notfound' ? 'today' : view} {selectedID} {drawerOpen} onview={go} onproject={openProject} onshare={share} onclose={() => (drawerOpen = false)} />
+	<Sidebar view={view === 'notfound' ? 'forYou' : view} {selectedID} {drawerOpen} onview={go} onproject={openProject} onshare={share} onclose={() => (drawerOpen = false)} />
 
 	<div class={['flex min-h-dvh min-w-0 flex-col', !ui.sidebarCollapsed && 'menu:pl-72']}>
 		<header class="bg-background/85 sticky top-0 z-20 flex h-12 items-center gap-1 border-b px-3 backdrop-blur menu:px-5">
@@ -251,7 +261,9 @@
 				</div>
 			{:else}
 				<div class={['mx-auto', view === 'overview' ? 'max-w-none' : 'max-w-4xl']}>
-					{#if view === 'today' || view === 'upcoming' || view === 'upNext'}
+					{#if view === 'forYou'}
+						<ForYouView onopen={openTask} />
+					{:else if view === 'today' || view === 'upcoming' || view === 'upNext'}
 						<PlanningView mode={view} />
 					{:else if view === 'overview'}
 						<CommandCenter />
@@ -288,9 +300,10 @@
 	</button>
 
 	<nav
-		class="bg-background/95 fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur menu:hidden"
+		class="bg-background/95 fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur menu:hidden"
 		aria-label={t('nav.main')}
 	>
+		{@render tabButton(t('nav.forYou'), Sparkles, view === 'forYou', () => go('forYou'))}
 		{@render tabButton(t('nav.today'), CalendarCheck, view === 'today', () => go('today'))}
 		{@render tabButton(t('nav.upcoming'), CalendarClock, view === 'upcoming', () => go('upcoming'))}
 		{@render tabButton(t('nav.search'), Search, view === 'search', () => go('search'))}

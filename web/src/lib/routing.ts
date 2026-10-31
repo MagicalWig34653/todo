@@ -1,6 +1,6 @@
 /** Pure URL <-> view mapping for the PWA (stable, shareable paths). */
 export type RouteView =
-	| 'project' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account';
+	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account';
 
 export type ProjectSub = 'liste' | 'board' | 'ueberblick' | 'kommentare';
 
@@ -16,11 +16,11 @@ export interface Route {
 }
 
 const SIMPLE: Record<string, RouteView> = {
-	heute: 'today', eingang: 'inbox', anstehend: 'upcoming', 'als-naechstes': 'upNext', suche: 'search',
+	'fuer-dich': 'forYou', heute: 'today', eingang: 'inbox', anstehend: 'upcoming', 'als-naechstes': 'upNext', suche: 'search',
 	ueberblick: 'overview', aktivitaet: 'activity', agenten: 'agents', teams: 'teams'
 };
 const PATH_OF: Partial<Record<RouteView, string>> = {
-	today: '/heute', inbox: '/eingang', upcoming: '/anstehend', upNext: '/als-naechstes', search: '/suche',
+	forYou: '/fuer-dich', today: '/heute', inbox: '/eingang', upcoming: '/anstehend', upNext: '/als-naechstes', search: '/suche',
 	overview: '/ueberblick', activity: '/aktivitaet', agents: '/agenten', teams: '/teams', filters: '/filter', account: '/konto'
 };
 const SUBS: ProjectSub[] = ['liste', 'board', 'ueberblick', 'kommentare'];
@@ -32,7 +32,7 @@ export function parseRoute(pathname: string, search = ''): Route {
 	const taskParam = q.get('task');
 	const taskID = taskParam && ID.test(taskParam) ? taskParam : undefined;
 	if (seg.includes('\0')) return { view: 'notfound' };
-	if (seg.length === 0) return { view: 'today' };
+	if (seg.length === 0) return { view: 'forYou' };
 	const [a, b, c] = seg;
 	if (seg.length === 1 && SIMPLE[a]) return { view: SIMPLE[a] };
 	if (a === 'projekt' && b && ID.test(b) && seg.length <= 3) {
@@ -58,7 +58,7 @@ export function buildPath(r: Route): string {
 }
 
 export const ROUTE_TITLES: Record<RouteView | 'notfound', string> = {
-	project: 'Projekt', inbox: 'Eingang', overview: 'Überblick', today: 'Heute', upcoming: 'Anstehend', upNext: 'Als Nächstes',
+	project: 'Projekt', forYou: 'Für dich', inbox: 'Eingang', overview: 'Überblick', today: 'Heute', upcoming: 'Anstehend', upNext: 'Als Nächstes',
 	search: 'Suche', filters: 'Filter und Labels', teams: 'Teams', agents: 'Agenten', activity: 'Aktivität', account: 'Konto', notfound: 'Nicht gefunden'
 };
 
