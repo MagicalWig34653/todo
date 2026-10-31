@@ -1,0 +1,25 @@
+version: '3.8'
+# Optional overlay: outgoing e-mail (recovery code delivery, address confirmation, test mail; ADR 0024,
+# docs/MAIL-EINRICHTUNG.md). scripts/swarm-deploy.sh adds this file automatically when MAIL_ENABLED=true is set in the env file.
+# Needs the external Swarm secret todo_smtp_password (the password of the SMTP account; name via SMTP_PASSWORD_SECRET):
+#   printf '%s' 'the-smtp-password' | docker secret create todo_smtp_password -
+# The password is mounted as a file (/run/secrets/smtp_password) and never appears in the image, the env file or the repository.
+x-mail: &mail
+  environment:
+    MAIL_ENABLED: 'true'
+    SMTP_HOST: ${SMTP_HOST:?SMTP_HOST required}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+    SMTP_USER: ${SMTP_USER:?SMTP_USER required}
+    SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+    MAIL_FROM: ${MAIL_FROM:?MAIL_FROM required}
+    MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Todolino}
+  secrets: [smtp_password]
+services:
+  # migrate loads the same settings and validates them, so it gets the secret too.
+  migrate: *mail
+  backend: *mail
+secrets:
+  smtp_password:
+    external: true
+    name: ${SMTP_PASSWORD_SECRET:-todo_smtp_password}

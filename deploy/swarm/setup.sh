@@ -9,6 +9,8 @@
 #                        BOOTSTRAP_TOKEN, only with ATTACHMENT_STORAGE=s3 also S3_ACCESS_KEY and S3_SECRET_KEY,
 #                        optionally APPLE_TEAM_ID/APPLE_BUNDLE_IDS, push: APNS_ENABLED=true, APNS_KEY_ID, APNS_TEAM_ID,
 #                        APNS_TOPIC, APNS_ENVIRONMENT and APNS_KEY_SOURCE (path of the .p8 file; only used to create the secret),
+#                        mail: MAIL_ENABLED=true, SMTP_HOST, SMTP_SECURITY, SMTP_PORT, SMTP_USER, MAIL_FROM, MAIL_FROM_NAME and the
+#                        secret value SMTP_PASSWORD (or SMTP_PASSWORD_FILE),
 #                        PUBLIC_DOMAIN, CHECK_NETWORK, SWARM_ADVERTISE_ADDR); the file is parsed, never executed
 #   --non-interactive    never prompt; take answers (file, SETUP_<KEY> env vars, existing env file, defaults)
 #   --reconfigure        prompt again for every value, existing env values are the defaults
@@ -180,6 +182,9 @@ valid_p8() {
   if [ -n "$1" ] && [ -r "$1" ] && grep -q 'BEGIN PRIVATE KEY' "$1"; then return 0; fi
   bad "lesbare .p8-Datei (beginnt mit -----BEGIN PRIVATE KEY-----) angeben"
 }
+valid_smtpsec() { [[ "$1" == starttls || "$1" == tls ]] || bad "starttls (Port 587) oder tls (Port 465); unverschlüsselt ist im Swarm nicht vorgesehen"; }
+valid_mailaddr() { [[ "$1" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]] || bad "Absenderadresse wie todolino@example.org"; }
+valid_nonempty() { [ -n "$1" ] || bad "darf nicht leer sein"; }
 valid_any() { return 0; }
 
 # ---------------------------------------------------------------- docker helpers
@@ -393,21 +398,48 @@ if [ "$APNS_ENABLED" = true ]; then
   fi
 fi
 
+# ---------------------------------------------------------------- Step 6c: outgoing mail (optional)
+step "E-Mail-Versand (optional)"
+echo "E-Mail für Recovery-Codes, Adressbestätigung und Test-Mail. Ohne Mail bleibt alles wie bisher; Anleitung: docs/MAIL-EINRICHTUNG.md."
+MAIL_ENABLED_DEFAULT=n
+[ "$(get MAIL_ENABLED 'false')" != true ] || MAIL_ENABLED_DEFAULT=y
+lookup MAIL_ENABLED ''; mail_src="$SRC"
+if [ "$NONINTERACTIVE" = 1 ] || [ "$mail_src" = answer ] || [ "$mail_src" = env ] || { [ "$REUSE" = 1 ] && [ "$mail_src" = existing ]; }; then
+  [ "$(get MAIL_ENABLED 'false')" = true ] && MAIL_ENABLED=true || MAIL_ENABLED=false
+elif confirm "E-Mail-Versand aktivieren?" "$MAIL_ENABLED_DEFAULT"; then MAIL_ENABLED=true; else MAIL_ENABLED=false; fi
+SMTP_HOST=""; SMTP_SECURITY=""; SMTP_PORT=""; SMTP_USER=""; MAIL_FROM=""; MAIL_FROM_NAME=""; SMTP_PASSWORD_SECRET=""
+if [ "$MAIL_ENABLED" = true ]; then
+  ask SMTP_HOST "SMTP-Server (Hostname)" "$(get SMTP_HOST '')" valid_host \
+    "Zugangsdaten deines Mail-Anbieters (Postausgangsserver)."
+  ask SMTP_SECURITY "Verschlüsselung (starttls/tls)" "$(get SMTP_SECURITY 'starttls')" valid_smtpsec \
+    "starttls nutzt meist Port 587, tls Port 465."
+  smtp_port_default=587; [ "$SMTP_SECURITY" != tls ] || smtp_port_default=465
+  ask SMTP_PORT "SMTP-Port" "$(get SMTP_PORT "$smtp_port_default")" valid_port
+  ask SMTP_USER "SMTP-Benutzername" "$(get SMTP_USER '')" valid_nonempty
+  ask MAIL_FROM "Absenderadresse" "$(get MAIL_FROM "$SMTP_USER")" valid_mailaddr \
+    "Viele Anbieter verlangen, dass sie zum Konto gehört (SPF/DKIM)."
+  ask MAIL_FROM_NAME "Absendername" "$(get MAIL_FROM_NAME 'Todolino')" valid_nonempty
+  ask SMTP_PASSWORD_SECRET "Name des Swarm-Secrets für das SMTP-Passwort" "${TODO_STACK}_smtp_password" valid_ident
+fi
+
 # ---------------------------------------------------------------- Step 7: secrets
 step "Secrets"
 # Per secret: status exists | create | missing; value in SV_<KEY> (never printed).
 SECRET_KEYS="DB_PASSWORD BOOTSTRAP_TOKEN"
 [ "$ATTACHMENT_STORAGE" != s3 ] || SECRET_KEYS="DB_PASSWORD S3_ACCESS_KEY S3_SECRET_KEY BOOTSTRAP_TOKEN"
+[ "$MAIL_ENABLED" != true ] || SECRET_KEYS="$SECRET_KEYS SMTP_PASSWORD"
 secret_name() {
   case "$1" in
     DB_PASSWORD) echo "$DB_PASSWORD_SECRET" ;; S3_ACCESS_KEY) echo "$S3_ACCESS_KEY_SECRET" ;;
     S3_SECRET_KEY) echo "$S3_SECRET_KEY_SECRET" ;; BOOTSTRAP_TOKEN) echo "$BOOTSTRAP_TOKEN_SECRET" ;;
+    SMTP_PASSWORD) echo "$SMTP_PASSWORD_SECRET" ;;
   esac
 }
 secret_label() {
   case "$1" in
     DB_PASSWORD) echo "Datenbank-Passwort" ;; S3_ACCESS_KEY) echo "S3 Access Key" ;;
     S3_SECRET_KEY) echo "S3 Secret Key" ;; BOOTSTRAP_TOKEN) echo "Bootstrap-Token" ;;
+    SMTP_PASSWORD) echo "SMTP-Passwort" ;;
   esac
 }
 GENERATED_TOKEN=0
@@ -499,6 +531,7 @@ Port / Replikate:  $BACKEND_PORT / $BACKEND_REPLICAS (CPU-Limit $BACKEND_CPU_LIM
 MariaDB:           $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME
 Anhänge:           $ATTACHMENT_STORAGE, Limit $ATTACHMENT_MAX_BYTES Bytes$([ "$ATTACHMENT_STORAGE" != s3 ] || echo ", S3 $S3_ENDPOINT, Bucket $S3_BUCKET, Region $S3_REGION")
 Push (APNs):      $([ "$APNS_ENABLED" = true ] && echo "an, Key-ID $APNS_KEY_ID, Team $APNS_TEAM_ID, Topic $APNS_TOPIC, Standard $APNS_ENVIRONMENT, Secret $APNS_KEY_SECRET" || echo aus)
+E-Mail:            $([ "$MAIL_ENABLED" = true ] && echo "an, $SMTP_HOST:$SMTP_PORT ($SMTP_SECURITY), Benutzer $SMTP_USER, Absender $MAIL_FROM_NAME <$MAIL_FROM>, Secret $SMTP_PASSWORD_SECRET" || echo aus)
 Env-Datei:         $OUT_ENV (Modus 600)
 EOF
 for key in $SECRET_KEYS; do
@@ -562,6 +595,16 @@ write_env() {
       echo "APNS_TOPIC=$APNS_TOPIC"
       echo "APNS_ENVIRONMENT=$APNS_ENVIRONMENT"
       echo "APNS_KEY_SECRET=$APNS_KEY_SECRET"
+    fi
+    if [ "$MAIL_ENABLED" = true ]; then
+      echo "MAIL_ENABLED=true"
+      echo "SMTP_HOST=$SMTP_HOST"
+      echo "SMTP_SECURITY=$SMTP_SECURITY"
+      echo "SMTP_PORT=$SMTP_PORT"
+      echo "SMTP_USER=$SMTP_USER"
+      echo "MAIL_FROM=$MAIL_FROM"
+      echo "MAIL_FROM_NAME=$MAIL_FROM_NAME"
+      echo "SMTP_PASSWORD_SECRET=$SMTP_PASSWORD_SECRET"
     fi
   } > "$tmp"
   chmod 600 "$tmp"
