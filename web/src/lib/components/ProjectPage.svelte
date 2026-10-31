@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { api, type BoardResponse, type Project, type Task } from '#lib/api.js';
+	import { api, type BoardResponse, type Project, type ProjectMode, type Task } from '#lib/api.js';
 	import { type Display, type Grouping, type Sort } from '#lib/listLogic.js';
 	import { PROJECT_COLORS } from '#lib/boardLogic.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
@@ -39,6 +39,17 @@
 
 	/** `tasks` = list/board of the project, `overview` = command center of the project (ADR 0014). */
 	let tab = $state<'tasks' | 'overview'>('tasks');
+	/** Classic = plain todo list/board; management = overview, agents, sync, milestones (per project and account). */
+	const mode = $derived(workspace.modeOf(project.id));
+	const management = $derived(mode === 'management');
+	const subprojects = $derived(workspace.subprojectsForMode(project.id));
+	$effect(() => {
+		void project.id;
+		void workspace.refreshPrefs();
+	});
+	$effect(() => {
+		if (!management) tab = 'tasks';
+	});
 
 	// ---- data -------------------------------------------------------------------------------------------------
 	let tasks = $state<Task[]>([]);
@@ -92,6 +103,12 @@
 	const display = $derived<Display>(workspace.displayOf(project.id));
 	/** Primitive on purpose: effects that depend on the view must not rerun when only the revision changes. */
 	const viewMode = $derived(display.view);
+	function setMode(next: ProjectMode) {
+		attempt(() => workspace.setMode(project.id, next));
+	}
+	function applyModeToSubprojects() {
+		attempt(() => workspace.setModeWithSubprojects(project.id, mode));
+	}
 	function setDisplay(changes: Partial<Display>) {
 		attempt(() => workspace.setDisplay(project.id, changes));
 	}
@@ -196,6 +213,23 @@
 			{/snippet}
 			{#snippet children()}
 				<div class="flex flex-col gap-3 p-1.5 text-sm">
+					<div role="group" aria-label={t('mode.title')} data-testid="mode-switch">
+						<p class="text-muted-foreground mb-1 text-xs font-semibold">{t('mode.title')}</p>
+						<div class="grid grid-cols-2 gap-1">
+							<Button size="sm" variant={mode === 'classic' ? 'default' : 'outline'} aria-pressed={mode === 'classic'} data-testid="mode-classic" onclick={() => setMode('classic')}>
+								{t('mode.classic')}
+							</Button>
+							<Button size="sm" variant={mode === 'management' ? 'default' : 'outline'} aria-pressed={mode === 'management'} data-testid="mode-management" onclick={() => setMode('management')}>
+								{t('mode.management')}
+							</Button>
+						</div>
+						<p class="text-muted-foreground mt-1 text-xs" data-testid="mode-hint">{t(mode === 'classic' ? 'mode.classic.hint' : 'mode.management.hint')}</p>
+						{#if subprojects && subprojects.length > 0}
+							<button type="button" class="text-ui-accent-ink mt-1 min-h-9 text-left text-xs underline underline-offset-2" data-testid="mode-apply-sub" onclick={applyModeToSubprojects}>
+								{t('mode.applySub', { count: subprojects.length })}
+							</button>
+						{/if}
+					</div>
 					<div role="group" aria-label={t('display.view')}>
 						<p class="text-muted-foreground mb-1 text-xs font-semibold">{t('display.view')}</p>
 						<div class="grid grid-cols-2 gap-1">
@@ -245,7 +279,9 @@
 				</MenuItem>
 				<MenuItem onclick={() => { close(); startTitle(); }}>{t('common.rename')}</MenuItem>
 				<MenuItem testid="project-color-open" onclick={() => { close(); colorOpen = true; }}>{t('project.color')}</MenuItem>
-				<MenuItem testid="milestones-open" onclick={() => { close(); milestonesOpen = true; }}>{t('view.milestones')}</MenuItem>
+				{#if management}
+					<MenuItem testid="milestones-open" onclick={() => { close(); milestonesOpen = true; }}>{t('view.milestones')}</MenuItem>
+				{/if}
 			{/snippet}
 		</Popover>
 	</div>
@@ -285,6 +321,7 @@
 		></textarea>
 	</header>
 
+	{#if management}
 	<div class="mb-4 flex gap-4 border-b" role="tablist" aria-label={t('cc.projectTabs')} data-testid="project-tabs">
 		{#each ['tasks', 'overview'] as const as id (id)}
 			<button
@@ -302,8 +339,9 @@
 			</button>
 		{/each}
 	</div>
+	{/if}
 
-	{#if tab === 'overview'}
+	{#if management && tab === 'overview'}
 		<CommandCenter projectID={project.id} />
 	{:else if display.view === 'board'}
 		{#if board}
@@ -333,9 +371,11 @@
 		<Button variant="outline" data-testid="color-auto" aria-pressed={!project.color} onclick={() => { setColor(''); colorOpen = false; }}>{t('project.colorAuto')}</Button>
 	</div>
 </Dialog>
-<Dialog bind:open={milestonesOpen} title={t('view.milestones')} class="max-w-2xl">
-	<MilestonesPanel {project} />
-</Dialog>
+{#if management}
+	<Dialog bind:open={milestonesOpen} title={t('view.milestones')} class="max-w-2xl">
+		<MilestonesPanel {project} />
+	</Dialog>
+{/if}
 <Dialog bind:open={detailOpen} title={detail?.title ?? t('task.details')} class="max-w-2xl" testid="task-dialog">
 	{#if detail}<TaskDetail task={detail} onplanned={reload} />{/if}
 </Dialog>

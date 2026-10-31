@@ -222,3 +222,35 @@ describe('legacy localStorage import', () => {
 		expect(r.cleared).toBe(true);
 	});
 });
+
+describe('project mode (classic | management)', () => {
+	it('defaults to classic without stored prefs and honours the server-derived value', async () => {
+		const { modeOfPrefs, defaultPrefs } = await import('../src/lib/projectState.js');
+		expect(modeOfPrefs(undefined)).toBe('classic');
+		expect(modeOfPrefs(defaultPrefs('a'))).toBe('classic');
+		expect(modeOfPrefs({ mode: 'management' })).toBe('management');
+		expect(modeOfPrefs({ mode: 'classic' })).toBe('classic');
+		// Servers that predate the field keep the full feature set.
+		expect(modeOfPrefs({})).toBe('management');
+	});
+	it('marks an explicit choice as user-chosen and sends only mode', async () => {
+		const { applyPrefsChange, defaultPrefs, displayChangeToPrefs } = await import('../src/lib/projectState.js');
+		const next = applyPrefsChange(defaultPrefs('a'), { mode: 'management' });
+		expect(next.mode).toBe('management');
+		expect(next.modeSource).toBe('user');
+		expect(displayChangeToPrefs({ view: 'board' })).toEqual({ view: 'board' });
+	});
+	it('collects descendants breadth first and survives cycles', async () => {
+		const { descendantIDs } = await import('../src/lib/projectState.js');
+		const ps = [
+			{ id: 'r', parentID: null },
+			{ id: 'a', parentID: 'r' },
+			{ id: 'b', parentID: 'a' },
+			{ id: 'x', parentID: 'b' },
+			{ id: 'o', parentID: null }
+		];
+		expect(descendantIDs(ps, 'r')).toEqual(['a', 'b', 'x']);
+		expect(descendantIDs([{ id: 'p', parentID: 'q' }, { id: 'q', parentID: 'p' }], 'p')).toEqual(['q']);
+		expect(descendantIDs(ps, 'o')).toEqual([]);
+	});
+});

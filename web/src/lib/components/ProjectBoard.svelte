@@ -10,6 +10,8 @@
 	import { Select } from '#lib/components/ui/select/index.js';
 	import Dialog from './app/Dialog.svelte';
 	import MenuItem from './app/MenuItem.svelte';
+	import { parseQuickAdd } from '#lib/quickAdd.js';
+	import { createQuickTask } from '#lib/quickAddCreate.js';
 	import Popover from './app/Popover.svelte';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Check from '@lucide/svelte/icons/check';
@@ -170,7 +172,7 @@
 		e.preventDefault();
 		const title = (addTitles[lane.laneKey] ?? '').trim();
 		if (!title) return;
-		const ok = await attempt(() => api.createTask(project.id, title, lane.id ? { columnID: lane.id } : {}));
+		const ok = await attempt(() => createQuickTask(api, parseQuickAdd(title), { projects: workspace.projects, labels: workspace.labels, defaultProjectID: project.id, columnID: lane.id }));
 		if (ok) {
 			addTitles[lane.laneKey] = '';
 			await reload();

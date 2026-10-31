@@ -231,7 +231,7 @@
 	</nav>
 </div>
 
-<QuickAdd currentProjectID={view === 'project' ? selectedID : null} />
+<QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
 
 <Dialog bind:open={shareOpen} title={t('project.shareTitle', { name: shareProject?.name ?? '' })} class="max-w-2xl" testid="share-dialog">
 	{#if shareProject}

@@ -7,6 +7,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import { parseQuickAdd } from '#lib/quickAdd.js';
+	import { createQuickTask } from '#lib/quickAddCreate.js';
 	import TaskDetail from './TaskDetail.svelte';
 	import TaskChips from './TaskChips.svelte';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -62,7 +64,7 @@
 		e.preventDefault();
 		const title = (addTitles[key] ?? '').trim();
 		if (!title) return;
-		if (await after(() => api.createTask(project.id, title, columnID ? { columnID } : {}))) addTitles[key] = '';
+		if (await after(() => createQuickTask(api, parseQuickAdd(title), { projects: workspace.projects, labels: workspace.labels, defaultProjectID: project.id, columnID }))) addTitles[key] = '';
 	}
 	const toggle = (task: Task) => after(() => api.updateTask(task, { status: task.status === 'done' ? 'open' : 'done' }));
 	const setStatus = (task: Task, status: TaskStatus) => after(() => api.updateTask(task, { status }));

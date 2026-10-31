@@ -1,4 +1,4 @@
-import { ApiError, type Api, type Project, type ProjectPrefs, type ProjectPrefsChange } from './api.js';
+import { ApiError, type Api, type Project, type ProjectMode, type ProjectPrefs, type ProjectPrefsChange } from './api.js';
 import { DEFAULT_DISPLAY, type Display } from './listLogic.js';
 
 /** Server prefs use `showCompleted`, the UI model `showDone`. */
@@ -18,11 +18,42 @@ export function displayChangeToPrefs(changes: Partial<Display>): ProjectPrefsCha
 
 /** Applies a change on top of (possibly default) prefs without touching the revision. */
 export function applyPrefsChange(base: ProjectPrefs, changes: ProjectPrefsChange): ProjectPrefs {
-	return { ...base, ...changes };
+	return { ...base, ...changes, ...(changes.mode ? { modeSource: 'user' as const } : {}) };
 }
 
 export function defaultPrefs(projectID: string): ProjectPrefs {
-	return { projectID, view: 'list', sort: 'manual', grouping: 'column', showCompleted: true, revision: 0 };
+	return { projectID, view: 'list', sort: 'manual', grouping: 'column', showCompleted: true, mode: 'classic', modeSource: 'default', revision: 0 };
+}
+
+/**
+ * Effective project view of an account. The server derives the default (management when the project already has an
+ * agent brief, a runner/repository binding or an open agent question, else classic). A server without the field
+ * predates the switch, so everything stays as it was (management).
+ */
+export function modeOfPrefs(p: Pick<ProjectPrefs, 'mode'> | undefined): ProjectMode {
+	return p ? (p.mode ?? 'management') : 'classic';
+}
+
+/** Largest sub-project tree the "apply to sub-projects" action handles in one go. */
+export const MAX_APPLY_SUBPROJECTS = 12;
+
+/** Descendant ids of `rootID` (breadth first, cycle safe). */
+export function descendantIDs(projects: Pick<Project, 'id' | 'parentID'>[], rootID: string): string[] {
+	const out: string[] = [];
+	const seen = new Set([rootID]);
+	let frontier = [rootID];
+	while (frontier.length) {
+		const next: string[] = [];
+		for (const p of projects) {
+			if (p.parentID && frontier.includes(p.parentID) && !seen.has(p.id)) {
+				seen.add(p.id);
+				out.push(p.id);
+				next.push(p.id);
+			}
+		}
+		frontier = next;
+	}
+	return out;
 }
 
 /** Favourites in the viewer's order, taken from the project list. */

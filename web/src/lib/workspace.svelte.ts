@@ -1,11 +1,11 @@
-import { api, type CommandSummary, type Label, type Project, type ProjectPrefs, type SavedFilter, type Task, type Team, type TeamMembership } from './api.js';
+import { api, type ProjectMode, type ProjectPrefsChange, type CommandSummary, type Label, type Project, type ProjectPrefs, type SavedFilter, type Task, type Team, type TeamMembership } from './api.js';
 import { attentionCount } from './commandCenter.js';
 import { inboxTasks, openCounts, todayTasks } from './counts.js';
 import type { Display } from './listLogic.js';
 import { KEYS, readJSON, writeJSON } from './localPrefs.js';
 import { collectAll } from './planning.js';
 import { projectColor } from './boardLogic.js';
-import { defaultPrefs, displayChangeToPrefs, favoriteProjects, hasLegacyState, importLegacyState, prefsToDisplay, applyPrefsChange, savePrefs } from './projectState.js';
+import { descendantIDs, modeOfPrefs, MAX_APPLY_SUBPROJECTS, defaultPrefs, displayChangeToPrefs, favoriteProjects, hasLegacyState, importLegacyState, prefsToDisplay, applyPrefsChange, savePrefs } from './projectState.js';
 
 /** Shared client state of the signed-in workspace: projects, all own tasks (for counts), teams, labels, filters. */
 class Workspace {
@@ -51,9 +51,19 @@ class Workspace {
 			/* optional */
 		}
 	}
+	/** Re-reads prefs (derived modes change when agents/bindings appear) unless a local write is still in flight. */
+	async refreshPrefs() {
+		if (this.#inflight > 0) return;
+		try {
+			await this.reloadPrefs();
+		} catch {
+			/* keep the cached prefs */
+		}
+	}
 	async reloadPrefs() {
-		const { items } = await api.listProjectPrefs();
+		const { items } = await api.listProjectPrefs(true);
 		this.prefs = Object.fromEntries(items.map((p) => [p.projectID, p]));
+		this.prefsLoaded = true;
 	}
 	/** Everything the sidebar shows; failures of the optional parts must not break the app. */
 	async reloadAll() {
@@ -98,8 +108,28 @@ class Workspace {
 	 * Optimistic: the UI changes immediately, the PATCH follows. Writes per project run one after another so a quick
 	 * second click does not conflict with the first one's revision; a foreign revision conflict is resolved in `savePrefs`.
 	 */
-	async setDisplay(id: string, changes: Partial<Display>) {
-		const change = displayChangeToPrefs(changes);
+	setDisplay(id: string, changes: Partial<Display>) {
+		return this.setPrefs(id, displayChangeToPrefs(changes));
+	}
+	/** Classic (plain todo list/board) or management (overview, agents, sync) view of a project for this account. */
+	/** False until the first prefs load; until then nothing is hidden (a failed load must not hide agent work). */
+	prefsLoaded = $state(false);
+	modeOf = (id: string | null | undefined): ProjectMode => (id && this.prefsLoaded ? modeOfPrefs(this.prefs[id]) : 'management');
+	setMode(id: string, mode: ProjectMode) {
+		return this.setPrefs(id, { mode });
+	}
+	/** Sub-projects the mode switch can be applied to in one go; `null` when the tree is too large. */
+	subprojectsForMode(id: string): string[] | null {
+		const ids = descendantIDs(this.projects, id);
+		return ids.length <= MAX_APPLY_SUBPROJECTS ? ids : null;
+	}
+	async setModeWithSubprojects(id: string, mode: ProjectMode) {
+		const ids = this.subprojectsForMode(id);
+		if (!ids) throw new Error('too_many_subprojects');
+		for (const pid of [id, ...ids]) await this.setMode(pid, mode);
+	}
+	#inflight = 0;
+	async setPrefs(id: string, change: ProjectPrefsChange) {
 		this.prefs = { ...this.prefs, [id]: applyPrefsChange(this.prefs[id] ?? defaultPrefs(id), change) };
 		const run = async () => {
 			const base = this.prefs[id] ?? defaultPrefs(id);
@@ -108,7 +138,8 @@ class Workspace {
 			this.prefs = { ...this.prefs, [id]: { ...this.prefs[id], revision: saved.revision, updatedAt: saved.updatedAt } };
 		};
 		const previous = this.#saving.get(id) ?? Promise.resolve();
-		const next = previous.catch(() => undefined).then(run);
+		this.#inflight++;
+		const next = previous.catch(() => undefined).then(run).finally(() => this.#inflight--);
 		this.#saving.set(id, next);
 		try {
 			await next;

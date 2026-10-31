@@ -3,6 +3,7 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { browserTimeZone } from '#lib/planning.js';
+	import { ui } from '#lib/ui.svelte.js';
 	import TaskChips from './TaskChips.svelte';
 	import TaskDetail from './TaskDetail.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -26,6 +27,13 @@
 		void mode;
 		loaded = false;
 		openID = null;
+		attempt(load);
+	});
+	// Quick add keeps working while this view is open: reload (silently) when something was created elsewhere.
+	let seenTick = ui.changeTick;
+	$effect(() => {
+		if (ui.changeTick === seenTick) return;
+		seenTick = ui.changeTick;
 		attempt(load);
 	});
 </script>

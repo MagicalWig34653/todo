@@ -48,6 +48,17 @@ test.beforeAll(async ({ browser }) => {
 	// The virtual authenticator is driven through the Chromium DevTools protocol; Firefox and WebKit projects need another way (open).
 	test.skip(browser.browserType().name() !== 'chromium', 'passkey flow needs the Chromium CDP virtual authenticator');
 	page = await (await browser.newContext()).newPage();
+	// This spec exercises the project-management features (criteria, dependencies, overview, ...), which classic
+	// projects hide. Report every project as `management`; the switch itself is covered by menus-and-modes.spec.ts.
+	await page.route('**/v1/me/project-prefs*', async (route) => {
+		if (route.request().method() !== 'GET') return route.continue();
+		const res = await route.fetch();
+		const body = await res.json();
+		const fix = (p: Record<string, unknown>) => Object.assign(p, { mode: 'management' });
+		if (Array.isArray(body.items)) body.items.forEach(fix);
+		else fix(body);
+		await route.fulfill({ response: res, json: body });
+	});
 });
 test.afterAll(async () => {
 	await page?.context().close();
@@ -285,10 +296,14 @@ test('sidebar: favorites, counts, quick add shortcut, notifications', async () =
 	await page.keyboard.press('q');
 	await expect(page.getByTestId('quick-add')).toBeVisible();
 	await page.getByLabel('Titel', { exact: true }).fill('Per Kürzel angelegt');
-	await page.getByRole('button', { name: 'Aufgabe hinzufügen', exact: true }).last().click();
+	await page.keyboard.press('Enter');
+	// Quick add stays open for the next task; Escape closes it.
+	await expect(page.getByTestId('quick-add-added')).toContainText('Per Kürzel angelegt');
+	await page.keyboard.press('Escape');
 	await expect(page.getByTestId('quick-add')).toHaveCount(0);
+	// Added from the Today view without a date: it gets today as due date (Todoist behaviour), so it shows up there.
+	await expect(page.getByText('Per Kürzel angelegt')).toBeVisible();
 	await nav('Eingang');
-	await expect(page.getByTestId('inbox-item').filter({ hasText: 'Per Kürzel angelegt' })).toBeVisible();
 
 	// Favorite (stored on the server per account) shows up in the Favoriten section.
 	const item = page.getByTestId('project-item').filter({ hasText: 'Küche' }).first();

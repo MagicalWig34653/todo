@@ -81,6 +81,7 @@ export interface BoardResponse {
 	columns: BoardColumn[];
 	unassigned: Task[];
 }
+export type ProjectMode = 'classic' | 'management';
 /** contracts/project-state.yaml */
 export interface ProjectPrefs {
 	projectID: string;
@@ -88,13 +89,16 @@ export interface ProjectPrefs {
 	sort: 'manual' | 'title' | 'due' | 'priority';
 	grouping: 'none' | 'column' | 'priority' | 'due';
 	showCompleted: boolean;
+	/** Per-account project view; absent on servers older than contracts/project-state 1.1 (treated as management). */
+	mode?: ProjectMode;
+	modeSource?: 'user' | 'default';
 	isFavorite?: boolean;
 	favoritePosition?: number;
 	/** 0 while nothing was stored (the other fields are then defaults). */
 	revision: number;
 	updatedAt?: string;
 }
-export type ProjectPrefsChange = Partial<Pick<ProjectPrefs, 'view' | 'sort' | 'grouping' | 'showCompleted'>>;
+export type ProjectPrefsChange = Partial<Pick<ProjectPrefs, 'view' | 'sort' | 'grouping' | 'showCompleted' | 'mode'>>;
 export interface ProjectComment {
 	id: string;
 	projectID: string;
@@ -732,7 +736,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				index === undefined ? undefined : { index }
 			),
 		deleteFavorite: (projectID: string) => request<void>('DELETE', `/me/favorites/${projectID}`),
-		listProjectPrefs: () => request<{ items: ProjectPrefs[] }>('GET', '/me/project-prefs'),
+		listProjectPrefs: (includeDefaults = false) =>
+			request<{ items: ProjectPrefs[] }>('GET', includeDefaults ? '/me/project-prefs?includeDefaults=true' : '/me/project-prefs'),
 		getProjectPrefs: (projectID: string) => request<ProjectPrefs>('GET', `/me/project-prefs/${projectID}`),
 		patchProjectPrefs: (projectID: string, revision: number, changes: ProjectPrefsChange) =>
 			request<ProjectPrefs>('PATCH', `/me/project-prefs/${projectID}`, { revision, ...changes }),
@@ -942,6 +947,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string) =>
 			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined }),
 		taskContext: (taskID: string) => request<TaskContext>('GET', `/tasks/${taskID}/context`),
+		setTaskStructure: (taskID: string, body: { kind?: string; parentTaskID?: string | null }) => request<unknown>('PUT', `/tasks/${taskID}/structure`, body),
 		projectStructure: (projectID: string) => request<ProjectStructure>('GET', `/projects/${projectID}/structure`),
 		getAgentBrief: (projectID: string) => request<AgentBrief>('GET', `/projects/${projectID}/agent-brief`),
 		putAgentBrief: (projectID: string, text: string, version: number) =>

@@ -68,11 +68,18 @@
 
 	const scope = $derived(projectID ? 'project' : 'account');
 	const project = $derived(projectID ? workspace.projects.find((p) => p.id === projectID) : undefined);
-	const lanes = $derived(orderedLanes(cc?.lanes, (k) => t(`cc.lane.${k}` as MessageKey)));
-	const items = $derived(cc?.items ?? []);
-	const updates = $derived(sortUpdates(cc?.updates ?? []));
+	/** Account scope lists only projects in the management view; classic projects are plain todo lists (per account). */
+	const shown = (projectID: string | null | undefined) => scope === 'project' || workspace.modeOf(projectID) === 'management';
+	const lanes = $derived(
+		orderedLanes(cc?.lanes, (k) => t(`cc.lane.${k}` as MessageKey)).map((l) => {
+			const cards = l.cards.filter((c) => shown(c.project.id));
+			return { ...l, cards, count: Math.max(cards.length, l.count - (l.cards.length - cards.length)) };
+		})
+	);
+	const items = $derived((cc?.items ?? []).filter((c) => shown(c.project.id)));
+	const updates = $derived(sortUpdates((cc?.updates ?? []).filter((u) => shown(u.projectID))));
 	const summary = $derived(cc?.summary);
-	const syncEntries = $derived(cc?.projects ?? []);
+	const syncEntries = $derived((cc?.projects ?? []).filter((e) => shown(e.projectID)));
 	/** Project scope: the entry of the project itself (the response may also list its sub-projects). */
 	const ownSync = $derived(projectID ? syncEntries.find((e) => e.projectID === projectID) : undefined);
 
@@ -113,7 +120,10 @@
 
 	/** Visible reload (initial, filter change): errors become a notice. */
 	function reload() {
-		return attempt(fetchAll);
+		return attempt(async () => {
+			if (scope === 'account') await workspace.refreshPrefs();
+			await fetchAll();
+		});
 	}
 	/** Background and post-action reload: never replaces a notice, only a lost session matters. */
 	async function refresh() {
@@ -247,6 +257,10 @@
 		{/if}
 	</div>
 
+	{#if scope === 'account'}
+		<p class="text-muted-foreground text-xs" data-testid="cc-mode-filter">{t('mode.overviewFilter')}</p>
+	{/if}
+
 	{#if summary}
 		<p class="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs" data-testid="cc-summary" data-attention={attentionCount(summary)}>
 			<span>{t('cc.summary.agents', { count: summary.activeAgents })}</span>
@@ -350,7 +364,7 @@
 			<EmptyState title={t('cc.question.empty')} icon={Gauge}><p>{t('cc.question.emptyHint')}</p></EmptyState>
 		{/if}
 		<ul class="flex max-w-3xl flex-col gap-3" data-testid="cc-questions">
-			{#each questions as q (q.id)}
+			{#each questions.filter((q) => shown(q.projectID)) as q (q.id)}
 				<li class="flex flex-col gap-1">
 					<QuestionAnswer
 						id={q.id}
@@ -370,7 +384,7 @@
 			<EmptyState title={t('cc.review.empty')} icon={Gauge}><p>{t('cc.review.emptyHint')}</p></EmptyState>
 		{/if}
 		<ul class="flex max-w-3xl flex-col gap-3" data-testid="cc-reviews">
-			{#each reviews as r (r.id)}
+			{#each reviews.filter((r) => shown(r.projectID)) as r (r.id)}
 				<li class="flex flex-col gap-1">
 					<ReviewDecision
 						taskID={r.taskID}

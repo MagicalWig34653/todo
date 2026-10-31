@@ -10,8 +10,9 @@
 		title,
 		children,
 		class: className,
-		testid
-	}: { open?: boolean; title: string; children: Snippet; class?: string; testid?: string } = $props();
+		testid,
+		sheet = false
+	}: { open?: boolean; title: string; children: Snippet; class?: string; testid?: string; sheet?: boolean } = $props();
 
 	let box = $state<HTMLDivElement | null>(null);
 	let returnTo: HTMLElement | null = null;
@@ -48,7 +49,13 @@
 </script>
 
 {#if open}
-	<div class="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[12vh] backdrop-blur-[2px]" role="presentation">
+	<div
+		class={[
+			'fixed inset-0 z-[60] flex justify-center overflow-y-auto bg-black/50 backdrop-blur-[2px]',
+			sheet ? 'items-end p-0 sm:items-start sm:p-4 sm:pt-[12vh]' : 'items-start p-4 pt-[12vh]'
+		]}
+		role="presentation"
+	>
 		<button type="button" class="absolute inset-0 cursor-default" tabindex="-1" aria-label={t('common.close')} onclick={() => (open = false)}></button>
 		<div
 			bind:this={box}
@@ -57,7 +64,7 @@
 			aria-label={title}
 			tabindex="-1"
 			data-testid={testid}
-			class={cn('bg-popover text-popover-foreground shadow-pop relative w-full max-w-lg rounded-2xl border p-4 sm:p-5', className)}
+			class={cn('bg-popover text-popover-foreground shadow-pop relative w-full max-w-lg rounded-2xl border p-4 sm:p-5', sheet && 'rounded-b-none pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-b-2xl', className)}
 			{onkeydown}
 		>
 			<div class="mb-3 flex items-center justify-between gap-2">
