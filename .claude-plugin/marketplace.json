@@ -1,0 +1,12 @@
+{
+  "name": "todolino",
+  "description": "Todolino: Todo- und Projektplanung mit Agenten-Steuerzentrale",
+  "owner": { "name": "Todolino" },
+  "plugins": [
+    {
+      "name": "todolino",
+      "source": "./claude-plugin",
+      "description": "Todolino MCP-Server, Einrichtungs-Skills und Hooks, die das Board aktuell halten"
+    }
+  ]
+}

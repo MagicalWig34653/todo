@@ -1,0 +1,19 @@
+{
+  "name": "todolino",
+  "displayName": "Todolino",
+  "version": "1.0.0",
+  "description": "Todolino MCP-Server, Skills zum Einrichten und Abgleichen von Projekten und Hooks, die erinnern, Todolino aktuell zu halten.",
+  "author": { "name": "Todolino" },
+  "homepage": "https://github.com/MagicalWig34653/todo",
+  "repository": "https://github.com/MagicalWig34653/todo",
+  "license": "UNLICENSED",
+  "keywords": ["todo", "mcp", "project-management"],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "Todolino-Server (MCP-URL)",
+      "description": "Adresse des MCP-Endpunkts deiner Todolino-Instanz, z. B. https://todo.linolaske.de/mcp",
+      "default": "https://todo.linolaske.de/mcp"
+    }
+  }
+}
