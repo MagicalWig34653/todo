@@ -51,6 +51,7 @@ addMd({ slug: 'produkt.html', src: 'docs/PRODUKT.md', group: 'Einstieg' });
 addMd({ slug: 'architektur.html', src: 'docs/ARCHITEKTUR.md', group: 'Technik' });
 addMd({ slug: 'identitaet-und-rechte.html', src: 'docs/IDENTITAET-UND-RECHTE.md', group: 'Technik' });
 addMd({ slug: 'agenten-und-mcp.html', src: 'docs/AGENTEN-UND-MCP.md', group: 'Technik' });
+addMd({ slug: 'claude-code-einrichtung.html', src: 'docs/CLAUDE-CODE-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'betrieb.html', src: 'docs/BETRIEB.md', group: 'Technik', title: 'Betrieb und Swarm' });
 addMd({ slug: 'entscheidungen.html', src: 'docs/ENTSCHEIDUNGEN.md', group: 'Entscheidungen', title: 'Entscheidungen' });
 const adrFiles = fs.readdirSync(path.join(repo, 'docs/adr')).filter((f) => f.endsWith('.md')).sort();

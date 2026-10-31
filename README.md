@@ -132,6 +132,7 @@ Vorhanden: Identität mit Passkeys und Recovery, Projekte/Aufgaben, Teams und Fr
 - [Architektur](docs/ARCHITEKTUR.md)
 - [Identität und Berechtigungen](docs/IDENTITAET-UND-RECHTE.md)
 - [Agenten und MCP](docs/AGENTEN-UND-MCP.md)
+- [Claude Code einrichten (MCP, Plugin, Projekt-Onboarding)](docs/CLAUDE-CODE-EINRICHTUNG.md)
 - [Betrieb](docs/BETRIEB.md)
 - [Umsetzungsplan](docs/UMSETZUNGSPLAN.md) und [Arbeitsplan](docs/ARBEITSPLAN.md)
 - [Entscheidungen](docs/ENTSCHEIDUNGEN.md)
