@@ -4,6 +4,8 @@
 
 Kompakte Zusammenfassung für den Einstieg ohne alten Chat. Alle Details, Testnachweise und Entscheidungen stehen unverändert in den chronologischen Checkpoints weiter unten; bei Widerspruch gilt der jüngere Checkpoint. Produktname Todolino (ADR 0017), noch nicht für den Produktivbetrieb freigegeben.
 
+Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): [TODOIST-VERGLEICH.md](TODOIST-VERGLEICH.md).
+
 ### Komponenten
 
 | Komponente | Stand | Wo |

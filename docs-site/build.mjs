@@ -66,6 +66,7 @@ for (const f of adrFiles) {
   addMd({ slug: `adr/${f.replace(/\.md$/, '.html')}`, src: `docs/adr/${f}`, group: 'Entscheidungen', nav: false });
 }
 addMd({ slug: 'apple.html', src: 'docs-site/content/apple.md', group: 'Apple', title: 'iOS, macOS, TestFlight' });
+addMd({ slug: 'todoist-vergleich.html', src: 'docs/TODOIST-VERGLEICH.md', group: 'Projekt', title: 'Todoist-Vergleich' });
 addMd({ slug: 'status.html', src: 'docs/STATUS.md', group: 'Projekt' });
 addMd({ slug: 'arbeitsplan.html', src: 'docs/ARBEITSPLAN.md', group: 'Projekt' });
 addMd({ slug: 'umsetzungsplan.html', src: 'docs/UMSETZUNGSPLAN.md', group: 'Projekt' });
