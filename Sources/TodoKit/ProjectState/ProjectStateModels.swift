@@ -18,6 +18,8 @@ final class ProjectUserState: Model, @unchecked Sendable {
     @Field(key: "sort_mode") var sortMode: String
     @Field(key: "grouping") var grouping: String
     @Field(key: "show_completed") var showCompleted: Bool
+    /// `classic` | `management`; `nil` = never chosen, the effective mode is derived (see `ProjectStateService.defaultModes`).
+    @OptionalField(key: "mode") var mode: String?
     /// Incremented on every write of favourite flag or display preferences (not on pure reordering); 0 = defaults.
     @Field(key: "revision") var revision: Int
     @Field(key: "updated_at") var updatedAt: Date
@@ -26,6 +28,7 @@ final class ProjectUserState: Model, @unchecked Sendable {
     static let views: Set<String> = ["list", "board"]
     static let sorts: Set<String> = ["manual", "title", "due", "priority"]
     static let groupings: Set<String> = ["none", "column", "priority", "due"]
+    static let modes: Set<String> = ["classic", "management"]
 
     init(userID: UUID, projectID: UUID) {
         self.userID = userID; self.projectID = projectID
@@ -92,6 +95,16 @@ struct AddProjectDetails: AsyncMigration {
     func revert(on db: any Database) async throws {
         try await db.schema(Project.schema).deleteField("color").update()
         try await db.schema(Project.schema).deleteField("description").update()
+    }
+}
+
+/// Additive: per-account project mode (classic | management). NULL = derived default, so existing rows need no backfill.
+struct AddProjectUserStateMode: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(ProjectUserState.schema).field("mode", .string).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(ProjectUserState.schema).deleteField("mode").update()
     }
 }
 

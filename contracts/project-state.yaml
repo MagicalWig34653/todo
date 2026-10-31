@@ -75,7 +75,9 @@ paths:
       operationId: listProjectPrefs
       summary: Gespeicherte Anzeigeeinstellungen aller sichtbaren Projekte
       description: 'Nur Projekte mit revision > 0 (mindestens einmal geschrieben). Alle anderen: Standardwerte
-        (view list, sort manual, grouping column, showCompleted true).'
+        (view list, sort manual, grouping column, showCompleted true, mode abgeleitet: management bei Agent-Brief mit Text, Runner-/Repository-Bindung oder offener Agentenfrage, sonst classic). Mit ?includeDefaults=true alle sichtbaren Projekte, nicht beschriebene mit Standardwerten und revision 0.'
+      parameters:
+      - {name: includeDefaults, in: query, required: false, schema: {type: boolean, default: false}}
       responses:
         '200': {description: Erfolg, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/ProjectPrefs'}}}}}}}
   /v1/me/project-prefs/{projectID}:
@@ -90,10 +92,10 @@ paths:
     patch:
       operationId: patchProjectPrefs
       summary: Anzeigeeinstellungen teilweise ändern
-      description: 'Strikt: genau die Schlüssel revision, view, sort, grouping, showCompleted (sonst 400
+      description: 'Strikt: genau die Schlüssel revision, view, sort, grouping, showCompleted, mode (sonst 400
         unknown_project_prefs_key), revision ist Pflicht, ganzzahlig >= 0 und muss der gespeicherten entsprechen (sonst
         409 revision_conflict); mindestens eine Einstellung (400 empty_project_prefs); unbekannte Werte 400
-        invalid_view|invalid_sort|invalid_grouping|invalid_showCompleted. Jeder Schreibvorgang erhöht revision um 1.
+        invalid_view|invalid_sort|invalid_grouping|invalid_showCompleted|invalid_mode. Jeder Schreibvorgang erhöht revision um 1.
         Körper höchstens 1 KiB.'
       requestBody:
         required: true
@@ -109,6 +111,7 @@ paths:
                 sort: {type: string, enum: [manual, title, due, priority]}
                 grouping: {type: string, enum: [none, column, priority, due]}
                 showCompleted: {type: boolean}
+                mode: {type: string, enum: [classic, management], description: 'Projektansicht dieses Kontos (Klassisch = reine Todo-Liste/Board, Projektmanagement = Überblick, Agenten, Sync)'}
       responses:
         '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectPrefs'}}}}
         '400': {description: Validierungsfehler}
@@ -201,13 +204,15 @@ components:
               position: {type: integer, minimum: 0}
     ProjectPrefs:
       type: object
-      required: [projectID, view, sort, grouping, showCompleted, isFavorite, revision]
+      required: [projectID, view, sort, grouping, showCompleted, mode, modeSource, isFavorite, revision]
       properties:
         projectID: {type: string, format: uuid}
         view: {type: string, enum: [list, board]}
         sort: {type: string, enum: [manual, title, due, priority]}
         grouping: {type: string, enum: [none, column, priority, due]}
         showCompleted: {type: boolean}
+        mode: {type: string, enum: [classic, management], description: 'Gespeicherte Wahl, sonst abgeleiteter Standard'}
+        modeSource: {type: string, enum: [user, default], description: 'user = ausdrücklich gewählt, default = abgeleitet (folgt späteren Agentenbezügen)'}
         isFavorite: {type: boolean}
         favoritePosition: {type: integer}
         revision: {type: integer, description: '0 solange nie geschrieben'}

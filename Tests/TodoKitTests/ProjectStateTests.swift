@@ -206,6 +206,50 @@ final class ProjectStateTests: XCTestCase {
         eq(try await t.json(.GET, "/v1/me/project-prefs/\(p)").status, .unauthorized)
     }
 
+    func testProjectModeDefaultRuleExplicitChoiceAndBulkDefaults() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await account(t)
+        let plain = try await project(t, a.token, "plain"), agentic = try await project(t, a.token, "agentic")
+        // Default: classic without any agent relation, and no stored row is needed for it.
+        var r = try await t.json(.GET, "/v1/me/project-prefs/\(plain)", token: a.token)
+        XCTAssertEqual(r.body?["mode"] as? String, "classic")
+        XCTAssertEqual(r.body?["modeSource"] as? String, "default")
+        XCTAssertEqual(r.body?["revision"] as? Int, 0)
+        // An agent brief with text makes the derived default `management`.
+        r = try await t.json(.PUT, "/v1/projects/\(agentic)/agent-brief", ["text": "## Goals\nShip", "version": 0], token: a.token)
+        XCTAssertEqual(r.status, .ok, "\(r.body ?? [:])")
+        r = try await t.json(.GET, "/v1/me/project-prefs/\(agentic)", token: a.token)
+        XCTAssertEqual(r.body?["mode"] as? String, "management")
+        XCTAssertEqual(r.body?["modeSource"] as? String, "default")
+        // Bulk read: stored only by default, every visible project with includeDefaults.
+        var all = try await t.json(.GET, "/v1/me/project-prefs", token: a.token)
+        XCTAssertEqual((all.body?["items"] as? [[String: Any]])?.count, 0)
+        all = try await t.json(.GET, "/v1/me/project-prefs?includeDefaults=true", token: a.token)
+        let modes = Dictionary(uniqueKeysWithValues: ((all.body?["items"] as? [[String: Any]]) ?? []).map { ($0["projectID"] as! String, $0["mode"] as! String) })
+        XCTAssertEqual(modes[plain.lowercased()] ?? modes[plain], "classic")
+        XCTAssertEqual(modes[agentic.lowercased()] ?? modes[agentic], "management")
+        // Explicit choice wins over the derived default and bumps the revision.
+        r = try await t.json(.PATCH, "/v1/me/project-prefs/\(agentic)", ["revision": 0, "mode": "classic"], token: a.token)
+        XCTAssertEqual(r.status, .ok, "\(r.body ?? [:])")
+        XCTAssertEqual(r.body?["mode"] as? String, "classic")
+        XCTAssertEqual(r.body?["modeSource"] as? String, "user")
+        XCTAssertEqual(r.body?["revision"] as? Int, 1)
+        r = try await t.json(.PATCH, "/v1/me/project-prefs/\(plain)", ["revision": 0, "mode": "management", "view": "board"], token: a.token)
+        XCTAssertEqual(r.body?["mode"] as? String, "management")
+        XCTAssertEqual(r.body?["view"] as? String, "board")
+        // Validation.
+        for body in [["revision": 1, "mode": "pm"], ["revision": 1, "mode": 1], ["revision": 1, "mode": true]] as [[String: Any]] {
+            let res = try await t.json(.PATCH, "/v1/me/project-prefs/\(plain)", body, token: a.token)
+            XCTAssertEqual(res.status, .badRequest, "\(body)")
+        }
+        // Per account: another account with read access still sees the derived default.
+        let b = try await account(t, "B")
+        try await grant(t, a.token, agentic, b.id, role: "read")
+        r = try await t.json(.GET, "/v1/me/project-prefs/\(agentic)", token: b.token)
+        XCTAssertEqual(r.body?["mode"] as? String, "management")
+    }
+
     // MARK: 3. Sibling order
 
     func testSiblingOrderIsPerUserAndRespectsPermissions() async throws {

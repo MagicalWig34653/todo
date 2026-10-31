@@ -46,14 +46,19 @@ struct ProjectPrefsDTO: Content {
     let sort: String
     let grouping: String
     let showCompleted: Bool
+    /// `classic` | `management`: the stored choice, otherwise the derived default.
+    let mode: String
+    /// `user` when `mode` was chosen explicitly, `default` when derived (agent brief, runner/repo binding, open agent question).
+    let modeSource: String
     let isFavorite: Bool
     let favoritePosition: Int?
     /// 0 while no preference was ever written for this project.
     let revision: Int
     let updatedAt: Date?
 
-    init(projectID: UUID, state: ProjectUserState?) {
+    init(projectID: UUID, state: ProjectUserState?, defaultMode: String) {
         self.projectID = projectID
+        mode = state?.mode ?? defaultMode; modeSource = state?.mode == nil ? "default" : "user"
         view = state?.view ?? "list"; sort = state?.sortMode ?? "manual"
         grouping = state?.grouping ?? "column"; showCompleted = state?.showCompleted ?? true
         isFavorite = state?.isFavorite ?? false
@@ -201,17 +206,44 @@ struct ProjectStateService: Sendable {
 
     // MARK: Display preferences
 
-    func prefs(_ projectID: UUID) async throws -> ProjectPrefsDTO {
-        _ = try await access.project(projectID, role: .read)
-        return ProjectPrefsDTO(projectID: projectID, state: try await state(projectID, create: false))
+    /// Projects that already involve agents or a repository: an agent brief with text, a runner binding, a repository
+    /// binding or an open question asked by an integration/run. Their default mode is `management`, all others `classic`.
+    func agentRelated(_ ids: [UUID]) async throws -> Set<UUID> {
+        var found = Set<UUID>()
+        for chunk in stride(from: 0, to: ids.count, by: 300).map({ Array(ids[$0..<min($0 + 300, ids.count)]) }) {
+            for brief in try await ProjectAgentBrief.query(on: db).filter(\.$id ~~ chunk).all()
+            where !brief.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { found.insert(brief.id!) }
+            for b in try await ProjectRunnerBinding.query(on: db).filter(\.$projectID ~~ chunk).all() { found.insert(b.projectID) }
+            for b in try await ProjectBinding.query(on: db).filter(\.$id ~~ chunk).all() { found.insert(b.id!) }
+            let questions = try await TaskQuestion.query(on: db)
+                .join(TodoTask.self, on: \TaskQuestion.$taskID == \TodoTask.$id)
+                .filter(TodoTask.self, \.$projectID ~~ chunk)
+                .filter(\.$state == "open").filter(\.$askedByType != .person).all()
+            for q in questions { found.insert(try q.joined(TodoTask.self).projectID) }
+        }
+        return found
     }
 
-    func allPrefs() async throws -> ProjectPrefsList {
+    func defaultMode(_ projectID: UUID) async throws -> String {
+        try await agentRelated([projectID]).contains(projectID) ? "management" : "classic"
+    }
+
+    func prefs(_ projectID: UUID) async throws -> ProjectPrefsDTO {
+        _ = try await access.project(projectID, role: .read)
+        let row = try await state(projectID, create: false)
+        return ProjectPrefsDTO(projectID: projectID, state: row, defaultMode: row?.mode == nil ? try await defaultMode(projectID) : "classic")
+    }
+
+    /// Stored preferences (revision > 0); with `includeDefaults` every visible project, unwritten ones with default values.
+    func allPrefs(includeDefaults: Bool = false) async throws -> ProjectPrefsList {
         let visibleIDs = Set(try await visible().map { try $0.requireID() })
-        let rows = try await ProjectUserState.query(on: db).filter(\.$userID == user.requireID())
-            .filter(\.$revision > 0).sort(\.$projectID).all()
-        return ProjectPrefsList(items: rows.filter { visibleIDs.contains($0.projectID) }
-            .map { ProjectPrefsDTO(projectID: $0.projectID, state: $0) })
+        let rows = try await ProjectUserState.query(on: db).filter(\.$userID == user.requireID()).all()
+        let byProject = Dictionary(rows.map { ($0.projectID, $0) }, uniquingKeysWith: { a, _ in a })
+        let ids = (includeDefaults ? Array(visibleIDs) : rows.filter { $0.revision > 0 && visibleIDs.contains($0.projectID) }.map(\.projectID)).sorted { $0.uuidString < $1.uuidString }
+        let related = try await agentRelated(ids.filter { byProject[$0]?.mode == nil })
+        return ProjectPrefsList(items: ids.map { id in
+            ProjectPrefsDTO(projectID: id, state: byProject[id], defaultMode: related.contains(id) ? "management" : "classic")
+        })
     }
 
     func updatePrefs(_ projectID: UUID, _ change: ProjectPrefsChange) async throws -> ProjectPrefsDTO {
@@ -223,9 +255,10 @@ struct ProjectStateService: Sendable {
         if let v = change.sort { row.sortMode = v }
         if let v = change.grouping { row.grouping = v }
         if let v = change.showCompleted { row.showCompleted = v }
+        if let v = change.mode { row.mode = v }
         row.revision += 1; row.updatedAt = Date()
         try await row.save(on: db)
-        return ProjectPrefsDTO(projectID: projectID, state: row)
+        return ProjectPrefsDTO(projectID: projectID, state: row, defaultMode: row.mode == nil ? try await defaultMode(projectID) : "classic")
     }
 }
 
@@ -236,13 +269,14 @@ struct ProjectPrefsChange: Decodable {
     let sort: String?
     let grouping: String?
     let showCompleted: Bool?
+    let mode: String?
 
     private struct AnyKey: CodingKey {
         var stringValue: String; var intValue: Int? { nil }
         init?(stringValue: String) { self.stringValue = stringValue }
         init?(intValue: Int) { nil }
     }
-    private enum Keys: String, CodingKey, CaseIterable { case revision, view, sort, grouping, showCompleted }
+    private enum Keys: String, CodingKey, CaseIterable { case revision, view, sort, grouping, showCompleted, mode }
 
     /// Strict: exact key set, strictly typed values, known enum values, `revision` >= 0, at least one preference.
     init(from decoder: any Decoder) throws {
@@ -265,11 +299,12 @@ struct ProjectPrefsChange: Decodable {
         view = try choice(.view, ProjectUserState.views)
         sort = try choice(.sort, ProjectUserState.sorts)
         grouping = try choice(.grouping, ProjectUserState.groupings)
+        mode = try choice(.mode, ProjectUserState.modes)
         if c.contains(.showCompleted) {
             guard let flag = try? c.decode(Bool.self, forKey: .showCompleted) else { throw Abort(.badRequest, reason: "invalid_showCompleted") }
             showCompleted = flag
         } else { showCompleted = nil }
-        guard view != nil || sort != nil || grouping != nil || showCompleted != nil else {
+        guard view != nil || sort != nil || grouping != nil || showCompleted != nil || mode != nil else {
             throw Abort(.badRequest, reason: "empty_project_prefs")
         }
     }

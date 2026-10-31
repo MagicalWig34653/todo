@@ -95,7 +95,7 @@ struct ProjectStateController: RouteCollection {
     // MARK: Display preferences
 
     @Sendable func allPrefs(_ req: Request) async throws -> ProjectPrefsList {
-        try await service(req).allPrefs()
+        try await service(req).allPrefs(includeDefaults: req.query[Bool.self, at: "includeDefaults"] ?? false)
     }
 
     @Sendable func prefs(_ req: Request) async throws -> ProjectPrefsDTO {
@@ -132,4 +132,5 @@ struct ProjectStateController: RouteCollection {
 
 func configureProjectState(_ app: Application) {
     app.migrations.add(CreateProjectState())
+    app.migrations.add(AddProjectUserStateMode())
 }
