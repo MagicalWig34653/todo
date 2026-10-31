@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
-	import { findEntry, normalizeArea, searchSettings, visibleGroups, settingsPath } from '#lib/settingsNav.js';
+	import { findEntry, normalizeArea, searchSettings, SERVER_CATEGORY_BY_ENTRY, visibleGroups, settingsPath } from '#lib/settingsNav.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -20,6 +20,8 @@
 	import AdminAccounts from './settings/AdminAccounts.svelte';
 	import AdminInvitations from './settings/AdminInvitations.svelte';
 	import AdminInfo from './settings/AdminInfo.svelte';
+	import ServerOverview from './settings/ServerOverview.svelte';
+	import ServerSettingsPage from './settings/ServerSettingsPage.svelte';
 	import ClaudeConnect from './help/ClaudeConnect.svelte';
 
 	/**
@@ -143,12 +145,10 @@
 				<AdminAccounts />
 			{:else if id === 'verwaltung-einladungen'}
 				<AdminInvitations />
-			{:else if id === 'verwaltung-mail'}
-				<AdminInfo kind="mail" />
-			{:else if id === 'verwaltung-push'}
-				<AdminInfo kind="push" />
-			{:else if id === 'verwaltung-speicher'}
-				<AdminInfo kind="storage" />
+			{:else if id === 'verwaltung-server'}
+				<ServerOverview />
+			{:else if id && SERVER_CATEGORY_BY_ENTRY[id]}
+				<ServerSettingsPage category={SERVER_CATEGORY_BY_ENTRY[id]} />
 			{:else if id === 'verwaltung-system'}
 				<AdminInfo kind="system" />
 			{/if}

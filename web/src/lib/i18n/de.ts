@@ -1,10 +1,12 @@
 // German UI strings. Components must only reference keys, never literal text.
 import { deNotify } from './de-notify.js';
 import { deSettings } from './de-settings.js';
+import { deAdminSettings } from './de-admin-settings.js';
 
 export const de = {
 	...deNotify,
 	...deSettings,
+	...deAdminSettings,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',

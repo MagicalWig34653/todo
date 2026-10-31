@@ -401,6 +401,10 @@ const shots = {
     ['claude-code-verbinden', 'Claude Code verbinden: Befehle mit der Adresse dieses Servers und Verbindungsprüfung'],
     ['claude-code-verbinden-dunkel', 'Claude Code verbinden (dunkel)'],
     ['verwaltung', 'Verwaltung (nur Administratoren): ehrliche Hinweise auf fehlende Backend-Funktionen'],
+    ['verwaltung-server-mail', 'Server-Einstellungen in der PWA: E-Mail mit Herkunft, Test-Mail (nur Administratoren)'],
+    ['verwaltung-server-mail-mobil', 'Server-Einstellungen mobil'],
+    ['verwaltung-server-speicher', 'Geheimnisse (S3-Schlüssel) werden nie angezeigt, nur „gesetzt“ mit Fingerabdruck'],
+    ['verwaltung-server-aufraeumen', 'Per Umgebungsvariable festgelegte Werte sind gesperrt; „wirkt nach Neustart“ ist gekennzeichnet'],
   ],
   fuerdich: [
     ['fuer-dich', 'Für dich (Startansicht): „Braucht dich“ mit Rückfragen und Fristen, darunter Neuigkeiten mit Fortschritt'],

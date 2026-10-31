@@ -76,13 +76,33 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		entries: [
 			{ id: 'verwaltung-konten', label: 'settings.verwaltung-konten', description: 'settings.verwaltung-konten.description', keywords: 'konten benutzer recovery sperren admin', adminOnly: true },
 			{ id: 'verwaltung-einladungen', label: 'settings.verwaltung-einladungen', description: 'settings.verwaltung-einladungen.description', keywords: 'einladung einladen registrierung token', adminOnly: true },
-			{ id: 'verwaltung-mail', label: 'settings.verwaltung-mail', description: 'settings.verwaltung-mail.description', keywords: 'mail smtp server versand', adminOnly: true },
-			{ id: 'verwaltung-push', label: 'settings.verwaltung-push', description: 'settings.verwaltung-push.description', keywords: 'apns push apple schlüssel', adminOnly: true },
-			{ id: 'verwaltung-speicher', label: 'settings.verwaltung-speicher', description: 'settings.verwaltung-speicher.description', keywords: 'speicher anhänge dateien limit', adminOnly: true },
+			{ id: 'verwaltung-server', label: 'settings.verwaltung-server', description: 'settings.verwaltung-server.description', keywords: 'server überblick schlüssel verschlüsselung protokoll änderungen audit umgebung', adminOnly: true },
+			{ id: 'verwaltung-mail', label: 'settings.verwaltung-mail', description: 'settings.verwaltung-mail.description', keywords: 'mail smtp server versand passwort absender testmail', adminOnly: true },
+			{ id: 'verwaltung-push', label: 'settings.verwaltung-push', description: 'settings.verwaltung-push.description', keywords: 'apns push apple schlüssel key team bundle', adminOnly: true },
+			{ id: 'verwaltung-speicher', label: 'settings.verwaltung-speicher', description: 'settings.verwaltung-speicher.description', keywords: 'speicher anhänge dateien limit s3 bucket', adminOnly: true },
+			{ id: 'verwaltung-anmeldung', label: 'settings.verwaltung-anmeldung', description: 'settings.verwaltung-anmeldung.description', keywords: 'anmeldung passwort passkey login', adminOnly: true },
+			{ id: 'verwaltung-limits', label: 'settings.verwaltung-limits', description: 'settings.verwaltung-limits.description', keywords: 'limits rate ratenbegrenzung recovery versuche', adminOnly: true },
+			{ id: 'verwaltung-live', label: 'settings.verwaltung-live', description: 'settings.verwaltung-live.description', keywords: 'live aktualisierung polling warten', adminOnly: true },
+			{ id: 'verwaltung-aufraeumen', label: 'settings.verwaltung-aufraeumen', description: 'settings.verwaltung-aufraeumen.description', keywords: 'aufräumen cleanup sync aufbewahrung tage', adminOnly: true },
+			{ id: 'verwaltung-instanz', label: 'settings.verwaltung-instanz', description: 'settings.verwaltung-instanz.description', keywords: 'instanz name darstellung branding', adminOnly: true },
+			{ id: 'verwaltung-apple', label: 'settings.verwaltung-apple', description: 'settings.verwaltung-apple.description', keywords: 'apple app ids passkey aasa', adminOnly: true },
 			{ id: 'verwaltung-system', label: 'settings.verwaltung-system', description: 'settings.verwaltung-system.description', keywords: 'system health status bereit datenbank wartung', adminOnly: true }
 		]
 	}
 ];
+
+/** Hub entry -> category of GET /v1/admin/settings (ADR 0025). One generated form per category. */
+export const SERVER_CATEGORY_BY_ENTRY: Record<string, string> = {
+	'verwaltung-mail': 'mail',
+	'verwaltung-push': 'push',
+	'verwaltung-speicher': 'attachments',
+	'verwaltung-anmeldung': 'auth',
+	'verwaltung-limits': 'limits',
+	'verwaltung-live': 'live',
+	'verwaltung-aufraeumen': 'maintenance',
+	'verwaltung-instanz': 'branding',
+	'verwaltung-apple': 'apple'
+};
 
 /** Old `/konto/<bereich>` values and the one-segment admin page of the first permission build. */
 export const LEGACY_AREAS: Record<string, string> = { verwaltung: 'verwaltung-konten', allgemein: 'profil', general: 'profil' };

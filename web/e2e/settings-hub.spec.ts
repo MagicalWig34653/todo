@@ -72,7 +72,7 @@ test('hub: reachable from the user menu, groups and one description per entry', 
 	}
 	// Landing: every visible entry has a card with its description line.
 	const cards = admin.getByTestId('settings-landing').getByRole('link');
-	await expect(cards).toHaveCount(18);
+	await expect(cards).toHaveCount(25);
 	await expect(admin.getByTestId('settings-card-passkeys')).toContainText('Mit welchen Geräten und Schlüsseln du dich anmeldest.');
 	await shot(admin, 'einstellungen');
 	await nav.getByRole('link', { name: 'Passkeys' }).click();
@@ -196,11 +196,11 @@ test('administration: invitation, system status, honest gaps', async () => {
 	await admin.getByTestId('settings-link-verwaltung-system').click();
 	await expect(admin.getByTestId('admin-system-status')).toHaveText('bereit');
 	await admin.getByTestId('settings-link-verwaltung-mail').click();
-	await expect(admin.getByTestId('admin-mail-status')).toBeVisible();
+	await expect(admin.getByTestId('server-settings-mail')).toBeVisible();
 	await admin.getByTestId('settings-link-verwaltung-push').click();
-	await expect(admin.getByTestId('admin-push-status')).toBeVisible();
+	await expect(admin.getByTestId('server-settings-push')).toBeVisible();
 	await admin.getByTestId('settings-link-verwaltung-speicher').click();
-	await expect(admin.getByTestId('admin-gap')).toContainText('Backend noch nicht vorhanden');
+	await expect(admin.getByTestId('server-settings-attachments')).toBeVisible();
 	await shot(admin, 'verwaltung');
 	await admin.getByTestId('settings-link-verwaltung-konten').click();
 	await expect(admin.getByTestId('admin-gaps')).toBeVisible();

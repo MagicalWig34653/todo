@@ -14,7 +14,7 @@ Stand 31.10.2026. Struktur der Einstellungen, des Hilfebereichs und der Verwaltu
 | `/einstellungen/berechtigungen` | Wer greift worauf zu | `AccessOverview.svelte` |
 | `/einstellungen/verbindungen` `runner` `mcp` | OAuth-Verbindungen, Runner-Geräte (Verweis auf Agenten), Claude Code verbinden | `OAuthGrants.svelte`, `settings/RunnerPage.svelte`, `help/ClaudeConnect.svelte` |
 | `/einstellungen/daten` | Export/Löschen: ehrlicher Platzhalter | `settings/DataPage.svelte` |
-| `/einstellungen/verwaltung-*` | nur Administratoren: `konten`, `einladungen`, `mail`, `push`, `speicher`, `system` | `settings/Admin*.svelte` |
+| `/einstellungen/verwaltung-*` | nur Administratoren: `konten`, `einladungen`, `system` sowie die **Server-Einstellungen** (ADR 0025, [KONFIGURATION.md](KONFIGURATION.md)): `server` (Überblick, Schlüssel, Änderungsprotokoll), `mail`, `push`, `speicher`, `anmeldung`, `limits`, `live`, `aufraeumen`, `instanz`, `apple` | `settings/Admin*.svelte`, `settings/Server*.svelte` |
 | `/hilfe`, `/hilfe/<seite>` | `erste-schritte`, `tastaturkuerzel`, `claude-code`, `agentenhandbuch`, `ueber` | `helpNav.ts`, `HelpView.svelte`, `help/*` |
 
 Alte Pfade: `/konto` wird zu `/einstellungen`, `/konto/<bereich>` zu `/einstellungen/<bereich>`, `/konto/verwaltung` zu `/einstellungen/verwaltung-konten` (Umleitung beim Start, `routing.ts` und `LEGACY_AREAS`).
@@ -39,9 +39,9 @@ Menüs oben rechts: Hilfemenü (Fragezeichen) und Benutzermenü (Avatar mit Eins
 | Konten verwalten | nur Konto-ID bekannt; keine Liste, kein Sperren, kein Löschen | Kontenliste mit Rolle/Status, Sperren, Löschen, Admin-Rolle vergeben | 1 |
 | Einladungen | Erzeugen (`POST /v1/invitations`, sieben Tage, einmalig), Link mit Token in der PWA | Liste offener Einladungen, Zurückziehen, Gültigkeit wählen, Versand per Mail | 2 |
 | Recovery | Admin stellt Code aus (`POST /v1/identity/accounts/{id}/recovery`), optional per Mail | Konto aus Liste wählen statt ID einfügen | 3 (hängt an Kontenliste) |
-| Mail | nur Lesen: `/health/ready` meldet `mail.enabled`; Konfiguration per Server-Umgebung | Zugangsdaten und Server-Testmail in der Oberfläche | 4 |
-| APNs | nur Lesen: `push.enabled` und Umgebung; Test an eigene Geräte unter Benachrichtigungen | Schlüssel verwalten, Server-Verbindungsprüfung | 5 |
-| Speicher/Anhänge | nichts lesbar (Limit und Ablage nur in der Server-Umgebung) | Verbrauch je Konto, Limit anzeigen/ändern, Aufräumen, S3-Umstellung | 5 |
+| Mail | **gebaut (31.10.2026):** Zugangsdaten, Absender, Test-Mail in der PWA (`verwaltung-mail`), Umgebung hat Vorrang | - | erledigt |
+| APNs | **gebaut:** Key-ID, Team-ID, Bundle-IDs, .p8-Inhalt (verschlüsselt), Push-Test (`verwaltung-push`) | - | erledigt |
+| Speicher/Anhänge | **gebaut:** Ablage (Datenbank/S3), S3-Zugang, Limit, Speicher-Prüfung (`verwaltung-speicher`) | Verbrauch je Konto | 5 |
 | Module | nicht vorhanden (Todolino kennt keine abschaltbaren Module) | nicht geplant | - |
 | Sitzungen | eigene Sitzungen anzeigen/beenden (PWA); fremde Sitzungen nicht | Admin: Sitzungen eines Kontos beenden | 6 |
 | API-Tokens | OAuth-Verbindungen für KI-Clients (anzeigen, widerrufen); keine persönlichen Tokens | persönliche API-Tokens mit Scopes | 6 |
