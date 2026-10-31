@@ -6,6 +6,8 @@ struct HealthResponse: Content {
     let status: String
     /// Informational only (periodic cleanup); never influences readiness.
     var maintenance: MaintenanceStatus? = nil
+    /// Informational only: whether APNs push is configured and its default environment.
+    var push: PushStatus? = nil
 }
 
 public func routes(_ app: Application) throws {
@@ -28,6 +30,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: ProjectStateController())
     try app.register(collection: CommandCenterController())
     try app.register(collection: ProjectSyncController())
+    try app.register(collection: PushController())
     // Apple app-site-association for passkeys in native apps: public, no redirect, JSON.
     for path in [[".well-known", "apple-app-site-association"], ["apple-app-site-association"]] {
         app.get(path.map { PathComponent(stringLiteral: $0) }) { req async throws -> Response in
@@ -49,7 +52,8 @@ public func routes(_ app: Application) throws {
             if let sql = req.db as? any SQLDatabase {
                 _ = try await sql.raw("SELECT 1").all()
             }
-            return HealthResponse(status: "ok", maintenance: await CleanupScheduler.status(of: req.application))
+            return HealthResponse(status: "ok", maintenance: await CleanupScheduler.status(of: req.application),
+                                  push: PushStatus(enabled: req.application.settings.apns.enabled, environment: req.application.settings.apns.environment.rawValue))
         } catch {
             throw Abort(.serviceUnavailable, reason: "database unavailable")
         }

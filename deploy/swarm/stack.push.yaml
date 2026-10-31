@@ -1,0 +1,23 @@
+version: '3.8'
+# Optional overlay: APNs push notifications for the Apple apps (ADR 0021, docs/PUSH-EINRICHTUNG.md).
+# scripts/swarm-deploy.sh adds this file automatically when APNS_ENABLED=true is set in the env file.
+# Needs the external Swarm secret todo_apns_key (the .p8 key from the Apple developer portal; name via APNS_KEY_SECRET):
+#   docker secret create todo_apns_key ./AuthKey_XXXXXXXXXX.p8
+# The key is mounted as a file (/run/secrets/apns_key) and never appears in the image, the env file or the repository.
+x-push: &push
+  environment:
+    APNS_ENABLED: 'true'
+    APNS_KEY_FILE: /run/secrets/apns_key
+    APNS_KEY_ID: ${APNS_KEY_ID:?APNS_KEY_ID required}
+    APNS_TEAM_ID: ${APNS_TEAM_ID:?APNS_TEAM_ID required}
+    APNS_TOPIC: ${APNS_TOPIC:-de.linolaske.todo}
+    APNS_ENVIRONMENT: ${APNS_ENVIRONMENT:-production}
+  secrets: [apns_key]
+services:
+  # migrate loads the same settings and validates the key, so it gets the secret too.
+  migrate: *push
+  backend: *push
+secrets:
+  apns_key:
+    external: true
+    name: ${APNS_KEY_SECRET:-todo_apns_key}

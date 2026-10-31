@@ -40,6 +40,7 @@ public func configure(_ app: Application) async throws {
     configureMigrations(app)
     try routes(app)
     configureMaintenanceScheduler(app)
+    try configurePushWorker(app)
 }
 
 public func configureDatabase(_ app: Application, settings: DatabaseSettings) throws {
@@ -86,6 +87,7 @@ public func configureMigrations(_ app: Application) {
     configureProjectState(app)
     configureCommandCenter(app)
     configureProjectSync(app)
+    configurePush(app)
     // Last: appends label upserts to the change log (needs the sync tables and the discovery tables).
     app.migrations.add(BackfillLabelSync())
 }

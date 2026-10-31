@@ -10,7 +10,7 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 
 | Komponente | Stand | Wo |
 | --- | --- | --- |
-| Backend (Swift 6.2, Vapor, Fluent) | Identität/Passkeys/Recovery, verschachtelte Projekte mit eigenen Spalten (ADR 0011/0012), Aufgaben, Teams/Freigaben (ADR 0005), Planung, Labels/Suche, Kommentare/Aktivität, Anhänge in der Datenbank (ADR 0013), OAuth/MCP (ADR 0007, Issuer ADR 0016), Agentenaufträge/Runner-API (ADR 0008), Steuerzentrale (ADR 0014), Projekt-Onboarding (ADR 0018), Sync mit Aufbewahrung, Kontolöschung und Cleanup-Scheduler (ADR 0009/0019) | `Sources/TodoKit`, `contracts/` (14 Verträge) |
+| Backend (Swift 6.2, Vapor, Fluent) | Identität/Passkeys/Recovery, verschachtelte Projekte mit eigenen Spalten (ADR 0011/0012), Aufgaben, Teams/Freigaben (ADR 0005), Planung, Labels/Suche, Kommentare/Aktivität, Anhänge in der Datenbank (ADR 0013), OAuth/MCP (ADR 0007, Issuer ADR 0016), Agentenaufträge/Runner-API (ADR 0008), Steuerzentrale (ADR 0014), Projekt-Onboarding (ADR 0018), Sync mit Aufbewahrung, Kontolöschung und Cleanup-Scheduler (ADR 0009/0019), APNs-Push für iOS/macOS (ADR 0021, Versand ungeprüft) | `Sources/TodoKit`, `contracts/` (15 Verträge) |
 | PWA (SvelteKit 3) | Login/Setup, Projektbaum, Listen und Board mit projektspezifischen Spalten, Planung, Teams/Freigaben, Konto/Darstellung, Steuerzentrale „Überblick“, Agenten-Seite (koppeln, binden, freigeben, stoppen), Aktivität und Projektkommentare mit Live-Refresh, Sync-Aktualität, Icons; wird vom Backend-Image ausgeliefert (ADR 0015) | `web/` |
 | Apple-App (SwiftUI) | Eigenes Repository `todo-apple` mit eigenem Status: iOS/iPadOS/macOS/watchOS, Sync-Engine (behandelt 410 `cursor_expired`), Steuerzentrale im Simulator, TestFlight-Uploads (iOS und macOS) | `MagicalWig34653/todo-apple` |
 | Mac-Runner | Im Apple-Repository (`TodoRunner`): Kopplung, Ordner-Allowlist, Lease/Generation, Fortschritt, Ruhezustandserkennung, CLI, LaunchAgent-Ausgabe; Anleitung `docs/RUNNER.md` dort | [todo-apple/docs/RUNNER.md](https://github.com/MagicalWig34653/todo-apple/blob/main/docs/RUNNER.md) |
@@ -29,6 +29,7 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 | OAuth/MCP | Discovery, PKCE, Resource Indicators, MCP-Aufrufe mit Bearer real geprüft; Claude-CLI gegen den Endpunkt (Discovery/401, Tools mit manuell beschafftem Token) |
 | Plugin | `claude plugin validate`, lokale Installation in temporärem Config-Verzeichnis, 22 Hook-Prüfungen, `scripts/onboarding-e2e.sh` im SQLite-Modus 22/22 |
 | Apple/Runner | TodoCore 129 Tests (17 Live übersprungen), Runner 65 Tests plus Live gegen echte `claude`-CLI und natives Backend; TestFlight-Uploads; Passkey auf echtem Gerät laut Nutzerangabe erledigt (Nachweis im Apple-Status nachtragen) |
+| APNs-Push | `PushTests` (14, SQLite, Test-Transport): Registrierung/Idempotenz/Limit, Einstellungen, JWT (ES256 mit Test-Schlüssel, Cache), Konfig-Validierung, Erinnerung genau einmal, Frage/Review/Kommentar, Rechteverlust vor Sendung, Widerruf bei 410/BadDeviceToken, Backoff/Fehlschlag, Lease mit zwei Instanzen, Kontolöschung; Gesamtsuite 193 Tests grün (31.10.). **Kein echter Apple-Aufruf.** `setup.sh --dry-run` mit/ohne Push, shellcheck |
 | Dokumentation | docs-site-Build ohne Warnungen, relative Links in `docs/` und README geprüft, YAML-Verträge laden (31.10.) |
 
 ### Bekannte Lücken
@@ -40,7 +41,7 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 | Plugin nie in echter Claude-Code-Sitzung (Hooks im Lauf, interaktiver OAuth-Flow der CLI); Verhalten bei Account-Wechsel nur Annahme | Durchsetzung/Alltag unbelegt |
 | `scripts/onboarding-e2e.sh` nur im Modus `sqlite`; `compose`/`devdb` ungeprüft | MariaDB-Pfad des Onboardings ungeprüft |
 | Mehrknoten-Swarm, Rollout/Rollback, Lastverteilung, Server-Klon des `deploy`-Branches, echter Server-Restore, TLS/Reverse Proxy | Produktionsreife unbelegt |
-| Keine Selbstbedienungs-Kontolöschung, keine Push-Zustellung für Fragen/Reviews, keine Erinnerungszustellung, Listen teils unpaginiert, keine Bindungs-Widerrufs-API, Repository-Plätze widerrufener Geräte nicht administrativ freigebbar | Funktionslücken |
+| Keine Selbstbedienungs-Kontolöschung, kein Web-Push (APNs serverseitig gebaut, aber nie gegen Apple ausgeführt: Schlüssel, Gerät und Apple-Client fehlen), Listen teils unpaginiert, keine Bindungs-Widerrufs-API, Repository-Plätze widerrufener Geräte nicht administrativ freigebbar | Funktionslücken |
 | Steuerzentrale: Build-Galerie aus `builds[]` fehlt, Aggregat lädt alle offenen Aufgaben (kein SQL-Voraggregat) | Komfort/Skalierung |
 | Apple: Live-Läufe gegen aktuelles Backend, Verarbeitung der TestFlight-Builds in App Store Connect, Runner-Kopplung gegen echten Server | Apple-Pfad nicht Ende-zu-Ende belegt |
 
@@ -54,7 +55,22 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 | 4 | TestFlight-Build prüfen bzw. neu bauen und an interne Tester verteilen; Passkey-Nachweis im Apple-Status festhalten | App Store Connect |
 | 5 | `deploy/swarm/update.sh` auf dem Server ausführen, Rollout prüfen (`/`, Discovery, `/health/ready` mit `maintenance`), danach Clients neu verbinden (OAuth-Issuer) | Serverzugang |
 | 6 | Empfehlung: Widgets und App Intents (Heute, Schnellerfassung, Fragen beantworten) für die Apple-Apps planen | Produktentscheidung |
-| 7 | Backend-Lücken: Bindungen widerrufen, Selbstbedienungs-Kontolöschung, Push für Fragen/Reviews, Build-Galerie | Priorisierung |
+| 7 | Backend-Lücken: Bindungen widerrufen, Selbstbedienungs-Kontolöschung, Build-Galerie | Priorisierung |
+| 8 | Push scharf schalten: Schlüssel anlegen und `docs/PUSH-EINRICHTUNG.md` befolgen, Apple-Client anbinden (Registrierung, Entitlement, Deep-Links, Einstellungen), erster echter Versand mit `todo-app push-test` | Nutzer: APNs-Schlüssel; Client-Agent |
+
+---
+
+## Checkpoint 31.10.2026 (APNs-Push, ADR 0021)
+
+**Ziel:** serverseitige Push-Zustellung für iOS/macOS (kein Web-Push); der Nutzer richtet die Apple-Schlüssel selbst ein.
+
+**Gebaut (Hauptrepository, `Sources/TodoKit/Push/`):** Tabellen `push_devices`, `push_prefs`, `push_outbox` (Migration `CreatePushSchema`, additiv); REST `POST/GET /v1/push/devices`, `DELETE /v1/push/devices/{id}`, `GET/POST/PUT /v1/me/push-prefs` (`contracts/push.yaml`); `APNsSender` mit ES256-JWT (50 min Cache), HTTP/2 über den Vapor-Client, Transport als Protokoll; `PushWorker` (Lease `push-worker` in `maintenance_leases`, nur bei `serve` und nur mit `APNS_ENABLED=true`) sammelt Erinnerungen, offene Fragen, ausstehende Reviews und (optional) Kommentare, dedupliziert über `(user_id, dedupe_key)` und sendet mit Wiederholung; Rechte beim Erzeugen und beim Senden; `App push-test <konto-id> --yes`; `/health/ready` mit `push {enabled, environment}`. Deploy: `stack.push.yaml` (nur bei `APNS_ENABLED=true`), `swarm-deploy.sh`, `setup.sh` (Schritt „Push aktivieren?“, legt Secret aus `.p8`-Pfad an), `stack.env.example`, Dev-Compose aus, Workflow `deploy-branch.yml` kopiert die neue Overlay-Datei. Doku: `docs/PUSH-EINRICHTUNG.md`, ADR 0021, BETRIEB.md.
+
+**Entscheidungen (begründet in ADR 0021):** Inhalte standardmäßig generisch (`showContent` aus; Titel/Prompt sind sensibel), `mutable-content` für eine App-seitige Anreicherung; Auslöser per Worker-Scan statt Hooks in Fachtransaktionen; Erinnerungen nur an den Aufgabenbesitzer; Fragen an alle mit Recht `comment`, Reviews an den Reviewer bzw. alle mit `edit`; Zuweisungen ohne Auslöser (Modell kennt keine); keine Ruhezeiten; `APNS_ENABLED` ohne Schlüssel ist ein Startfehler; Konfigurationsfehler (`InvalidProviderToken` u. a.) widerrufen keine Geräte.
+
+**Geprüft:** siehe Tabelle „Was real geprüft ist“ (SQLite). **Nicht geprüft:** echter Versand an Apple, HTTP/2-Aushandlung des Clients, MariaDB-Lauf von `PushTests` (Docker-VM voll), `setup.sh` ohne Trockenlauf, `push-test` als CLI (nur der Sendepfad ist über den Sender getestet).
+
+**Offen / nächste Schritte:** Nutzer legt APNs-Schlüssel an (Anleitung); Apple-Client (Registrierung bei jedem Start, Entitlement `aps-environment`, Berechtigungsabfrage, Deep-Links aus `kind/taskID/projectID/subjectID`, Einstellungs-UI für `/v1/me/push-prefs`, optional Notification Service Extension); danach Web-Push, Zuweisungen (sobald das Modell sie kennt), Index/Zeitfeld für sehr viele Erinnerungen.
 
 ---
 

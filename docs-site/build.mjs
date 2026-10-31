@@ -58,6 +58,7 @@ addMd({ slug: 'agent-manual.html', src: 'docs/agent-manual.md', group: 'Agenten'
 addMd({ slug: 'sync-aufbewahrung.html', src: 'docs-site/content/sync-aufbewahrung.md', group: 'Technik' });
 addMd({ slug: 'architektur.html', src: 'docs/ARCHITEKTUR.md', group: 'Technik' });
 addMd({ slug: 'identitaet-und-rechte.html', src: 'docs/IDENTITAET-UND-RECHTE.md', group: 'Technik' });
+addMd({ slug: 'push-einrichtung.html', src: 'docs/PUSH-EINRICHTUNG.md', group: 'Technik' });
 addMd({ slug: 'betrieb.html', src: 'docs/BETRIEB.md', group: 'Technik', title: 'Betrieb und Swarm' });
 addMd({ slug: 'entscheidungen.html', src: 'docs/ENTSCHEIDUNGEN.md', group: 'Entscheidungen', title: 'Entscheidungen' });
 const adrFiles = fs.readdirSync(path.join(repo, 'docs/adr')).filter((f) => f.endsWith('.md')).sort();
@@ -426,6 +427,7 @@ function renderHome(page) {
     ['sync-aufbewahrung.html', 'Sync-Aufbewahrung', 'Retention, 410, Cleanup-Scheduler'],
     ['architektur.html', 'Architektur', 'Modularer Monolith, Swarm, Konsistenz'],
     ['betrieb.html', 'Betrieb und Swarm', 'Stack, Secrets, Updates, Prüfungen'],
+    ['push-einrichtung.html', 'Push einrichten (APNs)', 'Schlüssel, Secret, Test, Fehlersuche'],
     ['adr/index.html', 'ADRs', 'Architekturentscheidungen mit Begründung'],
     ['api/index.html', 'API-Verträge', 'OpenAPI lesbar und mit Redoc'],
     ['apple.html', 'Apple und TestFlight', 'iOS, macOS, Passkey-Domain'],

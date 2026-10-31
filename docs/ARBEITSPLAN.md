@@ -127,3 +127,9 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 ## Sync: Planung und Labels (31.10.2026, ADR 0020)
 - [x] `task.planning`, `label.*`, `task.label_add/remove`, Feed-Planung und Entität `label`, sync.yaml 1.4.0, Tests SQLite
 - [ ] MariaDB-Lauf `SyncPlanningLabelTests` nachholen (Docker-Platz); Apple-Outbox auf die neuen Mutationen umstellen
+
+## APNs-Push (31.10.2026, ADR 0021)
+- [x] Backend: Geräte, Einstellungen, Outbox, Worker mit Lease, ES256-JWT, Sender mit Backoff/Widerruf, Trigger Erinnerung/Frage/Review/Kommentar, `push-test`, Health-Info, Vertrag `contracts/push.yaml`, Tests SQLite (14), Deploy-Overlay/`setup.sh`/Doku (`docs/PUSH-EINRICHTUNG.md`).
+- [ ] Nutzer: APNs-Schlüssel anlegen, Secret `todo_apns_key`, `stack.env`, `update.sh --force`, `push-test` (erster echter Apple-Versand, bisher ungeprüft).
+- [ ] Apple-Client: `POST /v1/push/devices` bei jedem Start (Umgebung sandbox bei Debug, production bei TestFlight/App Store), Entitlement, Berechtigungsabfrage, Deep-Links, Einstellungen (`/v1/me/push-prefs`), optional Notification Service Extension.
+- [ ] MariaDB-Lauf `PushTests` nachholen (Docker-Platz). Später: Web-Push (VAPID), Zuweisungs-Push, Ruhezeiten.

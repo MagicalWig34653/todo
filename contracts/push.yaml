@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: Todolino – Push-Benachrichtigungen (APNs)
+  version: 1.0.0
+  description: 'ADR 0021, Betrieb: docs/PUSH-EINRICHTUNG.md. Geräte-Registrierung und Einstellungen je Konto; Sitzung oder Bearer nötig,
+    jedes Konto sieht und ändert nur seine eigenen Geräte. Geräte-Tokens werden nie ausgegeben und nie geloggt. Registrierung ist auch
+    möglich, wenn der Server Push noch nicht aktiviert hat (APNS_ENABLED=false); bei aktiviertem Push muss bundleId zu APNS_TOPIC passen.
+    Zustellung: serverseitiger Worker (Outbox), Kategorien reminders, agent_questions, agent_reviews, comments (assignments vorbereitet,
+    ohne Auslöser). Inhalt generisch, solange showContent false ist. Nachrichten tragen im userInfo auf oberster Ebene kind
+    (reminder|question|review|comment|test), taskID, projectID, subjectID (Frage-/Review-/Kommentar-ID) und aps.thread-id = projectID,
+    aps.category TODO_REMINDER|TODO_QUESTION|TODO_REVIEW|TODO_COMMENT, mutable-content 1 (Notification Service Extension möglich), optional aps.badge
+    (offene Fragen plus ausstehende Reviews, wenn badge true). Kein Sync-Feed. Zusätzlich /health/ready: push {enabled, environment}.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/push/devices:
+    post:
+      operationId: registerPushDevice
+      summary: Gerät registrieren oder aktualisieren (idempotent je Token)
+      description: 'Dasselbe Token ergibt dieselbe Geräte-ID (201 beim ersten Mal, danach 200) und setzt last_seen zurück und reaktiviert ein
+        widerrufenes Gerät. Meldet ein anderes Konto dasselbe Token, wird es diesem Konto zugeordnet. Höchstens 20 aktive Geräte je Konto
+        (das am längsten ungesehene wird widerrufen). Sollte bei jedem App-Start und bei neuem Token aufgerufen werden.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterPushDevice'}
+      responses:
+        '200': {description: Bekanntes Token aktualisiert, content: {application/json: {schema: {$ref: '#/components/schemas/PushDevice'}}}}
+        '201': {description: Neu registriert, content: {application/json: {schema: {$ref: '#/components/schemas/PushDevice'}}}}
+        '400': {description: 'reason invalid_token, invalid_platform, invalid_environment, invalid_bundle_id, invalid_app_version, invalid_locale'}
+        '401': {description: Nicht angemeldet}
+    get:
+      operationId: listPushDevices
+      summary: Eigene aktive Geräte (ohne Token)
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/PushDevice'}}}}}
+        '401': {description: Nicht angemeldet}
+  /v1/push/devices/{id}:
+    delete:
+      operationId: revokePushDevice
+      summary: Gerät widerrufen (z. B. bei Abmeldung)
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Widerrufen}
+        '404': {description: Unbekannt, fremd oder bereits widerrufen}
+  /v1/me/push-prefs:
+    get:
+      operationId: getPushPrefs
+      summary: Push-Einstellungen des Kontos (Standardwerte, wenn nichts gespeichert ist)
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {$ref: '#/components/schemas/PushPrefs'}}}}
+    post:
+      operationId: setPushPrefs
+      summary: Einstellungen teilweise ändern (nur gesendete Felder)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdatePushPrefs'}
+      responses:
+        '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/PushPrefs'}}}}
+        '400': {description: invalid_category}
+    put:
+      operationId: putPushPrefs
+      summary: Wie POST (Alias)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdatePushPrefs'}
+      responses:
+        '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/PushPrefs'}}}}
+        '400': {description: invalid_category}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    RegisterPushDevice:
+      type: object
+      required: [token, platform, bundleId]
+      properties:
+        token: {type: string, description: 'APNs-Gerätetoken als Hex-String (32 bis 200 Zeichen), Groß-/Kleinschreibung egal'}
+        platform: {type: string, enum: [ios, macos]}
+        environment: {type: string, enum: [sandbox, production], description: 'Debug-Builds (aps-environment development): sandbox; TestFlight/App Store: production. Fehlt es, gilt APNS_ENVIRONMENT des Servers.'}
+        bundleId: {type: string, description: 'apns-topic, z. B. de.linolaske.todo'}
+        appVersion: {type: string, maxLength: 40}
+        locale: {type: string, maxLength: 35, description: 'z. B. de-DE; de* ergibt deutsche Texte, sonst englische'}
+    PushDevice:
+      type: object
+      required: [id, platform, environment, bundleId, lastSeenAt]
+      properties:
+        id: {type: string, format: uuid}
+        platform: {type: string, enum: [ios, macos]}
+        environment: {type: string, enum: [sandbox, production]}
+        bundleId: {type: string}
+        appVersion: {type: [string, 'null']}
+        locale: {type: [string, 'null']}
+        createdAt: {type: [string, 'null'], format: date-time}
+        lastSeenAt: {type: string, format: date-time}
+    PushPrefs:
+      type: object
+      required: [categories, showContent, badge]
+      properties:
+        categories:
+          type: object
+          description: 'Alle fünf Schlüssel sind immer vorhanden. Standard: reminders, agent_questions, agent_reviews true; assignments, comments false.'
+          properties:
+            reminders: {type: boolean}
+            agent_questions: {type: boolean}
+            agent_reviews: {type: boolean}
+            assignments: {type: boolean}
+            comments: {type: boolean}
+        showContent: {type: boolean, description: 'false (Standard): generische Texte. true: Aufgabentitel und bei Fragen/Reviews der Text (gekürzt) in der Benachrichtigung.'}
+        badge: {type: boolean, description: 'Standard true: aps.badge = offene Fragen + ausstehende Reviews.'}
+    UpdatePushPrefs:
+      type: object
+      properties:
+        categories:
+          type: object
+          additionalProperties: {type: boolean}
+        showContent: {type: boolean}
+        badge: {type: boolean}

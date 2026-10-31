@@ -7,7 +7,8 @@
 #   --env-file FILE      env file to write and, when it exists, to read as defaults (default: deploy/swarm/stack.env)
 #   --answers-file FILE  KEY=VALUE answers (same names as in the env file, plus the secret values DB_PASSWORD,
 #                        BOOTSTRAP_TOKEN, only with ATTACHMENT_STORAGE=s3 also S3_ACCESS_KEY and S3_SECRET_KEY,
-#                        optionally APPLE_TEAM_ID/APPLE_BUNDLE_IDS,
+#                        optionally APPLE_TEAM_ID/APPLE_BUNDLE_IDS, push: APNS_ENABLED=true, APNS_KEY_ID, APNS_TEAM_ID,
+#                        APNS_TOPIC, APNS_ENVIRONMENT and APNS_KEY_SOURCE (path of the .p8 file; only used to create the secret),
 #                        PUBLIC_DOMAIN, CHECK_NETWORK, SWARM_ADVERTISE_ADDR); the file is parsed, never executed
 #   --non-interactive    never prompt; take answers (file, SETUP_<KEY> env vars, existing env file, defaults)
 #   --reconfigure        prompt again for every value, existing env values are the defaults
@@ -172,6 +173,12 @@ valid_aasa() {
     [[ "$id" =~ ^[A-Z0-9]{10}\.[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]] || { bad "AASA_APP_IDS: '$id' ist nicht TeamID.BundleID"; rc=1; }
   done
   return "$rc"
+}
+valid_keyid() { [[ "$1" =~ ^[A-Z0-9]{10}$ ]] || bad "Key-ID: 10 Zeichen A-Z0-9 (steht im Developer Portal neben dem Schlüssel)"; }
+valid_apnsenv() { [[ "$1" == production || "$1" == sandbox ]] || bad "production (TestFlight/App Store) oder sandbox (Debug-Builds)"; }
+valid_p8() {
+  if [ -n "$1" ] && [ -r "$1" ] && grep -q 'BEGIN PRIVATE KEY' "$1"; then return 0; fi
+  bad "lesbare .p8-Datei (beginnt mit -----BEGIN PRIVATE KEY-----) angeben"
 }
 valid_any() { return 0; }
 
@@ -352,6 +359,40 @@ fi
 ask BOOTSTRAP_TOKEN_SECRET "Name des Secrets für das Bootstrap-Token" "${TODO_STACK}_bootstrap_token" valid_ident \
   "Das Bootstrap-Token erlaubt einmalig das Anlegen des ersten Administrator-Kontos."
 
+# ---------------------------------------------------------------- Step 6b: push notifications (APNs, optional)
+step "Push-Benachrichtigungen (APNs, optional)"
+echo "Push für die iOS-/macOS-App (Erinnerungen, Rückfragen, Reviews). Ohne Push bleibt alles wie bisher; Anleitung: docs/PUSH-EINRICHTUNG.md."
+APNS_ENABLED_DEFAULT=n
+[ "$(get APNS_ENABLED 'false')" != true ] || APNS_ENABLED_DEFAULT=y
+lookup APNS_ENABLED ''; push_src="$SRC"
+if [ "$NONINTERACTIVE" = 1 ] || [ "$push_src" = answer ] || [ "$push_src" = env ] || { [ "$REUSE" = 1 ] && [ "$push_src" = existing ]; }; then
+  [ "$(get APNS_ENABLED 'false')" = true ] && APNS_ENABLED=true || APNS_ENABLED=false
+elif confirm "Push aktivieren?" "$APNS_ENABLED_DEFAULT"; then APNS_ENABLED=true; else APNS_ENABLED=false; fi
+APNS_KEY_ID=""; APNS_TEAM_ID=""; APNS_TOPIC=""; APNS_ENVIRONMENT=""; APNS_KEY_SECRET=""; APNS_KEY_SOURCE=""
+if [ "$APNS_ENABLED" = true ]; then
+  ask APNS_KEY_ID "APNs Key-ID" "$(get APNS_KEY_ID '')" valid_keyid \
+    "Developer Portal > Certificates, Identifiers & Profiles > Keys: die Key-ID des Schlüssels mit APNs-Berechtigung."
+  ask APNS_TEAM_ID "Apple Team ID" "$(get APNS_TEAM_ID "${APPLE_TEAM_ID:-$team_default}")" valid_keyid
+  topic_default="$(get APNS_TOPIC '')"
+  [ -n "$topic_default" ] || topic_default="$(printf '%s' "${APPLE_BUNDLE_IDS:-de.linolaske.todo}" | cut -d, -f1)"
+  ask APNS_TOPIC "Bundle-ID(s) für Push (kommagetrennt, die erste ist Standard)" "$topic_default" valid_bundles
+  ask APNS_ENVIRONMENT "Standard-Umgebung für Geräte ohne Angabe (production/sandbox)" "production" valid_apnsenv \
+    "TestFlight- und App-Store-Builds nutzen production, Xcode-Debug-Builds sandbox. Jedes Gerät meldet seine Umgebung selbst."
+  ask APNS_KEY_SECRET "Name des Swarm-Secrets für die .p8-Datei" "${TODO_STACK}_apns_key" valid_ident
+  if secret_exists "$APNS_KEY_SECRET"; then
+    SS_APNS=exists
+    say "Secret '$APNS_KEY_SECRET' existiert bereits und bleibt unverändert."
+  else
+    SS_APNS=create
+    if [ "$DRY" = 1 ] && [ -z "$(get APNS_KEY_SOURCE '')" ]; then
+      APNS_KEY_SOURCE="(Trockenlauf: Pfad der .p8-Datei wird erst im echten Lauf abgefragt)"
+    else
+      ask APNS_KEY_SOURCE "Pfad der .p8-Datei (AuthKey_XXXXXXXXXX.p8)" "$(get APNS_KEY_SOURCE '')" valid_p8 \
+        "Die Datei wird nur in das Swarm-Secret übernommen, nicht kopiert. Danach aus Downloads/Backup-Ordnern entfernen und sicher (Passwortmanager) archivieren."
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------- Step 7: secrets
 step "Secrets"
 # Per secret: status exists | create | missing; value in SV_<KEY> (never printed).
@@ -457,6 +498,7 @@ Passwort-Login:    $PASSWORD_LOGIN_ENABLED
 Port / Replikate:  $BACKEND_PORT / $BACKEND_REPLICAS (CPU-Limit $BACKEND_CPU_LIMIT, Speicher-Limit $BACKEND_MEMORY_LIMIT)
 MariaDB:           $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME
 Anhänge:           $ATTACHMENT_STORAGE, Limit $ATTACHMENT_MAX_BYTES Bytes$([ "$ATTACHMENT_STORAGE" != s3 ] || echo ", S3 $S3_ENDPOINT, Bucket $S3_BUCKET, Region $S3_REGION")
+Push (APNs):      $([ "$APNS_ENABLED" = true ] && echo "an, Key-ID $APNS_KEY_ID, Team $APNS_TEAM_ID, Topic $APNS_TOPIC, Standard $APNS_ENVIRONMENT, Secret $APNS_KEY_SECRET" || echo aus)
 Env-Datei:         $OUT_ENV (Modus 600)
 EOF
 for key in $SECRET_KEYS; do
@@ -468,6 +510,9 @@ for key in $SECRET_KEYS; do
   esac
   printf 'Secret %-28s %s\n' "$(secret_name "$key")" "$st"
 done
+if [ "$APNS_ENABLED" = true ]; then
+  printf 'Secret %-28s %s\n' "$APNS_KEY_SECRET" "$([ "${SS_APNS:-}" = exists ] && echo 'vorhanden, bleibt unverändert' || echo 'wird aus der .p8-Datei angelegt')"
+fi
 echo "Danach: Migration (scripts/swarm-deploy.sh), Rolling Update, Health- und AASA-Prüfung."
 echo "Sichern Sie vor einem Update einer bestehenden Installation die Datenbank (scripts/backup-db.sh)."
 if [ "$DRY" = 0 ] && [ "$YES" = 0 ] && [ "$NONINTERACTIVE" = 0 ]; then
@@ -510,6 +555,14 @@ write_env() {
       echo "S3_SECRET_KEY_SECRET=$S3_SECRET_KEY_SECRET"
     fi
     echo "BOOTSTRAP_TOKEN_SECRET=$BOOTSTRAP_TOKEN_SECRET"
+    if [ "$APNS_ENABLED" = true ]; then
+      echo "APNS_ENABLED=true"
+      echo "APNS_KEY_ID=$APNS_KEY_ID"
+      echo "APNS_TEAM_ID=$APNS_TEAM_ID"
+      echo "APNS_TOPIC=$APNS_TOPIC"
+      echo "APNS_ENVIRONMENT=$APNS_ENVIRONMENT"
+      echo "APNS_KEY_SECRET=$APNS_KEY_SECRET"
+    fi
   } > "$tmp"
   chmod 600 "$tmp"
   if [ -f "$target" ]; then
@@ -528,6 +581,9 @@ if [ "$DRY" = 1 ]; then
     status="SS_$key"
     [ "${!status}" = exists ] || echo "  docker secret create $(secret_name "$key") -   (Wert nicht angezeigt)"
   done
+  if [ "$APNS_ENABLED" = true ] && [ "${SS_APNS:-}" != exists ]; then
+    echo "  docker secret create $APNS_KEY_SECRET <APNS_KEY_SOURCE>   (.p8-Inhalt nicht angezeigt)"
+  fi
   echo "  scripts/swarm-deploy.sh   (STACK=$TODO_STACK, Migration, danach Rollout mit $BACKEND_REPLICAS Replikaten)"
   echo "  Rollout abwarten, GET $RP_ORIGIN/health/ready und /.well-known/apple-app-site-association prüfen"
   say "Trockenlauf beendet; es wurden keine Docker-Aufrufe ausgeführt."
@@ -544,6 +600,13 @@ for key in $SECRET_KEYS; do
   printf '%s' "${!value}" | docker secret create "$name" - >/dev/null
   say "Secret '$name' angelegt."
 done
+if [ "$APNS_ENABLED" = true ] && [ "${SS_APNS:-}" = create ]; then
+  if secret_exists "$APNS_KEY_SECRET"; then say "Secret '$APNS_KEY_SECRET' wurde inzwischen angelegt, unverändert gelassen."
+  else
+    docker secret create "$APNS_KEY_SECRET" "$APNS_KEY_SOURCE" >/dev/null
+    say "Secret '$APNS_KEY_SECRET' angelegt. Die Datei $APNS_KEY_SOURCE kann jetzt aus Downloads/Backup-Ordnern entfernt werden."
+  fi
+fi
 if [ "$GENERATED_TOKEN" = 1 ]; then
   cat <<EOF
 

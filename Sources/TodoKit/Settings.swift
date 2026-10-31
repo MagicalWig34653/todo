@@ -1,3 +1,4 @@
+import Crypto
 import Vapor
 
 /// Runtime settings read from the environment. No replica-local state is needed for correctness.
@@ -46,6 +47,8 @@ public struct AppSettings: Sendable {
     public var cleanupIntervalMinutes: Int = 360
     /// Days after which sync tombstones and stored mutation results are purged (SYNC_RETENTION_DAYS); 0 keeps them.
     public var syncRetentionDays: Int = 90
+    /// APNs push configuration (ADR 0021). Disabled unless APNS_ENABLED=true.
+    public var apns = APNsConfig()
 
     public init(
         relyingPartyID: String = "localhost",
@@ -109,9 +112,63 @@ public struct AppSettings: Sendable {
         }
         try nonNegative("CLEANUP_INTERVAL_MINUTES", max: 10_080, into: &s.cleanupIntervalMinutes)
         try nonNegative("SYNC_RETENTION_DAYS", max: 3_650, into: &s.syncRetentionDays)
+        s.apns = try APNsConfig.fromEnvironment(get: get)
         // Default /srv/web is where the container image ships the PWA; absent directory means API only.
         s.webRoot = try RuntimeEnvironment.value("WEB_ROOT", get: get) ?? "/srv/web"
         return s
+    }
+}
+
+public enum APNsEnvironment: String, Sendable, Codable, CaseIterable {
+    case sandbox, production
+    public var host: String { self == .sandbox ? "api.sandbox.push.apple.com" : "api.push.apple.com" }
+}
+
+/// Settings for the APNs sender. The `.p8` key is read from `APNS_KEY_FILE` (a Docker secret) and validated at
+/// startup; with `APNS_ENABLED=true` a missing or unparsable key, key ID, team ID or topic is a startup error.
+public struct APNsConfig: Sendable {
+    public var enabled = false
+    /// PEM text of the `.p8` key. Never logged or returned by any endpoint.
+    public var keyPEM: String?
+    public var keyID: String?
+    public var teamID: String?
+    /// Allowed bundle IDs (apns-topic); the first one is the default for devices that report none.
+    public var topics: [String] = ["de.linolaske.todo"]
+    /// Used for devices that do not name an environment; each device row may override it.
+    public var environment: APNsEnvironment = .production
+
+    public init() {}
+
+    static func fromEnvironment(get: (String) -> String?) throws -> APNsConfig {
+        var c = APNsConfig()
+        if let raw = try RuntimeEnvironment.value("APNS_ENVIRONMENT", get: get), !raw.isEmpty {
+            guard let env = APNsEnvironment(rawValue: raw) else { throw SettingsError.invalid("APNS_ENVIRONMENT must be sandbox or production") }
+            c.environment = env
+        }
+        if let raw = try RuntimeEnvironment.value("APNS_TOPIC", get: get), !raw.isEmpty {
+            c.topics = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        let flag = try RuntimeEnvironment.value("APNS_ENABLED", get: get) ?? "false"
+        guard ["true", "false", ""].contains(flag) else { throw SettingsError.invalid("APNS_ENABLED must be true or false") }
+        guard flag == "true" else { return c }
+        c.enabled = true
+        guard !c.topics.isEmpty, c.topics.allSatisfy({ $0.range(of: "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$", options: .regularExpression) != nil }) else {
+            throw SettingsError.invalid("APNS_TOPIC must list bundle IDs like de.example.app (comma separated)")
+        }
+        let id = "^[A-Z0-9]{10}$"
+        guard let keyID = try RuntimeEnvironment.value("APNS_KEY_ID", get: get), keyID.range(of: id, options: .regularExpression) != nil else {
+            throw SettingsError.invalid("APNS_ENABLED=true needs APNS_KEY_ID (10 characters A-Z0-9, shown next to the key in the developer portal)")
+        }
+        guard let teamID = try RuntimeEnvironment.value("APNS_TEAM_ID", get: get), teamID.range(of: id, options: .regularExpression) != nil else {
+            throw SettingsError.invalid("APNS_ENABLED=true needs APNS_TEAM_ID (10 characters A-Z0-9)")
+        }
+        guard get("APNS_KEY_FILE") != nil || get("APNS_KEY") != nil, let pem = try RuntimeEnvironment.value("APNS_KEY", get: get), !pem.isEmpty else {
+            throw SettingsError.invalid("APNS_ENABLED=true needs the .p8 key: set APNS_KEY_FILE to the path of the Docker secret (e.g. /run/secrets/apns_key)")
+        }
+        do { _ = try P256.Signing.PrivateKey(pemRepresentation: pem) }
+        catch { throw SettingsError.invalid("APNS_KEY_FILE does not contain a valid APNs .p8 key (PEM, EC P-256)") }
+        c.keyID = keyID; c.teamID = teamID; c.keyPEM = pem
+        return c
     }
 }
 

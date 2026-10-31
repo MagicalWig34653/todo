@@ -105,8 +105,8 @@ Aufwand: S = Tage, M = 1–2 Wochen, L = mehrere Wochen oder externe Abhängigke
 
 Leitlinie: Nutzerkern zuerst (Projekte mit eigenen Spalten, Steuerzentrale, Passkey, MCP), danach das, was Alltagsnutzung gegenüber Todoist bremst.
 
-1. Erinnerungszustellung (Web Push plus APNs): ohne sie ist das vorhandene Feld wertlos; zugleich Grundlage für Push bei Agentenfragen und Reviews (laut STATUS offene Lücke).
-2. Push für Agentenfragen/Reviews (gleiche Infrastruktur): stärkt die Steuerzentrale direkt.
+1. Erinnerungszustellung (APNs serverseitig umgesetzt am 31.10.2026, ADR 0021, Versand und Apple-Client ausstehend; Web Push offen): ohne sie ist das vorhandene Feld wertlos; zugleich Grundlage für Push bei Agentenfragen und Reviews (laut STATUS offene Lücke).
+2. Push für Agentenfragen/Reviews (mit 1. umgesetzt, APNs; gleiche Infrastruktur): stärkt die Steuerzentrale direkt.
 3. Wiederholungsregeln erweitern (Wochentage, „ab Erledigung“, monatlicher Stichtag): kleine Vertragsänderung, hoher Alltagsnutzen.
 4. Filtersprache mit gespeichertem Filter: macht „gespeicherte Kriterien“ mächtig; auch für Agenten/MCP nutzbar.
 5. Schnellerfassung mit deutscher Datumserkennung („morgen 9 Uhr“, „jeden Montag“): eigener Parser, kein Fremdcode.

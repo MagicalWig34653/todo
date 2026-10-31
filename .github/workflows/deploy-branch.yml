@@ -48,7 +48,7 @@ jobs:
           find deploy -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cd main
           files="deploy/swarm/setup.sh deploy/swarm/update.sh deploy/swarm/lib.sh deploy/swarm/healthcheck.sh
-                 deploy/swarm/stack.yaml deploy/swarm/stack.s3.yaml deploy/swarm/stack.env.example
+                 deploy/swarm/stack.yaml deploy/swarm/stack.s3.yaml deploy/swarm/stack.push.yaml deploy/swarm/stack.env.example
                  scripts/swarm-deploy.sh scripts/backup-db.sh scripts/restore-db.sh scripts/db-common.sh
                  docs/BETRIEB.md"
           [ ! -f LICENSE ] || files="$files LICENSE"
