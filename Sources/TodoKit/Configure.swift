@@ -58,6 +58,8 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
     app.databases.middleware.use(SyncProjectMiddleware())
     app.databases.middleware.use(SyncTaskMiddleware())
     app.databases.middleware.use(SyncColumnMiddleware())
+    app.databases.middleware.use(SyncLabelMiddleware())
+    app.databases.middleware.use(SyncLabelLinkMiddleware())
 }
 
 /// Migrations are registered but never run on `serve`; run `App migrate --yes` once per deployment.
@@ -84,6 +86,8 @@ public func configureMigrations(_ app: Application) {
     configureProjectState(app)
     configureCommandCenter(app)
     configureProjectSync(app)
+    // Last: appends label upserts to the change log (needs the sync tables and the discovery tables).
+    app.migrations.add(BackfillLabelSync())
 }
 
 public func configureContent() {

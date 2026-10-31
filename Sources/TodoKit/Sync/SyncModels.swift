@@ -8,7 +8,7 @@ final class SyncChange: Model, @unchecked Sendable {
     static let schema = "sync_changes"
     @ID(key: .id) var id: UUID?
     @Field(key: "seq") var seq: Int
-    @Field(key: "entity_type") var entityType: String // project | task
+    @Field(key: "entity_type") var entityType: String // project | task | column | label
     @Field(key: "entity_id") var entityID: UUID
     @Field(key: "kind") var kind: String // upsert | delete | revoke
     @OptionalField(key: "project_id") var projectID: UUID?
@@ -93,4 +93,17 @@ struct CreateSyncSchema: AsyncMigration {
             try await db.schema(table).delete()
         }
     }
+}
+
+/// Appends an upsert for every pre-existing label so a cursor of 0 still yields the complete state (ADR 0020).
+struct BackfillLabelSync: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        for label in try await DiscoveryLabel.query(on: db).sort(\.$id).all() {
+            let seq = try await SyncRecorder.nextSeq(on: db)
+            try await SyncChange(seq: seq, entityType: "label", entityID: label.requireID(), kind: "upsert", projectID: nil).save(on: db)
+        }
+    }
+
+    /// Log entries are append-only history; nothing to undo.
+    func revert(on db: any Database) async throws {}
 }

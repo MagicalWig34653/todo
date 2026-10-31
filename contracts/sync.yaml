@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Sync
-  version: 1.3.0
+  version: 1.4.0
   description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
     ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz
     im Änderungsprotokoll bezeichnet. Cursor "c0" liefert den vollständigen sichtbaren Stand. Jede Änderung wird nach
@@ -23,7 +23,14 @@ info:
     der Client verwirft seinen lokalen Cache für dieses Konto und beginnt bei c0 (liefert den vollständigen sichtbaren Stand;
     der jeweils neueste Upsert lebender Objekte bleibt erhalten). c0 und Cursor ab dem Boden bleiben gültig. Gelöschte IDs sind
     nur innerhalb der Aufbewahrungsfrist durch id_deleted gesperrt. Wird ein Konto gelöscht (App delete-account), erhalten die
-    übrigen Konten Tombstones für alles, was sie dadurch nicht mehr sehen.'
+    übrigen Konten Tombstones für alles, was sie dadurch nicht mehr sehen.
+    1.4.0 (ADR 0020, rein additiv): Planung und Labels. Task-Upserts tragen zusätzlich "planning" (dueAt, plannedAt, priority,
+    recurrence, reminders; immer vorhanden, Standardwerte wenn nichts geplant ist). Neue Entität entityType "label" (Konto-private
+    Labels: id, name, version, taskIDs = aktuell lesbare Aufgaben des Kontos); Tombstones nur an das besitzende Konto.
+    Neue Mutationen task.planning (Pflicht version, ersetzt die Planungsdaten vollständig, erhöht die Aufgabenversion; Rolle edit),
+    label.create/label.rename/label.delete (nur eigene Labels, sonst 404), task.label_add/task.label_remove (id = Aufgabe,
+    labelID; eigene Labels, Aufgabe lesbar, idempotent). Antworten tragen planning bzw. label. Alte Clients ignorieren unbekannte Felder,
+    Entitäten und Mutationstypen. Migration BackfillLabelSync (bestehende Labels als Upserts); vor Serverstart ausführen.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -192,7 +199,7 @@ components:
       required: [seq, entityType, entityID, kind]
       properties:
         seq: {type: integer}
-        entityType: {type: string, enum: [project, task]}
+        entityType: {type: string, enum: [project, task, column, label], description: 'column seit 1.2.0, label seit 1.4.0; unbekannte Werte ignorieren'}
         entityID: {type: string, format: uuid}
         kind:
           type: string
@@ -200,6 +207,35 @@ components:
           description: 'delete entfernt lokale Daten bei physischer Löschung oder Zugriffsverlust; enthält keine Projekt-/Aufgaben-Payload. Ein Zugriffsverlust löscht das Objekt serverseitig nicht.'
         project: {$ref: '#/components/schemas/Project'}
         task: {$ref: '#/components/schemas/Task'}
+        planning: {$ref: '#/components/schemas/Planning', description: 'Nur bei entityType task, kind upsert (seit 1.4.0)'}
+        label: {$ref: '#/components/schemas/Label', description: 'Nur bei entityType label, kind upsert (seit 1.4.0)'}
+    Planning:
+      type: object
+      required: [priority, reminders]
+      properties:
+        dueAt: {type: string, format: date-time}
+        plannedAt: {type: string, format: date-time}
+        priority: {type: integer, minimum: 0, maximum: 3}
+        recurrence:
+          type: object
+          required: [frequency, interval, timeZone]
+          properties:
+            frequency: {type: string, enum: [daily, weekly, monthly]}
+            interval: {type: integer, minimum: 1, maximum: 1000}
+            timeZone: {type: string, description: IANA-Zeitzone}
+            until: {type: string, format: date-time}
+        reminders:
+          type: array
+          maxItems: 100
+          items: {type: string, format: date-time}
+    Label:
+      type: object
+      required: [id, name, version, taskIDs]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        version: {type: integer}
+        taskIDs: {type: array, items: {type: string, format: uuid}, description: 'Vollständige Mitgliedschaft (lesbare Aufgaben). Beim Löschen/Entzug einer Aufgabe entfernt der Client die Verknüpfung selbst.'}
     SyncChanges:
       type: object
       required: [changes, cursor, hasMore]
@@ -217,7 +253,8 @@ components:
         type:
           type: string
           enum: [project.create, project.update, project.delete, project.position, task.create, task.update, task.delete,
-            task.move_column, column.create, column.update, column.delete]
+            task.move_column, column.create, column.update, column.delete, task.planning, label.create, label.rename,
+            label.delete, task.label_add, task.label_remove]
         id: {type: string, format: uuid}
         version: {type: integer, description: 'Pflicht bei update, optional bei delete (dann Versionsprüfung)'}
         name: {type: string}
@@ -232,6 +269,12 @@ components:
         index: {type: integer, minimum: 0, description: 'column.create/update, task.move_column, project.position: 0-basierte Zielposition'}
         moveTo: {type: string, description: 'column.delete: "none" oder Spalten-UUID; fehlt = erste verbleibende Spalte'}
         columnID: {type: string, format: uuid, description: 'task.move_column: Zielspalte; fehlt = Ohne Spalte'}
+        dueAt: {type: string, format: date-time, description: 'task.planning (seit 1.4.0): vollständiger Ersatz; fehlende Felder löschen (priority 0, reminders [])'}
+        plannedAt: {type: string, format: date-time}
+        priority: {type: integer, minimum: 0, maximum: 3}
+        recurrence: {$ref: '#/components/schemas/Planning/properties/recurrence', description: 'Benötigt dueAt oder plannedAt'}
+        reminders: {type: array, items: {type: string, format: date-time}}
+        labelID: {type: string, format: uuid, description: 'task.label_add/label_remove: id ist die Aufgabe'}
     SyncMutationResult:
       type: object
       required: [mutationID, type, id, deleted, cursor]
@@ -243,4 +286,6 @@ components:
         project: {$ref: '#/components/schemas/Project'}
         task: {$ref: '#/components/schemas/Task'}
         column: {$ref: '#/components/schemas/Column', description: 'column.create/update'}
+        planning: {$ref: '#/components/schemas/Planning', description: 'task.planning'}
+        label: {$ref: '#/components/schemas/Label', description: 'label.create/rename, task.label_add/remove'}
         cursor: {type: string}

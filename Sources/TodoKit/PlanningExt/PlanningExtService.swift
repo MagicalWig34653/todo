@@ -46,15 +46,26 @@ struct PlanningService: Sendable {
     /// Serializes graph, ACL and board mutations across replicas using the shared sharing-graph lock.
     func lock() async throws { try await lockSharingGraph(on: db) }
 
-    func put(_ id: UUID, data: PlanningData) async throws -> PlanningTaskDTO {
+    /// `expectedVersion` is set by the sync path (`task.planning`): the task version must match and is bumped, so a
+    /// stale `task.update` or `task.planning` conflicts like any other edit. The REST route passes nil and keeps its
+    /// established semantics (no version check, version untouched).
+    func put(_ id: UUID, data: PlanningData, expectedVersion: Int? = nil) async throws -> PlanningTaskDTO {
         try data.validate()
         try await lock()
         try await lockRow(table: TodoTask.schema, id: id, on: db)
         let t = try await task(id, role: .edit)
+        if let expectedVersion, t.version != expectedVersion { throw Abort(.conflict, reason: "version_conflict") }
         let p = try await TaskPlanning.find(id, on: db) ?? TaskPlanning(taskID: id)
         p.dueAt = data.dueAt; p.plannedAt = data.plannedAt; p.priority = data.priority
         p.recurrence = data.recurrence; p.reminders = data.reminders
         try await p.save(on: db)
+        // Planning is part of the synced task state: always emit a task upsert (a version bump saves the row).
+        if expectedVersion != nil {
+            t.version += 1
+            try await t.save(on: db)
+        } else {
+            try await SyncRecorder.recordUpsert(type: "task", id: id, projectID: t.projectID, on: db)
+        }
         try await appendActivity(taskID: id, actorType: .person, actorID: user.requireID(), kind: "task.planning_updated", subjectID: nil, on: db)
         // Also reconcile already completed tasks, including completions before recurrence was configured.
         if t.status == "done" { try await spawnNext(t, planning: p) }

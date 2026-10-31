@@ -134,9 +134,15 @@ struct SyncProjectMiddleware: AsyncModelMiddleware {
             }
             plan.append(("project", pid, pid, audience))
         }
+        let taskIDs = plan.filter { $0.type == "task" }.map(\.id)
+        let labelIDs = taskIDs.isEmpty ? [] : Set(try await DiscoveryTaskLabel.query(on: db).filter(\.$taskID ~~ taskIDs).all().map(\.labelID))
         try await next.delete(model, force: force, on: db)
         for item in plan {
             try await SyncRecorder.recordDelete(type: item.type, id: item.id, projectID: item.project, audience: item.audience, on: db)
+        }
+        // Cascading link removal fires no model events: refresh the labels that referenced the deleted tasks.
+        for id in labelIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
+            try await SyncRecorder.recordUpsert(type: "label", id: id, projectID: nil, on: db)
         }
     }
 }
@@ -166,12 +172,48 @@ struct SyncTaskMiddleware: AsyncModelMiddleware {
     }
 
     func delete(model: TodoTask, force: Bool, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        // Cascading link removal fires no model events: refresh the owner's labels that referenced this task.
+        let labelIDs = try await DiscoveryTaskLabel.query(on: db).filter(\.$taskID == model.requireID()).all().map(\.labelID)
         guard let project = try await Project.find(model.projectID, on: db) else {
-            try await next.delete(model, force: force, on: db); return
+            try await next.delete(model, force: force, on: db)
+            for id in labelIDs { try await SyncRecorder.recordUpsert(type: "label", id: id, projectID: nil, on: db) }
+            return
         }
         let audience = try await SyncRecorder.readers(of: project, on: db)
         try await next.delete(model, force: force, on: db)
         try await SyncRecorder.recordDelete(type: "task", id: model.requireID(), projectID: model.projectID, audience: audience, on: db)
+        for id in labelIDs { try await SyncRecorder.recordUpsert(type: "label", id: id, projectID: nil, on: db) }
+    }
+}
+
+/// Labels are private to their owner (ADR 0020): upserts and tombstones concern only the owning account.
+struct SyncLabelMiddleware: AsyncModelMiddleware {
+    func create(model: DiscoveryLabel, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.create(model, on: db)
+        try await SyncRecorder.recordUpsert(type: "label", id: model.requireID(), projectID: nil, on: db)
+    }
+
+    func update(model: DiscoveryLabel, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.update(model, on: db)
+        try await SyncRecorder.recordUpsert(type: "label", id: model.requireID(), projectID: nil, on: db)
+    }
+
+    func delete(model: DiscoveryLabel, force: Bool, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.delete(model, force: force, on: db)
+        try await SyncRecorder.recordDelete(type: "label", id: model.requireID(), projectID: nil, audience: [model.ownerID], on: db)
+    }
+}
+
+/// Attaching or detaching a label changes the label's `taskIDs`, so the label is re-delivered.
+struct SyncLabelLinkMiddleware: AsyncModelMiddleware {
+    func create(model: DiscoveryTaskLabel, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.create(model, on: db)
+        try await SyncRecorder.recordUpsert(type: "label", id: model.labelID, projectID: nil, on: db)
+    }
+
+    func delete(model: DiscoveryTaskLabel, force: Bool, on db: any Database, next: any AnyAsyncModelResponder) async throws {
+        try await next.delete(model, force: force, on: db)
+        try await SyncRecorder.recordUpsert(type: "label", id: model.labelID, projectID: nil, on: db)
     }
 }
 

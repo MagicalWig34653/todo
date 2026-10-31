@@ -11,6 +11,44 @@ struct SyncChangeDTO: Content {
     let task: TaskDTO?
     /// Set for `entityType == "column"` upserts (project board columns).
     var column: ColumnDTO? = nil
+    /// Set for `entityType == "task"` upserts: the task's planning data (ADR 0020). Always present for tasks,
+    /// with defaults (priority 0, no dates, no reminders) when nothing is planned.
+    var planning: SyncPlanningDTO? = nil
+    /// Set for `entityType == "label"` upserts (account-private labels).
+    var label: SyncLabelDTO? = nil
+}
+
+/// Planning data of a task as carried by the feed and by `task.planning` results.
+struct SyncPlanningDTO: Content {
+    let dueAt: Date?
+    let plannedAt: Date?
+    let priority: Int
+    let recurrence: RecurrenceRule?
+    let reminders: [Date]
+    init(_ p: TaskPlanning?) {
+        dueAt = p?.dueAt; plannedAt = p?.plannedAt; priority = p?.priority ?? 0
+        recurrence = p?.recurrence; reminders = p?.reminders ?? []
+    }
+}
+
+/// A label with its full task membership. Labels are private to the owning account; `taskIDs` lists only tasks
+/// the account can currently read.
+struct SyncLabelDTO: Content {
+    let id: UUID
+    let name: String
+    let version: Int
+    let taskIDs: [UUID]
+
+    static func make(_ label: DiscoveryLabel, user: User, on db: any Database) async throws -> SyncLabelDTO {
+        let access = ProjectAccess(user: user, db: db)
+        var ids: [UUID] = []
+        let links = try await DiscoveryTaskLabel.query(on: db).filter(\.$labelID == label.requireID()).all()
+        for link in links.sorted(by: { $0.taskID.uuidString < $1.taskID.uuidString }) {
+            do { _ = try await access.task(link.taskID); ids.append(link.taskID) }
+            catch let error as any AbortError where error.status == .notFound || error.status == .forbidden { continue }
+        }
+        return SyncLabelDTO(id: try label.requireID(), name: label.name, version: label.version, taskIDs: ids)
+    }
 }
 
 struct SyncChangesResponse: Content {
@@ -22,7 +60,8 @@ struct SyncChangesResponse: Content {
 struct SyncMutationRequest: Content {
     let mutationID: UUID
     /// project.create | project.update | project.delete | project.position | task.create | task.update | task.delete |
-    /// task.move_column | column.create | column.update | column.delete
+    /// task.move_column | column.create | column.update | column.delete | task.planning | label.create | label.rename |
+    /// label.delete | task.label_add | task.label_remove
     let type: String
     /// Entity ID: chosen by the client for creates, the target for updates and deletes.
     let id: UUID
@@ -45,6 +84,15 @@ struct SyncMutationRequest: Content {
     var moveTo: String? = nil
     /// task.move_column: target column of the task's project; omitted/null = "Ohne Spalte".
     var columnID: UUID? = nil
+    /// task.planning: full replacement of the task's planning data (omitted optional fields clear; `priority`
+    /// omitted = 0, `reminders` omitted = none). Requires `version`.
+    var dueAt: Date? = nil
+    var plannedAt: Date? = nil
+    var priority: Int? = nil
+    var recurrence: RecurrenceRule? = nil
+    var reminders: [Date]? = nil
+    /// task.label_add / task.label_remove: the label (the task is `id`).
+    var labelID: UUID? = nil
 }
 
 struct SyncMutationResponse: Content {
@@ -56,6 +104,10 @@ struct SyncMutationResponse: Content {
     let task: TaskDTO?
     /// Set for column.create/update.
     var column: ColumnDTO? = nil
+    /// Set for task.planning.
+    var planning: SyncPlanningDTO? = nil
+    /// Set for label.create/rename and task.label_add/remove (the label after the change).
+    var label: SyncLabelDTO? = nil
     let cursor: String
 }
 
@@ -117,6 +169,7 @@ struct SyncController: RouteCollection {
                     if row.kind == "revoke" {
                         do {
                             if row.entityType == "project" { _ = try await access.project(row.entityID) }
+                            else if row.entityType == "label" { continue }
                             else if row.entityType == "column" {
                                 guard let c = try await ProjectColumn.find(row.entityID, on: req.db) else { throw Abort(.notFound) }
                                 _ = try await access.project(c.projectID)
@@ -139,6 +192,10 @@ struct SyncController: RouteCollection {
                     let project = try await access.project(row.entityID)
                     result.append(SyncChangeDTO(seq: row.seq, entityType: "project", entityID: row.entityID,
                         kind: "upsert", project: try await access.dto(project), task: nil))
+                } else if row.entityType == "label" {
+                    guard let label = try await DiscoveryLabel.find(row.entityID, on: req.db), label.ownerID == userID else { continue }
+                    result.append(SyncChangeDTO(seq: row.seq, entityType: "label", entityID: row.entityID,
+                        kind: "upsert", project: nil, task: nil, label: try await SyncLabelDTO.make(label, user: user, on: req.db)))
                 } else if row.entityType == "column" {
                     guard let column = try await ProjectColumn.find(row.entityID, on: req.db) else { continue }
                     _ = try await access.project(column.projectID)
@@ -147,7 +204,8 @@ struct SyncController: RouteCollection {
                 } else {
                     let task = try await access.task(row.entityID)
                     result.append(SyncChangeDTO(seq: row.seq, entityType: "task", entityID: row.entityID,
-                        kind: "upsert", project: nil, task: try TaskDTO(task)))
+                        kind: "upsert", project: nil, task: try TaskDTO(task),
+                        planning: SyncPlanningDTO(try await TaskPlanning.find(row.entityID, on: req.db))))
                 }
             } catch let error as any AbortError where error.status == .notFound || error.status == .forbidden {
                 continue
@@ -196,6 +254,12 @@ struct SyncController: RouteCollection {
         return jsonResponse(outcome.status, outcome.json, replay: outcome.replay)
     }
 
+    private func labelName(_ raw: String) throws -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest, reason: "invalid_name") }
+        return value
+    }
+
     private func cursorNow(_ db: any Database) async throws -> String {
         guard let sql = db as? any SQLDatabase,
               let row = try await sql.raw("SELECT value FROM sync_counter WHERE id = \(bind: syncCounterID)").first()
@@ -206,9 +270,9 @@ struct SyncController: RouteCollection {
     /// Dispatches to the same operations as the REST routes, so permission checks cannot differ between paths.
     private func apply(_ m: SyncMutationRequest, user: User, on db: any Database) async throws -> (HTTPStatus, SyncMutationResponse) {
         func result(_ status: HTTPStatus, project: ProjectDTO? = nil, task: TaskDTO? = nil, column: ColumnDTO? = nil,
-                    deleted: Bool = false) async throws -> (HTTPStatus, SyncMutationResponse) {
+                    planning: SyncPlanningDTO? = nil, label: SyncLabelDTO? = nil, deleted: Bool = false) async throws -> (HTTPStatus, SyncMutationResponse) {
             (status, SyncMutationResponse(mutationID: m.mutationID, type: m.type, id: m.id, deleted: deleted,
-                project: project, task: task, column: column, cursor: try await cursorNow(db)))
+                project: project, task: task, column: column, planning: planning, label: label, cursor: try await cursorNow(db)))
         }
         func requireVersion() throws -> Int {
             guard let version = m.version else { throw Abort(.badRequest, reason: "version_required") }
@@ -218,7 +282,8 @@ struct SyncController: RouteCollection {
             let projectExists = try await Project.find(m.id, on: db) != nil
             let taskExists = try await TodoTask.find(m.id, on: db) != nil
             let columnExists = try await ProjectColumn.find(m.id, on: db) != nil
-            if projectExists || taskExists || columnExists {
+            let labelExists = try await DiscoveryLabel.find(m.id, on: db) != nil
+            if projectExists || taskExists || columnExists || labelExists {
                 throw Abort(.conflict, reason: "id_exists")
             }
             if try await SyncRecorder.wasDeleted(m.id, on: db) { throw Abort(.conflict, reason: "id_deleted") }
@@ -283,6 +348,46 @@ struct SyncController: RouteCollection {
             }
             try await ColumnService(user: user, db: db).delete(m.id, moveTo: moveTo, expectedVersion: m.version)
             return try await result(.ok, deleted: true)
+        case "task.planning":
+            let data = PlanningData(dueAt: m.dueAt, plannedAt: m.plannedAt, priority: m.priority ?? 0,
+                recurrence: m.recurrence, reminders: m.reminders ?? [])
+            let dto = try await PlanningService(user: user, db: db).put(m.id, data: data, expectedVersion: try requireVersion())
+            return try await result(.ok, task: dto.task, planning: SyncPlanningDTO(try await TaskPlanning.find(m.id, on: db)))
+        case "label.create":
+            guard let raw = m.name else { throw Abort(.badRequest, reason: "invalid_name") }
+            let name = try labelName(raw)
+            try await requireFreshID()
+            let label = DiscoveryLabel(ownerID: try user.requireID(), name: name)
+            label.id = m.id
+            try await label.save(on: db)
+            return try await result(.created, label: SyncLabelDTO.make(label, user: user, on: db))
+        case "label.rename":
+            guard let raw = m.name else { throw Abort(.badRequest, reason: "invalid_name") }
+            try await lockRow(table: DiscoveryLabel.schema, id: m.id, on: db)
+            let label = try await DiscoveryService(user: user, db: db).label(m.id)
+            guard label.version == (try requireVersion()) else { throw Abort(.conflict, reason: "version_conflict") }
+            label.name = try labelName(raw)
+            label.version += 1
+            try await label.save(on: db)
+            return try await result(.ok, label: SyncLabelDTO.make(label, user: user, on: db))
+        case "label.delete":
+            try await lockRow(table: DiscoveryLabel.schema, id: m.id, on: db)
+            let label = try await DiscoveryService(user: user, db: db).label(m.id)
+            if let version = m.version, version != label.version { throw Abort(.conflict, reason: "version_conflict") }
+            try await label.delete(on: db)
+            return try await result(.ok, deleted: true)
+        case "task.label_add", "task.label_remove":
+            guard let labelID = m.labelID else { throw Abort(.badRequest, reason: "invalid_label") }
+            // Same rules as PUT/DELETE /v1/tasks/{id}/labels/{labelID}: own label, readable task, idempotent.
+            try await lockRow(table: DiscoveryLabel.schema, id: labelID, on: db)
+            let service = DiscoveryService(user: user, db: db)
+            let label = try await service.label(labelID)
+            _ = try await service.task(m.id)
+            let existing = try await DiscoveryTaskLabel.query(on: db)
+                .filter(\.$taskID == m.id).filter(\.$labelID == labelID).first()
+            if m.type == "task.label_add", existing == nil { try await DiscoveryTaskLabel(taskID: m.id, labelID: labelID).save(on: db) }
+            else if m.type == "task.label_remove", let existing { try await existing.delete(on: db) }
+            return try await result(.ok, label: SyncLabelDTO.make(label, user: user, on: db))
         default:
             throw Abort(.badRequest, reason: "unknown_mutation_type")
         }

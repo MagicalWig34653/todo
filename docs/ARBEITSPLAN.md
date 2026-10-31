@@ -123,3 +123,7 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 ## Checkpoint 31.10.2026 (Dokumentation und Projektseite konsolidiert)
 - [x] README neu gegliedert (Überblick, Schnellstart, Betrieb mit `deploy`-Branch, Claude-Code-Einrichtung, Status und Grenzen, Links). docs-site: neue Seiten Steuerzentrale, Projekt-Onboarding/Plugin, Sync-Aufbewahrung, Runner (Link ins Apple-Repository), Installation ohne Quellcode, Agentenhandbuch; Startseite und Screenshots-Seite mit den Steuerzentrale-Bildern. `docs/STATUS.md` beginnt mit der Zusammenfassung „Aktueller Stand (31.10.2026)“. `contracts/oauth-mcp.yaml`: Scope-Liste quotiert, damit auch YAML-1.1-Parser (Ruby) die Datei laden.
 - [ ] Nächste Schritte stehen in der Tabelle in STATUS.md: Docker-Platz, MariaDB-Volllauf und Playwright-Läufe, Plugin in echter Claude-Code-Sitzung, Account-Wechsel prüfen, TestFlight, Rollout per `update.sh`, Empfehlung Widgets/App Intents.
+
+## Sync: Planung und Labels (31.10.2026, ADR 0020)
+- [x] `task.planning`, `label.*`, `task.label_add/remove`, Feed-Planung und Entität `label`, sync.yaml 1.4.0, Tests SQLite
+- [ ] MariaDB-Lauf `SyncPlanningLabelTests` nachholen (Docker-Platz); Apple-Outbox auf die neuen Mutationen umstellen
