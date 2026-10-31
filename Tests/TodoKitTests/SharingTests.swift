@@ -226,6 +226,8 @@ final class SharingTests: XCTestCase {
         let owner = try await account(t), guest = try await account(t)
         let pid = try await project(t, owner.token)
         try await grant(t, owner.token, pid, guest.id, role: "comment")
+        let grants = try await t.json(.GET, "/v1/projects/\(pid)/grants", token: owner.token)
+        XCTAssertEqual(grants.list?.first?["principalName"] as? String, "Test")
         let mine = try await t.json(.GET, "/v1/projects", token: owner.token)
         let own = try XCTUnwrap(mine.list?.first { $0["id"] as? String == pid })
         XCTAssertEqual(own["role"] as? String, "manage")

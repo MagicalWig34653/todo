@@ -2,6 +2,23 @@ import Fluent
 import Vapor
 
 struct TeamInput: Content { let name: String }
+/// Grant as returned to clients, with the display name of the person or the team name (nil if it no longer exists).
+struct GrantDTO: Content {
+    let id: UUID?
+    let projectID: UUID
+    let principalType: String
+    let principalID: UUID
+    let role: ProjectRole
+    let principalName: String?
+
+    init(_ grant: ProjectGrant, on db: any Database) async throws {
+        id = grant.id; projectID = grant.projectID; principalType = grant.principalType
+        principalID = grant.principalID; role = grant.role
+        principalName = grant.principalType == "team"
+            ? try await Team.find(grant.principalID, on: db)?.name
+            : try await User.find(grant.principalID, on: db)?.displayName
+    }
+}
 struct MemberInput: Content { let userID: UUID; let isAdmin: Bool }
 struct GrantInput: Content { let principalType: String; let principalID: UUID; let role: ProjectRole }
 struct InheritanceInput: Content { let version: Int; let inherits: Bool }
@@ -146,13 +163,17 @@ struct SharingController: RouteCollection {
         }
     }
 
-    @Sendable func listGrants(_ req: Request) async throws -> [ProjectGrant] {
+    @Sendable func listGrants(_ req: Request) async throws -> [GrantDTO] {
         let user = try await req.requireUser(), pid = try id(req)
         _ = try await ProjectAccess(user: user, db: req.db).project(pid, role: .manage)
-        return try await ProjectGrant.query(on: req.db).filter(\.$projectID == pid).all()
+        var result: [GrantDTO] = []
+        for grant in try await ProjectGrant.query(on: req.db).filter(\.$projectID == pid).all() {
+            result.append(try await GrantDTO(grant, on: req.db))
+        }
+        return result
     }
 
-    @Sendable func putGrant(_ req: Request) async throws -> ProjectGrant {
+    @Sendable func putGrant(_ req: Request) async throws -> GrantDTO {
         let input = try req.content.decode(GrantInput.self), pid = try id(req)
         return try await write(req) { access in
             _ = try await ProjectAccess(user: access.user, db: access.db).project(pid, role: .manage)
@@ -162,7 +183,7 @@ struct SharingController: RouteCollection {
                 ?? ProjectGrant(projectID: pid, principalType: input.principalType, principalID: input.principalID, role: input.role)
             grant.role = input.role
             try await grant.save(on: access.db)
-            return grant
+            return try await GrantDTO(grant, on: access.db)
         }
     }
 

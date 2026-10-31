@@ -525,6 +525,9 @@ components:
         principalID: *id001
         role:
           $ref: '#/components/schemas/Role'
+        principalName:
+          type: string
+          description: Display name of the person or name of the team; omitted if the account no longer exists.
       required:
       - id
       - projectID
