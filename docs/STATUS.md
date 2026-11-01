@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 1.11.2026 (Sicherheitsfixes Codex-Review, Teil B; Agent sec-b)
+
+- Board-Aufgabe `22A03719-111B-4A6E-B88F-722DA4786B1E`. Branch `worktree-agent-a0febff622a14a99f`.
+- Befund 1+2 (hoch) behoben: Verschieben einer Aufgabe löst Eltern-/Kindverknüpfung (`PlanningExtService.update`); `WorkflowService.children(of:)` und Command Center zählen Unteraufgaben nur im selben Projekt wie das Elternteil (Verknüpfung allein wird nie vertraut, deckt MCP-Grants ab, da dieselbe Projektprüfung des Elternteils gilt); Migration `ClearCrossProjectSubtaskLinks`; Force-Unwraps auf Projekt-/Scope-/Zustands-Lookups in `CommandCenterService` entfernt (Eintrag wird ausgelassen). Feed/Sync/Suche nutzen keine Elternverknüpfung (geprüft). Tests: `SubtaskLinkSecurityTests` (4); der Legacy-Fall stürzte vorher ab (Fatal error CommandCenterService:394).
+- Befund 3 (mittel) behoben: `ProjectAccess.startAgent` prüft das aktuelle Eigentum (`canTransferOwnership`), Jobliste nutzt es auch; `AgentService.revokeRunnerAccess` bricht beim Eigentümerwechsel offene Jobs ehemaliger Eigentümer ab, sperrt Läufe, löscht unreferenzierte Bindungen; die Prüfung „Aufgabe vom Gerätebesitzer erstellt“ entfiel. Test `AgentOwnershipTransferTests`; Doku in `docs/BERECHTIGUNGEN.md`.
+- Befund 4 (Skalierung) bewusst nicht umgesetzt (riskanter Umbau der Rechte-Snapshot-Logik). Plan: `SharingSnapshot` nur mit relevanten Projekten laden: eigene/Team-eigene Projekte, Projekte mit Grants für Nutzer oder seine Teams, dazu alle Nachfahren (rekursiv per parent_id) und Vorfahren (für geerbte Grants und inherits-Kette); `ProjectSharing`/`ProjectGrant` nur für diese IDs; vorher Äquivalenztest Snapshot gegen `SharingAccess.visibility` über viele Konstellationen. Teams-Pfad: `SyncRecorder.readers` rechnet je Projekt für alle Konten einzeln (O(Projekte x Konten x Abfragen)) unter der globalen Graph-Sperre; Vorschlag: einmal Snapshot je Konto statt je Projekt, nur Konten mit Beziehung zum betroffenen Teilbaum, und den Vergleich vorher/nachher auf den Teilbaum der Änderung begrenzen.
+
 ## Checkpoint 1.11.2026 (Plugin: Board laufend nutzen, Plugin 1.1.0)
 
 - Ziel (Nutzer: „Todolino komplett benutzen, nicht nur einmal einrichten“): Agenten nutzen das Board während der Arbeit. Board-Aufgabe `2B52B42C-98ED-4B2F-820E-502B753194E0`.

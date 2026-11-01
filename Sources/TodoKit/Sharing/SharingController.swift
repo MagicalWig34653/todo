@@ -224,6 +224,7 @@ struct SharingController: RouteCollection {
                 ?? ProjectSharing(project: project)
             policy.ownerType = input.ownerType; policy.ownerID = input.ownerID
             try await policy.save(on: access.db)
+            try await AgentService.revokeRunnerAccess(projectID: pid, on: access.db)
             project.version += 1
             try await project.save(on: access.db)
             return try await access.visibility(project)

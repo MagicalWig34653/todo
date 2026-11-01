@@ -122,6 +122,9 @@ struct PlanningService: Sendable {
                 }.delete()
                 try await PlanningMilestoneTask.query(on: db).filter(\.$taskID == id).delete()
                 if let p = try await TaskPlanning.find(id, on: db) { p.position = 0; try await p.save(on: db) }
+                // Subtask links never cross a project: release this task from its parent and its own children from it.
+                if let wf = try await TaskWorkflow.find(id, on: db), wf.parentTaskID != nil { wf.parentTaskID = nil; try await wf.save(on: db) }
+                for child in try await TaskWorkflow.query(on: db).filter(\.$parentTaskID == id).all() { child.parentTaskID = nil; try await child.save(on: db) }
                 // Columns belong to one project; the task lands in "Ohne Spalte" of the target.
                 t.columnID = nil; t.boardPosition = 0
             }

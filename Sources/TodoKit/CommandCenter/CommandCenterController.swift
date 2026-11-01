@@ -132,4 +132,5 @@ struct CommandCenterController: RouteCollection {
 
 func configureCommandCenter(_ app: Application) {
     app.migrations.add(CreateCommandCenter())
+    app.migrations.add(ClearCrossProjectSubtaskLinks())
 }

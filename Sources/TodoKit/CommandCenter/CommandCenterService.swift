@@ -14,8 +14,8 @@ struct CommandCenterScope: Sendable {
         if let allowed { visible = visible.filter { allowed.contains($0.id ?? UUID()) } }
         let byID = Dictionary(uniqueKeysWithValues: try visible.map { (try $0.requireID(), $0) })
         guard let projectID else { return CommandCenterScope(projects: byID) }
-        guard byID[projectID] != nil else { throw Abort(.notFound) }
-        guard includeSubprojects else { return CommandCenterScope(projects: [projectID: byID[projectID]!]) }
+        guard let root = byID[projectID] else { throw Abort(.notFound) }
+        guard includeSubprojects else { return CommandCenterScope(projects: [projectID: root]) }
         var included: Set<UUID> = [projectID]
         var changed = true
         while changed {
@@ -315,11 +315,20 @@ struct CommandCenterService: Sendable {
         var childrenOf: [UUID: [TodoTask]] = [:]
         let linked = try await batched(Array(byID.keys), { try await TaskWorkflow.query(on: db).filter(\.$parentTaskID ~~ $0).all() })
         let childIDs = linked.compactMap(\.id)
-        let childTasks = try await batched(childIDs, { try await TodoTask.query(on: db).filter(\.$id ~~ $0).all() })
+        let allChildTasks = try await batched(childIDs, { try await TodoTask.query(on: db).filter(\.$id ~~ $0).all() })
         for wf in linked { workflows[wf.id!] = workflows[wf.id!] ?? wf }
+        // The link alone is not trusted: a child only counts under a parent in the same project. Cross-project links
+        // (legacy data) are dropped in memory, so such a child neither shows under the parent nor leaks its data.
+        let taskProject = Dictionary((loaded + allChildTasks).map { ($0.id!, $0.projectID) }, uniquingKeysWith: { first, _ in first })
+        for wf in workflows.values {
+            if let parent = wf.parentTaskID, let own = taskProject[wf.id!], let parentProject = taskProject[parent], own != parentProject {
+                wf.parentTaskID = nil
+            }
+        }
+        let childTasks = allChildTasks.filter { workflows[$0.id!]?.parentTaskID != nil }
         for child in childTasks { if let parent = workflows[child.id!]?.parentTaskID { childrenOf[parent, default: []].append(child) } }
-        for key in childrenOf.keys { childrenOf[key]!.sort { ($0.createdAt ?? .distantPast, $0.id!.uuidString) < ($1.createdAt ?? .distantPast, $1.id!.uuidString) } }
-        let allTaskIDs = Array(Set(byID.keys).union(childIDs))
+        for key in Array(childrenOf.keys) { childrenOf[key]?.sort { ($0.createdAt ?? .distantPast, $0.id!.uuidString) < ($1.createdAt ?? .distantPast, $1.id!.uuidString) } }
+        let allTaskIDs = Array(Set(byID.keys).union(childTasks.compactMap(\.id)))
 
         let questions = try await batched(allTaskIDs, { try await TaskQuestion.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "open").sort(\.$createdAt).all() })
         let reviews = try await batched(allTaskIDs, { try await TaskReview.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "pending").sort(\.$createdAt).all() })
@@ -371,7 +380,7 @@ struct CommandCenterService: Sendable {
             if s.role == .backlog { return "backlog" }
             return "ready"
         }
-        for task in loaded + childTasks.filter({ byID[$0.id!] == nil }) { states[task.id!]!.lane = ownLane(task, states[task.id!]!) }
+        for task in loaded + childTasks.filter({ byID[$0.id!] == nil }) { if let st = states[task.id!] { states[task.id!]?.lane = ownLane(task, st) } }
 
         // Cards for top-level tasks (no parent); subtasks nested.
         var progressByTask: [UUID: ProgressDTO] = [:]
@@ -383,15 +392,15 @@ struct CommandCenterService: Sendable {
             progressByTask[id] = p; return p
         }
         func effectiveLane(_ task: TodoTask) -> String {
-            let id = task.id!, own = states[id]!.lane
+            let id = task.id!, own = states[id]?.lane ?? "ready"
             guard let kids = childrenOf[id], !kids.isEmpty, own != "done" else { return own }
             let candidates = ([own] + kids.filter { $0.status != "done" }.map { states[$0.id!]?.lane ?? "ready" }).filter { $0 != "backlog" && $0 != "done" }
             if let best = candidates.min(by: { (Self.urgency[$0] ?? 9) < (Self.urgency[$1] ?? 9) }) { return best }
             return own == "backlog" ? (kids.allSatisfy { $0.status == "done" } ? "ready" : "backlog") : own
         }
-        func card(_ task: TodoTask, lane: String) throws -> CommandCard {
-            let id = task.id!, s = states[id]!
-            let project = scope.projects[task.projectID]!
+        func card(_ task: TodoTask, lane: String) throws -> CommandCard? {
+            let id = task.id!
+            guard let s = states[id], let project = scope.projects[task.projectID] else { return nil }
             let kids = childrenOf[id] ?? []
             let kidStates = kids.compactMap { states[$0.id!] }
             let allQuestions = (s.questions + kidStates.flatMap(\.questions)).sorted { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) }
@@ -432,14 +441,17 @@ struct CommandCenterService: Sendable {
                 subtasks: kids.map { SubtaskBrief(id: $0.id!, title: $0.title, status: $0.status, lane: states[$0.id!]?.lane ?? "ready", progressPercent: progress($0).percent) })
         }
 
-        let tops = loaded.filter { workflows[$0.id!]?.parentTaskID == nil || byID[workflows[$0.id!]!.parentTaskID!] == nil }
+        let tops = loaded.filter { task in
+            guard let parent = workflows[task.id!]?.parentTaskID else { return true }
+            return byID[parent] == nil
+        }
         // Only tasks of the recent-done window may form done cards; a done parent with active children stays visible.
         var topCards: [CommandCard] = []
         var backlog = 0
         for task in tops {
             let lane = effectiveLane(task)
             if lane == "backlog" { backlog += 1; continue }
-            topCards.append(try card(task, lane: lane))
+            if let c = try card(task, lane: lane) { topCards.append(c) }
         }
         var activeAgents = Set<String>()
         for c in topCards where c.lane == "running" {
@@ -482,10 +494,10 @@ struct CommandCenterService: Sendable {
             var pool = topCards
             if q.includeSubtasks {
                 for parent in tops {
-                    for kid in childrenOf[parent.id!] ?? [] where states[kid.id!]!.lane != "backlog" {
+                    for kid in childrenOf[parent.id!] ?? [] where (states[kid.id!]?.lane ?? "backlog") != "backlog" {
                         // Subtasks outside the done window are not listed as done cards.
                         if kid.status == "done", (kid.updatedAt ?? .distantPast) < cutoff { continue }
-                        pool.append(try card(kid, lane: states[kid.id!]!.lane))
+                        if let kidState = states[kid.id!], let c = try card(kid, lane: kidState.lane) { pool.append(c) }
                     }
                 }
             }
