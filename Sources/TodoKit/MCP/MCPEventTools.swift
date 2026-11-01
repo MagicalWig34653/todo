@@ -40,7 +40,9 @@ extension MCPController {
         func respond(_ snap: LiveToken.Snapshot, changed: Bool) async throws -> JSONValue {
             var hints: [EventHint] = []
             if changed, let since, let after = LiveToken.maxEventID(of: since) {
-                hints = try await visibleHints(after: after, user: user, grant: grant, db: db)
+                // Re-read the grant: projects may have been withdrawn, or the grant revoked, while waiting.
+                guard let current = try await OAuthGrant.find(grantID, on: db), !current.revoked else { throw Abort(.unauthorized) }
+                hints = try await visibleHints(after: after, user: user, grant: current, db: db)
             }
             return try .encoded(EventsResponse(changed: changed, token: snap.token, hints: hints))
         }
