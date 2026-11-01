@@ -28,7 +28,10 @@ Vor Übergabe, Kontextwechsel oder Sessionende einen konsistenten Checkpoint sch
 - Keine Secrets, Tokens, privaten Laufzeitdaten oder vollständigen Chats ins Repository.
 - Keine automatischen Pushes, Veröffentlichungen oder Deployments aus einer bloßen Implementierungsaufgabe ableiten.
 - Routineentscheidungen selbst treffen; nur bei tatsächlich blockierenden Unklarheiten nachfragen.
-- Keine Subagenten oder parallelen Schreiber ohne expliziten Auftrag. Wenn später autorisiert: getrennte Worktrees und klare Dateiverantwortung.
+- Arbeitsweise (Nutzerentscheidung 1.11.2026, dauerhaft): Die Hauptsession bleibt so klein wie möglich und koordiniert nur (Status und Board lesen, Aufträge schneiden, Agents starten, Berichte lesen, Branches zusammenführen, Todolino abgleichen). Implementierung, Builds, Tests und Recherche erledigen Subagenten.
+  - Parallele Schreiber nur in getrennten Worktrees (`isolation: worktree`) mit klarer Dateiverantwortung; Aufträge so schneiden, dass sich die Dateien nicht überschneiden.
+  - Jeder Agent-Auftrag nennt: AGENTS.md und aktuellen STATUS-Checkpoint lesen, konkretes Ziel, diese Regeln, Doku-Checkpoint in STATUS/ARBEITSPLAN, Commit auf dem Worktree-Branch (kein Push) und einen Kurzbericht (Commit, Branch, Tests mit Ergebnis, offene Punkte).
+  - Die Hauptsession liest nur die Berichte, nicht die Transkripte, und führt die Branches nach Prüfung zusammen. Entscheidungen, die dem Nutzer gehören (z. B. Datenschutz), werden vorher erfragt.
 
 ## Umsetzung und Abnahme
 

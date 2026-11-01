@@ -93,6 +93,23 @@ final class LiveRefreshTests: XCTestCase {
         XCTAssertEqual(again, last)
     }
 
+    func testTokenRisesForTeamInvitationAndGrant() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await account(t), b = try await account(t)
+        var last = try await token(t, b.token)
+        let team = try await t.json(.POST, "/v1/teams", ["name": "Live"], token: a.token)
+        XCTAssertTrue((200..<300).contains(Int(team.status.code)), "\(team.status)")
+        let teamID = try XCTUnwrap(team.body?["id"] as? String)
+        var now = try await token(t, b.token)
+        XCTAssertNotEqual(now, last, "team created")
+        last = now
+        let invite = try await t.json(.PUT, "/v1/teams/\(teamID)/members", ["userID": b.id, "isAdmin": false], token: a.token)
+        XCTAssertTrue((200..<300).contains(Int(invite.status.code)), "\(invite.status)")
+        now = try await token(t, b.token)
+        XCTAssertNotEqual(now, last, "team invitation")
+    }
+
     func testWaitTimesOutEmptyAndReturnsImmediatelyOnStaleToken() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }

@@ -1,5 +1,9 @@
 # Arbeitsplan
 
+## Checkpoint 1.11.2026 (Stop-Hook wartet auf Antwort, Option b Variante 2)
+
+Ziel: Sitzung endet nicht, solange eine eigene blockierende Frage offen ist. Gebaut: `claude-plugin/scripts/stop.sh` (fester Text, `wait_for_events` dann `get_question`, max. 6 Fortsetzungen, `stop_hook_active`-Schutz), Tests in `claude-plugin/tests/test-hooks.sh` (32 Prüfungen grün), Doku in `CLAUDE-CODE-EINRICHTUNG.md` und `PUSH-AN-CLAUDE-CODE.md`. Grenzen: trägt nur wenige Minuten (max. 8 Fortsetzungen durch Claude Code), nicht in einer echten Sitzung erprobt, `claude plugin validate` im Agentenlauf nicht ausführbar. Nächstes: manuell in Claude Code erproben, danach Spike für den `mcp_tool`-Hook (Variante 1).
+
 ## Etappe 0 – Grundlage
 - [x] Bestandsaufnahme, Entscheidungen 12–14, ADR 0001–0003
 - [x] Backend-Grundgerüst, Dev-Stack (MariaDB, S3Mock), Linux-Image, Health-Endpunkte
@@ -15,6 +19,14 @@ Datenmodell/Migrationen → Bootstrap und Passkey → Capability-Endpunkt und Pa
 
 ## Checkpoints
 Nach jedem Teilschritt STATUS.md und diesen Plan aktualisieren. Bisher nichts committet; Commit nur auf Nutzerwunsch.
+
+## Checkpoint 1.11.2026: MCP-Tool `wait_for_events` (Option a aus `docs/PUSH-AN-CLAUDE-CODE.md`)
+
+- **Ziel:** Agenten nach einer blockierenden `ask_question` ohne Dauerabfrage auf Neues warten lassen. Nur Hinweise, keine Inhalte.
+- **Änderungen:** Tool `wait_for_events {since?, timeoutSeconds 1..25, default 20}` (Scope `tasks:read`, `Sources/TodoKit/MCP/MCPEventTools.swift`) nutzt `LiveHub`/`LiveToken` (ADR 0022) mit dem Konto des OAuth-Grants; Antwort `{changed, token, hints:[{kind, taskID, projectID}]}`. Ohne `since` kommt sofort das aktuelle Token (`changed:false`). Hinweise nur für Projekte in `grant.projects`, die das Konto aktuell lesen darf; sonst nur `changed`/`token`. Widerruf des Grants beendet das Warten (401). Migration `AddLiveEventTask` (nullable `live_events.task_id`, nur Aufgaben-ID, keine Inhalte); `LiveEventMiddleware` füllt sie für Kommentar, Frage, Review, Fortschritt, Kriterium, Anhang, Build. `kind`: question, review, comment, progress, criterion, attachment, other. Agentenhandbuch 1.2.0 (Regel: nach blockierender Frage höchstens wenige Runden `wait_for_events`, dann `get_question`; eingebettet per `scripts/embed-agent-manual.sh`), Plugin-Skill `claude-plugin/skills/todolino/SKILL.md`, `contracts/command-center.yaml`, `docs/AGENTEN-UND-MCP.md`.
+- **Tests (SQLite):** neu `Tests/TodoKitTests/MCPWaitForEventsTests.swift` (Token ohne Warten, Scope, Grenzen 0/26, Timeout unverändert, Wecken durch `ask_question` mit Hinweis, kein Inhalt in der Antwort, Hinweise nur im Grant, Rechteverlust); Lauf mit LiveRefresh-, MCP-, CommandCenter-Tests grün; volle SQLite-Suite 257 Tests, 20 übersprungen, 0 Fehler.
+- **Grenzen:** weckt keine ruhende Sitzung, der Agent muss das Tool selbst aufrufen und ist währenddessen blockiert. Nicht geprüft: MCP-Tool-Timeout von Claude Code (25 s liegt vermutlich darunter), Verhalten hinter Zoraxy, MariaDB (UUID-Bindung in `LiveToken.taskHints` nur mit SQLite getestet). Änderungen ohne Aufgabenbezug (z. B. reine Sync-Änderungen) liefern `changed:true` ohne Hinweise. Pro Replika zählt ein Wartender gegen die Live-Limits (8 je Konto).
+- **Nächster Schritt:** Option (b) Stop-Hook im Plugin (Wartelogik mit `wait_for_events`), MariaDB-Lauf für Live-Tabellen.
 
 ## Berechtigungen in der PWA auffindbar (31.10.2026)
 

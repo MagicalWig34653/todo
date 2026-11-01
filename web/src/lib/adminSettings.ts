@@ -118,8 +118,23 @@ export const adminSettings = {
 	put: (key: string, value: SettingValue, version: number) => call<ServerSetting>('PUT', `/settings/${encodeURIComponent(key)}`, { value, version }),
 	reset: (key: string, version: number) => call<ServerSetting>('DELETE', `/settings/${encodeURIComponent(key)}?version=${version}`),
 	audit: (limit = 50) => call<AuditEntry[]>('GET', `/settings/audit?limit=${limit}`),
-	test: (kind: TestKind, body?: { to?: string }) => call<TestResult>('POST', `/settings/test/${kind}`, body ?? {})
+	test: (kind: TestKind, body?: { to?: string }) => call<TestResult>('POST', `/settings/test/${kind}`, body ?? {}),
+	users: () => call<AdminUser[]>('GET', '/users'),
+	setAdmin: (id: string, isAdmin: boolean) => call<AdminUser>('PUT', `/users/${encodeURIComponent(id)}/admin`, { isAdmin })
 };
+
+/** contracts/admin-settings.yaml AdminUser */
+export interface AdminUser {
+	id: string;
+	displayName: string;
+	isAdmin: boolean;
+	username?: string;
+}
+
+/** Administrators first, then by name; the list the accounts page renders. */
+export function sortUsers(users: AdminUser[]): AdminUser[] {
+	return [...users].sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || a.displayName.localeCompare(b.displayName, 'de'));
+}
 
 // --- Pure helpers ----------------------------------------------------------------------------------------------
 

@@ -115,6 +115,7 @@ final class OAuthTests: XCTestCase {
             let first = try await f.tokens(), second = try await f.tokens()
             let grants = try await f.test.json(.GET, "/oauth/grants", token: f.session)
             let id = try XCTUnwrap(grants.list?.first?["id"] as? String)
+            XCTAssertEqual(grants.list?.first?["client_name"] as? String, "Test Client")
             let revoked = try await f.test.json(.DELETE, "/oauth/grants/" + id, token: f.session)
             XCTAssertEqual(revoked.status, .noContent)
             let statuses = try await [f.rpc("tools/list", access: first.access).status, f.rpc("tools/list", access: second.access).status]

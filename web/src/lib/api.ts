@@ -408,6 +408,8 @@ export interface ConsentRequest {
 export interface OAuthGrant {
 	id: string;
 	client_id: string;
+	/** Name given at registration; empty when unknown. */
+	client_name?: string;
 	scopes: string[];
 	project_ids: string[];
 	revoked: boolean;
@@ -1066,7 +1068,9 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		sendTestEmail: () => request<{ status: string }>('POST', '/me/email/test', {}),
 		confirmEmail: (token: string) => request<void>('POST', '/email/confirm', { token }),
 
-		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`)
+		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`),
+		/** Replaces the projects of an existing connection (authorise and deauthorise afterwards); effective immediately. */
+		setOAuthGrantProjects: (id: string, projectIDs: string[]) => request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: projectIDs })
 	};
 }
 

@@ -50,6 +50,7 @@ Ohne Plugin gibt es keine Hooks; die Pflicht beruht dann nur auf diesem Textbaus
 
 Was erzwungen werden kann (nur mit Plugin, nur in Repositories mit `.todolino.json`):
 - Der Stop-Hook hält die Sitzung **höchstens einmal** auf, wenn in der Sitzung Dateien geändert wurden (Edit/Write im Transcript) und `record_sync` nie aufgerufen wurde, und nennt den Grund. Danach darf die Sitzung enden (kein Endlosloop, `stop_hook_active` und eine Marke je Sitzung).
+- Zusätzlich hält der Stop-Hook die Sitzung auf, solange eine **blockierende Frage** (`ask_question`) ohne anschließendes `get_question` offen ist: fester Text, der `wait_for_events` und danach `get_question` verlangt (keine Nutzertexte), höchstens 6 Fortsetzungen je Sitzung. Das trägt nur wenige Minuten (Claude Code erlaubt höchstens 8 aufeinanderfolgende Fortsetzungen), ist kein echtes Push und noch nicht in einer echten Sitzung erprobt. Siehe [PUSH-AN-CLAUDE-CODE.md](PUSH-AN-CLAUDE-CODE.md).
 - Fehler jeder Art (kein Transcript, unlesbare Eingabe, Zeitüberschreitung) führen dazu, dass der Hook nichts tut („fail-open“). Hooks nutzen kein Netzwerk und keine Tokens.
 - Abschalten für eine Sitzung: Umgebungsvariable `TODOLINO_HOOKS_OFF=1`.
 

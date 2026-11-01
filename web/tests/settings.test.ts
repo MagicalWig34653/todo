@@ -109,3 +109,12 @@ describe('mini markdown', () => {
 		expect(b[3]).toEqual({ kind: 'code', text: '<b>x</b>' });
 	});
 });
+
+describe('invitation list', () => {
+	it('orders open invitations by expiry, then the rest newest first', async () => {
+		const { sortInvitations } = await import('../src/lib/instance.js');
+		const row = (id: string, status: 'open' | 'used' | 'expired', expiresAt: string) => ({ id, status, expiresAt, createdBy: 'u', createdByName: 'A' });
+		const sorted = sortInvitations([row('u1', 'used', '2026-11-01T10:00:00Z'), row('o2', 'open', '2026-11-05T10:00:00Z'), row('e1', 'expired', '2026-11-03T10:00:00Z'), row('o1', 'open', '2026-11-04T10:00:00Z')]);
+		expect(sorted.map((i) => i.id)).toEqual(['o1', 'o2', 'e1', 'u1']);
+	});
+});
