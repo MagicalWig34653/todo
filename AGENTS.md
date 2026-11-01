@@ -30,6 +30,10 @@ Vor Übergabe, Kontextwechsel oder Sessionende einen konsistenten Checkpoint sch
 - Routineentscheidungen selbst treffen; nur bei tatsächlich blockierenden Unklarheiten nachfragen.
 - Keine Subagenten oder parallelen Schreiber ohne expliziten Auftrag. Wenn später autorisiert: getrennte Worktrees und klare Dateiverantwortung.
 
+## Todolino laufend nutzen
+
+Das Board ist Teil der Arbeit, nicht nur ein Abschlussschritt (`record_sync` allein genügt nicht). Je Auftrag gibt es eine Aufgabe in Todolino (suchen, sonst `create_task`, dann `claim_task`); Entscheidungsfragen an den Nutzer gehören als `ask_question` an diese Aufgabe, nicht nur in den Chat; nach jedem Teilschritt und Commit `post_progress`; bei Fertigstellung `request_review`, nie selbst auf erledigt setzen. Startet eine Hauptsession Agenten, nennt sie die Aufgaben-ID im Agent-Prompt; die Agenten melden `post_progress` selbst, das Review stellt die Hauptsession. Details: `docs/agent-manual.md` („Board laufend nutzen“).
+
 ## Umsetzung und Abnahme
 
 Zuerst ausführbaren vertikalen Schnitt herstellen. Relevante Änderungen mit passenden Tests prüfen; unnötige Tests und unbelegte Erfolgsaussagen vermeiden. Bei Backendänderungen Linux/MariaDB und bei nativen Änderungen betroffene Apple-Targets berücksichtigen. Fehlende Geräte-/Infrastrukturprüfungen offen nennen.
