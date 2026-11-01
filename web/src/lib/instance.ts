@@ -14,8 +14,24 @@ export interface ManualDoc {
 	content: string;
 }
 export interface Invitation {
+	id: string;
 	token: string;
 	expiresAt: string;
+}
+/** contracts/openapi.yaml InvitationSummary; the code itself is never listed. */
+export interface InvitationSummary {
+	id: string;
+	status: 'open' | 'used' | 'expired';
+	expiresAt: string;
+	usedAt?: string | null;
+	createdBy: string;
+	createdByName: string;
+}
+/** Open ones first (soonest expiry first), then used and expired (newest first). */
+export function sortInvitations(list: InvitationSummary[]): InvitationSummary[] {
+	const open = list.filter((i) => i.status === 'open').sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
+	const rest = list.filter((i) => i.status !== 'open').sort((a, b) => b.expiresAt.localeCompare(a.expiresAt));
+	return [...open, ...rest];
 }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
@@ -34,6 +50,7 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 		}
 		throw new ApiError(res.status, reason);
 	}
+	if (res.status === 204) return undefined as T;
 	return (await res.json()) as T;
 }
 
@@ -41,5 +58,7 @@ export const instance = {
 	health: () => json<HealthReady>('/health/ready'),
 	manual: (section?: string) => json<ManualDoc>(`/v1/manual${section ? `?section=${encodeURIComponent(section)}` : ''}`),
 	/** Admin only; the token is shown once. */
-	createInvitation: () => json<Invitation>('/v1/invitations', { method: 'POST' })
+	createInvitation: () => json<Invitation>('/v1/invitations', { method: 'POST' }),
+	listInvitations: () => json<InvitationSummary[]>('/v1/invitations'),
+	withdrawInvitation: (id: string) => json<void>(`/v1/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' })
 };

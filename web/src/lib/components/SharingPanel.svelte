@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { Select } from '#lib/components/ui/select/index.js';
-	import { api, ApiError, type EffectiveVisibility, type PrincipalType, type Project, type ProjectGrant, type Role, type Team, type TeamMembership } from '#lib/api.js';
+	import { api, ApiError, type EffectiveVisibility, type OAuthGrant, type PrincipalType, type Project, type ProjectGrant, type Role, type Team, type TeamMembership } from '#lib/api.js';
 	import { accessRows, inheritedChain, ROLES, whoCanSee, type AccessRow, type AncestorGrants } from '#lib/access.js';
 	import { auth } from '#lib/auth.svelte.js';
+	import { connectionName, connectionsForProject, projectsWith, scopeLabel, wouldLeaveEmpty } from '#lib/oauth.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { ui } from '#lib/ui.svelte.js';
@@ -16,7 +17,7 @@
 	import CornerLeftUp from '@lucide/svelte/icons/corner-left-up';
 
 	/** Share dialog content: who has access with which role, add/change/remove, inheritance, effective visibility, ownership. */
-	let { project, onchanged, onopen, onclose }: { project: Project; onchanged: () => unknown; onopen?: (id: string) => void; onclose?: () => void } = $props();
+	let { project, onchanged, onopen, onclose, onsettings }: { project: Project; onchanged: () => unknown; onopen?: (id: string) => void; onclose?: () => void; onsettings?: (area: string) => void } = $props();
 
 	const roleName = (r: Role) => t(`sharing.role.${r}` as MessageKey);
 	const roleHelp = (r: Role) => t(`access.roleHelp.${r}` as MessageKey);
@@ -29,6 +30,9 @@
 	let teamMembers = $state<Record<string, TeamMembership[]>>({});
 	let canManage = $state(false);
 	let loaded = $state(false);
+	let grants = $state<OAuthGrant[]>([]);
+	let mcpBusy = $state<string | null>(null);
+	let mcpMessage = $state<{ ok: boolean; text: string } | null>(null);
 
 	let type = $state<PrincipalType>('person');
 	let personID = $state('');
@@ -44,25 +48,28 @@
 	let transferTeam = $state('');
 	let transferKey = $state(0);
 
-	/**
-	 * Loads everything into locals and publishes it in one step, and only if no newer load was started meanwhile.
-	 * Several loads overlap (explicit reload after a change plus the effect that follows `accessTick`); without this a
-	 * slow, older response could overwrite the newer state (for example showing a just removed grant again).
-	 */
+	/** Only the newest load may write: a slower, older one must not bring back data from before a change. */
 	let loadSeq = 0;
 	async function load() {
-		const seq = ++loadSeq;
-		const nextVis = await api.visibility(project.id);
-		const nextTeams = await api.listTeams();
+		const mine = ++loadSeq;
+		const stale = () => mine !== loadSeq;
+		const [nextVis, nextTeams, nextGrants] = await Promise.all([api.visibility(project.id), api.listTeams(), api.listOAuthGrants().catch(() => [] as OAuthGrant[])]);
+		if (stale()) return;
+		vis = nextVis;
+		teams = nextTeams;
+		grants = nextGrants;
 		let nextDirect: ProjectGrant[] = [];
-		let nextManage = false;
+		let nextCanManage = false;
 		try {
 			nextDirect = await api.listGrants(project.id);
-			nextManage = true;
+			nextCanManage = true;
 		} catch (e) {
 			if (!denied(e)) throw e;
 		}
-		const nextChain = nextManage
+		if (stale()) return;
+		direct = nextDirect;
+		canManage = nextCanManage;
+		const nextChain = nextCanManage
 			? await inheritedChain(project, nextVis.inherits, workspace.projects, async (anc) => {
 					try {
 						const [v, g] = await Promise.all([api.visibility(anc.id), api.listGrants(anc.id).catch((e) => (denied(e) ? null : Promise.reject(e)))]);
@@ -73,22 +80,18 @@
 					}
 				})
 			: [];
-		const nextMembers = await loadMembers(nextDirect, nextChain);
-		if (seq !== loadSeq) return;
-		vis = nextVis;
-		teams = nextTeams;
-		direct = nextDirect;
-		canManage = nextManage;
+		if (stale()) return;
 		chain = nextChain;
-		teamMembers = nextMembers;
+		await loadMembers();
+		if (stale()) return;
 		loaded = true;
 	}
 	/** Members of every team that matters here (owner, grants); teams the viewer is not in stay unknown. */
-	async function loadMembers(grants: ProjectGrant[], levels: AncestorGrants[]): Promise<Record<string, TeamMembership[]>> {
+	async function loadMembers() {
 		const ids = new Set<string>();
 		if (project.ownerType === 'team' && project.ownerID) ids.add(project.ownerID);
-		for (const g of grants) if (g.principalType === 'team') ids.add(g.principalID);
-		for (const level of levels) for (const g of level.grants ?? []) if (g.principalType === 'team') ids.add(g.principalID);
+		for (const g of direct) if (g.principalType === 'team') ids.add(g.principalID);
+		for (const level of chain) for (const g of level.grants ?? []) if (g.principalType === 'team') ids.add(g.principalID);
 		const next: Record<string, TeamMembership[]> = {};
 		await Promise.all([...ids].map(async (id) => {
 			try {
@@ -97,7 +100,7 @@
 				if (!denied(e)) throw e;
 			}
 		}));
-		return next;
+		teamMembers = next;
 	}
 	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
 	const projectKey = $derived(project.id);
@@ -120,6 +123,22 @@
 		})
 	);
 	const myID = $derived(auth.user?.id);
+	const connections = $derived(connectionsForProject(grants, project.id));
+
+	async function setConnection(grant: OAuthGrant, allowed: boolean) {
+		mcpMessage = null;
+		if (!allowed && wouldLeaveEmpty(grant, project.id)) {
+			mcpMessage = { ok: false, text: t('share.mcp.needOne') };
+			return;
+		}
+		mcpBusy = grant.id;
+		const ok = await attempt(async () => {
+			const updated = await api.setOAuthGrantProjects(grant.id, projectsWith(grant, project.id, allowed));
+			grants = grants.map((g) => (g.id === updated.id ? { ...updated, client_name: updated.client_name || g.client_name } : g));
+		});
+		if (ok) mcpMessage = { ok: true, text: t('share.mcp.updated') };
+		mcpBusy = null;
+	}
 
 	const changed = async () => {
 		ui.accessTick++;
@@ -293,6 +312,37 @@
 				{/each}
 			</ul>
 			<p class="text-muted-foreground text-xs">{t('share.visibilityNote')}</p>
+		</div>
+	{/if}
+
+	{#if loaded}
+		<div class="flex flex-col gap-2" data-testid="mcp-connections">
+			<h3 class="text-sm font-semibold">{t('share.mcp.title')}</h3>
+			<p class="text-muted-foreground text-xs">{t('share.mcp.hint')}</p>
+			{#if connections.length === 0}<p class="text-muted-foreground text-xs">{t('share.mcp.empty')}</p>{/if}
+			<ul class="flex flex-col gap-1.5">
+				{#each connections as c (c.grant.id)}
+					<li class="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="mcp-connection">
+						<label class="flex min-w-0 flex-1 basis-48 items-start gap-2">
+							<Checkbox
+								class="mt-0.5 size-4"
+								checked={c.allowed}
+								disabled={mcpBusy === c.grant.id}
+								aria-label={t('share.mcp.toggle', { name: connectionName(c.grant) })}
+								onchange={() => setConnection(c.grant, !c.allowed)}
+								data-testid="mcp-toggle"
+							/>
+							<span class="min-w-0">
+								<span class="block truncate font-medium">{connectionName(c.grant)}</span>
+								<span class="text-muted-foreground block text-xs">{c.grant.scopes.map(scopeLabel).join(', ')}</span>
+							</span>
+						</label>
+						<span class="bg-muted rounded-full px-2 py-0.5 text-xs font-medium">{c.allowed ? t('share.mcp.on') : t('share.mcp.off')}</span>
+					</li>
+				{/each}
+			</ul>
+			{#if mcpMessage}<p class={['text-xs', mcpMessage.ok ? 'text-success' : 'text-destructive']} role="status" data-testid="mcp-message">{mcpMessage.text}</p>{/if}
+			<div><Button size="sm" variant="ghost" onclick={() => { onclose?.(); onsettings?.('verbindungen'); }}>{t('share.mcp.manage')}</Button></div>
 		</div>
 	{/if}
 

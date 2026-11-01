@@ -50,6 +50,8 @@ Werkzeuge nach fachlichen Fähigkeiten schneiden, beispielsweise:
 - `begin_attachment_upload`, `complete_attachment_upload`, `list_attachments`, `get_attachment`
 - `submit_for_review`
 
+Umgesetzt (1.11.2026): `wait_for_events {since?, timeoutSeconds 1..25}` als Long-Poll auf Basis von `live_events` (ADR 0022). Antwort nur Hinweise `{changed, token, hints:[{kind, taskID, projectID}]}`, ohne Inhalte und nur für Projekte, die der Grant erlaubt und das Konto sieht. Es weckt keine ruhende Sitzung; der Agent ruft es selbst auf (nach blockierender Frage wenige Runden, dann `get_question`). Siehe `docs/PUSH-AN-CLAUDE-CODE.md`.
+
 Dies sind noch keine fixierten Namen oder Protokollschemas. Runner-Steuerung wie Claim/Heartbeat kann über eine separate authentifizierte API laufen und muss nicht jedem MCP-Client zugänglich sein.
 
 Scopes beispielsweise für Lesen, Bearbeiten, Kommentieren und Anhänge getrennt halten. Keine beliebigen Dateisystem- oder Shell-Werkzeuge im Todolino-MCP anbieten. Freitext und Anhänge sind Daten; sie erweitern keine Berechtigungen. Der Verlauf nennt handelnde Person, Integration und Lauf.

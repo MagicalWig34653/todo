@@ -307,3 +307,38 @@ final class SharingTests: XCTestCase {
         XCTAssertEqual(after.status, .notFound)
     }
 }
+
+final class ProjectListPerformanceTests: XCTestCase {
+    /// The list used to cost several queries per project (N+1). 300 nested, partly shared projects must stay fast.
+    func testProjectListWithManyProjects() async throws {
+        let t = try await TestApp.make()
+        do {
+            let me = User(displayName: "Me", isAdmin: false); try await me.save(on: t.app.db)
+            let other = User(displayName: "Other", isAdmin: false); try await other.save(on: t.app.db)
+            let session = AuthSupport.randomToken()
+            try await UserSession(userID: me.requireID(), tokenHash: AuthSupport.hash(session), expiresAt: Date().addingTimeInterval(3600)).save(on: t.app.db)
+            var parent: UUID? = nil
+            for i in 0..<300 {
+                let mine = i % 3 != 0
+                let p = Project(ownerID: try (mine ? me : other).requireID(), parentID: i % 10 == 0 ? nil : parent, name: "P\(i)")
+                try await p.save(on: t.app.db)
+                try await ProjectSharing(project: p).save(on: t.app.db)
+                if !mine && i % 2 == 0 {
+                    try await ProjectGrant(projectID: try p.requireID(), principalType: "person", principalID: try me.requireID(), role: .read).save(on: t.app.db)
+                }
+                parent = try p.requireID()
+            }
+            let started = Date()
+            let r = try await t.json(.GET, "/v1/projects", token: session)
+            let elapsed = Date().timeIntervalSince(started)
+            XCTAssertEqual(r.status, .ok)
+            let rows = try XCTUnwrap(r.list)
+            XCTAssertEqual(rows.count, 290, "own projects plus read-shared ones and their inheriting children (same result as the per-project implementation)")
+            XCTAssertEqual(rows.filter { $0["isOwner"] as? Bool == true }.count, 200)
+            XCTAssertEqual(rows.first { $0["name"] as? String == "P1" }?["ownerName"] as? String, "Me")
+            print("project list with 300 projects: \(elapsed) s")
+            XCTAssertLessThan(elapsed, 2.0)
+        } catch { await t.shutdown(); throw error }
+        await t.shutdown()
+    }
+}

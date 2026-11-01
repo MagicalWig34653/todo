@@ -74,8 +74,19 @@ struct PasswordLoginRequest: Content {
 }
 
 struct InvitationResponse: Content {
+    let id: UUID
     let token: String
     let expiresAt: Date
+}
+
+/// One row of the administrators' invitation list. The token itself is never stored, so it cannot be shown again.
+struct InvitationSummary: Content {
+    let id: UUID
+    let status: String
+    let expiresAt: Date
+    let usedAt: Date?
+    let createdBy: UUID
+    let createdByName: String
 }
 
 struct AuthController: RouteCollection {
@@ -92,6 +103,8 @@ struct AuthController: RouteCollection {
         v1.get("me", use: me)
         v1.post("me", "password", use: setPassword)
         v1.post("invitations", use: createInvitation)
+        v1.get("invitations", use: listInvitations)
+        v1.delete("invitations", ":id", use: withdrawInvitation)
     }
 
     private func webAuthn(_ req: Request) -> WebAuthnManager {
@@ -293,8 +306,30 @@ struct AuthController: RouteCollection {
         let admin = try await req.requireAdmin()
         let token = AuthSupport.randomToken()
         let expires = Date().addingTimeInterval(7 * 24 * 3600)
-        try await Invitation(tokenHash: AuthSupport.hash(token), createdBy: try admin.requireID(), expiresAt: expires)
-            .save(on: req.db)
-        return InvitationResponse(token: token, expiresAt: expires)
+        let invitation = Invitation(tokenHash: AuthSupport.hash(token), createdBy: try admin.requireID(), expiresAt: expires)
+        try await invitation.save(on: req.db)
+        return InvitationResponse(id: try invitation.requireID(), token: token, expiresAt: expires)
+    }
+
+    /// Open, used and expired invitations, newest expiry first. Expired and used rows disappear with the cleanup scheduler.
+    @Sendable func listInvitations(_ req: Request) async throws -> [InvitationSummary] {
+        _ = try await req.requireAdmin()
+        let rows = try await Invitation.query(on: req.db).sort(\.$expiresAt, .descending).limit(200).all()
+        let names = Dictionary(uniqueKeysWithValues: try await User.query(on: req.db).filter(\.$id ~~ Set(rows.map(\.createdBy))).all()
+            .map { ($0.id!, $0.displayName) })
+        let now = Date()
+        return try rows.map {
+            InvitationSummary(id: try $0.requireID(), status: $0.usedAt != nil ? "used" : ($0.expiresAt <= now ? "expired" : "open"),
+                              expiresAt: $0.expiresAt, usedAt: $0.usedAt, createdBy: $0.createdBy, createdByName: names[$0.createdBy] ?? "")
+        }
+    }
+
+    /// Withdraws an unused invitation; its code stops working at once. Used invitations stay as a record (409).
+    @Sendable func withdrawInvitation(_ req: Request) async throws -> HTTPStatus {
+        _ = try await req.requireAdmin()
+        guard let id = req.parameters.get("id", as: UUID.self), let inv = try await Invitation.find(id, on: req.db) else { throw Abort(.notFound) }
+        guard inv.usedAt == nil else { throw Abort(.conflict, reason: "invitation_used") }
+        try await inv.delete(on: req.db)
+        return .noContent
     }
 }

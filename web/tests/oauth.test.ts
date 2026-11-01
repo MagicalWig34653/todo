@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApi, type FetchLike, type OAuthGrant, type Project } from '../src/lib/api';
 import { de } from '../src/lib/i18n/de';
-import { redirectTarget, resolveGrantProjects, safeRedirect, scopeLabel, sortGrants } from '../src/lib/oauth';
+import { connectionName, connectionsForProject, projectsWith, wouldLeaveEmpty, redirectTarget, resolveGrantProjects, safeRedirect, scopeLabel, sortGrants } from '../src/lib/oauth';
 
 function recorder(body: unknown, status = 200) {
 	const calls: { url: string; init?: RequestInit }[] = [];
@@ -72,5 +72,37 @@ describe('oauth helpers', () => {
 	it('localizes known scopes and passes unknown through', () => {
 		expect(scopeLabel('tasks:read')).toBe(de['scope.tasks:read']);
 		expect(scopeLabel('other')).toBe('other');
+	});
+});
+
+describe('grant project editing', () => {
+	it('sends the replaced list on the unversioned oauth path', async () => {
+		const { calls, api } = recorder({ id: 'g', client_id: 'c', scopes: [], project_ids: ['p1'], revoked: false });
+		await api.setOAuthGrantProjects('g', ['p1']);
+		expect(calls[0].url).toBe('/oauth/grants/g/projects');
+		expect(calls[0].init?.method).toBe('PUT');
+		expect(JSON.parse(calls[0].init?.body as string)).toEqual({ project_ids: ['p1'] });
+	});
+});
+
+describe('connections in the share dialog', () => {
+	const g = (id: string, name: string, projects: string[], over: Partial<OAuthGrant> = {}): OAuthGrant => ({ id, client_id: 'c'.repeat(8) + id, client_name: name, scopes: ['tasks:read'], project_ids: projects, revoked: false, ...over });
+	it('lists active connections, those with access first', () => {
+		const list = connectionsForProject([g('1', 'Zed', []), g('2', 'Alpha', ['p']), g('3', 'Gone', ['p'], { revoked: true }), g('4', 'Beta', ['p'])], 'p');
+		expect(list.map((c) => [connectionName(c.grant), c.allowed])).toEqual([['Alpha', true], ['Beta', true], ['Zed', false]]);
+	});
+	it('falls back to a short id without a client name', () => {
+		expect(connectionName(g('1', ' ', []))).toBe('cccccccc');
+	});
+	it('switches one project on and off without touching the others', () => {
+		const grant = g('1', 'A', ['x', 'p']);
+		expect(projectsWith(grant, 'p', false)).toEqual(['x']);
+		expect(projectsWith(grant, 'q', true)).toEqual(['x', 'p', 'q']);
+		expect(projectsWith(grant, 'p', true)).toEqual(['x', 'p']);
+	});
+	it('refuses to empty a connection unless it may create projects', () => {
+		expect(wouldLeaveEmpty(g('1', 'A', ['p']), 'p')).toBe(true);
+		expect(wouldLeaveEmpty(g('1', 'A', ['p', 'x']), 'p')).toBe(false);
+		expect(wouldLeaveEmpty(g('1', 'A', ['p'], { scopes: ['projects:write'] }), 'p')).toBe(false);
 	});
 });

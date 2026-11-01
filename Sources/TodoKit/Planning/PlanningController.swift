@@ -132,11 +132,47 @@ struct ProjectAccess {
     }
 
     func visibleProjects() async throws -> [Project] {
-        var result: [Project] = []
-        for project in try await Project.query(on: db).sort(\.$createdAt).sort(\.$id).all() {
-            if try await SharingAccess(user: user, db: db).visibility(project).role != nil { result.append(project) }
+        let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
+        return try ordered.filter { try snapshot.visibility($0).role != nil }
+    }
+
+    /// The project list as DTOs with a constant number of queries (the sharing graph, owner names and states are loaded once).
+    func listDTOs(states: [UUID: ProjectUserState]) async throws -> [ProjectDTO] {
+        let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
+        let visible = try ordered.filter { try snapshot.visibility($0).role != nil }
+        var ownerIDs = Set<UUID>(), teamOwnerIDs = Set<UUID>()
+        for project in visible {
+            let row = snapshot.sharing[try project.requireID()]
+            if row?.ownerType == "team" { teamOwnerIDs.insert(row!.ownerID) } else { ownerIDs.insert(row?.ownerID ?? project.ownerID) }
         }
-        return result
+        let userNames = Dictionary(uniqueKeysWithValues: try await User.query(on: db).filter(\.$id ~~ ownerIDs).all().compactMap { u in u.id.map { ($0, u.displayName) } })
+        let teamNames = Dictionary(uniqueKeysWithValues: try await Team.query(on: db).filter(\.$id ~~ teamOwnerIDs).all().compactMap { t in t.id.map { ($0, t.name) } })
+        return try visible.map { project in
+            var result: ProjectDTO
+            if let parentID = project.parentID, let parent = snapshot.projects[parentID], try snapshot.visibility(parent).role == nil {
+                let redacted = Project(ownerID: project.ownerID, parentID: nil, name: project.name)
+                redacted.id = project.id; redacted.version = project.version
+                redacted.details = project.details; redacted.color = project.color; redacted.createdAt = project.createdAt
+                result = try ProjectDTO(redacted)
+            } else {
+                result = try ProjectDTO(project)
+            }
+            let id = try project.requireID()
+            let state = states[id]
+            result.position = state?.orderPosition
+            result.isFavorite = state?.isFavorite ?? false
+            result.favoritePosition = state?.isFavorite == true ? state?.favoritePosition : nil
+            let visibility = try snapshot.visibility(project)
+            let row = snapshot.sharing[id]
+            let ownerType = row?.ownerType ?? "person"
+            let ownerID = row?.ownerID ?? project.ownerID
+            result.role = visibility.role
+            result.isOwner = visibility.canTransferOwnership
+            result.ownerType = ownerType
+            result.ownerID = ownerID
+            result.ownerName = ownerType == "team" ? teamNames[ownerID] : userNames[ownerID]
+            return result
+        }
     }
 
     /// Viewer-specific DTO: redacts a hidden parent and adds the viewer's order/favourite state. Pass `states`
@@ -304,10 +340,8 @@ struct PlanningController: RouteCollection {
     @Sendable func listProjects(_ req: Request) async throws -> [ProjectDTO] {
         let user = try await req.requireUser()
         let access = ProjectAccess(user: user, db: req.db)
-        var result: [ProjectDTO] = []
         let states = try await ProjectUserState.states(of: user, on: req.db)
-        for project in try await access.visibleProjects() { result.append(try await access.dto(project, states: states)) }
-        return result
+        return try await access.listDTOs(states: states)
     }
 
     @Sendable func createProject(_ req: Request) async throws -> Response {

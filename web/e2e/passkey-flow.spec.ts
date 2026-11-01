@@ -1116,6 +1116,31 @@ test('oauth consent page and grant management', async () => {
 	const grant = page.getByTestId('oauth-grant').filter({ hasText: clientID });
 	await expect(grant).toContainText('Projekte lesen, Aufgaben lesen');
 	await expect(grant).toContainText('Haushalt');
+	// Change the projects afterwards: deauthorise Haushalt (needs at least one other project), then authorise it again.
+	await grant.getByTestId('oauth-edit').click();
+	const panel = grant.getByTestId('oauth-edit-panel');
+	await panel.getByLabel('Haushalt').uncheck();
+	await expect(panel.getByTestId('oauth-edit-save')).toBeDisabled();
+	await panel.locator('label').filter({ hasNotText: 'Haushalt' }).locator('input').first().check();
+	await panel.getByTestId('oauth-edit-save').click();
+	await expect(page.getByTestId('oauth-info')).toHaveText('Die Projekte wurden aktualisiert.');
+	await expect(grant.getByText(/^Projekte:/)).not.toContainText('Haushalt');
+	await grant.getByTestId('oauth-edit').click();
+	await grant.getByTestId('oauth-edit-panel').getByLabel('Haushalt').check();
+	await grant.getByTestId('oauth-edit-save').click();
+	await expect(grant.getByText(/^Projekte:/)).toContainText('Haushalt');
+
+	// The same switch lives in the share dialog of the project: see which connection reaches it and change that there.
+	await openProject('Haushalt');
+	await page.getByTestId('share-open').click();
+	const connection = page.getByTestId('mcp-connection').filter({ hasText: 'Test-Assistent' });
+	await expect(connection).toContainText('hat Zugriff');
+	await connection.getByTestId('mcp-toggle').click();
+	await expect(connection).toContainText('kein Zugriff');
+	await connection.getByTestId('mcp-toggle').click();
+	await expect(connection).toContainText('hat Zugriff');
+	await page.keyboard.press('Escape');
+	await page.goto('/einstellungen/verbindungen');
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).click();
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).last().click();
 	await expect(page.getByTestId('oauth-info')).toHaveText('Der Zugriff wurde widerrufen.');

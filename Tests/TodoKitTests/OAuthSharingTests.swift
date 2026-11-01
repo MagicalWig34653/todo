@@ -69,6 +69,44 @@ final class OAuthSharingTests: XCTestCase {
         await f.test.shutdown()
     }
 
+    func testGrantProjectsCanBeChangedAfterwards() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let tokens = try await f.tokens()
+            let grants = try await f.test.json(.GET, "/oauth/grants", token: f.session)
+            let id = try XCTUnwrap(grants.list?.first?["id"] as? String)
+            let allowed = try f.project.requireID().uuidString, other = try f.other.requireID().uuidString
+            let call = { (pid: String) in try await f.rpc("tools/call", ["name": "list_tasks", "arguments": ["projectID": pid]], access: tokens.access) }
+            let before = try await call(other)
+            XCTAssertEqual(try text(before.body), "not_found")
+            // Authorise a further project afterwards; the same token reaches it at once.
+            let added = try await f.test.json(.PUT, "/oauth/grants/\(id)/projects", ["project_ids": [allowed, other]], token: f.session)
+            XCTAssertEqual(added.status, .ok)
+            XCTAssertEqual(Set(added.body?["project_ids"] as? [String] ?? []), [allowed, other])
+            let after = try await call(other)
+            XCTAssertNotEqual(try text(after.body), "not_found")
+            // Deauthorise the first one again.
+            let removed = try await f.test.json(.PUT, "/oauth/grants/\(id)/projects", ["project_ids": [other]], token: f.session)
+            XCTAssertEqual(removed.status, .ok)
+            let dropped = try await call(allowed)
+            XCTAssertEqual(try text(dropped.body), "not_found")
+            // Boundaries: empty list without projects:write, foreign project, unknown grant.
+            let empty = try await f.test.json(.PUT, "/oauth/grants/\(id)/projects", ["project_ids": [String]()], token: f.session)
+            XCTAssertEqual(empty.status, .badRequest)
+            let stranger = User(displayName: "Stranger", isAdmin: false); try await stranger.save(on: f.test.app.db)
+            let foreign = Project(ownerID: try stranger.requireID(), parentID: nil, name: "Private"); try await foreign.save(on: f.test.app.db)
+            let denied = try await f.test.json(.PUT, "/oauth/grants/\(id)/projects", ["project_ids": [try foreign.requireID().uuidString]], token: f.session)
+            XCTAssertEqual(denied.status, .notFound)
+            let unknown = try await f.test.json(.PUT, "/oauth/grants/\(UUID().uuidString)/projects", ["project_ids": [allowed]], token: f.session)
+            XCTAssertEqual(unknown.status, .notFound)
+            // Revoked grants stay revoked.
+            _ = try await f.test.json(.DELETE, "/oauth/grants/\(id)", token: f.session)
+            let late = try await f.test.json(.PUT, "/oauth/grants/\(id)/projects", ["project_ids": [allowed]], token: f.session)
+            XCTAssertEqual(late.status, .conflict)
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
     private func text(_ body: [String: Any]?) throws -> String {
         let content = try XCTUnwrap((body?["result"] as? [String: Any])?["content"] as? [[String: Any]])
         return try XCTUnwrap(content.first?["text"] as? String)

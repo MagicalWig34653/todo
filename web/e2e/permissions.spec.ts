@@ -207,6 +207,8 @@ test('team invitation: badge, accept, decline, leave', async () => {
 	await b.reload();
 	await expect(sidebar(b).getByTestId('sidebar-shared')).toContainText('Hausbau');
 	// The team page lists the projects the viewer manages that are shared with the team (grants are only readable with Verwalten).
+	await a.reload();
+	await sidebar(a).getByRole('button', { name: 'Teams', exact: true }).click();
 	await a.getByTestId('team-item').filter({ hasText: 'Bauteam' }).click();
 	await expect(a.getByTestId('team-projects')).toContainText('Hausbau');
 	await expect(a.getByTestId('team-projects')).toContainText('Kommentieren');
@@ -223,7 +225,7 @@ test('team invitation: badge, accept, decline, leave', async () => {
 	await a.getByRole('button', { name: 'Einladen', exact: true }).waitFor();
 	await a.getByLabel('Konto-ID der Person').fill(bID);
 	await a.getByRole('button', { name: 'Einladen', exact: true }).click();
-	// The click returns before the request is done: wait until A sees the pending invitation before B looks for it.
+	// Wait until the invitation exists before B reloads (the click does not await the request).
 	await expect(a.getByTestId('team-member').filter({ hasText: 'Ben Gast' })).toContainText('Einladung offen');
 	await b.reload();
 	await sidebar(b).getByRole('button', { name: /^Teams/ }).click();

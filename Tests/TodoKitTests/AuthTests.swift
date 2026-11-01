@@ -89,4 +89,32 @@ final class AuthTests: XCTestCase {
         let nope = try await t.json(.POST, "/v1/invitations", token: b.session)
         XCTAssertEqual(nope.status, .forbidden)
     }
+
+    func testInvitationListAndWithdraw() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await t.register(token: "bootstrap-secret", name: "Alice")
+        let used = try await t.json(.POST, "/v1/invitations", token: a.session)
+        let b = try await t.register(token: try XCTUnwrap(used.body?["token"] as? String), name: "Bob")
+        let open = try await t.json(.POST, "/v1/invitations", token: a.session)
+        let list = try await t.json(.GET, "/v1/invitations", token: a.session)
+        let rows = try XCTUnwrap(list.list)
+        XCTAssertEqual(rows.compactMap { $0["status"] as? String }.sorted(), ["open", "used"])
+        XCTAssertEqual(rows.first?["createdByName"] as? String, "Alice")
+        XCTAssertNil(rows.first?["token"])
+        let denied = try await t.json(.GET, "/v1/invitations", token: b.session)
+        XCTAssertEqual(denied.status, .forbidden)
+        let usedID = try XCTUnwrap(rows.first { $0["status"] as? String == "used" }?["id"] as? String)
+        let openID = try XCTUnwrap(rows.first { $0["status"] as? String == "open" }?["id"] as? String)
+        let conflict = try await t.json(.DELETE, "/v1/invitations/\(usedID)", token: a.session)
+        XCTAssertEqual(conflict.status, .conflict)
+        let notAdmin = try await t.json(.DELETE, "/v1/invitations/\(openID)", token: b.session)
+        XCTAssertEqual(notAdmin.status, .forbidden)
+        let gone = try await t.json(.DELETE, "/v1/invitations/\(openID)", token: a.session)
+        XCTAssertEqual(gone.status, .noContent)
+        let reuse = try await t.json(.POST, "/v1/auth/register/begin", ["token": try XCTUnwrap(open.body?["token"] as? String), "displayName": "C"])
+        XCTAssertEqual(reuse.status, .forbidden)
+        let again = try await t.json(.DELETE, "/v1/invitations/\(openID)", token: a.session)
+        XCTAssertEqual(again.status, .notFound)
+    }
 }

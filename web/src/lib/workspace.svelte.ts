@@ -100,8 +100,10 @@ class Workspace {
 	}
 	/** Everything the sidebar shows; failures of the optional parts must not break the app. */
 	async reloadAll() {
+		// Everything starts at once (the optional parts used to wait for projects and tasks); each part renders when it arrives.
+		const optional = Promise.allSettled([this.reloadTeams(), this.reloadMeta(), this.reloadPrefs(), this.reloadAttention()]);
 		await Promise.all([this.reloadProjects(), this.reloadTasks()]);
-		await Promise.allSettled([this.reloadTeams(), this.reloadMeta(), this.reloadPrefs(), this.reloadAttention()]);
+		await optional;
 		await this.importLegacy();
 	}
 
