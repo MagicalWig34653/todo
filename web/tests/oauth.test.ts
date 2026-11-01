@@ -74,3 +74,13 @@ describe('oauth helpers', () => {
 		expect(scopeLabel('other')).toBe('other');
 	});
 });
+
+describe('grant project editing', () => {
+	it('sends the replaced list on the unversioned oauth path', async () => {
+		const { calls, api } = recorder({ id: 'g', client_id: 'c', scopes: [], project_ids: ['p1'], revoked: false });
+		await api.setOAuthGrantProjects('g', ['p1']);
+		expect(calls[0].url).toBe('/oauth/grants/g/projects');
+		expect(calls[0].init?.method).toBe('PUT');
+		expect(JSON.parse(calls[0].init?.body as string)).toEqual({ project_ids: ['p1'] });
+	});
+});

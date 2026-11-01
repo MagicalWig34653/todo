@@ -47,3 +47,13 @@ export function resolveGrantProjects(grant: OAuthGrant, projects: Project[]): { 
 export function sortGrants(grants: OAuthGrant[]): OAuthGrant[] {
 	return [...grants].sort((a, b) => Number(a.revoked) - Number(b.revoked));
 }
+
+/** Whether a grant may be saved with an empty project list (only connections that may create projects). */
+export function mayBeEmpty(grant: OAuthGrant): boolean {
+	return grant.scopes.includes('projects:write');
+}
+
+/** Ids to send: the checked ones; ids the user cannot see any more are dropped (least privilege). */
+export function nextGrantProjects(selected: Set<string>, projects: Project[]): string[] {
+	return projects.filter((p) => selected.has(p.id)).map((p) => p.id);
+}

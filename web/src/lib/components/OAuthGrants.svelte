@@ -2,13 +2,34 @@
 	import { api, type OAuthGrant, type Project } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
-	import { resolveGrantProjects, scopeLabel, sortGrants } from '#lib/oauth.js';
+	import { mayBeEmpty, nextGrantProjects, resolveGrantProjects, scopeLabel, sortGrants } from '#lib/oauth.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	let grants = $state<OAuthGrant[]>([]);
 	let projects = $state<Project[]>([]);
 	let confirmID = $state<string | null>(null);
 	let info = $state<string | null>(null);
+	let editID = $state<string | null>(null);
+	let selected = $state<Set<string>>(new Set());
+
+	function edit(g: OAuthGrant) {
+		editID = g.id;
+		selected = new Set(g.project_ids);
+		confirmID = null;
+	}
+	function toggle(id: string) {
+		const next = new Set(selected);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selected = next;
+	}
+	async function save(g: OAuthGrant) {
+		info = null;
+		if (await attempt(async () => { await api.setOAuthGrantProjects(g.id, nextGrantProjects(selected, projects)); await load(); }, load)) {
+			editID = null;
+			info = t('account.oauth.editProjects.done');
+		}
+	}
 
 	async function load() {
 		const [g, p] = await Promise.all([api.listOAuthGrants(), api.listProjects()]);
@@ -44,6 +65,7 @@
 					{#if g.revoked}
 						<span class="text-muted-foreground text-xs">{t('account.oauth.revoked')}</span>
 					{:else}
+						<Button size="xs" variant="outline" onclick={() => edit(g)} data-testid="oauth-edit">{t('account.oauth.editProjects')}</Button>
 						<Button size="xs" variant="destructive" onclick={() => (confirmID = g.id)}>{t('account.oauth.revoke')}</Button>
 					{/if}
 				</div>
@@ -51,6 +73,22 @@
 				<p class="text-muted-foreground text-xs">
 					{t('account.oauth.projects', { names: resolved.names.join(', ') || '–' })}{#if resolved.unknown > 0} ({t('account.oauth.unknownProjects', { count: resolved.unknown })}){/if}
 				</p>
+				{#if editID === g.id}
+					{@const empty = nextGrantProjects(selected, projects).length === 0}
+					<div class="mt-2 flex flex-col gap-2" data-testid="oauth-edit-panel">
+						<p class="text-muted-foreground text-xs">{t('account.oauth.editProjects.hint')}</p>
+						<ul class="flex max-h-60 flex-col gap-1 overflow-auto">
+							{#each projects as p (p.id)}
+								<li><label class="flex items-center gap-2"><input type="checkbox" class="size-[18px]" checked={selected.has(p.id)} onchange={() => toggle(p.id)} data-testid="oauth-edit-project-{p.id}" /> <span>{p.name}</span></label></li>
+							{/each}
+						</ul>
+						{#if empty && !mayBeEmpty(g)}<p class="text-xs" role="status">{t('account.oauth.editProjects.needOne')}</p>{/if}
+						<div class="flex gap-2">
+							<Button size="sm" disabled={empty && !mayBeEmpty(g)} onclick={() => save(g)} data-testid="oauth-edit-save">{t('account.oauth.editProjects.save')}</Button>
+							<Button size="sm" variant="ghost" onclick={() => (editID = null)}>{t('common.cancel')}</Button>
+						</div>
+					</div>
+				{/if}
 				{#if confirmID === g.id}
 					<div class="mt-2 flex flex-wrap items-center gap-2">
 						<span>{t('account.oauth.revokeConfirm')}</span>

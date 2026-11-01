@@ -128,6 +128,26 @@ paths:
       responses:
         '204': {description: Grant und damit alle zugehörigen Tokens widerrufen.}
         '404': {description: Fremder oder unbekannter Grant.}
+  /oauth/grants/{id}/projects:
+    put:
+      security: [{userSession: []}]
+      summary: Projekte einer bestehenden Verbindung nachträglich ändern (berechtigen und entrechtigen)
+      description: >-
+        Ersetzt die Projektliste des Grants. Wirkt sofort, weil MCP-Aufrufe den Grant bei jedem Request lesen.
+        Neu hinzugefügte Projekte müssen für das Konto zugänglich sein (sonst 404); Entfernen ist immer möglich.
+        Eine leere Liste ist nur mit dem Scope projects:write erlaubt (sonst 400 projects_required).
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [project_ids], properties: {project_ids: {type: array, items: {type: string, format: uuid}}}}
+      responses:
+        '200': {description: Der Grant im Format von GET /oauth/grants.}
+        '400': {description: projects_required}
+        '404': {description: Fremder Grant oder nicht zugängliches Projekt.}
+        '409': {description: grant_revoked}
   /mcp:
     post:
       security: [{oauthBearer: []}]

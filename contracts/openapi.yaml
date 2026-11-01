@@ -344,6 +344,49 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '500':
           $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listInvitations
+      summary: List invitations (admin only)
+      tags:
+        - Auth
+      description: Status open, used or expired. The code is stored hashed and cannot be shown again.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InvitationSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/invitations/{id}:
+    delete:
+      operationId: withdrawInvitation
+      summary: Withdraw an unused invitation (admin only)
+      tags:
+        - Auth
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Withdrawn; the code no longer works.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown invitation
+        '409':
+          description: invitation_used
   /v1/projects:
     get:
       operationId: listProjects
@@ -736,6 +779,10 @@ components:
         - expiresAt
         - user
       properties:
+        id:
+          type: string
+          format: uuid
+          description: Matches the id in GET /v1/invitations, so a just-created invitation can be withdrawn.
         token:
           type: string
         expiresAt:
@@ -743,9 +790,20 @@ components:
           format: date-time
         user:
           $ref: '#/components/schemas/User'
+    InvitationSummary:
+      type: object
+      required: [id, status, expiresAt, createdBy, createdByName]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [open, used, expired]}
+        expiresAt: {type: string, format: date-time}
+        usedAt: {type: string, format: date-time}
+        createdBy: {type: string, format: uuid}
+        createdByName: {type: string}
     Invitation:
       type: object
       required:
+        - id
         - token
         - expiresAt
       properties:
