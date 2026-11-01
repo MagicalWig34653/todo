@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 1.11.2026: Antwortoptionen laufen nicht mehr über die Karte (PWA)
+
+- Ursache: `Button` ist `whitespace-nowrap` mit fester Höhe, die Optionen standen in `flex-wrap` ohne `min-w-0`/Umbruch; lange Texte und lange Wörter machten Knopf und Karte breiter als den Bildschirm. Betroffen: `QuestionAnswer` (Überblick-Fragenliste, Karte, Aufgabendetail) und die Aktionsknöpfe der Karten in „Für dich“ (`ForYouView`, zusätzlich Titel-/Detailtext ohne Umbruch).
+- Fix: gemeinsame Komponente `overview/OptionButtons.svelte` (umbrechend, `overflow-wrap:anywhere`, `h-auto` mit Mindesthöhe wie bisher 32/36 px, `min-w-0`), von `QuestionAnswer` und `ForYouView` genutzt; `min-w-0` an Karten. Nebenbei bei 320 px/200 % Schrift: Ansichtsumschalter (`CommandCenter`) umbrechbar, Filter in `SyncList` schmaler.
+- Nachweis: neuer Spec `web/e2e/question-overflow.spec.ts` (Frage per API mit 4 Optionen: kurz, ~200 Zeichen, langes Wort ohne Leerzeichen, 500 Zeichen). Prüft kein Nachfahre ragt über die Karte, scrollWidth <= clientWidth von Karte, Seite und Body bei 320/390 px hell/dunkel, 200 % Schrift (Für dich, Überblick-Fragen, Board-Karte, Detaildialog), Fokus, Antwort senden. Ohne Fix rot (Elemente 1464/1685/3452 px bei 304 px Karte), mit Fix 7/7 grün. Specs for-you, menus-and-modes, passkey-flow, question-overflow je 2 Läufe grün; vitest 226 grün; `npm run build` grün; `npm run check` nur der bekannte Symlink-Fehler `./$types`.
+- Screenshots (nicht im Repo): `/private/tmp/claude-501/pwa-overflow/before` und `after`. Grenzen: nur Chromium, SQLite; nicht geprüft: Safari/Firefox.
+
 ## Checkpoint 1.11.2026: Flake passkey-flow Test 7 behoben
 
 - Ursache: `TaskPlanning.svelte` rief `api.getPlanning(taskID)` synchron im `$effect` auf; die Prop `taskID` hängt am Task-Objekt, und jeder Listen-Refresh (neues Objekt, gleiche ID) ließ den Effekt neu laufen: Formular zurückgesetzt (`current = null`, deaktiviert) und mit veralteter Antwort überschrieben, Eingaben/gespeicherter Stand gingen verloren (Test sah kein `recurrence-error`/`task-chips`).

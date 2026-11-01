@@ -11,6 +11,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import PageHeader from './app/PageHeader.svelte';
 	import EmptyState from './app/EmptyState.svelte';
+	import OptionButtons from './overview/OptionButtons.svelte';
 	import Dialog from './app/Dialog.svelte';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 
@@ -131,8 +132,8 @@
 					{#if needsTotal > needs.length}<span class="font-normal normal-case">{t('forYou.needsYouMore', { count: needsTotal - needs.length })}</span>{/if}
 				</h3>
 				{#each needs as item (item.id)}
-					<article class="bg-card flex flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
-						<button type="button" class="flex flex-col items-start gap-0.5 text-left" aria-label={t('forYou.openTask')} onclick={() => onopen?.(item.projectID, item.taskID)}>
+					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-label={t('forYou.openTask')} onclick={() => onopen?.(item.projectID, item.taskID)}>
 							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(kindKey(item.kind))}</span>
 							<span class="text-sm font-semibold">{item.title}</span>
 							{#if item.detail}<span class="text-muted-foreground text-sm">{item.detail}</span>{/if}
@@ -148,11 +149,12 @@
 									<Button type="submit" disabled={busy.has(item.id) || !(texts[item.id] ?? '').trim()}>{t('forYou.send')}</Button>
 								</form>
 							{:else}
-								<div class="flex flex-wrap gap-2">
-									{#each item.actions as action (action.key + action.label)}
-										<Button variant="outline" disabled={busy.has(item.id)} onclick={() => click(item, action)}>{action.label}</Button>
-									{/each}
-								</div>
+								<OptionButtons
+									class="gap-2"
+									items={item.actions.map((a, i) => ({ key: String(i), label: a.label }))}
+									disabled={busy.has(item.id)}
+									onpick={(i) => click(item, item.actions[Number(i)])}
+								/>
 								{#if noteFor === item.id}
 									<Input placeholder={t('forYou.notePlaceholder')} aria-label={t('forYou.notePlaceholder')} bind:value={texts[item.id]} />
 								{/if}
@@ -168,7 +170,7 @@
 				<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('forYou.posts')}</h3>
 				{#each posts as post (post.id)}
 					<article class="bg-card flex flex-col gap-2 rounded-xl border p-3" data-testid="post-card" data-kind={post.kind}>
-						<button type="button" class="flex flex-col items-start gap-0.5 text-left" aria-label={t('forYou.openTask')} onclick={() => onopen?.(post.projectID, post.taskID)}>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-label={t('forYou.openTask')} onclick={() => onopen?.(post.projectID, post.taskID)}>
 							<span class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
 							{#if post.text}<span class="text-sm whitespace-pre-line">{post.text}</span>{/if}
 							{#if post.detail}<span class="text-muted-foreground text-sm">→ {post.detail}</span>{/if}
