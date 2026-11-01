@@ -119,7 +119,7 @@ paths:
       security: [{userSession: []}]
       responses:
         '200':
-          description: Eigene Grants mit id, client_id, scopes, project_ids und revoked.
+          description: Eigene Grants mit id, client_id, client_name (bei der Registrierung angegeben, leer wenn unbekannt), scopes, project_ids und revoked.
   /oauth/grants/{id}:
     delete:
       security: [{userSession: []}]

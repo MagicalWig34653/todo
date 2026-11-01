@@ -57,3 +57,33 @@ export function mayBeEmpty(grant: OAuthGrant): boolean {
 export function nextGrantProjects(selected: Set<string>, projects: Project[]): string[] {
 	return projects.filter((p) => selected.has(p.id)).map((p) => p.id);
 }
+
+export interface ConnectionAccess {
+	grant: OAuthGrant;
+	/** The connection may reach this project. */
+	allowed: boolean;
+}
+
+/** Name shown for a connection: the registered client name, else a short id. */
+export function connectionName(grant: OAuthGrant): string {
+	return grant.client_name?.trim() || grant.client_id.slice(0, 8);
+}
+
+/** The caller's active connections with whether each reaches `projectID`; allowed ones first, then by name. */
+export function connectionsForProject(grants: OAuthGrant[], projectID: string): ConnectionAccess[] {
+	return grants
+		.filter((g) => !g.revoked)
+		.map((grant) => ({ grant, allowed: grant.project_ids.includes(projectID) }))
+		.sort((a, b) => Number(b.allowed) - Number(a.allowed) || connectionName(a.grant).localeCompare(connectionName(b.grant), 'de'));
+}
+
+/** New project list of a connection after switching one project on or off (order kept, no duplicates). */
+export function projectsWith(grant: OAuthGrant, projectID: string, allowed: boolean): string[] {
+	const rest = grant.project_ids.filter((id) => id !== projectID);
+	return allowed ? [...rest, projectID] : rest;
+}
+
+/** Switching `projectID` off would leave a connection without projects, which only projects:write connections may have. */
+export function wouldLeaveEmpty(grant: OAuthGrant, projectID: string): boolean {
+	return !mayBeEmpty(grant) && grant.project_ids.every((id) => id === projectID);
+}

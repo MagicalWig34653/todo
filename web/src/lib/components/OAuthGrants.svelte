@@ -61,7 +61,7 @@
 			{@const resolved = resolveGrantProjects(g, projects)}
 			<li class="rounded-lg border p-2.5 text-sm" data-testid="oauth-grant">
 				<div class="flex flex-wrap items-center gap-2">
-					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']}>{t('account.oauth.client', { id: g.client_id })}</span>
+					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']}>{g.client_name ? t('account.oauth.clientNamed', { name: g.client_name, id: g.client_id }) : t('account.oauth.client', { id: g.client_id })}</span>
 					{#if g.revoked}
 						<span class="text-muted-foreground text-xs">{t('account.oauth.revoked')}</span>
 					{:else}

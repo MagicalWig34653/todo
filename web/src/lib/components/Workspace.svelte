@@ -357,6 +357,6 @@
 <Dialog bind:open={shareOpen} title={t('share.dialogTitle', { name: shareProject?.name ?? '' })} class="max-w-2xl" testid="share-dialog">
 	{#if shareProject}
 		{@const p = workspace.projects.find((x) => x.id === shareProject!.id) ?? shareProject}
-		<SharingPanel project={p} onchanged={() => workspace.reloadProjects()} onopen={openProject} onclose={() => (shareOpen = false)} />
+		<SharingPanel project={p} onchanged={() => workspace.reloadProjects()} onopen={openProject} onsettings={openAccountArea} onclose={() => (shareOpen = false)} />
 	{/if}
 </Dialog>

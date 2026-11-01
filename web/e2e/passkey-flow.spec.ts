@@ -1129,6 +1129,18 @@ test('oauth consent page and grant management', async () => {
 	await grant.getByTestId('oauth-edit-panel').getByLabel('Haushalt').check();
 	await grant.getByTestId('oauth-edit-save').click();
 	await expect(grant.getByText(/^Projekte:/)).toContainText('Haushalt');
+
+	// The same switch lives in the share dialog of the project: see which connection reaches it and change that there.
+	await openProject('Haushalt');
+	await page.getByTestId('share-open').click();
+	const connection = page.getByTestId('mcp-connection').filter({ hasText: 'Test-Assistent' });
+	await expect(connection).toContainText('hat Zugriff');
+	await connection.getByTestId('mcp-toggle').click();
+	await expect(connection).toContainText('kein Zugriff');
+	await connection.getByTestId('mcp-toggle').click();
+	await expect(connection).toContainText('hat Zugriff');
+	await page.keyboard.press('Escape');
+	await page.goto('/einstellungen/verbindungen');
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).click();
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).last().click();
 	await expect(page.getByTestId('oauth-info')).toHaveText('Der Zugriff wurde widerrufen.');

@@ -408,6 +408,8 @@ export interface ConsentRequest {
 export interface OAuthGrant {
 	id: string;
 	client_id: string;
+	/** Name given at registration; empty when unknown. */
+	client_name?: string;
 	scopes: string[];
 	project_ids: string[];
 	revoked: boolean;
