@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 1.11.2026: Flake passkey-flow Test 7 behoben
+
+- Ursache: `TaskPlanning.svelte` rief `api.getPlanning(taskID)` synchron im `$effect` auf; die Prop `taskID` hängt am Task-Objekt, und jeder Listen-Refresh (neues Objekt, gleiche ID) ließ den Effekt neu laufen: Formular zurückgesetzt (`current = null`, deaktiviert) und mit veralteter Antwort überschrieben, Eingaben/gespeicherter Stand gingen verloren (Test sah kein `recurrence-error`/`task-chips`).
+- Fix: Effekt und Laden hängen nur an einem primitiven `$derived`-Schlüssel; `load()` und `save()` nutzen eine Sequenznummer, sodass nur die jüngste Antwort übernommen wird.
+- Läufe passkey-flow.spec (frische SQLite je Lauf, natives Backend): vorher 8 von 16 Läufen fehlgeschlagen (Test 7); Zwischenstand nur mit Sequenznummer 4 von 16; nachher 20/20 Läufe grün (je 20 Tests). vitest 219 grün.
+- Grenzen: `npm run check` im Worktree meldet wegen des node_modules-Symlinks einen Typ-Importfehler in `+layout.svelte` (`./$types`), unabhängig von der Änderung; im Hauptordner 0 Fehler. Nur Chromium.
+
 ## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
 
 Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.2026)“ darunter ist die Vortagsfassung; bei Widerspruch gilt dieser Abschnitt, danach die chronologischen Checkpoints.
