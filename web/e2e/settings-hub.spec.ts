@@ -204,6 +204,10 @@ test('administration: invitation, system status, honest gaps', async () => {
 	await shot(admin, 'verwaltung');
 	await admin.getByTestId('settings-link-verwaltung-konten').click();
 	await expect(admin.getByTestId('admin-gaps')).toBeVisible();
+	// The only account is the administrator; revoking the last administrator is refused.
+	await expect(admin.getByTestId('admin-accounts').locator('li')).toHaveCount(1);
+	await admin.locator('[data-testid^="admin-toggle-"]').click();
+	await expect(admin.getByText('Mindestens ein Administrator muss bleiben.')).toBeVisible();
 
 	// A second account registers with the invitation and gets no administration.
 	member = await (await admin.context().browser()!.newContext({ viewport: { width: 1280, height: 800 }, locale: 'de-DE' })).newPage();

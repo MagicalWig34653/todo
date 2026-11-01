@@ -36,7 +36,7 @@ Menüs oben rechts: Hilfemenü (Fragezeichen) und Benutzermenü (Avatar mit Eins
 
 | Funktion | Ist (Backend und PWA) | Soll | Priorität |
 |---|---|---|---|
-| Konten verwalten | nur Konto-ID bekannt; keine Liste, kein Sperren, kein Löschen | Kontenliste mit Rolle/Status, Sperren, Löschen, Admin-Rolle vergeben | 1 |
+| Konten verwalten | **Liste und Admin-Rolle gebaut (1.11.2026):** `verwaltung-konten` zeigt alle Konten (`GET /v1/admin/users`), Administratorrolle erteilen/entziehen (`PUT /v1/admin/users/{id}/admin`, letzter Admin bleibt: 409) | Sperren, Löschen | 1 (Rest) |
 | Einladungen | Erzeugen (`POST /v1/invitations`, sieben Tage, einmalig), Link mit Token in der PWA | Liste offener Einladungen, Zurückziehen, Gültigkeit wählen, Versand per Mail | 2 |
 | Recovery | Admin stellt Code aus (`POST /v1/identity/accounts/{id}/recovery`), optional per Mail | Konto aus Liste wählen statt ID einfügen | 3 (hängt an Kontenliste) |
 | Mail | **gebaut (31.10.2026):** Zugangsdaten, Absender, Test-Mail in der PWA (`verwaltung-mail`), Umgebung hat Vorrang | - | erledigt |

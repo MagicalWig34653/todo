@@ -22,7 +22,7 @@ Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.
 4. Plugin in einer echten Claude-Code-Sitzung (Hooks/Stop-Hook), Verhalten bei Account-Wechsel.
 5. Backend noch nicht gebaut: Konten-Verwaltung in der PWA (API `GET /v1/admin/users` steht), Einladungsliste/Zurückziehen, Export und Selbstlöschung, Profil bearbeiten, Zuweisungen an Personen, feinere Rollen, einzelne Runner-Bindung widerrufen, Build-Galerie, Web-Push, Widgets/App Intents, Tool `wait_for_events` (Empfehlung in `PUSH-AN-CLAUDE-CODE.md`).
 6. Apple: Screenshots des Feeds und der neuen Einstellungen, iPad/AX5 nach den letzten Änderungen, Klassisch-Modus (`mode`) im Client, Rolle/Eigentümer-Anzeige, Label umbenennen/löschen in der UI, Mac-UI zur Laufzeit.
-7. Offene Aufräumpunkte: `web/src/lib/components/AccountView.svelte` ist nicht mehr eingebunden (löschen); lokale Branches `worktree-*` und `command-center` im Hauptrepo sowie alte `feature/*`-Branches im Apple-Repo sind aufgegangen oder veraltet (Löschung erst nach Nutzerfreigabe); fünf alte Agent-Worktrees unter `.claude/worktrees/` ließen sich nicht entfernen (Ordner nicht leer, einer gesperrt).
+7. Offene Aufräumpunkte: lokale Branches `worktree-*` und `command-center` im Hauptrepo sowie alte `feature/*`-Branches im Apple-Repo sind aufgegangen oder veraltet (Löschung erst nach Nutzerfreigabe); fünf alte Agent-Worktrees unter `.claude/worktrees/` ließen sich nicht entfernen (Ordner nicht leer, einer gesperrt).
 
 **Schritte, die nur der Nutzer tun kann:**
 - Server: `deploy/swarm/update.sh` (Image `edge`/`sha-34ad803`, Migrationen laufen mit); `openssl rand -base64 32 | tr -d '\n' | docker secret create todo_settings_key -` und `SETTINGS_KEY_ENABLED=true`; Werte, die in der PWA änderbar sein sollen, aus `stack.env` entfernen; Zoraxy-Timeout für `/v1/sync/wait`.
@@ -31,6 +31,10 @@ Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.
 - Plugin in Claude Code mit der URL `https://todo.linolaske.de/mcp` (muss auf `/mcp` enden); Verbindung steht laut Nutzer.
 
 **Arbeitsregeln für Agenten (unverändert):** keine Attributionszeilen, nie `git add -A` im geteilten Arbeitsverzeichnis, fremde Docker-Stacks/Port 13306 nie anfassen, kein globales `docker prune`, isolierte Compose-Projekte, Timetrack-Projekte nur lesen, Secrets nie ins Repo, parallele Agenten im selben Ordner nur mit häufigem Rebase und Pfad-Staging. Docker-Aufräumen verweigert die Berechtigungsprüfung gelegentlich: nicht umgehen, den Nutzer fragen.
+
+## Checkpoint 1.11.2026 (PWA: Kontenliste in der Verwaltung)
+
+**Gebaut (`web/`):** `verwaltung-konten` zeigt die Kontenliste (Name, Benutzername, ID, Admin-Kennzeichen, „du“) und schaltet die Administratorrolle über die vorhandene API (`adminSettings.users/setAdmin`, `sortUsers`); der letzte Administrator lässt sich nicht entziehen (Fehlertext aus `last_admin_required`). Ungenutzte `AccountView.svelte` gelöscht. Kein Backend-Eingriff. **Geprüft:** vitest 220 grün (neu: Sortierung), `npm run check` 0 Fehler, `npm run build`, Playwright Chromium gegen natives SQLite-Backend: `settings-hub` 11/11 inkl. neuer Prüfung (eine Zeile, Entzug des letzten Admins abgelehnt). **Nicht geprüft:** Rollenwechsel mit zwei Konten im Browser, MariaDB, Firefox/WebKit. **Offen:** Sperren und Löschen von Konten (Backend fehlt), Einladungsliste/Zurückziehen, Recovery aus der Liste auslösen. **Nächster Schritt:** Einladungsliste (Priorität 2 in VERWALTUNG.md) oder `wait_for_events`.
 
 ## Aktueller Stand (31.10.2026)
 
