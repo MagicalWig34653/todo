@@ -1,5 +1,37 @@
 # Status
 
+## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
+
+Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.2026)“ darunter ist die Vortagsfassung; bei Widerspruch gilt dieser Abschnitt, danach die chronologischen Checkpoints.
+
+**Repositories und Stand:** Hauptrepo `main` bei `34ad803` (CI, Docker publish, Pages, Deploy-Branch grün; Image `ghcr.io/magicalwig34653/todo-backend:edge` und `:sha-34ad803`, Multi-Arch). Apple-Repo `todo-apple` `main` bei `f84f055`. Produktname **Todolino** (nur Anzeigename; technische Namen bleiben `todo`, ADR 0017). Das Repo ist in Todolino selbst als Projekt „Todolino“ eingerichtet (`.todolino.json`, Plugin-Skills `todolino:setup`/`sync`); die Repo-Dateien bleiben die Wahrheit, das Board spiegelt sie.
+
+**Seit dem 31.10. gebaut (je mit ADR/Vertrag/Doku):**
+- Server: Sync-Planung und Labels (ADR 0020, `sync.yaml` 1.4.0), Live-Refresh `GET /v1/sync/head` + Long-Poll `/v1/sync/wait` (ADR 0022, `live_events`), Feed „Für dich“ `GET /v1/feed` (ADR 0023), APNs-Push (ADR 0021, `push_devices`/`push_prefs`/`push_outbox`, `POST /v1/push/test`), Mailversand mit Outbox und Double-Opt-In-Adressen (ADR 0024, Recovery per Mail), Projektmodus `classic|management` je Konto/Projekt, Konfiguration über die PWA (ADR 0025, `server_settings`, verschlüsselte Geheimnisse, **Umgebungsvariable > PWA-Wert > Standard**, Admin-API, Hot-Reload), Berechtigungs-Details (Rolle/Eigentümer in `/v1/projects`, Team verlassen).
+- PWA: Menüs im Viewport, Klassisch/Projektmanagement, Schnell-Hinzufügen (Taste Q), URL-Pfade, zentraler Live-Refresh, „Für dich“ als Startansicht (`/fuer-dich`), Teilen-Fenster/Teams/Mit mir geteilt, Einstellungs-Hub `/einstellungen/…`, Benutzer- und Hilfemenü, „Claude Code verbinden“, Verwaltung (Server, Mail, Push, Speicher, Anmeldung, Limits u. a., aus der Registry generiert), Benachrichtigungen mit Push-Test.
+- Apple (TestFlight iOS `2610311632`, macOS `2610311634`, Bundle-ID `de.linolaske.todo`, Universal Purchase): Redesign, HIG-Abgleich (`docs/HIG-AUDIT.md` im Apple-Repo), Recovery-Flow, Passkey-Fehlertexte, Sync-Planung/Labels, LiveRefresh/LiveHub, Feed „Für dich“ als erster Tab, Push-Client, Runner-CLI/Fortschritt/Ruhezustand.
+- Betrieb: `deploy`-Branch, `setup.sh` (S3/Push/Mail/Konfigurationsschlüssel optional), PWA im Image, OAuth-Issuer aus `RP_ORIGIN`, AASA über Zoraxy freigegeben (Passkey in der App funktioniert laut Nutzer).
+- Recherche: `docs/PUSH-AN-CLAUDE-CODE.md`, `docs/TODOIST-VERGLEICH.md`, `docs/VERWALTUNG.md`, `docs/BERECHTIGUNGEN.md`, `docs/KONFIGURATION.md`.
+
+**Real geprüft (31.10./1.11.):** MariaDB-Volllauf 199 Tests grün (Stand `cb5ead7`-Vorgänger, danach nur SQLite); SQLite-Suite zuletzt 254 Tests; vitest 219; Playwright (Chromium, natives SQLite-Backend, je Spec frische DB) für for-you, icons, live-refresh, menus-and-modes, passkey-flow, permissions, settings-hub, server-settings, mail. Apple: TodoCore 192 Tests, UI-Tests inkl. Barrierefreiheits-Audit.
+
+**Nicht geprüft / offen:**
+1. MariaDB für alles nach dem Volllauf: Mail-, Settings-, Feed-, Live-Tabellen, `BackfillLabelSync` ohne eigenen Test.
+2. Echter SMTP-, APNs-, S3-Versand; Push auf Gerät; Betrieb mit mehreren Replikaten im Swarm; Zoraxy-Timeout für `/v1/sync/wait` (≥ 60 s, nicht puffern).
+3. Firefox/WebKit-Playwright; Compose-E2E; `onboarding-e2e.sh` nur im SQLite-Modus.
+4. Plugin in einer echten Claude-Code-Sitzung (Hooks/Stop-Hook), Verhalten bei Account-Wechsel.
+5. Backend noch nicht gebaut: Konten-Verwaltung in der PWA (API `GET /v1/admin/users` steht), Einladungsliste/Zurückziehen, Export und Selbstlöschung, Profil bearbeiten, Zuweisungen an Personen, feinere Rollen, einzelne Runner-Bindung widerrufen, Build-Galerie, Web-Push, Widgets/App Intents, Tool `wait_for_events` (Empfehlung in `PUSH-AN-CLAUDE-CODE.md`).
+6. Apple: Screenshots des Feeds und der neuen Einstellungen, iPad/AX5 nach den letzten Änderungen, Klassisch-Modus (`mode`) im Client, Rolle/Eigentümer-Anzeige, Label umbenennen/löschen in der UI, Mac-UI zur Laufzeit.
+7. Offene Aufräumpunkte: `web/src/lib/components/AccountView.svelte` ist nicht mehr eingebunden (löschen); lokale Branches `worktree-*` und `command-center` im Hauptrepo sowie alte `feature/*`-Branches im Apple-Repo sind aufgegangen oder veraltet (Löschung erst nach Nutzerfreigabe); fünf alte Agent-Worktrees unter `.claude/worktrees/` ließen sich nicht entfernen (Ordner nicht leer, einer gesperrt).
+
+**Schritte, die nur der Nutzer tun kann:**
+- Server: `deploy/swarm/update.sh` (Image `edge`/`sha-34ad803`, Migrationen laufen mit); `openssl rand -base64 32 | tr -d '\n' | docker secret create todo_settings_key -` und `SETTINGS_KEY_ENABLED=true`; Werte, die in der PWA änderbar sein sollen, aus `stack.env` entfernen; Zoraxy-Timeout für `/v1/sync/wait`.
+- Konfiguration in der PWA: SMTP-Zugang, APNs-Schlüssel (`docs/PUSH-EINRICHTUNG.md`, `docs/MAIL-EINRICHTUNG.md`), Test-Knöpfe nutzen.
+- App Store Connect: TestFlight-Gruppen, Build-Verarbeitung; Push-Capability ist laut Nutzer aktiviert.
+- Plugin in Claude Code mit der URL `https://todo.linolaske.de/mcp` (muss auf `/mcp` enden); Verbindung steht laut Nutzer.
+
+**Arbeitsregeln für Agenten (unverändert):** keine Attributionszeilen, nie `git add -A` im geteilten Arbeitsverzeichnis, fremde Docker-Stacks/Port 13306 nie anfassen, kein globales `docker prune`, isolierte Compose-Projekte, Timetrack-Projekte nur lesen, Secrets nie ins Repo, parallele Agenten im selben Ordner nur mit häufigem Rebase und Pfad-Staging. Docker-Aufräumen verweigert die Berechtigungsprüfung gelegentlich: nicht umgehen, den Nutzer fragen.
+
 ## Aktueller Stand (31.10.2026)
 
 Kompakte Zusammenfassung für den Einstieg ohne alten Chat. Alle Details, Testnachweise und Entscheidungen stehen unverändert in den chronologischen Checkpoints weiter unten; bei Widerspruch gilt der jüngere Checkpoint. Produktname Todolino (ADR 0017), noch nicht für den Produktivbetrieb freigegeben.
