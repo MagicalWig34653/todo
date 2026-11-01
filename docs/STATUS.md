@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 1.11.2026: MCP-Tool `wait_for_events` (Option a aus `docs/PUSH-AN-CLAUDE-CODE.md`)
+
+- **Ziel:** Agenten nach einer blockierenden `ask_question` ohne Dauerabfrage auf Neues warten lassen. Nur Hinweise, keine Inhalte.
+- **Änderungen:** Tool `wait_for_events {since?, timeoutSeconds 1..25, default 20}` (Scope `tasks:read`, `Sources/TodoKit/MCP/MCPEventTools.swift`) nutzt `LiveHub`/`LiveToken` (ADR 0022) mit dem Konto des OAuth-Grants; Antwort `{changed, token, hints:[{kind, taskID, projectID}]}`. Ohne `since` kommt sofort das aktuelle Token (`changed:false`). Hinweise nur für Projekte in `grant.projects`, die das Konto aktuell lesen darf; sonst nur `changed`/`token`. Widerruf des Grants beendet das Warten (401). Migration `AddLiveEventTask` (nullable `live_events.task_id`, nur Aufgaben-ID, keine Inhalte); `LiveEventMiddleware` füllt sie für Kommentar, Frage, Review, Fortschritt, Kriterium, Anhang, Build. `kind`: question, review, comment, progress, criterion, attachment, other. Agentenhandbuch 1.2.0 (Regel: nach blockierender Frage höchstens wenige Runden `wait_for_events`, dann `get_question`; eingebettet per `scripts/embed-agent-manual.sh`), Plugin-Skill `claude-plugin/skills/todolino/SKILL.md`, `contracts/command-center.yaml`, `docs/AGENTEN-UND-MCP.md`.
+- **Tests (SQLite):** neu `Tests/TodoKitTests/MCPWaitForEventsTests.swift` (Token ohne Warten, Scope, Grenzen 0/26, Timeout unverändert, Wecken durch `ask_question` mit Hinweis, kein Inhalt in der Antwort, Hinweise nur im Grant, Rechteverlust); Lauf mit LiveRefresh-, MCP-, CommandCenter-Tests grün; volle SQLite-Suite 257 Tests, 20 übersprungen, 0 Fehler.
+- **Grenzen:** weckt keine ruhende Sitzung, der Agent muss das Tool selbst aufrufen und ist währenddessen blockiert. Nicht geprüft: MCP-Tool-Timeout von Claude Code (25 s liegt vermutlich darunter), Verhalten hinter Zoraxy, MariaDB (UUID-Bindung in `LiveToken.taskHints` nur mit SQLite getestet). Änderungen ohne Aufgabenbezug (z. B. reine Sync-Änderungen) liefern `changed:true` ohne Hinweise. Pro Replika zählt ein Wartender gegen die Live-Limits (8 je Konto).
+- **Nächster Schritt:** Option (b) Stop-Hook im Plugin (Wartelogik mit `wait_for_events`), MariaDB-Lauf für Live-Tabellen.
+
 ## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
 
 Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.2026)“ darunter ist die Vortagsfassung; bei Widerspruch gilt dieser Abschnitt, danach die chronologischen Checkpoints.
@@ -20,7 +28,7 @@ Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.
 2. Echter SMTP-, APNs-, S3-Versand; Push auf Gerät; Betrieb mit mehreren Replikaten im Swarm; Zoraxy-Timeout für `/v1/sync/wait` (≥ 60 s, nicht puffern).
 3. Firefox/WebKit-Playwright; Compose-E2E; `onboarding-e2e.sh` nur im SQLite-Modus.
 4. Plugin in einer echten Claude-Code-Sitzung (Hooks/Stop-Hook), Verhalten bei Account-Wechsel.
-5. Backend noch nicht gebaut: Konten-Verwaltung in der PWA (API `GET /v1/admin/users` steht), Einladungsliste/Zurückziehen, Export und Selbstlöschung, Profil bearbeiten, Zuweisungen an Personen, feinere Rollen, einzelne Runner-Bindung widerrufen, Build-Galerie, Web-Push, Widgets/App Intents, Tool `wait_for_events` (Empfehlung in `PUSH-AN-CLAUDE-CODE.md`).
+5. Backend noch nicht gebaut: Konten-Verwaltung in der PWA (API `GET /v1/admin/users` steht), Einladungsliste/Zurückziehen, Export und Selbstlöschung, Profil bearbeiten, Zuweisungen an Personen, feinere Rollen, einzelne Runner-Bindung widerrufen, Build-Galerie, Web-Push, Widgets/App Intents, Tool `wait_for_events` (inzwischen gebaut, siehe Checkpoint oben).
 6. Apple: Screenshots des Feeds und der neuen Einstellungen, iPad/AX5 nach den letzten Änderungen, Klassisch-Modus (`mode`) im Client, Rolle/Eigentümer-Anzeige, Label umbenennen/löschen in der UI, Mac-UI zur Laufzeit.
 7. Offene Aufräumpunkte: lokale Branches `worktree-*` und `command-center` im Hauptrepo sowie alte `feature/*`-Branches im Apple-Repo sind aufgegangen oder veraltet (Löschung erst nach Nutzerfreigabe); fünf alte Agent-Worktrees unter `.claude/worktrees/` ließen sich nicht entfernen (Ordner nicht leer, einer gesperrt).
 
