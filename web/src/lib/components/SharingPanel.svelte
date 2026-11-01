@@ -13,6 +13,7 @@
 	import Avatar from './app/Avatar.svelte';
 	import PersonPicker from './PersonPicker.svelte';
 	import RoleChip from './RoleChip.svelte';
+	import { createKeyedGate } from '#lib/serial.js';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import CornerLeftUp from '@lucide/svelte/icons/corner-left-up';
 
@@ -31,7 +32,9 @@
 	let canManage = $state(false);
 	let loaded = $state(false);
 	let grants = $state<OAuthGrant[]>([]);
-	let mcpBusy = $state<string | null>(null);
+	// Grants with a PUT in flight (one write per grant; a global flag would re-enable a toggle too early).
+	let mcpBusy = $state<string[]>([]);
+	const mcpGate = createKeyedGate((b) => (mcpBusy = b));
 	let mcpMessage = $state<{ ok: boolean; text: string } | null>(null);
 
 	let type = $state<PrincipalType>('person');
@@ -131,13 +134,11 @@
 			mcpMessage = { ok: false, text: t('share.mcp.needOne') };
 			return;
 		}
-		mcpBusy = grant.id;
-		const ok = await attempt(async () => {
+		const done = await mcpGate.run(grant.id, () => attempt(async () => {
 			const updated = await api.setOAuthGrantProjects(grant.id, projectsWith(grant, project.id, allowed));
 			grants = grants.map((g) => (g.id === updated.id ? { ...updated, client_name: updated.client_name || g.client_name } : g));
-		});
-		if (ok) mcpMessage = { ok: true, text: t('share.mcp.updated') };
-		mcpBusy = null;
+		}));
+		if (done?.value) mcpMessage = { ok: true, text: t('share.mcp.updated') };
 	}
 
 	const changed = async () => {
@@ -327,7 +328,7 @@
 							<Checkbox
 								class="mt-0.5 size-4"
 								checked={c.allowed}
-								disabled={mcpBusy === c.grant.id}
+								disabled={mcpBusy.includes(c.grant.id)}
 								aria-label={t('share.mcp.toggle', { name: connectionName(c.grant) })}
 								onchange={() => setConnection(c.grant, !c.allowed)}
 								data-testid="mcp-toggle"

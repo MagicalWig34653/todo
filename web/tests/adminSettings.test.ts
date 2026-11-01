@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { de } from '../src/lib/i18n/de.js';
-import { draftOf, hintFor, isDirty, saveOrder, toValue, TEST_FOR_CATEGORY, type ServerSetting } from '../src/lib/adminSettings.js';
+import { draftOf, hintFor, isDirty, refreshAfterRoleChange, saveOrder, toValue, TEST_FOR_CATEGORY, type ServerSetting } from '../src/lib/adminSettings.js';
 import { SERVER_CATEGORY_BY_ENTRY, SETTINGS_GROUPS } from '../src/lib/settingsNav.js';
 
 const base: ServerSetting = {
@@ -68,5 +68,17 @@ describe('admin accounts list', () => {
 			{ id: '3', displayName: 'Yvi', isAdmin: true }
 		]);
 		expect(sorted.map((u) => u.id)).toEqual(['3', '2', '1']);
+	});
+});
+
+describe('refreshAfterRoleChange', () => {
+	it('reloads the own profile only when the change concerned the current user', async () => {
+		let calls = 0;
+		const refresh = async () => { calls++; };
+		expect(await refreshAfterRoleChange('u2', 'u1', refresh)).toBe(false);
+		expect(await refreshAfterRoleChange('u1', undefined, refresh)).toBe(false);
+		expect(calls).toBe(0);
+		expect(await refreshAfterRoleChange('u1', 'u1', refresh)).toBe(true);
+		expect(calls).toBe(1);
 	});
 });
