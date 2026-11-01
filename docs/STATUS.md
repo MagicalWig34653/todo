@@ -1,5 +1,9 @@
 # Status
 
+## Checkpoint 1.11.2026 (Stop-Hook: Warten auf Antwort)
+
+Plugin-Stop-Hook erweitert (PUSH-AN-CLAUDE-CODE.md, Option b, Variante 2): bei offener blockierender `ask_question` blockt er mit festem Text (`wait_for_events`, dann `get_question`), max. 6 Fortsetzungen, `stop_hook_active`-Schutz, kein Netzwerk/Token. Tests: `sh claude-plugin/tests/test-hooks.sh` (32 ok). Nicht geprüft: echte Claude-Code-Sitzung, `claude plugin validate`. Grenze: trägt nur wenige Minuten (max. 8 Fortsetzungen durch Claude Code). Details: ARBEITSPLAN.md (gleicher Titel).
+
 ## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
 
 Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.2026)“ darunter ist die Vortagsfassung; bei Widerspruch gilt dieser Abschnitt, danach die chronologischen Checkpoints.
