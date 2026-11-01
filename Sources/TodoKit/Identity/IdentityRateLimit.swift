@@ -45,6 +45,7 @@ struct IdentityRateMiddleware: AsyncMiddleware {
         let limit: Int
         switch Self.normalizedPath(req.url.path) {
         case "/v1/auth/login/begin", "/v1/auth/login/finish": scope = "login"; limit = s.loginLimit
+        case "/oauth/register": scope = "oauth_register"; limit = s.oauthRegisterLimit
         case "/v1/auth/password/login": scope = "password"; limit = s.passwordLimit
         case "/v1/auth/register/begin": scope = "register"; limit = s.registerLimit
         case "/v1/identity/recovery/redeem", "/v1/identity/recovery/passkeys/begin", "/v1/identity/recovery/passkeys/finish": scope = "recovery"; limit = s.recoveryLimit

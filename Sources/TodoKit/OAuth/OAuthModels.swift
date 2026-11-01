@@ -6,8 +6,10 @@ final class OAuthClient: Model, @unchecked Sendable {
     @ID(key: .id) var id: UUID?
     @Field(key: "name") var name: String
     @Field(key: "redirects") var redirects: [String]
+    /// Set on creation; rows from before the column existed are backfilled by the migration.
+    @OptionalField(key: "created_at") var createdAt: Date?
     init() {}
-    init(name: String, redirects: [String]) { self.name = name; self.redirects = redirects }
+    init(name: String, redirects: [String]) { self.name = name; self.redirects = redirects; createdAt = Date() }
 }
 
 final class OAuthGrant: Model, @unchecked Sendable {
