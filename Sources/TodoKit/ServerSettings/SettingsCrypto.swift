@@ -8,7 +8,9 @@ import Foundation
 struct SettingsKeyRing: Sendable {
     struct Key: Sendable {
         let id: String
-        let key: SymmetricKey
+        /// Raw bytes: `SymmetricKey` is not `Sendable` on Linux.
+        let material: Data
+        var key: SymmetricKey { SymmetricKey(data: material) }
     }
 
     let current: Key?
@@ -28,7 +30,7 @@ struct SettingsKeyRing: Sendable {
         }
         guard let data, data.count == 32 else { return nil }
         let id = SHA256.hash(data: Data("todolino.settings.keyid".utf8) + data).prefix(4).map { String(format: "%02x", $0) }.joined()
-        return Key(id: id, key: SymmetricKey(data: data))
+        return Key(id: id, material: data)
     }
 
     /// Missing variables mean "no key"; a present but malformed key is a startup error (never silently ignored).
