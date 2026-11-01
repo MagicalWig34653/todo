@@ -14,11 +14,10 @@
 - **Tests (SQLite):** neu `Tests/TodoKitTests/MCPWaitForEventsTests.swift` (Token ohne Warten, Scope, Grenzen 0/26, Timeout unverändert, Wecken durch `ask_question` mit Hinweis, kein Inhalt in der Antwort, Hinweise nur im Grant, Rechteverlust); Lauf mit LiveRefresh-, MCP-, CommandCenter-Tests grün; volle SQLite-Suite 257 Tests, 20 übersprungen, 0 Fehler.
 - **Grenzen:** weckt keine ruhende Sitzung, der Agent muss das Tool selbst aufrufen und ist währenddessen blockiert. Nicht geprüft: MCP-Tool-Timeout von Claude Code (25 s liegt vermutlich darunter), Verhalten hinter Zoraxy, MariaDB (UUID-Bindung in `LiveToken.taskHints` nur mit SQLite getestet). Änderungen ohne Aufgabenbezug (z. B. reine Sync-Änderungen) liefern `changed:true` ohne Hinweise. Pro Replika zählt ein Wartender gegen die Live-Limits (8 je Konto).
 - **Nächster Schritt:** Option (b) Stop-Hook im Plugin (Wartelogik mit `wait_for_events`), MariaDB-Lauf für Live-Tabellen.
-=======
+
 ## Checkpoint 1.11.2026 (Stop-Hook: Warten auf Antwort)
 
 Plugin-Stop-Hook erweitert (PUSH-AN-CLAUDE-CODE.md, Option b, Variante 2): bei offener blockierender `ask_question` blockt er mit festem Text (`wait_for_events`, dann `get_question`), max. 6 Fortsetzungen, `stop_hook_active`-Schutz, kein Netzwerk/Token. Tests: `sh claude-plugin/tests/test-hooks.sh` (32 ok). Nicht geprüft: echte Claude-Code-Sitzung, `claude plugin validate`. Grenze: trägt nur wenige Minuten (max. 8 Fortsetzungen durch Claude Code). Details: ARBEITSPLAN.md (gleicher Titel).
->>>>>>> worktree-agent-a980d6ead2852a07f
 
 ## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
 
