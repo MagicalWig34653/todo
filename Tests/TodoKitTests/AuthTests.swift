@@ -117,4 +117,47 @@ final class AuthTests: XCTestCase {
         let again = try await t.json(.DELETE, "/v1/invitations/\(openID)", token: a.session)
         XCTAssertEqual(again.status, .notFound)
     }
+
+    /// Two registrations started with one invitation: whichever finishes second must fail, and a later withdrawal reports 409.
+    func testInvitationRedeemedOnceAcrossParallelFinishAndWithdrawOrdering() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await t.register(token: "bootstrap-secret", name: "Alice")
+        let inv = try await t.json(.POST, "/v1/invitations", token: a.session)
+        let token = try XCTUnwrap(inv.body?["token"] as? String)
+        let invID = try XCTUnwrap(inv.body?["id"] as? String)
+        var begins: [(id: String, challenge: String)] = []
+        for name in ["B", "C"] {
+            let b = try await t.json(.POST, "/v1/auth/register/begin", ["token": token, "displayName": name])
+            XCTAssertEqual(b.status, .ok)
+            begins.append((try XCTUnwrap(b.body?["challengeID"] as? String), try XCTUnwrap((b.body?["options"] as? [String: Any])?["challenge"] as? String)))
+        }
+        func finish(_ id: String, _ challenge: String) async throws -> (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?) {
+            try await t.json(.POST, "/v1/auth/register/finish", ["challengeID": id, "credential": VirtualAuthenticator().registrationResponse(challenge: challenge)])
+        }
+        let (id0, c0, id1, c1) = (begins[0].id, begins[0].challenge, begins[1].id, begins[1].challenge)
+        // Sequential on purpose: parallel writers on SQLite fail with "database is locked" (500) instead of
+        // serialising; on MariaDB the FOR UPDATE row lock (lockRow) serialises them. Not exercised here.
+        let statuses = [try await finish(id0, c0).status, try await finish(id1, c1).status]
+        XCTAssertEqual(statuses.filter { $0 == .ok }.count, 1, "\(statuses)")
+        XCTAssertEqual(statuses.filter { $0 == .forbidden }.count, 1, "\(statuses)")
+        let w = try await t.json(.DELETE, "/v1/invitations/\(invID)", token: a.session)
+        XCTAssertEqual(w.status, .conflict)
+    }
+
+    /// A registration begun before the invitation is withdrawn cannot complete afterwards.
+    func testWithdrawnInvitationBlocksRegistrationInProgress() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await t.register(token: "bootstrap-secret", name: "Alice")
+        let inv = try await t.json(.POST, "/v1/invitations", token: a.session)
+        let token = try XCTUnwrap(inv.body?["token"] as? String)
+        let invID = try XCTUnwrap(inv.body?["id"] as? String)
+        let b = try await t.json(.POST, "/v1/auth/register/begin", ["token": token, "displayName": "B"])
+        let challenge = try XCTUnwrap((b.body?["options"] as? [String: Any])?["challenge"] as? String)
+        let w = try await t.json(.DELETE, "/v1/invitations/\(invID)", token: a.session)
+        XCTAssertEqual(w.status, .noContent)
+        let fin = try await t.json(.POST, "/v1/auth/register/finish", ["challengeID": try XCTUnwrap(b.body?["challengeID"]), "credential": VirtualAuthenticator().registrationResponse(challenge: challenge)])
+        XCTAssertEqual(fin.status, .forbidden)
+    }
 }
