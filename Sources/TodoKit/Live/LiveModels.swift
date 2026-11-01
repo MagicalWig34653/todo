@@ -44,6 +44,8 @@ func registerLiveMiddleware(_ app: Application) {
     use(ProjectComment.self); use(ProjectActivityEvent.self); use(ProjectUserState.self)
     use(PlanningDependency.self); use(PlanningMilestone.self); use(PlanningMilestoneTask.self)
     use(UserPreferences.self)
+    // Sharing: invitations, membership changes, team projects and grants must reach the other account's open views.
+    use(Team.self); use(TeamMembership.self); use(ProjectGrant.self)
 }
 
 enum LiveToken {

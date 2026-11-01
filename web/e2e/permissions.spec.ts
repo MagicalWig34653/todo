@@ -223,6 +223,8 @@ test('team invitation: badge, accept, decline, leave', async () => {
 	await a.getByRole('button', { name: 'Einladen', exact: true }).waitFor();
 	await a.getByLabel('Konto-ID der Person').fill(bID);
 	await a.getByRole('button', { name: 'Einladen', exact: true }).click();
+	// The click returns before the request is done: wait until A sees the pending invitation before B looks for it.
+	await expect(a.getByTestId('team-member').filter({ hasText: 'Ben Gast' })).toContainText('Einladung offen');
 	await b.reload();
 	await sidebar(b).getByRole('button', { name: /^Teams/ }).click();
 	await b.getByTestId('team-decline').click();

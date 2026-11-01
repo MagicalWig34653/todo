@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 1.11.2026: Instabilität permissions.spec behoben
+
+**Ursache (zwei Teile):** (1) Teams, Mitgliedschaften und Projektfreigaben (`Team`, `TeamMembership`, `ProjectGrant`) schrieben keine `live_events`; der Live-Refresh der anderen Konto-Sitzung wurde nie geweckt, `TeamsView` hatte zudem keinen Live-Abonnenten. (2) Überlappende Ladevorgänge in `SharingPanel`, `ShareButton` und `TeamsView` (expliziter Reload plus Effekt nach `ui.accessTick`) konnten sich überholen, sodass eine ältere, langsamere Antwort neuere Daten überschrieb (leere Projektliste im Team, wieder sichtbare entzogene Freigabe). Zusätzlich war im Test der Klick auf „Einladen“ nicht abgewartet, bevor B neu lud (Race, daher `team-decline` nicht gefunden).
+**Fix:** Sequenznummern je Loader (nur der neueste Aufruf veröffentlicht, `SharingPanel` veröffentlicht atomar), `TeamsView` abonniert `startLiveRefresh` und lädt Gewährungen auch bei `workspace.projects`-Änderung; Backend-Middleware für die drei Modelle; Test `testTokenRisesForTeamInvitationAndGrant`; Spec wartet auf die offene Einladung bei A.
+**Nachweis:** permissions.spec vorher 4/12 grün (8 Fehlschläge: 6x `team-projects` leer, 2x `team-decline` Timeout); nachher 12+15+25+12 Läufe, 1 Fehlschlag (vor dem Test-Wait-Fix, `team-decline`), danach 37/37 grün. vitest 219, passkey-flow 20/20, LiveRefreshTests 7/7. `npm run check` meldet 1 bekannten Fehler (`./$types` in `+layout.svelte`, schon vor der Änderung vorhanden, sonst 0).
+**Grenzen:** nur Chromium, nur SQLite.
+
 ## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
 
 Für eine neue Sitzung ohne alten Chat. Der Abschnitt „Aktueller Stand (31.10.2026)“ darunter ist die Vortagsfassung; bei Widerspruch gilt dieser Abschnitt, danach die chronologischen Checkpoints.

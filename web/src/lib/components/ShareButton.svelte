@@ -11,12 +11,15 @@
 	let { project, onshare }: { project: Project; onshare: (p: Project) => void } = $props();
 
 	let rows = $state<AccessRow[]>([]);
+	/** Only the newest request may publish its result (an older, slower response must not overwrite newer grants). */
+	let loadSeq = 0;
 	const projectKey = $derived(project.id);
 	const manage = $derived(can(roleOf(project), 'share'));
 	$effect(() => {
 		void projectKey;
 		void ui.accessTick;
 		const id = projectKey;
+		const seq = ++loadSeq;
 		if (!manage) {
 			rows = [];
 			return;
@@ -24,9 +27,11 @@
 		// Grants are only readable with the manage role; everyone else sees the owner and themselves at most.
 		api.listGrants(id).then(
 			(g) => {
-				if (id === project.id) rows = accessRows(g, [], (x) => x.principalID.slice(0, 8));
+				if (seq === loadSeq && id === project.id) rows = accessRows(g, [], (x) => x.principalID.slice(0, 8));
 			},
-			() => (rows = [])
+			() => {
+				if (seq === loadSeq) rows = [];
+			}
 		);
 	});
 

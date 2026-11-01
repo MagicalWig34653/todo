@@ -44,19 +44,26 @@
 	let transferTeam = $state('');
 	let transferKey = $state(0);
 
+	/**
+	 * Loads everything into locals and publishes it in one step, and only if no newer load was started meanwhile.
+	 * Several loads overlap (explicit reload after a change plus the effect that follows `accessTick`); without this a
+	 * slow, older response could overwrite the newer state (for example showing a just removed grant again).
+	 */
+	let loadSeq = 0;
 	async function load() {
-		vis = await api.visibility(project.id);
-		teams = await api.listTeams();
+		const seq = ++loadSeq;
+		const nextVis = await api.visibility(project.id);
+		const nextTeams = await api.listTeams();
+		let nextDirect: ProjectGrant[] = [];
+		let nextManage = false;
 		try {
-			direct = await api.listGrants(project.id);
-			canManage = true;
+			nextDirect = await api.listGrants(project.id);
+			nextManage = true;
 		} catch (e) {
 			if (!denied(e)) throw e;
-			direct = [];
-			canManage = false;
 		}
-		chain = canManage
-			? await inheritedChain(project, vis.inherits, workspace.projects, async (anc) => {
+		const nextChain = nextManage
+			? await inheritedChain(project, nextVis.inherits, workspace.projects, async (anc) => {
 					try {
 						const [v, g] = await Promise.all([api.visibility(anc.id), api.listGrants(anc.id).catch((e) => (denied(e) ? null : Promise.reject(e)))]);
 						return { inherits: v.inherits, grants: g };
@@ -66,15 +73,22 @@
 					}
 				})
 			: [];
-		await loadMembers();
+		const nextMembers = await loadMembers(nextDirect, nextChain);
+		if (seq !== loadSeq) return;
+		vis = nextVis;
+		teams = nextTeams;
+		direct = nextDirect;
+		canManage = nextManage;
+		chain = nextChain;
+		teamMembers = nextMembers;
 		loaded = true;
 	}
 	/** Members of every team that matters here (owner, grants); teams the viewer is not in stay unknown. */
-	async function loadMembers() {
+	async function loadMembers(grants: ProjectGrant[], levels: AncestorGrants[]): Promise<Record<string, TeamMembership[]>> {
 		const ids = new Set<string>();
 		if (project.ownerType === 'team' && project.ownerID) ids.add(project.ownerID);
-		for (const g of direct) if (g.principalType === 'team') ids.add(g.principalID);
-		for (const level of chain) for (const g of level.grants ?? []) if (g.principalType === 'team') ids.add(g.principalID);
+		for (const g of grants) if (g.principalType === 'team') ids.add(g.principalID);
+		for (const level of levels) for (const g of level.grants ?? []) if (g.principalType === 'team') ids.add(g.principalID);
 		const next: Record<string, TeamMembership[]> = {};
 		await Promise.all([...ids].map(async (id) => {
 			try {
@@ -83,7 +97,7 @@
 				if (!denied(e)) throw e;
 			}
 		}));
-		teamMembers = next;
+		return next;
 	}
 	/** Primitive on purpose: a live refresh replaces the object, the effects below must only rerun for another id. */
 	const projectKey = $derived(project.id);
