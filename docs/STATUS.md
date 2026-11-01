@@ -1,5 +1,16 @@
 # Status
 
+## Checkpoint 1.11.2026 (Security-Fixes A: Befunde 1 bis 5 aus dem Codex-Review)
+
+- Board-Aufgabe `22A03719-111B-4A6E-B88F-722DA4786B1E`; Branch `worktree-agent-a84a0326b3c20a589`, je Befund ein Commit, jeweils zuerst rot ohne Fix.
+- 1 Rate-Limit-Umgehung (hoch): `IdentityRateMiddleware.normalizedPath` normalisiert wie der Router (leere Segmente, Prozent-Dekodierung bis 3 Stufen, Kleinschreibung). Test `testRateLimitCannotBeBypassedWithPathVariants` (13 Fehlschläge ohne Fix).
+- 2 Double->Int-Absturz (hoch): `intArgument` prüft zusätzlich `isFinite`; `get_command_center` (limit, offset, laneLimit, updatesLimit, doneWithinDays u. a.) und `move_task_to_column` (version, index) nutzen es, Fehler sind Tool-Fehler. Alle weiteren MCP-Stellen nutzten es bereits. Test `MCPNumericArgumentTests` (Fatal error ohne Fix).
+- 3 OAuth-Registrierung (mittel): Rate-Limit `oauth_register` je IP (`IdentitySettings.oauthRegisterLimit`, 20 je Fenster), `redirect_uri` höchstens 2000 Zeichen (Name 200, 10 URIs galten schon), Migration `AddOAuthClientCreatedAt` (Bestand startet mit Migrationszeit), Cleanup löscht Clients ohne Grant älter als 7 Tage (`OAUTH_UNUSED_CLIENT_DAYS`, 0 = nie; `Report.oauthClients`), läuft auch im Scheduler. `client_name` wird in Consent-Seite (textContent) und PWA (Textinterpolation) nie als HTML gerendert, kein `{@html}` in `web/src`. Tests `OAuthRegistrationLimitTests` (3).
+- 4 Upload vor Auth (mittel): PUT `/v1/attachments/{id}/upload` ist `.stream`; `checkUploadCapability` (Token, Status, Ablauf) läuft vor dem Body, ungültig = 404 auch bei Übergröße (vorher 413 nach Pufferung), `Content-Length` über Limit = 413 ohne Lesen, `UploadSlots` begrenzt parallele Uploads je Konto auf 4 (429, nur pro Prozess). Test `AttachmentUploadAuthOrderTests` (echter HTTP-Server, ohne Fix 413).
+- 5 Clickjacking (mittel): `WebRootMiddleware` setzt für HTML `Content-Security-Policy: frame-ancestors 'none'` und `X-Frame-Options: DENY`, für alle Dateien `nosniff` und `Referrer-Policy: same-origin`. Bewusst keine vollständige Script-CSP (SvelteKit-Inline-Bootstrap). Die serverseitige Consent-Seite hatte beides schon. Test `testHTMLCannotBeFramedAndAllFilesAreNosniff` (12 Fehlschläge ohne Fix).
+- Prüfungen: `swift test` 269 Tests, 20 übersprungen, 0 Fehlschläge; vitest 226 grün; `npm run build` grün; `npm run check` nur bekannter Symlink-Fehler `./$types`; Playwright Chromium passkey-flow 20/20, for-you 2/2, settings-hub 11/11 (frische SQLite, Backend per `migrate --yes` dann `serve`).
+- Grenzen: nur SQLite/Chromium; `UploadSlots` und `oauthRegisterLimit`-Nutzung nicht in MariaDB geprüft (Rate-Limit ist DB-basiert, Slots je Replika); Upload-Slots werden nach Abbruch der Verbindung durch Fehlerpfad freigegeben. Offene Befunde 6 bis 12 gehören anderen Agenten.
+
 ## Checkpoint 1.11.2026 (Plugin: Board laufend nutzen, Plugin 1.1.0)
 
 - Ziel (Nutzer: „Todolino komplett benutzen, nicht nur einmal einrichten“): Agenten nutzen das Board während der Arbeit. Board-Aufgabe `2B52B42C-98ED-4B2F-820E-502B753194E0`.
