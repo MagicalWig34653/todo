@@ -72,7 +72,9 @@ struct MCPController: RouteCollection {
             }
             do {
                 guard tool.scope.isEmpty || grant.scopes.contains(tool.scope) else { throw Abort(.forbidden, reason: "insufficient_scope") }
-                let value = try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db, settings: req.application.settings)
+                let value = name == "wait_for_events"
+                    ? try await waitForEvents(body["params"]["arguments"], req: req, user: user, grant: grant)
+                    : try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db, settings: req.application.settings)
                 let text = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(false)])
             } catch {
@@ -96,7 +98,7 @@ struct MCPController: RouteCollection {
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
     /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
-    static let tools: [Tool] = coreTools + workflowTools + syncTools
+    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)

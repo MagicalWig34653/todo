@@ -17,6 +17,7 @@ struct OAuthController: RouteCollection {
         routes.post("oauth", "token", use: token)
         routes.get("oauth", "grants", use: grants)
         routes.delete("oauth", "grants", ":id", use: revoke)
+        routes.put("oauth", "grants", ":id", "projects", use: setGrantProjects)
         try routes.register(collection: MCPController())
     }
 
@@ -185,12 +186,33 @@ struct OAuthController: RouteCollection {
         let r = try await JSONValue.object(["error": .string("invalid_grant")]).encodeResponse(status: .badRequest, for: req)
         r.headers.replaceOrAdd(name: .cacheControl, value: "no-store"); return r
     }
+    private static func grantJSON(_ g: OAuthGrant, clientName: String? = nil) throws -> JSONValue {
+        .object(["id": .string(try g.requireID().uuidString), "client_id": .string(g.clientID.uuidString), "client_name": .string(clientName ?? ""),
+                 "scopes": .strings(g.scopes), "project_ids": .strings(g.projects.map(\.uuidString)), "revoked": .bool(g.revoked)])
+    }
     @Sendable func grants(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
-        return .array(try await OAuthGrant.query(on: req.db).filter(\.$userID == user.requireID()).all().map {
-            .object(["id": .string(try $0.requireID().uuidString), "client_id": .string($0.clientID.uuidString),
-                     "scopes": .strings($0.scopes), "project_ids": .strings($0.projects.map(\.uuidString)), "revoked": .bool($0.revoked)])
-        })
+        let grants = try await OAuthGrant.query(on: req.db).filter(\.$userID == user.requireID()).all()
+        let names = Dictionary(uniqueKeysWithValues: try await OAuthClient.query(on: req.db).filter(\.$id ~~ Set(grants.map(\.clientID))).all().compactMap { c in c.id.map { ($0, c.name) } })
+        return .array(try grants.map { try Self.grantJSON($0, clientName: names[$0.clientID]) })
+    }
+    struct GrantProjects: Content { var project_ids: [UUID] }
+    /// Replaces the projects an existing connection may reach. MCP requests read the grant on every call, so the change is immediate.
+    @Sendable func setGrantProjects(_ req: Request) async throws -> JSONValue {
+        let user = try await req.requireUser()
+        guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.notFound) }
+        let b = try req.content.decode(GrantProjects.self)
+        let ids = Array(Set(b.project_ids))
+        return try await req.db.transaction { db in
+            try await lockRow(table: OAuthGrant.schema, id: id, on: db)
+            guard let g = try await OAuthGrant.find(id, on: db), g.userID == user.id else { throw Abort(.notFound) }
+            guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }
+            guard !ids.isEmpty || g.scopes.contains("projects:write") else { throw Abort(.badRequest, reason: "projects_required") }
+            // Only projects added now need the user's current access; removing one the user lost access to must stay possible.
+            for pid in ids where !g.projects.contains(pid) { _ = try await ProjectAccess(user: user, db: db).project(pid) }
+            g.projects = ids; try await g.save(on: db)
+            return try Self.grantJSON(g, clientName: try await OAuthClient.find(g.clientID, on: db)?.name)
+        }
     }
     @Sendable func revoke(_ req: Request) async throws -> HTTPStatus {
         let user = try await req.requireUser()

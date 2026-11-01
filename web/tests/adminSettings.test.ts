@@ -58,3 +58,15 @@ describe('server settings navigation', () => {
 		expect(TEST_FOR_CATEGORY).toEqual({ mail: 'mail', push: 'apns', attachments: 'storage' });
 	});
 });
+
+describe('admin accounts list', () => {
+	it('sorts administrators first, then by name', async () => {
+		const { sortUsers } = await import('../src/lib/adminSettings.js');
+		const sorted = sortUsers([
+			{ id: '1', displayName: 'Zoe', isAdmin: false },
+			{ id: '2', displayName: 'Bert', isAdmin: false },
+			{ id: '3', displayName: 'Yvi', isAdmin: true }
+		]);
+		expect(sorted.map((u) => u.id)).toEqual(['3', '2', '1']);
+	});
+});

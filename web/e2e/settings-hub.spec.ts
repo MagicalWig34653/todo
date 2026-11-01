@@ -192,7 +192,14 @@ test('administration: invitation, system status, honest gaps', async () => {
 	const code = (await admin.getByTestId('invite-code').innerText()).trim();
 	expect(code.length).toBeGreaterThan(20);
 	await expect(admin.getByTestId('invite-link')).toHaveText(`${origin}/setup?token=${encodeURIComponent(code)}`);
-	await expect(admin.getByTestId('invite-gap')).toBeVisible();
+	await expect(admin.getByTestId('invite-row')).toHaveCount(1);
+	// A second invitation is withdrawn again; the first (used below) stays valid.
+	await admin.getByTestId('invite-create').click();
+	await expect(admin.getByTestId('invite-row')).toHaveCount(2);
+	const secondID = await admin.getByTestId('invite-result').getAttribute('data-id');
+	await admin.locator(`[data-testid=invite-row][data-id="${secondID}"]`).getByTestId('invite-withdraw').click();
+	await expect(admin.getByTestId('invite-info')).toHaveText('Die Einladung wurde zurückgezogen.');
+	await expect(admin.getByTestId('invite-row')).toHaveCount(1);
 	await admin.getByTestId('settings-link-verwaltung-system').click();
 	await expect(admin.getByTestId('admin-system-status')).toHaveText('bereit');
 	await admin.getByTestId('settings-link-verwaltung-mail').click();
@@ -204,6 +211,10 @@ test('administration: invitation, system status, honest gaps', async () => {
 	await shot(admin, 'verwaltung');
 	await admin.getByTestId('settings-link-verwaltung-konten').click();
 	await expect(admin.getByTestId('admin-gaps')).toBeVisible();
+	// The only account is the administrator; revoking the last administrator is refused.
+	await expect(admin.getByTestId('admin-accounts').locator('li')).toHaveCount(1);
+	await admin.locator('[data-testid^="admin-toggle-"]').click();
+	await expect(admin.getByText('Mindestens ein Administrator muss bleiben.')).toBeVisible();
 
 	// A second account registers with the invitation and gets no administration.
 	member = await (await admin.context().browser()!.newContext({ viewport: { width: 1280, height: 800 }, locale: 'de-DE' })).newPage();

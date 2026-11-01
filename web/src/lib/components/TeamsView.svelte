@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { api, type Team, type TeamMembership } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
@@ -35,12 +37,32 @@
 	const selected = $derived(teams.find((x) => x.id === selectedID) ?? null);
 	const iAmAdmin = $derived(members.some((m) => m.userID === auth.user?.id && m.isAdmin && m.accepted));
 
+	/**
+	 * All three loaders publish only if no newer call of the same loader was started meanwhile and only when the data
+	 * changed, so a slow older response cannot overwrite newer data and a live refresh causes no needless re-render.
+	 */
+	let loadSeq = 0;
+	let membersSeq = 0;
+	let grantsSeq = 0;
 	async function load() {
-		[teams, invitations] = await Promise.all([api.listTeams(), api.teamInvitations()]);
-		if (selectedID && !teams.some((x) => x.id === selectedID)) selectedID = null;
+		const seq = ++loadSeq;
+		const [nextTeams, nextInvitations] = await Promise.all([api.listTeams(), api.teamInvitations()]);
+		if (seq !== loadSeq) return;
+		if (!sameList(teams, nextTeams)) teams = nextTeams;
+		if (!sameList(invitations, nextInvitations)) invitations = nextInvitations;
+		if (selectedID && !nextTeams.some((x) => x.id === selectedID)) selectedID = null;
 	}
 	async function loadMembers() {
-		members = selectedID ? await api.teamMembers(selectedID) : [];
+		const seq = ++membersSeq;
+		const id = selectedID;
+		const next = id ? await api.teamMembers(id) : [];
+		if (seq !== membersSeq || id !== selectedID) return;
+		if (!sameList(members, next)) members = next;
+	}
+	async function loadGrants() {
+		const seq = ++grantsSeq;
+		const next = await loadManagedGrants(workspace.projects);
+		if (seq === grantsSeq) grants = next;
 	}
 	$effect(() => {
 		attempt(load);
@@ -50,9 +72,18 @@
 		attempt(loadMembers);
 	});
 	$effect(() => {
+		// Also after changes made elsewhere in the app (share dialog, other team actions) and whenever the project list changes.
 		void selectedID;
-		if (selectedID) loadManagedGrants(workspace.projects).then((g) => (grants = g));
+		void workspace.projects;
+		void ui.accessTick;
+		if (selectedID) loadGrants().catch(() => undefined);
 	});
+	// Invitations, members and the shared projects change on other accounts' actions: follow the central live refresh.
+	onMount(() =>
+		startLiveRefresh(async () => {
+			await Promise.allSettled([load(), loadMembers(), selectedID ? loadGrants() : undefined]);
+		})
+	);
 
 	async function create(e: Event) {
 		e.preventDefault();

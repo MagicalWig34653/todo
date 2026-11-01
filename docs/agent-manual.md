@@ -33,7 +33,7 @@ The user decides; you propose and execute. If a decision is needed that the brie
 2. **Claim**: `claim_task {taskID, agentName}`. This sets the task to `in_progress`, records who works on it and moves the card to "In Arbeit". A second agent gets `already_claimed` unless it passes `takeOver: true`; never take over a task that another agent is actively working on without a reason.
 3. **Plan**: for a larger piece of work create the feature with `create_task`, mark it `set_task_structure {taskID, kind: "feature"}` and create subtasks with `create_task` plus `set_task_structure {taskID, parentTaskID}`. Optionally add acceptance criteria with `add_criterion`. Progress is then computed for you.
 4. **Work and report**: `post_progress {taskID, note, percent?}` after each meaningful step (not for every command). Tick criteria with `set_criterion {criterionID, completed}`. Mark blocked work with `set_task_structure {taskID, blockedReason}`; clear it with `blockedReason: null`.
-5. **Ask when you need a decision**: `ask_question {taskID, prompt, options?, blocking: true}`. The card moves to "Frage offen". Continue with other tasks while it is open. Poll `get_question {questionID}` (or `list_open_questions {taskID, includeAnswered: true}`) until `state` is `answered`, then read `answer`. Never answer your own question.
+5. **Ask when you need a decision**: `ask_question {taskID, prompt, options?, blocking: true}`. The card moves to "Frage offen". Continue with other tasks while it is open. Poll `get_question {questionID}` (or `list_open_questions {taskID, includeAnswered: true}`) until `state` is `answered`, then read `answer`. Never answer your own question. After a blocking question you may call `wait_for_events {since?, timeoutSeconds}` for at most a few rounds (it returns hints only: `changed`, `token`, `hints[{kind, taskID, projectID}]`; pass the returned `token` as `since` next time), then `get_question`; if still open, end the turn normally instead of looping.
 6. **Show the result**: attach screenshots of the finished build with `add_attachment` (or `begin_attachment` + `complete_attachment` for large files). Always pass the same `buildID` for screenshots of one build and a `platform` (for example `ios`, `macos`, `web`).
 7. **Request review**: `request_review {taskID, summary}`. The task moves to `in_review` and "Review". Do not set `done` yourself.
 8. **Handle the review**: poll `get_task_context {taskID}`; `review.state` is `accepted` (the task is done), or `changes_requested` with `decisionNote`. On changes, the task is back in `in_progress`: read the note, continue at step 4.
@@ -163,6 +163,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `ask_question` | tasks:write | Ask a structured, optionally blocking question. |
 | `list_open_questions` | tasks:read | Questions across projects, one project or one task. |
 | `get_question` | tasks:read | One question with its answer. |
+| `wait_for_events` | tasks:read | Wait up to 25 s for board changes; returns hints only (no content). Use a few rounds after a blocking question, then `get_question`. |
 | `answer_question` | tasks:write | Answer a question on behalf of the user (not your own). |
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
 | `list_pending_reviews` | tasks:read | Pending reviews. |

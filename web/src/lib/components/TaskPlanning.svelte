@@ -45,11 +45,18 @@
 		invalid = false;
 	}
 
+	/** Primitive on purpose: a list refresh hands in a new task object with the same id; only another id may reload the form. */
+	const taskKey = $derived(taskID);
+	let loadSeq = 0;
 	async function load() {
-		adopt(await api.getPlanning(taskID));
+		const my = ++loadSeq;
+		// Reads the derived key, not the prop: load() runs inside the effect and must not subscribe it to the task object.
+		const pt = await api.getPlanning(taskKey);
+		// A newer load or a save superseded this answer: adopting it would overwrite what the user has entered since.
+		if (my === loadSeq) adopt(pt);
 	}
 	$effect(() => {
-		void taskID;
+		void taskKey;
 		current = null;
 		attempt(load);
 	});
@@ -60,16 +67,16 @@
 		const recurrence = buildRecurrence(frequency, interval, until, current.recurrence?.timeZone);
 		invalid = recurrenceNeedsDate(recurrence, due, planned);
 		if (invalid) return;
+		const my = ++loadSeq;
 		const ok = await attempt(async () => {
-			adopt(
-				await api.putPlanning(taskID, {
-					dueAt: fromLocalInput(due),
-					plannedAt: fromLocalInput(planned),
-					priority,
-					recurrence,
-					reminders
-				})
-			);
+			const saved = await api.putPlanning(taskID, {
+				dueAt: fromLocalInput(due),
+				plannedAt: fromLocalInput(planned),
+				priority,
+				recurrence,
+				reminders
+			});
+			if (my === loadSeq) adopt(saved);
 		}, load);
 		if (ok) await onsaved();
 	}
