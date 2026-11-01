@@ -6,7 +6,6 @@
 - Fix: Effekt und Laden hängen nur an einem primitiven `$derived`-Schlüssel; `load()` und `save()` nutzen eine Sequenznummer, sodass nur die jüngste Antwort übernommen wird.
 - Läufe passkey-flow.spec (frische SQLite je Lauf, natives Backend): vorher 8 von 16 Läufen fehlgeschlagen (Test 7); Zwischenstand nur mit Sequenznummer 4 von 16; nachher 20/20 Läufe grün (je 20 Tests). vitest 219 grün.
 - Grenzen: `npm run check` im Worktree meldet wegen des node_modules-Symlinks einen Typ-Importfehler in `+layout.svelte` (`./$types`), unabhängig von der Änderung; im Hauptordner 0 Fehler. Nur Chromium.
-=======
 ## Checkpoint 1.11.2026: Instabilität permissions.spec behoben
 
 **Ursache (zwei Teile):** (1) Teams, Mitgliedschaften und Projektfreigaben (`Team`, `TeamMembership`, `ProjectGrant`) schrieben keine `live_events`; der Live-Refresh der anderen Konto-Sitzung wurde nie geweckt, `TeamsView` hatte zudem keinen Live-Abonnenten. (2) Überlappende Ladevorgänge in `SharingPanel`, `ShareButton` und `TeamsView` (expliziter Reload plus Effekt nach `ui.accessTick`) konnten sich überholen, sodass eine ältere, langsamere Antwort neuere Daten überschrieb (leere Projektliste im Team, wieder sichtbare entzogene Freigabe). Zusätzlich war im Test der Klick auf „Einladen“ nicht abgewartet, bevor B neu lud (Race, daher `team-decline` nicht gefunden).
@@ -25,7 +24,6 @@
 ## Checkpoint 1.11.2026 (Stop-Hook: Warten auf Antwort)
 
 Plugin-Stop-Hook erweitert (PUSH-AN-CLAUDE-CODE.md, Option b, Variante 2): bei offener blockierender `ask_question` blockt er mit festem Text (`wait_for_events`, dann `get_question`), max. 6 Fortsetzungen, `stop_hook_active`-Schutz, kein Netzwerk/Token. Tests: `sh claude-plugin/tests/test-hooks.sh` (32 ok). Nicht geprüft: echte Claude-Code-Sitzung, `claude plugin validate`. Grenze: trägt nur wenige Minuten (max. 8 Fortsetzungen durch Claude Code). Details: ARBEITSPLAN.md (gleicher Titel).
->>>>>>> main
 
 ## Übergabe 1.11.2026 (aktuellster Stand, gilt vor allem darunter)
 
