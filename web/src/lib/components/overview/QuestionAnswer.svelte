@@ -5,6 +5,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import OptionButtons from './OptionButtons.svelte';
 	import CircleHelp from '@lucide/svelte/icons/circle-help';
 
 	/** One open question with its answer controls: options become buttons, otherwise free text. */
@@ -36,7 +37,7 @@
 	}
 </script>
 
-<div class="bg-ui-accent-soft/50 flex flex-col gap-2 rounded-lg border p-2.5 text-sm" data-testid="question" data-question-id={id}>
+<div class="bg-ui-accent-soft/50 flex min-w-0 flex-col gap-2 rounded-lg border p-2.5 text-sm" data-testid="question" data-question-id={id}>
 	<div class="flex items-start gap-2">
 		<CircleHelp class="text-ui-accent-ink mt-0.5 size-4 shrink-0" aria-hidden="true" />
 		<div class="min-w-0 flex-1">
@@ -46,11 +47,7 @@
 		</div>
 	</div>
 	{#if options.length > 0}
-		<div class="flex flex-wrap gap-1.5" role="group" aria-label={t('cc.question.pick')}>
-			{#each options as option (option)}
-				<Button size="sm" variant="outline" disabled={busy} data-testid="question-option" onclick={() => send(option)}>{option}</Button>
-			{/each}
-		</div>
+		<OptionButtons size="sm" items={options.map((o) => ({ key: o, label: o }))} onpick={send} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
 	{:else}
 		<form
 			class="flex flex-col gap-1.5"
