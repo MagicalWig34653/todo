@@ -42,6 +42,8 @@ struct IdentitySettings: Sendable {
     var passwordLimit: Int = 10
     var registerLimit: Int = 10
     var recoveryLimit: Int = 5
+    /// Anonymous dynamic client registrations per IP and window.
+    var oauthRegisterLimit: Int = 20
     var recoveryLifetime: TimeInterval = 3600
     var recoverySessionLifetime: TimeInterval = 300
 

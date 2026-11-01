@@ -1,7 +1,26 @@
 import Fluent
 import Vapor
 
+/// Bounds simultaneous body collection per account so one token holder cannot pin many large buffers.
+actor UploadSlots {
+    private var active: [UUID: Int] = [:]
+    let limit: Int
+    init(limit: Int = 4) { self.limit = limit }
+    func acquire(_ owner: UUID) -> Bool {
+        let n = active[owner, default: 0]
+        guard n < limit else { return false }
+        active[owner] = n + 1
+        return true
+    }
+    func release(_ owner: UUID) {
+        let n = active[owner, default: 0]
+        if n <= 1 { active[owner] = nil } else { active[owner] = n - 1 }
+    }
+}
+
 struct AttachmentController: RouteCollection {
+    private let slots = UploadSlots()
+
     /// Body limit for the upload PUT; ATTACHMENT_MAX_BYTES.
     let maxBytes: Int
     init(maxBytes: Int = AttachmentLimits.defaultMaxBytes) { self.maxBytes = maxBytes }
@@ -9,7 +28,7 @@ struct AttachmentController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let v1 = routes.grouped("v1")
         v1.post("attachments", "begin", use: begin)
-        v1.on(.PUT, "attachments", ":id", "upload", body: .collect(maxSize: ByteCount(value: maxBytes)), use: upload)
+        v1.on(.PUT, "attachments", ":id", "upload", body: .stream, use: upload)
         v1.post("attachments", ":id", "complete", use: complete)
         v1.delete("attachments", ":id", use: abort)
         v1.get("attachments", ":id", "download", use: download)
@@ -27,7 +46,20 @@ struct AttachmentController: RouteCollection {
     }
     @Sendable func upload(_ req: Request) async throws -> HTTPStatus {
         guard let token = req.headers.bearerAuthorization?.token else { throw Abort(.notFound) }
-        try await service(req).upload(id(req), token: token, data: Data(req.body.data?.readableBytesView ?? ByteBuffer().readableBytesView), db: req.db)
+        let id = try id(req)
+        let service = service(req)
+        // Capability first: nothing of the body is buffered for callers without a valid, current upload token.
+        let owner = try await service.checkUploadCapability(id, token: token, db: req.db)
+        if let length = req.headers.first(name: .contentLength).flatMap(Int.init), length > maxBytes { throw Abort(.payloadTooLarge) }
+        guard await slots.acquire(owner) else { throw Abort(.tooManyRequests, reason: "too_many_parallel_uploads") }
+        do {
+            let buffer = try await req.body.collect(max: maxBytes).get()
+            try await service.upload(id, token: token, data: Data(buffer?.readableBytesView ?? ByteBuffer().readableBytesView), db: req.db)
+        } catch {
+            await slots.release(owner)
+            throw error
+        }
+        await slots.release(owner)
         return .noContent
     }
     @Sendable func complete(_ req: Request) async throws -> AttachmentDTO {

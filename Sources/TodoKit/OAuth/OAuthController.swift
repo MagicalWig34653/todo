@@ -43,7 +43,7 @@ struct OAuthController: RouteCollection {
     @Sendable func register(_ req: Request) async throws -> Response {
         let b = try req.content.decode(Registration.self)
         guard !b.redirect_uris.isEmpty, b.redirect_uris.count <= 10,
-              b.redirect_uris.allSatisfy(Self.validRedirect), (b.client_name?.count ?? 0) <= 200,
+              b.redirect_uris.allSatisfy({ $0.count <= 2000 && Self.validRedirect($0) }), (b.client_name?.count ?? 0) <= 200,
               b.token_endpoint_auth_method == nil || b.token_endpoint_auth_method == "none",
               Set(b.grant_types ?? ["authorization_code", "refresh_token"]).isSubset(of: ["authorization_code", "refresh_token"]),
               b.response_types == nil || b.response_types == ["code"] else { throw Abort(.badRequest, reason: "invalid_client_metadata") }

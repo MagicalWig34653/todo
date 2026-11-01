@@ -216,12 +216,12 @@ struct MCPController: RouteCollection {
             return try .encoded(try await ColumnService(user: user, db: db).board(id))
         case "move_task_to_column":
             let id = try uuid(a["id"])
-            guard case .number(let v) = a["version"], v == v.rounded() else { throw Abort(.badRequest, reason: "invalid_arguments") }
+            guard let version = try intArgument(a["version"], reason: "invalid_arguments") else { throw Abort(.badRequest, reason: "invalid_arguments") }
             var columnID: UUID?
             if !a["columnID"].isNull { columnID = try uuid(a["columnID"]) }
             var index: Int?
-            if !a["index"].isNull { guard case .number(let n) = a["index"], n == n.rounded() else { throw Abort(.badRequest, reason: "invalid_index") }; index = Int(n) }
-            let request = MoveTaskRequest(version: Int(v), columnID: columnID, index: index)
+            index = try intArgument(a["index"], reason: "invalid_index")
+            let request = MoveTaskRequest(version: version, columnID: columnID, index: index)
             return try await db.transaction { db in
                 try await lockSharingGraph(on: db)
                 let t = try await ProjectAccess(user: user, db: db).task(id)
@@ -279,7 +279,7 @@ struct MCPController: RouteCollection {
     /// Optional integer argument: absent/null = nil, anything but a whole number is rejected.
     func intArgument(_ value: JSONValue, reason: String) throws -> Int? {
         if value.isNull { return nil }
-        guard case .number(let n) = value, n == n.rounded(), abs(n) < 1e9 else { throw Abort(.badRequest, reason: reason) }
+        guard case .number(let n) = value, n.isFinite, n == n.rounded(), abs(n) < 1e9 else { throw Abort(.badRequest, reason: reason) }
         return Int(n)
     }
 

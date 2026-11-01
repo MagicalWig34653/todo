@@ -186,7 +186,7 @@ extension MCPController {
                 switch a[key] {
                 case .string(let s): raw[key] = s
                 case .bool(let b): raw[key] = b ? "true" : "false"
-                case .number(let n) where n == n.rounded(): raw[key] = String(Int(n))
+                case .number: raw[key] = String(try intArgument(a[key], reason: "invalid_\(key)") ?? 0)
                 default: throw Abort(.badRequest, reason: "invalid_\(key)")
                 }
             }
