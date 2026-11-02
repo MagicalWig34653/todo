@@ -119,4 +119,35 @@ final class MCPWaitForEventsTests: XCTestCase {
         } catch { await f.test.shutdown(); throw error }
         await f.test.shutdown()
     }
+
+    func testProjectWithdrawnWhileWaitingProducesNoHint() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let tokens = try await f.tokens()
+            let owner = try f.user.requireID()
+            let p = try f.project.requireID().uuidString, q = try f.other.requireID().uuidString
+            let grants = try await f.test.json(.GET, "/oauth/grants", token: f.session)
+            let gid = try XCTUnwrap(grants.list?.first?["id"] as? String)
+            let both = try await f.test.json(.PUT, "/oauth/grants/\(gid)/projects", ["project_ids": [p, q]], token: f.session)
+            XCTAssertEqual(both.status, .ok)
+            let inP = TodoTask(ownerID: owner, projectID: try f.project.requireID(), title: "P", details: "")
+            try await inP.save(on: f.test.app.db)
+            let first = try await wait(f, tokens.access, since: nil)
+            let token = try XCTUnwrap(first.json["token"] as? String)
+
+            async let pending = Self.waitCall(f, tokens.access, since: token, timeout: 20)
+            for _ in 0..<500 {
+                if await f.test.app.liveHub.waiterCount >= 1 { break }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let withdrawn = try await f.test.json(.PUT, "/oauth/grants/\(gid)/projects", ["project_ids": [q]], token: f.session)
+            XCTAssertEqual(withdrawn.status, .ok)
+            try await TaskComment(taskID: inP.requireID(), authorID: owner, body: "in withdrawn project").save(on: f.test.app.db)
+            let woken = try await pending
+            XCTAssertFalse(woken.error)
+            XCTAssertEqual(woken.json["changed"] as? Bool, true)
+            XCTAssertEqual((woken.json["hints"] as? [Any])?.count, 0)
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
 }

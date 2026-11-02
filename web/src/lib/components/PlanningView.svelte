@@ -1,41 +1,61 @@
 <script lang="ts">
+	import { onMount, untrack } from 'svelte';
 	import { api, type PlanningTask } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
+	import { startLiveRefresh, sameList } from '#lib/liveRefresh.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { browserTimeZone } from '#lib/planning.js';
 	import { ui } from '#lib/ui.svelte.js';
-	import TaskChips from './TaskChips.svelte';
-	import TaskDetail from './TaskDetail.svelte';
-	import { Button } from '#lib/components/ui/button/index.js';
+	import { workspace } from '#lib/workspace.svelte.js';
+	import TaskRow from './TaskRow.svelte';
 	import PageHeader from './app/PageHeader.svelte';
 	import EmptyState from './app/EmptyState.svelte';
 	import CircleCheck from '@lucide/svelte/icons/circle-check';
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
 	let { mode }: { mode: 'today' | 'upcoming' | 'upNext' } = $props();
 
 	let items = $state<PlanningTask[]>([]);
 	let loaded = $state(false);
 	let openID = $state<string | null>(null);
+	let seq = 0;
 
-	async function load() {
+	/** Only the newest answer counts; unchanged lists are not re-assigned (open details and drafts stay untouched). */
+	async function fetchItems() {
+		const mine = ++seq;
 		const tz = browserTimeZone();
-		items = await (mode === 'today' ? api.today(tz) : mode === 'upcoming' ? api.upcoming(tz) : api.upNext(tz));
+		const next = await (mode === 'today' ? api.today(tz) : mode === 'upcoming' ? api.upcoming(tz) : api.upNext(tz));
+		if (mine !== seq) return;
+		if (!sameList(items, next)) items = next;
 		loaded = true;
 	}
+	/** Background refresh: failures keep the shown list. */
+	const refresh = () => fetchItems().catch(() => undefined);
+
 	$effect(() => {
 		void mode;
-		loaded = false;
-		openID = null;
-		attempt(load);
+		untrack(() => {
+			loaded = false;
+			openID = null;
+			items = [];
+			void attempt(fetchItems);
+		});
 	});
-	// Quick add keeps working while this view is open: reload (silently) when something was created elsewhere.
+	// The shell refreshes workspace.tasks (sidebar counters) on every live tick and after local changes; reload the list
+	// from the same source so counter and list cannot drift apart. Quick add bumps changeTick.
+	let seenTasks = workspace.tasks;
+	$effect(() => {
+		const tasks = workspace.tasks;
+		if (tasks === seenTasks) return;
+		seenTasks = tasks;
+		untrack(() => void refresh());
+	});
 	let seenTick = ui.changeTick;
 	$effect(() => {
 		if (ui.changeTick === seenTick) return;
 		seenTick = ui.changeTick;
-		attempt(load);
+		untrack(() => void refresh());
 	});
+	onMount(() => startLiveRefresh(refresh, { guardEditing: true }));
 </script>
 
 <section class="flex flex-col gap-3">
@@ -43,14 +63,7 @@
 	{#if loaded && items.length === 0}<EmptyState title={t(`planning.${mode}.empty` as MessageKey)} icon={CircleCheck} />{/if}
 	<ul class="flex flex-col gap-2">
 		{#each items as pt (pt.task.id)}
-			<li class="bg-card rounded-xl border p-3 shadow-card" data-testid="planning-item">
-				<div class="flex flex-wrap items-center gap-2">
-					<span class="min-w-0 flex-1 basis-40 text-sm font-medium break-words">{pt.task.title}</span>
-					<TaskChips {pt} status={pt.task.status} />
-					<Button size="sm" variant="ghost" onclick={() => (openID = openID === pt.task.id ? null : pt.task.id)}>{t('task.details')}<ChevronDown class={['transition-transform', openID === pt.task.id && 'rotate-180']} aria-hidden="true" /></Button>
-				</div>
-				{#if openID === pt.task.id}<TaskDetail task={pt.task} onplanned={load} />{/if}
-			</li>
+			<TaskRow task={pt.task} {pt} open={openID === pt.task.id} ontoggle={() => (openID = openID === pt.task.id ? null : pt.task.id)} onchanged={refresh} />
 		{/each}
 	</ul>
 </section>

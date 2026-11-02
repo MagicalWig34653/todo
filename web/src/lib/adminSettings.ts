@@ -136,6 +136,13 @@ export function sortUsers(users: AdminUser[]): AdminUser[] {
 	return [...users].sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || a.displayName.localeCompare(b.displayName, 'de'));
 }
 
+/** After an admin flag changed: refreshes the signed-in user's own profile when the change concerned themselves. */
+export async function refreshAfterRoleChange(changedUserID: string, currentUserID: string | undefined, refresh: () => Promise<void>): Promise<boolean> {
+	if (!currentUserID || changedUserID !== currentUserID) return false;
+	await refresh();
+	return true;
+}
+
 // --- Pure helpers ----------------------------------------------------------------------------------------------
 
 /** The editable text of a setting (secrets start empty: their value is never delivered). */

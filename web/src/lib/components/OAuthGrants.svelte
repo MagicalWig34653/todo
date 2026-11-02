@@ -3,6 +3,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { mayBeEmpty, nextGrantProjects, resolveGrantProjects, scopeLabel, sortGrants } from '#lib/oauth.js';
+	import { createKeyedGate, createLatest } from '#lib/serial.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	let grants = $state<OAuthGrant[]>([]);
@@ -11,6 +12,10 @@
 	let info = $state<string | null>(null);
 	let editID = $state<string | null>(null);
 	let selected = $state<Set<string>>(new Set());
+	// One write per grant at a time: a second PUT could overtake the first and bring back a withdrawn project.
+	let busyIDs = $state<string[]>([]);
+	const gate = createKeyedGate((b) => (busyIDs = b));
+	const latest = createLatest();
 
 	function edit(g: OAuthGrant) {
 		editID = g.id;
@@ -25,14 +30,18 @@
 	}
 	async function save(g: OAuthGrant) {
 		info = null;
-		if (await attempt(async () => { await api.setOAuthGrantProjects(g.id, nextGrantProjects(selected, projects)); await load(); }, load)) {
+		const ids = nextGrantProjects(selected, projects);
+		const done = await gate.run(g.id, () => attempt(async () => { await api.setOAuthGrantProjects(g.id, ids); await load(); }, load));
+		if (done?.value) {
 			editID = null;
 			info = t('account.oauth.editProjects.done');
 		}
 	}
 
 	async function load() {
+		const current = latest.begin();
 		const [g, p] = await Promise.all([api.listOAuthGrants(), api.listProjects()]);
+		if (!current()) return;
 		grants = sortGrants(g);
 		projects = p;
 	}
@@ -42,7 +51,8 @@
 
 	async function revoke(g: OAuthGrant) {
 		info = null;
-		if (await attempt(async () => { await api.revokeOAuthGrant(g.id); await load(); }, load)) {
+		const done = await gate.run(g.id, () => attempt(async () => { await api.revokeOAuthGrant(g.id); await load(); }, load));
+		if (done?.value) {
 			confirmID = null;
 			info = t('account.oauth.revokedDone');
 		}
@@ -65,8 +75,8 @@
 					{#if g.revoked}
 						<span class="text-muted-foreground text-xs">{t('account.oauth.revoked')}</span>
 					{:else}
-						<Button size="xs" variant="outline" onclick={() => edit(g)} data-testid="oauth-edit">{t('account.oauth.editProjects')}</Button>
-						<Button size="xs" variant="destructive" onclick={() => (confirmID = g.id)}>{t('account.oauth.revoke')}</Button>
+						<Button size="xs" variant="outline" disabled={busyIDs.includes(g.id)} onclick={() => edit(g)} data-testid="oauth-edit">{t('account.oauth.editProjects')}</Button>
+						<Button size="xs" variant="destructive" disabled={busyIDs.includes(g.id)} onclick={() => (confirmID = g.id)}>{t('account.oauth.revoke')}</Button>
 					{/if}
 				</div>
 				<p class="text-muted-foreground text-xs">{t('account.oauth.scopes', { scopes: g.scopes.map(scopeLabel).join(', ') })}</p>
@@ -79,20 +89,20 @@
 						<p class="text-muted-foreground text-xs">{t('account.oauth.editProjects.hint')}</p>
 						<ul class="flex max-h-60 flex-col gap-1 overflow-auto">
 							{#each projects as p (p.id)}
-								<li><label class="flex items-center gap-2"><input type="checkbox" class="size-[18px]" checked={selected.has(p.id)} onchange={() => toggle(p.id)} data-testid="oauth-edit-project-{p.id}" /> <span>{p.name}</span></label></li>
+								<li><label class="flex items-center gap-2"><input type="checkbox" class="size-[18px]" checked={selected.has(p.id)} disabled={busyIDs.includes(g.id)} onchange={() => toggle(p.id)} data-testid="oauth-edit-project-{p.id}" /> <span>{p.name}</span></label></li>
 							{/each}
 						</ul>
 						{#if empty && !mayBeEmpty(g)}<p class="text-xs" role="status">{t('account.oauth.editProjects.needOne')}</p>{/if}
 						<div class="flex gap-2">
-							<Button size="sm" disabled={empty && !mayBeEmpty(g)} onclick={() => save(g)} data-testid="oauth-edit-save">{t('account.oauth.editProjects.save')}</Button>
-							<Button size="sm" variant="ghost" onclick={() => (editID = null)}>{t('common.cancel')}</Button>
+							<Button size="sm" disabled={(empty && !mayBeEmpty(g)) || busyIDs.includes(g.id)} onclick={() => save(g)} data-testid="oauth-edit-save">{t('account.oauth.editProjects.save')}</Button>
+							<Button size="sm" variant="ghost" disabled={busyIDs.includes(g.id)} onclick={() => (editID = null)}>{t('common.cancel')}</Button>
 						</div>
 					</div>
 				{/if}
 				{#if confirmID === g.id}
 					<div class="mt-2 flex flex-wrap items-center gap-2">
 						<span>{t('account.oauth.revokeConfirm')}</span>
-						<Button size="sm" variant="destructive" onclick={() => revoke(g)}>{t('account.oauth.revoke')}</Button>
+						<Button size="sm" variant="destructive" disabled={busyIDs.includes(g.id)} onclick={() => revoke(g)}>{t('account.oauth.revoke')}</Button>
 						<Button size="sm" variant="ghost" onclick={() => (confirmID = null)}>{t('common.cancel')}</Button>
 					</div>
 				{/if}

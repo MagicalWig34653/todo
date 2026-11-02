@@ -779,10 +779,6 @@ components:
         - expiresAt
         - user
       properties:
-        id:
-          type: string
-          format: uuid
-          description: Matches the id in GET /v1/invitations, so a just-created invitation can be withdrawn.
         token:
           type: string
         expiresAt:
@@ -807,6 +803,10 @@ components:
         - token
         - expiresAt
       properties:
+        id:
+          type: string
+          format: uuid
+          description: Matches the id in GET /v1/invitations, so a just-created invitation can be withdrawn.
         token:
           type: string
         expiresAt:

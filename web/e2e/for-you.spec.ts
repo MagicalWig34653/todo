@@ -46,7 +46,7 @@ test('empty state, then needs-you card with options and a progress post; answeri
 	await expect(page.getByTestId('post-card').filter({ hasText: 'Frage beantwortet' })).toBeVisible();
 
 	// Tapping a card opens the task in its project.
-	await page.getByTestId('post-card').filter({ hasText: 'Halbzeit erreicht' }).getByRole('button', { name: 'Aufgabe öffnen' }).click();
+	await page.getByTestId('post-card').filter({ hasText: 'Halbzeit erreicht' }).getByRole('button').first().click();
 	await expect(page).toHaveURL(/\/projekt\/.+\?task=/);
 });
 

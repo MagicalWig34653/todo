@@ -194,6 +194,8 @@ struct AuthController: RouteCollection {
             user.id = userID
             if first { user.bootstrapSlot = 1 }
             if let invitationID = challenge.invitationID {
+                // Same row lock as withdrawInvitation: exactly one of redeem/withdraw/second redeem wins.
+                try await lockRow(table: Invitation.schema, id: invitationID, on: db)
                 guard let invitation = try await Invitation.find(invitationID, on: db),
                     invitation.usedAt == nil, invitation.expiresAt > Date()
                 else { throw Abort(.forbidden, reason: "invalid_token") }
@@ -327,9 +329,15 @@ struct AuthController: RouteCollection {
     /// Withdraws an unused invitation; its code stops working at once. Used invitations stay as a record (409).
     @Sendable func withdrawInvitation(_ req: Request) async throws -> HTTPStatus {
         _ = try await req.requireAdmin()
-        guard let id = req.parameters.get("id", as: UUID.self), let inv = try await Invitation.find(id, on: req.db) else { throw Abort(.notFound) }
-        guard inv.usedAt == nil else { throw Abort(.conflict, reason: "invitation_used") }
-        try await inv.delete(on: req.db)
+        guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.notFound) }
+        // Check and delete under a row lock; registerFinish locks the same row before it consumes the invitation
+        // (SELECT ... FOR UPDATE on MariaDB; SQLite serialises writers, so no lock statement there).
+        try await req.db.transaction { db in
+            try await lockRow(table: Invitation.schema, id: id, on: db)
+            guard let inv = try await Invitation.find(id, on: db) else { throw Abort(.notFound) }
+            guard inv.usedAt == nil else { throw Abort(.conflict, reason: "invitation_used") }
+            try await inv.delete(on: db)
+        }
         return .noContent
     }
 }

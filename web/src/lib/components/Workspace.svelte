@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import type { Component } from 'svelte';
 	import type { Project } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
@@ -187,6 +187,49 @@
 		drawerOpen = false;
 	}
 
+	// Mobile drawer: behaves like a modal dialog (focus moves in and is trapped, Escape closes, background is inert,
+	// focus returns to the opener). On desktop the sidebar is a fixed column and drawerOpen is always false.
+	let drawerOpener: HTMLElement | null = null;
+	const drawerFocusables = () =>
+		Array.from(document.querySelectorAll<HTMLElement>('#main-nav button, #main-nav [href], #main-nav input, #main-nav [tabindex]:not([tabindex="-1"])')).filter(
+			(e) => !(e as HTMLButtonElement).disabled && e.offsetParent !== null
+		);
+	$effect(() => {
+		if (!drawerOpen) return;
+		drawerOpener = document.activeElement as HTMLElement | null;
+		tick().then(() => (drawerFocusables()[0] ?? document.getElementById('main-nav'))?.focus());
+		const key = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				if (e.defaultPrevented || document.querySelector('[aria-modal="true"]:not(#main-nav)')) return;
+				drawerOpen = false;
+			} else if (e.key === 'Tab') {
+				const nav = document.getElementById('main-nav');
+				if (!nav || document.querySelector('[aria-modal="true"]:not(#main-nav)')) return;
+				const f = drawerFocusables();
+				if (f.length === 0) return;
+				const active = document.activeElement;
+				if (!nav.contains(active) || (e.shiftKey && active === f[0]) || (!e.shiftKey && active === f[f.length - 1])) {
+					e.preventDefault();
+					(e.shiftKey ? f[f.length - 1] : f[0]).focus();
+				}
+			}
+		};
+		const wide = window.matchMedia('(min-width: 768px)');
+		const resized = () => {
+			if (wide.matches) drawerOpen = false;
+		};
+		document.addEventListener('keydown', key);
+		wide.addEventListener('change', resized);
+		return () => {
+			document.removeEventListener('keydown', key);
+			wide.removeEventListener('change', resized);
+			const opener = drawerOpener;
+			tick().then(() => {
+				if (opener?.isConnected && opener.offsetParent !== null) opener.focus();
+			});
+		};
+	});
+
 	/** `q` opens quick add unless the user is typing or a dialog is open. */
 	function onkeydown(e: KeyboardEvent) {
 		if ((e.key !== 'q' && e.key !== '?') || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
@@ -231,6 +274,8 @@
 
 	<Sidebar view={view === 'notfound' ? 'forYou' : view} {selectedID} {drawerOpen} onview={go} onproject={openProject} onshare={share} onclose={() => (drawerOpen = false)} />
 
+	<!-- While the mobile drawer is open everything behind it is inert (not focusable, hidden from assistive technology). -->
+	<div inert={drawerOpen}>
 	<div class={['flex min-h-dvh min-w-0 flex-col', !ui.sidebarCollapsed && 'menu:pl-72']}>
 		<header class="bg-background/85 sticky top-0 z-20 flex h-12 items-center gap-1 border-b px-3 backdrop-blur menu:px-5">
 			<Button
@@ -260,7 +305,7 @@
 			</div>
 		</header>
 
-		{#if notice.text}
+		{#if notice.text && notice.dialogs === 0}
 			<div
 				role={notice.conflict ? 'status' : 'alert'}
 				class="border-warning/30 bg-warning-soft text-foreground mx-4 mt-4 flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm menu:mx-8"
@@ -280,6 +325,19 @@
 					{#key selected.id}
 						<ProjectPage project={selected} {trail} onselect={openProject} onshare={share} sub={routeSub} taskID={routeTask} onroute={projectRoute} />
 					{/key}
+				{:else if selectedID && !workspace.projectsLoaded && !workspace.projectsFailed}
+					<div class="mx-auto flex max-w-3xl flex-col gap-3" data-testid="project-loading" role="status" aria-busy="true" aria-label={t('common.loading')}>
+						<div class="bg-muted h-9 w-1/2 animate-pulse rounded-lg"></div>
+						<div class="bg-muted h-24 animate-pulse rounded-xl"></div>
+						<div class="bg-muted h-24 animate-pulse rounded-xl"></div>
+					</div>
+				{:else if selectedID && workspace.projectsFailed && !workspace.projectsLoaded}
+					<div class="mx-auto max-w-3xl" data-testid="project-load-failed">
+						<EmptyState title={t('route.loadFailed')} icon={FolderOpen}>
+							<p>{t('route.loadFailedHint')}</p>
+							<Button class="mt-3" onclick={() => attempt(() => workspace.reloadAll())}>{t('route.retry')}</Button>
+						</EmptyState>
+					</div>
 				{:else}
 					<div class="mx-auto max-w-3xl" data-testid="not-found">
 						<EmptyState title={selectedID && workspace.projects.length > 0 ? t('route.projectMissing') : t('nav.noProjectTitle')} icon={FolderOpen}>
@@ -346,6 +404,7 @@
 		{@render tabButton(t('nav.search'), Search, view === 'search', () => go('search'))}
 		{@render tabButton(t('nav.openMenu'), LayoutList, drawerOpen, () => (drawerOpen = !drawerOpen), drawerOpen, 'main-nav')}
 	</nav>
+	</div>
 </div>
 
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />

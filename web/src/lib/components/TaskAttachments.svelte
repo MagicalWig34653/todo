@@ -14,14 +14,25 @@
 	let items = $state<Attachment[]>([]);
 	let role = $state<AttachmentRole>('reference');
 	let busy = $state(false);
+	let loaded = $state(false);
+	let loadFailed = $state(false);
 	let problem = $state<string | null>(null);
 	let input = $state<HTMLInputElement | null>(null);
 
 	async function load() {
-		items = await api.listAttachments(taskID);
+		try {
+			items = await api.listAttachments(taskID);
+			loadFailed = false;
+		} catch (e) {
+			loadFailed = true;
+			throw e;
+		} finally {
+			loaded = true;
+		}
 	}
 	$effect(() => {
 		void taskID;
+		loaded = false;
 		untrack(() => attempt(load));
 	});
 	onMount(() =>
@@ -70,7 +81,11 @@
 </script>
 
 <div class="flex flex-col gap-2">
-	{#if items.length === 0}<p class="text-muted-foreground text-xs">{t('attachments.empty')}</p>{/if}
+	{#if !loaded}
+		<div class="bg-muted/60 h-24 animate-pulse rounded-md" role="status" aria-label={t('common.loading')} data-testid="attachments-loading"></div>
+	{:else if loadFailed && items.length === 0}
+		<p class="text-destructive text-xs" role="alert" data-testid="attachments-error">{t('common.loadFailed')} <button type="button" class="underline" onclick={() => attempt(load)}>{t('common.retry')}</button></p>
+	{:else if items.length === 0}<p class="text-muted-foreground text-xs">{t('attachments.empty')}</p>{/if}
 	<ul class="flex flex-wrap gap-2">
 		{#each items as a (a.id)}
 			<li class="w-40 rounded-md border p-1 text-xs" data-testid="attachment">

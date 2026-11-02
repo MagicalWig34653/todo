@@ -161,7 +161,9 @@
 						{#if m.userID === selected.founderID}<Badge>{t('teams.founder')}</Badge>{/if}
 						{#if !m.accepted}<Badge variant="warning">{t('teams.pending')}</Badge>{/if}
 						{#if m.isAdmin}<Badge variant="accent">{t('teams.admin')}</Badge>{/if}
-						{#if iAmAdmin}
+						{#if iAmAdmin && m.userID === selected.founderID}
+							<span class="text-muted-foreground text-xs" data-testid="team-founder-locked">{t('teams.founderLocked')}</span>
+						{:else if iAmAdmin}
 							{#if m.accepted}
 								<Button size="xs" variant="ghost" onclick={() => setAdmin(m, !m.isAdmin)}>
 									{m.isAdmin ? t('teams.removeAdmin') : t('teams.makeAdmin')}
@@ -190,7 +192,7 @@
 				{#if confirm?.kind === 'leave'}
 					<div class="bg-muted/60 flex flex-wrap items-center gap-2 rounded-md p-2 text-sm" data-testid="team-leave-confirm">
 						<span class="flex-1">{t('teams.leaveConfirm', { name: selected.name })}</span>
-						<Button size="sm" variant="destructive" onclick={() => withdraw({ teamID: selected.id, userID: me }, t('teams.declined'))}>{t('teams.leaveYes')}</Button>
+						<Button size="sm" variant="destructive" onclick={() => withdraw({ teamID: selected.id, userID: me }, t('teams.left'))}>{t('teams.leaveYes')}</Button>
 						<Button size="sm" variant="ghost" onclick={() => (confirm = null)}>{t('common.cancel')}</Button>
 					</div>
 				{:else}

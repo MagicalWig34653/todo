@@ -214,3 +214,20 @@ input[data-slot='checkbox']:checked {
 		background-color: var(--background) !important;
 	}
 }
+
+/* Small icon controls keep their visual size but get a larger hit area (32 px desktop, 44 px touch). */
+.hit-area::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: max(100%, 32px);
+	height: max(100%, 32px);
+	transform: translate(-50%, -50%);
+}
+@media (pointer: coarse) {
+	.hit-area::after {
+		width: max(100%, 44px);
+		height: max(100%, 44px);
+	}
+}

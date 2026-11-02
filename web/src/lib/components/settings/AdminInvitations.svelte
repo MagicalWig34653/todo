@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { instance, sortInvitations, type Invitation, type InvitationSummary } from '#lib/instance.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { createLatest } from '#lib/serial.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import Panel from '../app/Panel.svelte';
@@ -14,9 +15,12 @@
 	let list = $state<InvitationSummary[]>([]);
 	let info = $state<string | null>(null);
 
+	const latest = createLatest();
 	async function load() {
+		const current = latest.begin();
 		await attempt(async () => {
-			list = sortInvitations(await instance.listInvitations());
+			const next = sortInvitations(await instance.listInvitations());
+			if (current()) list = next;
 		});
 	}
 	onMount(load);

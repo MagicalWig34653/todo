@@ -79,6 +79,19 @@ export function actionRequest(action: ForYouAction, input = ''): { method: strin
 	return { method: action.method, path: action.path.replace(/^\/v1/, ''), body };
 }
 
+/**
+ * Merges a freshly fetched first page into the loaded feed without losing older pages loaded by scrolling:
+ * fresh posts come first (new ones inserted at the front), already loaded posts the page does not contain stay.
+ * `keepCursor` is true when older posts survived, so the cursor of the loaded pages must be kept.
+ */
+export function mergeFirstPage(current: readonly ForYouPost[], fresh: readonly ForYouPost[]): { posts: ForYouPost[]; keepCursor: boolean } {
+	const ids = new Set(fresh.map((p) => p.id));
+	const oldest = fresh.length > 0 ? fresh[fresh.length - 1].createdAt ?? null : null;
+	// Loaded posts missing from the page: older than the page's last post they are simply further down the feed; otherwise deleted.
+	const rest = current.filter((p) => !ids.has(p.id) && oldest !== null && p.createdAt != null && p.createdAt <= oldest);
+	return { posts: [...fresh, ...rest], keepCursor: rest.length > 0 };
+}
+
 /** Appends a later page; posts already known (same id) are dropped. */
 export function appendPosts(posts: readonly ForYouPost[], more: readonly ForYouPost[]): ForYouPost[] {
 	const known = new Set(posts.map((p) => p.id));

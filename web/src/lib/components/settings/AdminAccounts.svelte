@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth } from '#lib/auth.svelte.js';
-	import { adminSettings, sortUsers, type AdminUser } from '#lib/adminSettings.js';
+	import { adminSettings, refreshAfterRoleChange, sortUsers, type AdminUser } from '#lib/adminSettings.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -27,6 +27,8 @@
 		await attempt(async () => {
 			const updated = await adminSettings.setAdmin(u.id, !u.isAdmin);
 			users = sortUsers(users.map((x) => (x.id === updated.id ? updated : x)));
+			// Own role changed: navigation and admin pages read auth.user, so refresh it from the server.
+			await refreshAfterRoleChange(updated.id, auth.user?.id, () => auth.restore());
 		});
 		busyID = null;
 	}

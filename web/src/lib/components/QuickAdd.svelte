@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { api, type Label, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { notice } from '#lib/notice.svelte.js';
@@ -56,8 +57,12 @@
 	});
 
 	// Each time the dialog opens: reset the session and preselect the current project (else "Eingang", else the first).
+	// Only `ui.quickAdd` and `currentProjectID` are dependencies: live refresh of workspace.projects must never wipe a draft.
 	$effect(() => {
 		if (!ui.quickAdd) return;
+		untrack(initSession);
+	});
+	function initSession() {
 		text = '';
 		error = '';
 		indent = false;
@@ -66,7 +71,7 @@
 		added = [];
 		const inbox = workspace.projects.find((p) => p.name === 'Eingang');
 		projectID = currentProjectID ?? inbox?.id ?? workspace.projects[0]?.id ?? '';
-	});
+	}
 
 	function onkeydown(e: KeyboardEvent) {
 		if (e.key === 'Tab' && !e.shiftKey && !indent && canIndent && text.trim()) {

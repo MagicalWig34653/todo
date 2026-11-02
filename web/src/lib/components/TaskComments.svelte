@@ -16,9 +16,20 @@
 	let body = $state('');
 	let editingID = $state<string | null>(null);
 	let draft = $state('');
+	let loaded = $state(false);
+	let loadFailed = $state(false);
+	let sending = $state(false);
 
 	async function load() {
-		items = await api.listComments(taskID);
+		try {
+			items = await api.listComments(taskID);
+			loadFailed = false;
+		} catch (e) {
+			loadFailed = true;
+			throw e;
+		} finally {
+			loaded = true;
+		}
 	}
 	/** Silent refetch (focus, visibility, interval): keeps the list when nothing changed and never interrupts an edit. */
 	async function refresh() {
@@ -31,16 +42,23 @@
 	$effect(() => {
 		void taskID;
 		editingID = null;
+		loaded = false;
 		untrack(() => attempt(load));
 	});
 
 	async function add(e: Event) {
 		e.preventDefault();
 		const v = body.trim();
-		if (!v) return;
-		if (await attempt(async () => (items = [...items, await api.createComment(taskID, v)]), load)) {
-			body = '';
-			await onchanged?.();
+		if (!v || sending) return;
+		sending = true;
+		try {
+			// The draft stays in the field until the server accepted it.
+			if (await attempt(async () => (items = [...items, await api.createComment(taskID, v)]), load)) {
+				body = '';
+				await onchanged?.();
+			}
+		} finally {
+			sending = false;
 		}
 	}
 	async function save(c: Comment) {
@@ -65,7 +83,11 @@
 </script>
 
 <div class="flex flex-col gap-2">
-	{#if items.length === 0}<p class="text-muted-foreground text-xs">{t('comments.empty')}</p>{/if}
+	{#if !loaded}
+		<div class="bg-muted/60 h-16 animate-pulse rounded-md" role="status" aria-label={t('common.loading')} data-testid="comments-loading"></div>
+	{:else if loadFailed && items.length === 0}
+		<p class="text-destructive text-xs" role="alert" data-testid="comments-error">{t('common.loadFailed')} <button type="button" class="underline" onclick={() => attempt(load)}>{t('common.retry')}</button></p>
+	{:else if items.length === 0}<p class="text-muted-foreground text-xs">{t('comments.empty')}</p>{/if}
 	<ul class="flex flex-col gap-2">
 		{#each items as c (c.id)}
 			{@const mine = c.authorID === auth.user?.id}
@@ -92,7 +114,7 @@
 		{/each}
 	</ul>
 	<form class="flex flex-col gap-1" onsubmit={add}>
-		<Textarea bind:value={body} placeholder={t('comments.new')} aria-label={t('comments.new')} />
-		<div><Button type="submit" size="sm">{t('comments.add')}</Button></div>
+		<Textarea bind:value={body} placeholder={t('comments.new')} aria-label={t('comments.new')} disabled={sending} />
+		<div><Button type="submit" size="sm" disabled={sending || !body.trim()}>{sending ? t('common.sending') : t('comments.add')}</Button></div>
 	</form>
 </div>

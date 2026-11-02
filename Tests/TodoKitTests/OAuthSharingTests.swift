@@ -107,6 +107,37 @@ final class OAuthSharingTests: XCTestCase {
         await f.test.shutdown()
     }
 
+    /// Writes replace the whole list, so the last accepted PUT decides (this is why the PWA sends one PUT per grant at a
+    /// time). Parallel writers are serialised by lockRow on MariaDB; SQLite would answer "database is locked", so the
+    /// order is tested sequentially: a withdrawal followed by a stale re-add of the same list is a re-add by design.
+    func testLastGrantProjectsPutWinsAndWithdrawalSticks() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            _ = try await f.tokens()
+            let grants = try await f.test.json(.GET, "/oauth/grants", token: f.session)
+            let id = try XCTUnwrap(grants.list?.first?["id"] as? String)
+            let allowed = try f.project.requireID().uuidString, other = try f.other.requireID().uuidString
+            func put(_ ids: [String]) async throws -> Set<String> {
+                let r = try await f.test.json(.PUT, "/oauth/grants/\(id)/projects", ["project_ids": ids], token: f.session)
+                XCTAssertEqual(r.status, .ok)
+                return Set(r.body?["project_ids"] as? [String] ?? [])
+            }
+            func listed() async throws -> Set<String> {
+                let r = try await f.test.json(.GET, "/oauth/grants", token: f.session)
+                return Set(r.list?.first?["project_ids"] as? [String] ?? [])
+            }
+            let rp1 = try await put([allowed, other]); XCTAssertEqual(rp1, [allowed, other])
+            let rp2 = try await put([other]); XCTAssertEqual(rp2, [other])
+            let rl3 = try await listed(); XCTAssertEqual(rl3, [other])
+            // A stale writer that still holds [allowed, other] overwrites the withdrawal: last write wins.
+            let rp5 = try await put([allowed, other]); XCTAssertEqual(rp5, [allowed, other])
+            let rl6 = try await listed(); XCTAssertEqual(rl6, [allowed, other])
+            let rp7 = try await put([other]); XCTAssertEqual(rp7, [other])
+            let rl8 = try await listed(); XCTAssertEqual(rl8, [other])
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
     private func text(_ body: [String: Any]?) throws -> String {
         let content = try XCTUnwrap((body?["result"] as? [String: Any])?["content"] as? [[String: Any]])
         return try XCTUnwrap(content.first?["text"] as? String)
