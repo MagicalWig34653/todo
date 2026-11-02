@@ -1,5 +1,11 @@
 # Status
 
+## Checkpoint 2.11.2026: Review-Fixes (Codex-Review + Security-Befunde 10/12)
+
+- Board-Aufgabe `32A215DC-B7AA-4524-A31E-42EC1C015AA3`. Behoben, je mit Test: `wait_for_events` lädt den Grant nach dem Warten neu (entzogenes Projekt, Widerruf -> 401); Einladung: `withdrawInvitation` und `registerFinish` sperren dieselbe `invitations`-Zeile (`lockRow`, MariaDB `FOR UPDATE`; unter SQLite nur Reihenfolgetests, parallele Schreiber liefern dort "database is locked"); Stop-Hook wertet `ask_question` je tool_use aus (`claude-plugin/scripts/open-questions.awk`: `blocking:false` nur je Aufruf, Zuordnung über tool_result-ID und `get_question`/`list_open_questions includeAnswered`, nicht blockierende Fragen blocken nie) und legt Zustandsdateien nur in einem privaten 0700-Verzeichnis ab (Symlinks nie gefolgt); `openapi.yaml` `Invitation.id` korrekt, ContractTests prüfen required-in-properties und echte Einladungsantworten; PWA: je Grant serialisierte PUTs (`serial.ts`, OAuthGrants, SharingPanel), AdminInvitations Laufnummer, AdminAccounts lädt `auth.user` nach Selbständerung neu; neuer Test Snapshot- gegen Einzelprüfung (22 Projekte, 3 Betrachter, Zyklus) und Reihenfolge paralleler Grant-PUTs.
+- Tests: swift 281 (20 übersprungen, 0 Fehler), test-hooks 0 FAIL, vitest 230, build ok, Playwright settings-hub 11, permissions 8 (3 Läufe), passkey-flow 20 (mehrere Läufe), alle grün. Rot ohne Fix belegt für wait_for_events, Hook-Fälle, Vertrag.
+- Grenzen: Einladungs-Rennen und parallele Grant-PUTs nicht mit echter Parallelität getestet (SQLite), MariaDB ungetestet; `npm run check` im Worktree 1 bekannter `./$types`-Fehler (Symlink); keine PWA-Komponententests, nur Logik (`serial.ts`) und E2E-Regression.
+
 ## Checkpoint 1.11.2026 (Sicherheitsfixes Codex-Review, Teil B; Agent sec-b)
 
 - Board-Aufgabe `22A03719-111B-4A6E-B88F-722DA4786B1E`. Branch `worktree-agent-a0febff622a14a99f`.
