@@ -27,16 +27,21 @@
 	const dirty = $derived(draft !== savedText);
 	const columnsOwn = $derived(structure?.columnMode === 'columns');
 
-	async function load(keepDraft = false) {
+	let initialDone = $state(false);
+
+	/** An edited draft is never overwritten by a server answer; only an untouched editor adopts the loaded text. */
+	async function load() {
 		const s = await api.projectStructure(projectID);
+		const edited = draft !== savedText;
 		structure = s;
 		version = s.brief.version;
 		savedText = s.brief.text;
-		if (!keepDraft || draft === '') draft = s.brief.text;
+		if (!edited) draft = s.brief.text;
 	}
 
+	// The editor stays locked until the first answer (or failure) so early typing cannot be lost or overwritten.
 	onMount(() => {
-		attempt(() => load());
+		void attempt(() => load()).finally(() => (initialDone = true));
 	});
 
 	async function save() {
@@ -52,7 +57,7 @@
 		} catch (e) {
 			if (e instanceof ApiError && e.isConflict) {
 				// Keep the user's text, adopt the server revision so a second save can overwrite knowingly.
-				await load(true).catch(() => undefined);
+				await load().catch(() => undefined);
 				notice.text = t('cc.brief.conflict');
 				notice.conflict = true;
 			} else {
@@ -69,7 +74,7 @@
 		busy = true;
 		const ok = await attempt(async () => {
 			await api.applyColumnTemplate(projectID, 'agent_workflow');
-			await load(true);
+			await load();
 			await onchanged?.();
 		});
 		busy = false;
@@ -81,6 +86,7 @@
 	<Panel title={t('cc.brief.title')} description={t('cc.brief.hint')}>
 		<Textarea
 			bind:value={draft}
+			disabled={!initialDone}
 			rows={10}
 			maxlength={BRIEF_MAX}
 			class="font-mono text-[13px]"

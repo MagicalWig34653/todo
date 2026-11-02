@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { api, ApiError } from '#lib/api.js';
-	import { actionRequest, appendPosts, postTitleKey, type ForYouAction, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
+	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ForYouAction, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { startLiveRefresh, sameList } from '#lib/liveRefresh.js';
@@ -34,8 +34,9 @@
 	function adopt(page: ForYouPage) {
 		if (!sameList(needs, page.needsYou)) needs = page.needsYou;
 		needsTotal = page.needsYouTotal;
-		if (!sameList(posts, page.posts)) posts = page.posts;
-		next = page.nextCursor ?? null;
+		const merged = mergeFirstPage(posts, page.posts);
+		if (!sameList(posts, merged.posts)) posts = merged.posts;
+		if (!merged.keepCursor) next = page.nextCursor ?? null;
 		loaded = true;
 	}
 	async function load() {
@@ -133,11 +134,11 @@
 				</h3>
 				{#each needs as item (item.id)}
 					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-label={t('forYou.openTask')} onclick={() => onopen?.(item.projectID, item.taskID)}>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => onopen?.(item.projectID, item.taskID)}>
 							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(kindKey(item.kind))}</span>
-							<span class="text-sm font-semibold">{item.title}</span>
+							<span id="need-t-{item.id}" class="text-sm font-semibold">{item.title}</span>
 							{#if item.detail}<span class="text-muted-foreground text-sm">{item.detail}</span>{/if}
-							<span class="text-muted-foreground text-xs">
+							<span id="need-d-{item.id}" class="text-muted-foreground text-xs">
 								{[item.projectName, item.kind === 'question' || item.kind === 'review' ? item.taskTitle : '', item.dueAt ? formatWhen(item.dueAt) : ''].filter(Boolean).join(' · ')}
 							</span>
 						</button>
@@ -170,11 +171,11 @@
 				<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('forYou.posts')}</h3>
 				{#each posts as post (post.id)}
 					<article class="bg-card flex flex-col gap-2 rounded-xl border p-3" data-testid="post-card" data-kind={post.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-label={t('forYou.openTask')} onclick={() => onopen?.(post.projectID, post.taskID)}>
-							<span class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="post-t-{post.id}" aria-describedby="post-d-{post.id}" onclick={() => onopen?.(post.projectID, post.taskID)}>
+							<span id="post-t-{post.id}" class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
 							{#if post.text}<span class="text-sm whitespace-pre-line">{post.text}</span>{/if}
 							{#if post.detail}<span class="text-muted-foreground text-sm">→ {post.detail}</span>{/if}
-							<span class="text-muted-foreground text-xs">{[post.projectName, post.taskTitle, post.createdAt ? formatWhen(post.createdAt) : ''].filter(Boolean).join(' · ')}</span>
+							<span id="post-d-{post.id}" class="text-muted-foreground text-xs">{[post.projectName, post.taskTitle, post.createdAt ? formatWhen(post.createdAt) : ''].filter(Boolean).join(' · ')}</span>
 						</button>
 						{#if post.percent != null}
 							<div class="bg-muted h-1.5 w-full overflow-hidden rounded-full" role="progressbar" aria-valuenow={post.percent} aria-valuemin="0" aria-valuemax="100">

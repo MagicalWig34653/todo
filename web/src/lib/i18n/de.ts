@@ -1021,6 +1021,11 @@ export const de = {
 	'access.admin.denied': 'Dieser Bereich ist nur für Administratoren.',
 	'access.admin.accountID': 'Deine Konto-ID',
 	'access.admin.gaps': 'Noch nicht vorhanden: Nutzerliste, Konten sperren oder löschen, Datenexport. Siehe Vorschläge in der Dokumentation.',
+	'task.openProject': 'Projekt „{name}“ öffnen',
+	'common.sending': 'Wird gesendet …',
+	'common.loadFailed': 'Konnte nicht geladen werden.',
+	'common.retry': 'Erneut versuchen',
+	'search.searching': 'Suche läuft …',
 } as const;
 
 export type MessageKey = keyof typeof de;

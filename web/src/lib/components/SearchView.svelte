@@ -2,6 +2,7 @@
 	import { api, type Criteria, type Label, type Project, type SavedFilter, type SearchHit, type TaskStatus } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { openTaskRoute } from '#lib/navigate.js';
 	import { STATUSES, collectAll } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -26,6 +27,8 @@
 	let hits = $state<SearchHit[]>([]);
 	let next = $state<string | null>(null);
 	let searched = $state(false);
+	let searching = $state(false);
+	let seq = 0;
 	let labels = $state<Label[]>([]);
 	let filters = $state<SavedFilter[]>([]);
 	let activeFilter = $state<SavedFilter | null>(null);
@@ -59,13 +62,21 @@
 		});
 	});
 
+	/** Only the newest request may apply its answer; older ones are dropped. */
 	async function run(more = false) {
-		const page = activeFilter
-			? await api.filterResults(activeFilter.id, more ? next : null)
-			: await api.search(criteria, more ? next : null);
-		hits = more ? [...hits, ...page.items] : page.items;
-		next = page.nextCursor ?? null;
-		searched = true;
+		const mine = ++seq;
+		searching = true;
+		try {
+			const page = activeFilter
+				? await api.filterResults(activeFilter.id, more ? next : null)
+				: await api.search(criteria, more ? next : null);
+			if (mine !== seq) return;
+			hits = more ? [...hits, ...page.items] : page.items;
+			next = page.nextCursor ?? null;
+			searched = true;
+		} finally {
+			if (mine === seq) searching = false;
+		}
 	}
 	async function submit(e: Event) {
 		e.preventDefault();
@@ -143,12 +154,13 @@
 	</form>
 
 	{#if activeFilter}<p class="text-muted-foreground text-sm">{t('search.activeFilter', { name: activeFilter.name })}</p>{/if}
-	{#if searched && hits.length === 0}<EmptyState title={t('search.noResults')} icon={SearchIcon} />{/if}
+	{#if searching}<p class="text-muted-foreground text-sm" role="status" data-testid="search-status">{t('search.searching')}</p>{/if}
+	{#if searched && !searching && hits.length === 0}<EmptyState title={t('search.noResults')} icon={SearchIcon} />{/if}
 	<ul class="flex flex-col gap-2">
 		{#each hits as h (h.kind + h.id)}
 			<li class="bg-card flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm shadow-card" data-testid="search-hit">
 				<Badge variant={h.kind === 'task' ? 'accent' : 'default'}>{t(`search.hit.${h.kind}` as MessageKey)}</Badge>
-				<button class="min-w-0 flex-1 text-left font-medium hover:underline" onclick={() => onopen(h.project.id)}>
+				<button class="min-w-0 flex-1 text-left font-medium hover:underline" onclick={() => (h.kind === 'task' && h.task ? openTaskRoute(h.project.id, h.task.id) : onopen(h.project.id))}>
 					{h.kind === 'task' ? h.task?.title : h.project.name}
 				</button>
 				{#if h.kind === 'task'}<span class="text-muted-foreground text-xs">{h.project.name}</span>{/if}
@@ -179,7 +191,7 @@
 						{#if hasCriteria}
 							<button class="text-muted-foreground" aria-label={t('search.overwriteFilter', { name: f.name })} onclick={() => overwriteFilter(f)}>{t('search.overwrite')}</button>
 						{/if}
-						<button class="text-muted-foreground" aria-label={t('search.deleteFilter', { name: f.name })} onclick={() => deleteFilter(f)}><X class="size-3.5" aria-hidden="true" /></button>
+						<button class="text-muted-foreground -m-2 inline-flex size-11 items-center justify-center rounded-full sm:-m-1.5 sm:size-8" aria-label={t('search.deleteFilter', { name: f.name })} onclick={() => deleteFilter(f)}><X class="size-3.5" aria-hidden="true" /></button>
 					{/if}
 				</li>
 			{/each}
@@ -197,7 +209,7 @@
 						<button class="text-destructive" onclick={() => deleteLabel(l)}>{t('common.delete')}</button>
 						<button onclick={() => (deletingLabelID = null)}>{t('common.cancel')}</button>
 					{:else}
-						<button class="text-muted-foreground" aria-label={t('labels.remove', { name: l.name })} onclick={() => (deletingLabelID = l.id)}><X class="size-3.5" aria-hidden="true" /></button>
+						<button class="text-muted-foreground -m-2 inline-flex size-11 items-center justify-center rounded-full sm:-m-1.5 sm:size-8" aria-label={t('labels.remove', { name: l.name })} onclick={() => (deletingLabelID = l.id)}><X class="size-3.5" aria-hidden="true" /></button>
 					{/if}
 				</li>
 			{/each}
