@@ -1154,6 +1154,8 @@ export const de = {
 	'card.side.labels': 'Etiketten',
 	'card.side.dependencies': 'Abhängigkeiten',
 	'setup.codeFromLink': 'Dein Einladungscode wurde aus dem Link übernommen.',
+	'cc.review.undo': 'Rückgängig',
+	'cc.review.undoLeft': 'noch {time}',
 } as const;
 
 export type MessageKey = keyof typeof de;

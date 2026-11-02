@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { api } from '#lib/api.js';
+	import { api, type Review } from '#lib/api.js';
 	import { decisionNeedsNote, type ReviewDecision } from '#lib/commandCenter.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import { reviewUndo } from '#lib/reviewUndo.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import Markdown from '../card/Markdown.svelte';
@@ -32,9 +33,15 @@
 		}
 		needNote = false;
 		busy = true;
-		const ok = await attempt(() => api.decideReview(taskID, decision, note.trim()));
+		let decided: Review | undefined;
+		const ok = await attempt(async () => {
+			decided = await api.decideReview(taskID, decision, note.trim());
+		});
 		busy = false;
-		if (ok) note = '';
+		if (ok) {
+			note = '';
+			reviewUndo.offer(taskID, decided?.undoUntil);
+		}
 		// Also after a conflict (already decided elsewhere): show the real state.
 		await ondecided();
 	}

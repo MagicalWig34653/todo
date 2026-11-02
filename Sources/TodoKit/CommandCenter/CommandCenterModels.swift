@@ -60,7 +60,25 @@ final class TaskReview: Model, @unchecked Sendable {
     @OptionalField(key: "agent_job_id") var agentJobID: UUID?
     @Field(key: "version") var version: Int
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
+    /// Undo snapshot written when a person decides (nil for old rows and runner-backed reviews).
+    @OptionalField(key: "undo_status") var undoStatus: String?
+    @OptionalField(key: "undo_column_id") var undoColumnID: UUID?
+    @OptionalField(key: "undo_task_version") var undoTaskVersion: Int?
     init() {}
+}
+
+/// Migration for the review undo window (ADR 0020): previous task state and the task version right after the decision.
+struct AddReviewUndo: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(TaskReview.schema).field("undo_status", .string).update()
+        try await db.schema(TaskReview.schema).field("undo_column_id", .uuid).update()
+        try await db.schema(TaskReview.schema).field("undo_task_version", .int).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(TaskReview.schema).deleteField("undo_status").update()
+        try await db.schema(TaskReview.schema).deleteField("undo_column_id").update()
+        try await db.schema(TaskReview.schema).deleteField("undo_task_version").update()
+    }
 }
 
 final class TaskProgressNote: Model, @unchecked Sendable {
@@ -230,11 +248,17 @@ struct ReviewDTO: Content {
     let agentJobID: UUID?
     let createdAt: Date?
     let version: Int
+    /// End of the undo window for a fresh person decision; nil when not undoable by time or kind.
+    let undoUntil: Date?
     init(_ r: TaskReview) throws {
         id = try r.requireID(); taskID = r.taskID; state = r.state; requestedByType = r.requestedByType
         requestedByID = r.requestedByID; requestedByLabel = r.requestedByLabel; reviewerID = r.reviewerID
         summary = r.summary; decidedBy = r.decidedBy; decidedAt = r.decidedAt; decisionNote = r.decisionNote
         agentJobID = r.agentJobID; createdAt = r.createdAt; version = r.version
+        if r.state != "pending", r.agentJobID == nil, r.undoStatus != nil || r.undoTaskVersion != nil, let at = r.decidedAt {
+            let until = at.addingTimeInterval(WorkflowLimits.reviewUndoWindow)
+            undoUntil = until > Date() ? until : nil
+        } else { undoUntil = nil }
     }
 }
 

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
 	import { parseInviteCode } from '#lib/inviteLink.js';
 	import { auth } from '#lib/auth.svelte.js';
@@ -11,7 +10,7 @@
 	import AuthShell from '#lib/components/app/AuthShell.svelte';
 	import { Label } from '#lib/components/ui/label/index.js';
 
-	let token = $state(browser ? parseInviteCode(location.search, location.hash) : '');
+	let token = $state(typeof location !== 'undefined' ? parseInviteCode(location.search, location.hash) : '');
 	let fromLink = $state(false);
 	onMount(() => {
 		// The code came with the link: remove it from the address bar so it is not kept in history or shared by accident.

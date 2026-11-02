@@ -182,3 +182,6 @@ Persönliche Einstellungen (Favoriten, Anzeige) sind kontoweit privat und erweit
 Beispiele: `update_column {"id":"…","version":1,"name":"Review","color":"#ff0000"}`, `apply_column_template {"projectID":"…","source":"agent_workflow"}`, `reorder_tasks {"projectID":"…","status":"open","taskIDs":["…","…"]}`, `set_project_favorite {"projectID":"…","favorite":true,"index":0}`, `update_project_prefs {"projectID":"…","revision":0,"view":"board"}`.
 
 Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflict`, `board_changed`, `columns_exist`, `invalid_arguments`, `invalid_version`, `invalid_index`, `invalid_color`, `invalid_isDone`, `invalid_source`, `invalid_status`, `invalid_taskIDs`, `invalid_favorite`, `invalid_view|sort|grouping|mode|showCompleted`, `revision_required`, `empty_project_prefs`, `invalid_project_prefs`. Handbuch und Version macht die Hauptsession; der Test `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die sieben Tools fehl.
+## Review-Undo (ADR 0027)
+
+Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.

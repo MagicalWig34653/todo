@@ -27,6 +27,26 @@
 				if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
 			}
 		</script>
+		<script>
+			// Version skew after a deploy (stale page or a mixed rollout answers 404 for old hashed chunks):
+			// drop service worker and shell caches and reload once. The guard prevents reload loops.
+			addEventListener('unhandledrejection', function (e) {
+				var msg = String((e.reason && e.reason.message) || e.reason || '');
+				if (!/Importing a module script failed|Failed to fetch dynamically imported module|error loading dynamically imported module/i.test(msg)) return;
+				try {
+					var last = Number(sessionStorage.getItem('todo.chunkReload') || 0);
+					if (Date.now() - last < 60000) return;
+					sessionStorage.setItem('todo.chunkReload', String(Date.now()));
+				} catch (err) {
+					return;
+				}
+				var done = function () { location.reload(); };
+				var work = [];
+				if (navigator.serviceWorker) work.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+				if (window.caches) work.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+				Promise.all(work).then(done, done);
+			});
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
