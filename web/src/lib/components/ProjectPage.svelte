@@ -16,6 +16,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import Dialog from './app/Dialog.svelte';
 	import MenuItem from './app/MenuItem.svelte';
 	import Popover from './app/Popover.svelte';
@@ -409,7 +410,7 @@
 		<CommandCenter projectID={project.id} />
 	{:else if display.view === 'board'}
 		{#if board}
-			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={openDetail} />
+			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={(task) => cardDetail.open({ type: 'task', id: task.id })} />
 		{/if}
 	{:else}
 		<TaskPanel {project} {tasks} {board} {display} {loaded} {reload} />

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { api, type FeedItem } from '#lib/api.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { de } from '#lib/i18n/de.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -150,7 +151,9 @@
 					<span data-testid="feed-label">{label(a)}</span>
 				</div>
 				<div class="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
-					{#if a.taskTitle}<span class="text-foreground/80" data-testid="feed-task">{a.taskTitle}</span>{/if}
+					{#if a.taskTitle && a.taskID}
+						<button type="button" class="text-foreground/80 text-left underline-offset-2 hover:underline [overflow-wrap:anywhere]" data-testid="feed-task" onclick={() => cardDetail.open({ type: 'task', id: a.taskID! })}>{a.taskTitle}</button>
+					{:else if a.taskTitle}<span class="text-foreground/80" data-testid="feed-task">{a.taskTitle}</span>{/if}
 					<button type="button" class="hover:text-foreground underline-offset-2 hover:underline" data-testid="feed-project" onclick={() => onopen?.(a.projectID)}>
 						{t('activity.inProject', { name: a.projectName })}
 					</button>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { api, type Criteria, type Label, type Project, type SavedFilter, type SearchHit, type TaskStatus } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -160,7 +161,7 @@
 		{#each hits as h (h.kind + h.id)}
 			<li class="bg-card flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm shadow-card" data-testid="search-hit">
 				<Badge variant={h.kind === 'task' ? 'accent' : 'default'}>{t(`search.hit.${h.kind}` as MessageKey)}</Badge>
-				<button class="min-w-0 flex-1 text-left font-medium hover:underline" onclick={() => (h.kind === 'task' && h.task ? openTaskRoute(h.project.id, h.task.id) : onopen(h.project.id))}>
+				<button class="min-w-0 flex-1 text-left font-medium hover:underline" onclick={() => (h.kind === 'task' && h.task ? cardDetail.open({ type: 'task', id: h.task.id }) : onopen(h.project.id))}>
 					{h.kind === 'task' ? h.task?.title : h.project.name}
 				</button>
 				{#if h.kind === 'task'}<span class="text-muted-foreground text-xs">{h.project.name}</span>{/if}

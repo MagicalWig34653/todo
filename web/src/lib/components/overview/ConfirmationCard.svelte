@@ -15,8 +15,10 @@
 		/** Set once the request was decided; the card then shows only the outcome. */
 		outcome?: ActionRequest | null;
 		ondecided: (item: ForYouConfirmation, result: ActionRequest) => void;
+		/** Opens the large detail window; the header becomes a button. Absent inside the window itself. */
+		onopen?: () => void;
 	}
-	let { item, outcome = null, ondecided }: Props = $props();
+	let { item, outcome = null, ondecided, onopen }: Props = $props();
 
 	let step = $state<'ask' | 'confirm'>('ask');
 	let typed = $state('');
@@ -47,12 +49,17 @@
 </script>
 
 <article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3 [overflow-wrap:anywhere]" data-testid="confirm-card" data-tool={item.tool} data-state={outcome?.state ?? 'pending'}>
-	<div class="flex min-w-0 flex-col gap-0.5">
+	{#snippet head()}
 		<span class="text-destructive text-xs font-semibold">{t(kindKey as MessageKey)}</span>
 		<span class="text-muted-foreground text-xs">{t('confirm.by', { agent: item.agentLabel || t('confirm.agentFallback') })}</span>
-		<span class="text-sm font-semibold" data-testid="confirm-summary">{item.summary}</span>
+		<span id="confirm-t-{item.id}" class="text-sm font-semibold" data-testid="confirm-summary">{item.summary}</span>
 		<span class="text-muted-foreground text-xs">{t('confirm.expires', { when: formatWhen(item.expiresAt) })}</span>
-	</div>
+	{/snippet}
+	{#if onopen}
+		<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left" aria-labelledby="confirm-t-{item.id}" onclick={onopen}>{@render head()}</button>
+	{:else}
+		<div class="flex w-full min-w-0 flex-col gap-0.5">{@render head()}</div>
+	{/if}
 
 	{#if outcome}
 		<p class={['text-sm', outcome.state === 'failed' ? 'text-destructive' : 'text-muted-foreground']} role="status" data-testid="confirm-outcome">{outcomeText(outcome)}</p>

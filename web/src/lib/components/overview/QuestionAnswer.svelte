@@ -17,9 +17,11 @@
 		askedBy?: string | null;
 		/** Where the question belongs (task and project), shown in aggregate lists. */
 		context?: string;
+		/** Button size of the options (the large card detail uses `default`). */
+		size?: 'sm' | 'default';
 		onanswered: () => void | Promise<void>;
 	}
-	let { id, prompt, options, blocking = false, askedBy, context, onanswered }: Props = $props();
+	let { id, prompt, options, blocking = false, askedBy, context, size = 'sm', onanswered }: Props = $props();
 
 	let text = $state('');
 	let busy = $state(false);
@@ -47,7 +49,7 @@
 		</div>
 	</div>
 	{#if options.length > 0}
-		<OptionButtons size="sm" items={options.map((o) => ({ key: o, label: o }))} onpick={send} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
+		<OptionButtons {size} items={options.map((o) => ({ key: o, label: o }))} onpick={send} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
 	{:else}
 		<form
 			class="flex flex-col gap-1.5"

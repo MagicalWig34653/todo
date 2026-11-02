@@ -1019,7 +1019,7 @@ test('command center: kanban, list, questions, reviews, updates, project scope, 
 	// ---- detail dialog ---------------------------------------------------------------------------------------------------
 	await page.getByTestId('cc-section-board').click();
 	await cardIn('running', 'Login-Seite bauen').getByTestId('oc-title').click();
-	const detail = page.getByTestId('cc-detail-dialog');
+	const detail = page.getByTestId('card-dialog');
 	await expect(detail.getByTestId('detail-notes')).toContainText('Grundgerüst steht');
 	await expect(detail.getByRole('img')).toBeVisible();
 	await page.keyboard.press('Escape');

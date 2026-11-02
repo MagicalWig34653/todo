@@ -1,6 +1,7 @@
 /** Pure URL <-> view mapping for the PWA (stable, shareable paths). */
 import { normalizeHelpArea, helpPath } from './helpNav.js';
 import { normalizeArea, settingsPath } from './settingsNav.js';
+import { buildCardParam, parseCardParam, type CardRef } from './cardRef.js';
 
 export type RouteView =
 	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account' | 'help';
@@ -12,6 +13,10 @@ export interface Route {
 	projectID?: string;
 	sub?: ProjectSub;
 	taskID?: string;
+	/** `?card=<type>:<id>`: the large detail window opened over the view. */
+	card?: CardRef;
+	/** `?card=` was present but is not a valid reference. */
+	cardInvalid?: boolean;
 	labelID?: string;
 	filterID?: string;
 	/** `/settings/<slug>` (account) or `/help/<slug>` (help); holds the internal id. */
@@ -41,6 +46,13 @@ export function parseRoute(pathname: string, search = ''): Route {
 	const taskParam = q.get('task');
 	const taskID = taskParam && ID.test(taskParam) ? taskParam : undefined;
 	if (seg.includes('\0')) return { view: 'notfound' };
+	const cardParam = q.get('card');
+	const card = parseCardParam(cardParam);
+	const withCard = (r: Route): Route => (cardParam === null ? r : card ? { ...r, card } : { ...r, cardInvalid: true });
+	return withCard(parseSegments(seg, taskID));
+}
+
+function parseSegments(seg: string[], taskID: string | undefined): Route {
 	if (seg.length === 0) return { view: 'forYou' };
 	const [a, b, c] = seg;
 	if (seg.length === 1 && (SIMPLE[a] || LEGACY_SIMPLE[a])) return { view: SIMPLE[a] ?? LEGACY_SIMPLE[a] };
@@ -67,7 +79,8 @@ export function buildPath(r: Route): string {
 	else if (r.view === 'account') path = settingsPath(r.area);
 	else if (r.view === 'help') path = helpPath(r.area);
 	else path = PATH_OF[r.view as RouteView] ?? '/today';
-	return r.taskID ? `${path}?task=${encodeURIComponent(r.taskID)}` : path;
+	const params = [r.taskID ? `task=${encodeURIComponent(r.taskID)}` : '', r.card ? `card=${buildCardParam(r.card)}` : ''].filter(Boolean);
+	return params.length ? `${path}?${params.join('&')}` : path;
 }
 
 export const ROUTE_TITLES: Record<RouteView | 'notfound', string> = {

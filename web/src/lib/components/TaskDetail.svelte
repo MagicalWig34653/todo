@@ -14,7 +14,8 @@
 	import { workspace } from '#lib/workspace.svelte.js';
 
 	/** `standalone`: the surrounding row has no status control (planning lists), so the detail offers complete/reopen and a project link. */
-	let { task, onplanned, standalone = false }: { task: Task; onplanned?: () => unknown; standalone?: boolean } = $props();
+	/** `comments = false`: the surrounding window shows the conversation itself (card detail). */
+	let { task, onplanned, standalone = false, comments = true }: { task: Task; onplanned?: () => unknown; standalone?: boolean; comments?: boolean } = $props();
 	let statusBusy = $state(false);
 	const project = $derived(workspace.projects.find((p) => p.id === task.projectID));
 	async function toggleStatus() {
@@ -69,10 +70,12 @@
 		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.attachments')}</h3>
 		<TaskAttachments taskID={task.id} onchanged={bump} />
 	</section>
+	{#if comments}
 	<section class="flex flex-col gap-2">
 		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.comments')}</h3>
 		<TaskComments taskID={task.id} onchanged={bump} />
 	</section>
+	{/if}
 	{#if management}
 	<section class="flex flex-col gap-2">
 		<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('task.section.activity')}</h3>

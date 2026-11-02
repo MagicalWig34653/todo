@@ -13,10 +13,12 @@
 		children,
 		class: className,
 		testid,
-		sheet = false
-	}: { open?: boolean; title: string; children: Snippet; class?: string; testid?: string; sheet?: boolean } = $props();
+		sheet = false,
+		large = false
+	}: { open?: boolean; title: string; children: Snippet; class?: string; testid?: string; sheet?: boolean; large?: boolean } = $props();
 
 	let box = $state<HTMLDivElement | null>(null);
+	let overlay = $state<HTMLDivElement | null>(null);
 	let returnTo: HTMLElement | null = null;
 
 	const focusables = () =>
@@ -27,6 +29,17 @@
 	$effect(() => {
 		if (!open || !box) return;
 		returnTo = document.activeElement as HTMLElement | null;
+		// Large window (card detail): rendered at the end of <body>, everything else becomes inert so neither Tab nor a
+		// screen reader reaches the page behind the blurred backdrop. Moving and inerting happen before the focus moves in.
+		const inerted: HTMLElement[] = [];
+		if (large && overlay) {
+			document.body.appendChild(overlay);
+			for (const child of Array.from(document.body.children)) {
+				if (child === overlay || !(child instanceof HTMLElement) || child.hasAttribute('inert') || ['SCRIPT', 'STYLE', 'LINK'].includes(child.tagName)) continue;
+				child.setAttribute('inert', '');
+				inerted.push(child);
+			}
+		}
 		(box.querySelector<HTMLElement>('[data-autofocus]') ?? focusables()[0] ?? box).focus();
 		untrack(() => notice.dialogs++);
 		const esc = (e: KeyboardEvent) => {
@@ -35,6 +48,7 @@
 		document.addEventListener('keydown', esc);
 		return () => {
 			document.removeEventListener('keydown', esc);
+			inerted.forEach((c) => c.removeAttribute('inert'));
 			untrack(() => notice.dialogs--);
 			returnTo?.focus?.();
 		};
@@ -54,10 +68,14 @@
 
 {#if open}
 	<div
+		bind:this={overlay}
 		class={[
-			'fixed inset-0 z-[60] flex justify-center overflow-y-auto bg-black/50 backdrop-blur-[2px]',
-			sheet ? 'items-end p-0 sm:items-start sm:p-4 sm:pt-[12vh]' : 'items-start p-4 pt-[12vh]'
+			'fixed inset-0 z-[60] flex justify-center',
+			large
+				? 'items-stretch bg-black/40 p-0 backdrop-blur-md sm:items-center sm:p-6 dark:bg-black/65'
+				: ['overflow-y-auto bg-black/50 backdrop-blur-[2px]', sheet ? 'items-end p-0 sm:items-start sm:p-4 sm:pt-[12vh]' : 'items-start p-4 pt-[12vh]']
 		]}
+		data-large={large || undefined}
 		role="presentation"
 	>
 		<button type="button" class="absolute inset-0 cursor-default" tabindex="-1" aria-label={t('common.close')} onclick={() => (open = false)}></button>
@@ -68,19 +86,23 @@
 			aria-label={title}
 			tabindex="-1"
 			data-testid={testid}
-			class={cn('bg-popover text-popover-foreground shadow-pop relative w-full max-w-lg rounded-2xl border p-4 sm:p-5', sheet && 'rounded-b-none pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-b-2xl', className)}
+			class={cn(
+				'bg-popover text-popover-foreground shadow-pop relative w-full max-w-lg rounded-2xl border p-4 sm:p-5',
+				large && 'card-window flex max-w-[880px] min-w-0 flex-col overflow-hidden rounded-none border-0 p-0 sm:max-h-[90vh] sm:rounded-2xl sm:border',
+				sheet && 'rounded-b-none pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-b-2xl', className)
+			}
 			{onkeydown}
 		>
-			<div class="mb-3 flex items-center justify-between gap-2">
-				<h2 class="text-base font-semibold">{title}</h2>
-				<button type="button" class="text-muted-foreground hover:bg-muted inline-flex size-8 items-center justify-center rounded-lg" aria-label={t('common.close')} onclick={() => (open = false)}>
+			<div class={['flex items-center justify-between gap-2', large ? 'shrink-0 border-b px-4 py-2.5 sm:px-6' : 'mb-3']}>
+				<h2 class={['min-w-0 font-semibold [overflow-wrap:anywhere]', large ? 'text-base sm:text-lg' : 'text-base']}>{title}</h2>
+				<button type="button" class="text-muted-foreground hover:bg-muted hit-area relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg" aria-label={t('common.close')} onclick={() => (open = false)}>
 					<X class="size-4" aria-hidden="true" />
 				</button>
 			</div>
 			{#if notice.text}
 				<div
 					role={notice.conflict ? 'status' : 'alert'}
-					class="border-warning/30 bg-warning-soft text-foreground mb-3 flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm"
+					class={['border-warning/30 bg-warning-soft text-foreground flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm', large ? 'mx-4 mt-3 sm:mx-6' : 'mb-3']}
 					data-testid="notice"
 				>
 					<span>
@@ -90,7 +112,11 @@
 					<Button variant="ghost" size="xs" onclick={() => notice.clear()}>{t('common.cancel')}</Button>
 				</div>
 			{/if}
-			{@render children()}
+			{#if large}
+				<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6" data-testid="card-scroll">{@render children()}</div>
+			{:else}
+				{@render children()}
+			{/if}
 		</div>
 	</div>
 {/if}

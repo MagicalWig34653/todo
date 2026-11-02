@@ -812,6 +812,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('DELETE', `/projects/${c.projectID}/comments/${c.id}`, { version: c.version }),
 		forYou: (params: { cursor?: string | null; limit?: number; projectID?: string; mode?: string } = {}) =>
 			request<ForYouPage>('GET', `/feed${query(params)}`),
+		actionRequest: (id: string) => request<ActionRequest>('GET', `/action-requests/${id}`),
 		confirmActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/confirm`),
 		rejectActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/reject`),
 		performAction: (method: string, path: string, body: unknown) => request<unknown>(method, path, body),
@@ -1003,6 +1004,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				'GET',
 				`/questions${query({ projectID: p.projectID, state: p.state ?? 'open', includeSubprojects: p.includeSubprojects === undefined ? undefined : String(p.includeSubprojects), limit: p.limit })}`
 			),
+		question: (id: string) => request<Question>('GET', `/questions/${id}`),
 		answerQuestion: (id: string, answer: string) => request<Question>('POST', `/questions/${id}/answer`, { answer }),
 		listReviews: (p: { projectID?: string; state?: Review['state'] | 'all'; limit?: number } = {}) =>
 			request<Review[]>('GET', `/reviews${query({ projectID: p.projectID, state: p.state ?? 'pending', limit: p.limit })}`),

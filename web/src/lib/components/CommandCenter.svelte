@@ -21,11 +21,10 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
-	import Dialog from './app/Dialog.svelte';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import EmptyState from './app/EmptyState.svelte';
 	import PageHeader from './app/PageHeader.svelte';
 	import AgentBriefPanel from './overview/AgentBriefPanel.svelte';
-	import CardDetail from './overview/CardDetail.svelte';
 	import OverviewCard from './overview/OverviewCard.svelte';
 	import QuestionAnswer from './overview/QuestionAnswer.svelte';
 	import SyncChip from './overview/SyncChip.svelte';
@@ -60,9 +59,6 @@
 	let questionFilter = $state(false);
 	let sort = $state<NonNullable<CommandCenterParams['sort']>>('attention');
 	let limit = $state(PAGE);
-	// Detail dialog.
-	let detail = $state<CommandCard | { id: string; title: string } | null>(null);
-	let detailOpen = $state(false);
 	let seq = 0;
 
 	const scope = $derived(projectID ? 'project' : 'account');
@@ -160,16 +156,13 @@
 		saveView(v);
 		limit = PAGE;
 	}
+	/** Every card opens the shared large detail window. */
 	function openCard(card: CommandCard) {
-		detail = card;
-		detailOpen = true;
+		cardDetail.open({ type: 'task', id: card.task.id });
 	}
-	function openTask(id: string, title: string) {
-		detail = { id, title };
-		detailOpen = true;
+	function openTask(id: string, _title: string) {
+		cardDetail.open({ type: 'task', id });
 	}
-	const detailTaskID = (d: NonNullable<typeof detail>) => ('task' in d ? d.task.id : d.id);
-	const detailTitle = (d: NonNullable<typeof detail>) => ('task' in d ? d.task.title : d.title);
 
 	const sections: { id: OverviewSection; key: MessageKey }[] = [
 		{ id: 'board', key: 'cc.section.board' },
@@ -430,7 +423,3 @@
 	{/if}
 	</div>
 </section>
-
-<Dialog bind:open={detailOpen} title={detail ? t('cc.detail.title', { title: detailTitle(detail) }) : t('cc.title')} class="max-w-2xl" testid="cc-detail-dialog">
-	{#if detail}<CardDetail taskID={detailTaskID(detail)} onchanged={refresh} />{/if}
-</Dialog>

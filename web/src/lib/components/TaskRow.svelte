@@ -7,6 +7,8 @@
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
+	import Maximize2 from '@lucide/svelte/icons/maximize-2';
 	import TaskChips from './TaskChips.svelte';
 	import TaskDetail from './TaskDetail.svelte';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -57,6 +59,7 @@
 				onclick={(e) => { e.preventDefault(); openProjectRoute(project.id); }}
 			><span style:color={workspace.colorOf(project.id)} aria-hidden="true">#</span>{project.name}</a>
 		{/if}
+		<Button size="sm" variant="ghost" data-testid="task-open-large" aria-label={t('card.openLarge', { title: task.title })} title={t('card.openLarge', { title: task.title })} onclick={() => cardDetail.open({ type: 'task', id: task.id })}><Maximize2 aria-hidden="true" /></Button>
 		<Button size="sm" variant="ghost" aria-expanded={open} onclick={ontoggle}>{t('task.details')}<ChevronDown class={['transition-transform', open && 'rotate-180']} aria-hidden="true" /></Button>
 	</div>
 	{#if open}<TaskDetail {task} standalone onplanned={onchanged} />{/if}

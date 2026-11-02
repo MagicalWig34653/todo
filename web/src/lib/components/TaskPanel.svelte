@@ -10,6 +10,8 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { parseQuickAdd } from '#lib/quickAdd.js';
 	import { createQuickTask } from '#lib/quickAddCreate.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
+	import Maximize2 from '@lucide/svelte/icons/maximize-2';
 	import TaskDetail from './TaskDetail.svelte';
 	import TaskChips from './TaskChips.svelte';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -158,6 +160,9 @@
 								onclick={() => (detailID = detailID === task.id ? null : task.id)}
 								>{t('task.details')}<ChevronDown class={['transition-transform', detailID === task.id && 'rotate-180']} aria-hidden="true" /></Button
 							>
+							<Button size="sm" variant="ghost" data-testid="task-open-large" aria-label={t('card.openLarge', { title: task.title })} title={t('card.openLarge', { title: task.title })} onclick={() => cardDetail.open({ type: 'task', id: task.id })}>
+								<Maximize2 aria-hidden="true" />
+							</Button>
 							<Button size="sm" variant="ghost" disabled={!canEdit} title={needEdit} onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>
 								<Pencil aria-hidden="true" />{t('tasks.edit')}
 							</Button>

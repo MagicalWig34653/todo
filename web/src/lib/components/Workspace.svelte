@@ -5,6 +5,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { liveRefresh } from '#lib/liveRefresh.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
 	import { buildPath, parseRoute, ROUTE_TITLES, type ProjectSub, type Route } from '#lib/routing.js';
 	import { ui } from '#lib/ui.svelte.js';
@@ -20,6 +21,7 @@
 	import AgentsView from './AgentsView.svelte';
 	import CommandCenter from './CommandCenter.svelte';
 	import ForYouView from './ForYouView.svelte';
+	import CardDetailDialog from './card/CardDetailDialog.svelte';
 	import ActivityView from './ActivityView.svelte';
 	import PlanningView from './PlanningView.svelte';
 	import SearchView from './SearchView.svelte';
@@ -71,6 +73,7 @@
 		routeSub = r.sub;
 		routeTask = r.taskID;
 		routeArea = r.area;
+		cardDetail.apply(r.card, r.cardInvalid);
 		if (r.view === 'search') {
 			searchInitial = { labelID: r.labelID, filterID: r.filterID };
 			searchKey++;
@@ -82,12 +85,14 @@
 		projectID: view === 'project' ? (selectedID ?? undefined) : undefined,
 		sub: view === 'project' ? routeSub : undefined,
 		taskID: routeTask,
+		card: cardDetail.ref ?? undefined,
 		area: view === 'account' || view === 'help' ? routeArea : undefined,
 		labelID: view === 'search' ? searchInitial.labelID : undefined,
 		filterID: view === 'search' ? searchInitial.filterID : undefined
 	});
 	/** push = new history entry (navigation); replace = state change within the same view. */
 	function syncUrl(push: boolean) {
+		if (push) cardDetail.leave();
 		const path = buildPath(currentRoute());
 		if (path === location.pathname + location.search) return;
 		if (push) history.pushState(null, '', path);
@@ -355,7 +360,7 @@
 			{:else}
 				<div class={['mx-auto', view === 'overview' ? 'max-w-none' : 'max-w-4xl']}>
 					{#if view === 'forYou'}
-						<ForYouView onopen={openTask} />
+						<ForYouView />
 					{:else if view === 'today' || view === 'upcoming' || view === 'upNext'}
 						<PlanningView mode={view} />
 					{:else if view === 'overview'}
@@ -408,6 +413,8 @@
 </div>
 
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
+
+<CardDetailDialog onopentask={openTask} onopenproject={openProject} />
 
 <Dialog bind:open={shortcutsOpen} title={t('help.keys.overlay')} testid="shortcuts-overlay">
 	<ShortcutList />
