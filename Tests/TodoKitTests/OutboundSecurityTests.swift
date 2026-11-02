@@ -40,30 +40,6 @@ final class OutboundSecurityTests: XCTestCase {
         XCTAssertThrowsError(try values.s3Config()) { XCTAssertEqual(($0 as? SettingsProblem)?.key, "attachments.s3Endpoint") }
     }
 
-    func testStoredPasswordBlocksHostChangeUntilReset() async throws {
-        let s = ServerSettingsTests()
-        let f = try await s.fixture(); defer { Task { await f.t.shutdown() } }
-        var r = try await s.put(f, "mail.smtpHost", "smtp.example.org")
-        XCTAssertEqual(r.status, .ok)
-        r = try await s.put(f, "mail.smtpUser", "u"); XCTAssertEqual(r.status, .ok)
-        r = try await s.put(f, "mail.smtpPassword", "pw-1"); XCTAssertEqual(r.status, .ok)
-        r = try await s.put(f, "mail.smtpHost", "evil.example.net", version: 1)
-        XCTAssertEqual(r.status, .unprocessableEntity)
-        XCTAssertEqual(r.body?["reason"] as? String, "setting_dependency")
-        let reset = try await f.t.json(.DELETE, "/v1/admin/settings/mail.smtpHost", token: f.admin.token)
-        XCTAssertEqual(reset.status, .unprocessableEntity)
-        // Same value is not a change.
-        r = try await s.put(f, "mail.smtpHost", "smtp.example.org", version: 1)
-        XCTAssertEqual(r.status, .ok)
-        // After removing the credentials the destination can change.
-        for key in ["mail.smtpPassword", "mail.smtpUser"] {
-            let d = try await f.t.json(.DELETE, "/v1/admin/settings/\(key)", token: f.admin.token)
-            XCTAssertEqual(d.status, .ok)
-        }
-        r = try await s.put(f, "mail.smtpHost", "other.example.org", version: 2)
-        XCTAssertEqual(r.status, .ok)
-    }
-
     // MARK: Finding 2 - target protection
 
     func testAddressClassification() {
@@ -148,5 +124,31 @@ final class OutboundSecurityTests: XCTestCase {
         XCTAssertEqual(stillIn.status, .ok, "a rejected logout must keep the session")
         let ok = try await logout(json: true, origin: origin)
         XCTAssertEqual(ok, .noContent)
+    }
+}
+
+// Lives on ServerSettingsTests (not a second instance): XCTestCase has no parameterless initializer on Linux.
+extension ServerSettingsTests {
+    func testStoredPasswordBlocksHostChangeUntilReset() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        var r = try await put(f, "mail.smtpHost", "smtp.example.org")
+        XCTAssertEqual(r.status, .ok)
+        r = try await put(f, "mail.smtpUser", "u"); XCTAssertEqual(r.status, .ok)
+        r = try await put(f, "mail.smtpPassword", "pw-1"); XCTAssertEqual(r.status, .ok)
+        r = try await put(f, "mail.smtpHost", "evil.example.net", version: 1)
+        XCTAssertEqual(r.status, .unprocessableEntity)
+        XCTAssertEqual(r.body?["reason"] as? String, "setting_dependency")
+        let reset = try await f.t.json(.DELETE, "/v1/admin/settings/mail.smtpHost", token: f.admin.token)
+        XCTAssertEqual(reset.status, .unprocessableEntity)
+        // Same value is not a change.
+        r = try await put(f, "mail.smtpHost", "smtp.example.org", version: 1)
+        XCTAssertEqual(r.status, .ok)
+        // After removing the credentials the destination can change.
+        for key in ["mail.smtpPassword", "mail.smtpUser"] {
+            let d = try await f.t.json(.DELETE, "/v1/admin/settings/\(key)", token: f.admin.token)
+            XCTAssertEqual(d.status, .ok)
+        }
+        r = try await put(f, "mail.smtpHost", "other.example.org", version: 2)
+        XCTAssertEqual(r.status, .ok)
     }
 }
