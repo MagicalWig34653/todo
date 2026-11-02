@@ -32,6 +32,24 @@ final class WebRootTests: XCTestCase {
 
     private let html: HTTPHeaders = ["Accept": "text/html,application/xhtml+xml"]
 
+    func testHTMLCannotBeFramedAndAllFilesAreNosniff() async throws {
+        let app = try await makeApp(webRoot: dir)
+        for path in ["/", "/inbox", "/consent", "/index.html"] {
+            try await app.test(.GET, path, headers: html) { res async in
+                XCTAssertEqual(res.status, .ok, path)
+                XCTAssertEqual(res.headers.first(name: "Content-Security-Policy"), "frame-ancestors 'none'", path)
+                XCTAssertEqual(res.headers.first(name: "X-Frame-Options"), "DENY", path)
+                XCTAssertEqual(res.headers.first(name: "X-Content-Type-Options"), "nosniff", path)
+                XCTAssertEqual(res.headers.first(name: "Referrer-Policy"), "same-origin", path)
+            }
+        }
+        try await app.test(.GET, "/manifest.webmanifest") { res async in
+            XCTAssertEqual(res.headers.first(name: "X-Content-Type-Options"), "nosniff")
+            XCTAssertNil(res.headers.first(name: "X-Frame-Options"))
+        }
+        try await app.asyncShutdown()
+    }
+
     func testIndexAtRootWithNoCache() async throws {
         let app = try await makeApp(webRoot: dir)
         try await app.test(.GET, "/") { res async in

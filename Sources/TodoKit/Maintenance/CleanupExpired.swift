@@ -13,13 +13,21 @@ struct ExpiredCleanup: Sendable {
     /// Age after which change-log tombstones, superseded upserts and stored mutation results are purged (ADR 0019).
     /// nil keeps the sync log untouched.
     var syncRetention: TimeInterval?
+    /// Dynamically registered OAuth clients without any grant are removed after this age (default 7 days, env OAUTH_UNUSED_CLIENT_DAYS; nil keeps them).
+    var unusedClientRetention: TimeInterval? = ExpiredCleanup.defaultClientRetention()
+
+    static func defaultClientRetention() -> TimeInterval? {
+        guard let raw = Environment.get("OAUTH_UNUSED_CLIENT_DAYS") else { return 7 * 86_400 }
+        guard let days = Int(raw), days > 0 else { return nil }
+        return TimeInterval(days) * 86_400
+    }
 
     struct Report: Sendable, Equatable {
         var sessions = 0, challenges = 0, invitations = 0, recoveries = 0
-        var rateLimits = 0, oauthSecrets = 0, pairings = 0
+        var rateLimits = 0, oauthSecrets = 0, pairings = 0, oauthClients = 0
         var syncTombstones = 0, syncSuperseded = 0, syncMutations = 0
         var syncTotal: Int { syncTombstones + syncSuperseded + syncMutations }
-        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + syncTotal }
+        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + syncTotal }
     }
 
     private func purge<M: Model>(_ type: M.Type, on db: any Database, _ condition: (QueryBuilder<M>) -> QueryBuilder<M>) async throws -> Int
@@ -47,11 +55,32 @@ struct ExpiredCleanup: Sendable {
         r.oauthSecrets = try await purge(OAuthSecret.self, on: db) { $0.filter(\.$expiresAt < cutoff) }
         r.pairings = try await purge(RunnerPairing.self, on: db) { $0.filter(\.$expiresAt < cutoff) }
         r.rateLimits = try await purgeRateLimits(on: db)
+        if let age = unusedClientRetention { r.oauthClients = try await purgeUnusedClients(on: db, olderThan: now.addingTimeInterval(-age)) }
         if let retention = syncRetention {
             let sync = try await SyncRetention(batchSize: batchSize).run(on: db, olderThan: now.addingTimeInterval(-retention))
             r.syncTombstones = sync.tombstones; r.syncSuperseded = sync.superseded; r.syncMutations = sync.mutations
         }
         return r
+    }
+
+    /// Clients nobody ever authorized (no grant row, revoked or not) and older than the cutoff.
+    private func purgeUnusedClients(on db: any Database, olderThan cutoff: Date) async throws -> Int {
+        var total = 0
+        var last: UUID?
+        while true {
+            var q = OAuthClient.query(on: db).filter(\.$createdAt < cutoff).sort(\.$id).limit(batchSize)
+            if let last { q = q.filter(\.$id > last) }
+            let ids = try await q.all().compactMap(\.id)
+            if ids.isEmpty { return total }
+            last = ids.last
+            let used = Set(try await OAuthGrant.query(on: db).filter(\.$clientID ~~ ids).all().map(\.clientID))
+            let unused = ids.filter { !used.contains($0) }
+            if !unused.isEmpty {
+                try await OAuthClient.query(on: db).filter(\.$id ~~ unused).delete()
+                total += unused.count
+            }
+            if ids.count < batchSize { return total }
+        }
     }
 
     /// Rate-limit windows are measured with the database clock; a row is useless once its window ended.
@@ -95,7 +124,7 @@ struct CleanupExpiredCommand: AsyncCommand {
         guard days >= 0 else { throw Abort(.badRequest, reason: "invalid_sync_retention") }
         if days > 0 { cleanup.syncRetention = TimeInterval(days) * 86_400 }
         let r = try await cleanup.run(on: context.application.db)
-        context.console.print("Removed \(r.total) expired rows (sessions \(r.sessions), challenges \(r.challenges), invitations \(r.invitations), recovery \(r.recoveries), rate limits \(r.rateLimits), OAuth tokens \(r.oauthSecrets), pairings \(r.pairings), sync log \(r.syncTotal)).")
+        context.console.print("Removed \(r.total) expired rows (sessions \(r.sessions), challenges \(r.challenges), invitations \(r.invitations), recovery \(r.recoveries), rate limits \(r.rateLimits), OAuth tokens \(r.oauthSecrets), pairings \(r.pairings), unused OAuth clients \(r.oauthClients), sync log \(r.syncTotal)).")
     }
 }
 
