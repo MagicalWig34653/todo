@@ -1060,6 +1060,10 @@ export const de = {
 	'confirm.fail.conflict': 'Wurde inzwischen geändert.',
 	'confirm.fail.revoked': 'Die Verbindung wurde widerrufen.',
 	'confirm.fail.other': 'Unbekannter Fehler.',
+	'scope.labels:read': 'Eigene private Labels lesen',
+	'scope.labels:write': 'Eigene private Labels verwalten und Aufgaben zuordnen',
+	'scope.filters:read': 'Eigene gespeicherte Filter lesen und ausführen',
+	'scope.filters:write': 'Eigene gespeicherte Filter verwalten',
 } as const;
 
 export type MessageKey = keyof typeof de;

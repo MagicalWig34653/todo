@@ -22,7 +22,8 @@ enum ConsentPage {
       el('p', 'Die Anwendung „' + d.client_name + '“ möchte im Namen deines Kontos auf Todolino zugreifen.');
       el('p', 'Rückkehr nach: ' + d.redirect_uri);
       el('h2', 'Berechtigungen');
-      const ul = el('ul'); d.scopes.forEach(s => el('li', s, ul));
+      const labels = {'labels:read': 'Eigene private Labels lesen', 'labels:write': 'Eigene private Labels verwalten und Aufgaben zuordnen', 'filters:read': 'Eigene gespeicherte Filter lesen und ausführen', 'filters:write': 'Eigene gespeicherte Filter verwalten'};
+      const ul = el('ul'); d.scopes.forEach(s => el('li', labels[s] || s, ul));
       el('h2', 'Projekte (nur ausdrücklich gewählte werden freigegeben)');
       if (d.scopes.includes('projects:write')) el('p', 'Projekte, die über diese Verbindung neu angelegt werden, sind automatisch freigegeben.');
       const boxes = [];

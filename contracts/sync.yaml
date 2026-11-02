@@ -234,6 +234,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         name: {type: string}
+        color: {type: string, nullable: true, description: Optionale Label-Farbe (additiv, MCP-Stapel 3).}
         version: {type: integer}
         taskIDs: {type: array, items: {type: string, format: uuid}, description: 'Vollständige Mitgliedschaft (lesbare Aufgaben). Beim Löschen/Entzug einer Aufgabe entfernt der Client die Verknüpfung selbst.'}
     SyncChanges:

@@ -14,6 +14,7 @@ struct ConfirmableAction: Sendable {
     let describe: @Sendable (_ args: [String: String], _ user: User, _ db: any Database) async throws -> Description
     /// Runs the action inside the caller's transaction (sharing graph locked); returns the result code.
     let execute: @Sendable (_ args: [String: String], _ user: User, _ db: any Database) async throws -> String
+    var requiredScope: String? = nil
 }
 
 /// MCP error: the call was turned into a request, nothing happened yet.
@@ -22,7 +23,7 @@ struct ConfirmationRequired: Error {
 }
 
 enum ConfirmableActions {
-    static let all: [String: ConfirmableAction] = Dictionary(uniqueKeysWithValues: [deleteProject, deleteTask, transferOwner].map { ($0.tool, $0) })
+    static let all: [String: ConfirmableAction] = Dictionary(uniqueKeysWithValues: ([deleteProject, deleteTask, transferOwner] + discoveryActions).map { ($0.tool, $0) })
 
     private static func id(_ args: [String: String], _ key: String) throws -> UUID {
         guard let raw = args[key], let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_\(key)") }
@@ -139,6 +140,7 @@ struct ActionRequestService: Sendable {
     /// MCP path: validates, then stores (or returns the already open) request. Nothing is executed.
     static func create(tool: String, args: [String: String], user: User, grant: OAuthGrant, label: String?, on db: any Database) async throws -> ActionRequest {
         guard let action = ConfirmableActions.all[tool] else { throw Abort(.badRequest, reason: "unknown_action") }
+        if let scope = action.requiredScope, !grant.scopes.contains(scope) { throw Abort(.forbidden, reason: "insufficient_scope") }
         let grantID = try grant.requireID(), userID = try user.requireID()
         return try await db.transaction { tx in
             // Serialises concurrent identical calls of one connection (same pattern as create_project).
@@ -213,6 +215,7 @@ struct ActionRequestService: Sendable {
                 guard let action = ConfirmableActions.all[r.tool] else { throw Failed(code: "unknown_action") }
                 // The connection's limits apply at execution time too.
                 guard let grantID = r.grantID, let grant = try await OAuthGrant.find(grantID, on: tx), !grant.revoked else { throw Failed(code: "connection_revoked") }
+                if let scope = action.requiredScope, !grant.scopes.contains(scope) { throw Failed(code: "insufficient_scope") }
                 do {
                     // describe re-checks the account's current rights; execute is the REST code path.
                     let description = try await action.describe(r.args, user, tx)
