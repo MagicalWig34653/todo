@@ -235,4 +235,12 @@ x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write',
   update_filter: {scope: 'filters:write', required: [filterID, version], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
   run_filter: {scope: 'filters:read', required: [filterID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
   delete_filter: {scope: 'filters:write', required: [filterID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
-x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write']
+  list_project_grants: {scope: 'sharing:read', required: [projectID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  get_project_visibility: {scope: 'sharing:read', required: [projectID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  set_project_grant: {scope: 'sharing:write', required: [projectID, principalType, principalID, role], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  revoke_project_grant: {scope: 'sharing:write', required: [projectID, grantID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  list_teams: {scope: 'teams:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  list_team_members: {scope: 'teams:read', required: [teamID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  create_team: {scope: 'teams:write', required: [name], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+  invite_team_member: {scope: 'teams:write', required: [teamID, userID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
+x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write', 'sharing:read', 'sharing:write', 'teams:read', 'teams:write']

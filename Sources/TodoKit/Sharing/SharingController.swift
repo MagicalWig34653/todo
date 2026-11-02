@@ -66,14 +66,7 @@ struct SharingController: RouteCollection {
     private func write<T: Sendable>(_ req: Request,
         _ operation: @escaping @Sendable (SharingAccess) async throws -> T
     ) async throws -> T {
-        let user = try await req.requireUser()
-        return try await req.db.transaction { db in
-            try await lockSharingGraph(on: db)
-            let before = try await SyncRecorder.visibility(on: db)
-            let result = try await operation(SharingAccess(user: user, db: db))
-            try await SyncRecorder.recordVisibilityChanges(from: before, on: db)
-            return result
-        }
+        try await SharingOperations.write(user: try await req.requireUser(), db: req.db, operation)
     }
 
     @Sendable func listTeams(_ req: Request) async throws -> [Team] {
@@ -85,15 +78,7 @@ struct SharingController: RouteCollection {
 
     @Sendable func createTeam(_ req: Request) async throws -> Team {
         let input = try req.content.decode(TeamInput.self)
-        let name = input.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name.count <= 200 else { throw Abort(.badRequest, reason: "invalid_name") }
-        return try await write(req) { access in
-            let team = Team(name: name, founderID: try access.user.requireID())
-            try await team.save(on: access.db)
-            try await TeamMembership(teamID: team.requireID(), userID: access.user.requireID(),
-                isAdmin: true, accepted: true).save(on: access.db)
-            return team
-        }
+        return try await write(req) { try await SharingOperations.createTeam($0, name: input.name) }
     }
 
     @Sendable func listMembers(_ req: Request) async throws -> [TeamMembershipDTO] {
@@ -118,18 +103,7 @@ struct SharingController: RouteCollection {
     @Sendable func inviteMember(_ req: Request) async throws -> TeamMembership {
         let input = try req.content.decode(MemberInput.self)
         let tid = try id(req, "teamID")
-        return try await write(req) { access in
-            let team = try await access.requireTeam(tid, admin: true)
-            guard let invitee = try await User.find(input.userID, on: access.db) else { throw Abort(.notFound) }
-            if invitee.isLocked { throw Abort(.conflict, reason: "account_disabled") }
-            if input.userID == team.founderID && !input.isAdmin { throw Abort(.conflict, reason: "team_founder_required") }
-            let member = try await TeamMembership.query(on: access.db).filter(\.$teamID == tid)
-                .filter(\.$userID == input.userID).first()
-                ?? TeamMembership(teamID: tid, userID: input.userID)
-            member.isAdmin = input.isAdmin
-            try await member.save(on: access.db)
-            return member
-        }
+        return try await write(req) { try await SharingOperations.inviteMember($0, teamID: tid, userID: input.userID, isAdmin: input.isAdmin) }
     }
 
     @Sendable func acceptMembership(_ req: Request) async throws -> HTTPStatus {
@@ -176,24 +150,15 @@ struct SharingController: RouteCollection {
 
     @Sendable func putGrant(_ req: Request) async throws -> GrantDTO {
         let input = try req.content.decode(GrantInput.self), pid = try id(req)
-        return try await write(req) { access in
-            _ = try await ProjectAccess(user: access.user, db: access.db).project(pid, role: .manage)
-            try await access.validatePrincipal(type: input.principalType, id: input.principalID)
-            let grant = try await ProjectGrant.query(on: access.db).filter(\.$projectID == pid)
-                .filter(\.$principalType == input.principalType).filter(\.$principalID == input.principalID).first()
-                ?? ProjectGrant(projectID: pid, principalType: input.principalType, principalID: input.principalID, role: input.role)
-            grant.role = input.role
-            try await grant.save(on: access.db)
-            return try await GrantDTO(grant, on: access.db)
+        return try await write(req) {
+            try await SharingOperations.putGrant($0, projectID: pid, principalType: input.principalType, principalID: input.principalID, role: input.role)
         }
     }
 
     @Sendable func deleteGrant(_ req: Request) async throws -> HTTPStatus {
         let pid = try id(req), gid = try id(req, "grantID")
         return try await write(req) { access in
-            _ = try await ProjectAccess(user: access.user, db: access.db).project(pid, role: .manage)
-            guard let grant = try await ProjectGrant.find(gid, on: access.db), grant.projectID == pid else { throw Abort(.notFound) }
-            try await grant.delete(on: access.db)
+            try await SharingOperations.deleteGrant(access, projectID: pid, grantID: gid)
             return .noContent
         }
     }

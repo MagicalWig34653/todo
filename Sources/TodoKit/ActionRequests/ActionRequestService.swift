@@ -23,7 +23,7 @@ struct ConfirmationRequired: Error {
 }
 
 enum ConfirmableActions {
-    static let all: [String: ConfirmableAction] = Dictionary(uniqueKeysWithValues: ([deleteProject, deleteTask, transferOwner, deleteColumn, deleteCriterion, deleteMilestone] + discoveryActions).map { ($0.tool, $0) })
+    static let all: [String: ConfirmableAction] = Dictionary(uniqueKeysWithValues: ([deleteProject, deleteTask, transferOwner, deleteColumn, deleteCriterion, deleteMilestone] + discoveryActions + sharingActions).map { ($0.tool, $0) })
 
     private static func id(_ args: [String: String], _ key: String) throws -> UUID {
         guard let raw = args[key], let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_\(key)") }

@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 2.11.2026: MCP Stapel 5 Teilen und Teams (Agent claude-code@mcp-s5)
+
+- Neu: 8 Tools (`list_project_grants`, `get_project_visibility`, `set_project_grant`, `revoke_project_grant`, `list_teams`, `list_team_members`, `create_team`, `invite_team_member`) in `MCPSharingTools.swift`, neue Scopes `sharing:*`/`teams:*` (Consent, de.ts, Vertrag). `SharingController` nutzt jetzt `SharingOperations` (gleicher Fachpfad für REST/MCP).
+- Entzug, Fremdfreigaben, Rolle manage, Unterprojekte außerhalb des Grants und Admin-Einladungen laufen über Bestätigungsanfragen (neue Aktionen `set_project_grant`, `revoke_project_grant`, `invite_team_member`). Eigentümerwechsel bleibt `transfer_project_owner`.
+- Tests: `MCPSharingToolsTests` 10/10; Details in docs/MCP-PARITAET.md (Stapel 5).
+- Offen: Handbuch und Version (Hauptsession); Doku-Test schlägt bis dahin für die neuen Tools fehl.
+
 ## Checkpoint 2.11.2026 (abends): Chat je Karte (Agent chat)
 
 - Board-Aufgabe `598FA538-9FE6-4379-A33B-38D5A942FA0D` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push.

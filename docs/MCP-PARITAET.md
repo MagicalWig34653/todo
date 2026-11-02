@@ -116,3 +116,26 @@ Elf Tools, alle in `MCPDiscoveryTools.swift`. Fachpfad: `DiscoveryService`, geme
 Beispiele: `search_tasks {"query":"Anmeldung","limit":20}`, `create_label {"name":"Wichtig","color":"#ff0000"}`, `create_filter {"name":"Offen","query":{"status":"open"}}`, `set_task_labels {"taskID":"<UUID>","labelIDs":[]}`. Namen getrimmt 1–200 Zeichen, Farbe `#RRGGBB`, Suchtext höchstens 500 Zeichen, Limit 1–100 (Standard 50). Suchergebnisse werden vor dem Limit auf Grant-Projekte begrenzt; Label-Verknüpfungen erweitern die Reichweite nicht. Gespeicherte Filter mit explizitem Projekt außerhalb des Grants liefern `not_found`.
 
 Fehler: `insufficient_scope`, `not_found` (auch fremde Labels/Filter und entzogene Leserechte), `version_conflict`, `invalid_arguments`, `invalid_name`, `invalid_color`, `invalid_query`, `invalid_limit`, `invalid_version`; sonst REST-Validierungsfehler als Tool-Fehler. C-Tools liefern `confirmation_required` mit `actionRequestID`, führen noch nichts aus und prüfen Eigentum/Version erneut bei Bestätigung. Optionales Label-`color` ist additiv in REST und Sync, Migration `AddDiscoveryLabelColor` vor Serve ausführen. Die PWA zeigt für neue Aktionsarten den vorhandenen generischen Bestätigungstext und die serverseitige Zusammenfassung. Kein Toolname kollidiert; Handbuch-/Plugin-Update macht die Hauptsession.
+
+## Umgesetzt: Stapel 5 (Teilen und Teams)
+
+Stand 2.11.2026, Code `Sources/TodoKit/MCP/MCPSharingTools.swift`, Tests `MCPSharingToolsTests`. Gemeinsamer Fachpfad `SharingOperations` (auch von `SharingController` genutzt): Rechteprüfung, Principal-Validierung, Sperre des Rechte-Graphen und Sync-Einträge der Sichtbarkeit wie bei REST. Alle Tools prüfen Scope, Projektliste der Verbindung und die aktuelle Rolle; nicht erreichbar = `not_found`, fehlende Rolle = `Forbidden`.
+
+Neue Scopes (bestehende Verbindungen bekommen sie nicht automatisch, Zustimmungsseite und `scope.*` in de.ts ergänzt): `sharing:read`, `sharing:write`, `teams:read`, `teams:write`.
+
+| Tool | Scope | Klasse | Parameter / Wirkung |
+| --- | --- | --- | --- |
+| `list_project_grants` | sharing:read | A | `projectID`; Freigaben mit Namen, nur mit Rolle manage |
+| `get_project_visibility` | sharing:read | A | `projectID`, optional `userID` (dann manage nötig); wirksame Rolle, Eigentümer, Vererbung |
+| `set_project_grant` | sharing:write | B / C | `projectID`, `principalType` person\|team, `principalID`, `role` read\|comment\|edit\|manage; direkt nur für eigene Teams und Bekannte (Eigentümer, vorhandene Freigabe-Empfänger, Mitglieder eigener Teams) mit Rolle bis edit und wenn alle Unterprojekte im Grant liegen, sonst Bestätigungsanfrage |
+| `revoke_project_grant` | sharing:write | C | `projectID`, `grantID`, optional `version` (Projekt); immer Bestätigungsanfrage |
+| `list_teams` | teams:read | A | eigene Teams mit `isAdmin`, `founderID` |
+| `list_team_members` | teams:read | A | `teamID`; Mitglieder mit Name, `isAdmin`, `accepted` |
+| `create_team` | teams:write | A | `name`; Gründer und Admin, gewährt keinen Zugriff |
+| `invite_team_member` | teams:write | B / C | `teamID`, `userID`, `isAdmin`; Einladung direkt (Person muss annehmen), `isAdmin:true` als Bestätigungsanfrage |
+
+- Eigentümerwechsel bleibt `transfer_project_owner` (Stapel 1, Klasse C, Scope projects:write); kein zweites Tool.
+- Die Verbindung selbst wächst nie: `grant.projects` und Scopes bleiben unverändert. Weil eine Freigabe an Unterprojekte vererbt wird, führt ein Unterprojekt außerhalb des Grants zur Bestätigungsanfrage. Bestätigung führt den REST-Pfad mit den aktuellen Rechten des Kontos aus (`describe` prüft erneut), Ergebniscodes `grant_set`, `grant_revoked`, `invited`.
+- Beispiele: `set_project_grant {"projectID":"…","principalType":"team","principalID":"…","role":"edit"}`, `revoke_project_grant {"projectID":"…","grantID":"…"}`, `invite_team_member {"teamID":"…","userID":"…"}`.
+- Fehlercodes: `insufficient_scope`, `not_found`, `Forbidden`, `invalid_role`, `invalid_principal`, `invalid_name`, `invalid_version`, `invalid_projectID`, `account_disabled`, `team_founder_required`, `confirmation_required`, `version_conflict` (bei Bestätigung).
+- Offen: Handbuch (`docs/agent-manual.md`, `AgentManualContent.swift`) und Version werden von der Hauptsession einmal nachgezogen; der Test `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die acht Tools fehl.
