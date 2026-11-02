@@ -126,13 +126,49 @@ struct PushDelivery: Sendable {
         let service = WorkflowService(user: user, db: db)
         guard let q = try? await service.questions(projectID: nil, taskID: nil, state: "open", limit: 100),
               let r = try? await service.reviews(projectID: nil, state: "pending", limit: 100) else { return nil }
-        return q.count + r.count
+        let c = (try? await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total) ?? 0
+        return q.count + r.count + c
+    }
+
+    /// Fixed text, no content (ADR 0026): the request itself is read in the app after sign-in.
+    private func deliverConfirmation(_ row: PushOutbox, user: User, prefs: PushPrefsDTO) async throws -> Result {
+        guard let data = row.payload.data(using: .utf8), let event = try? JSONDecoder().decode(PushConfirmationEvent.self, from: data) else {
+            return Result(state: "failed", error: "invalid_payload")
+        }
+        guard let request = try await ActionRequest.find(event.subjectID, on: db), request.userID == row.userID,
+              request.state == "pending", request.expiresAt > Date() else { return Result(state: "skipped", error: "no_longer_relevant") }
+        let devices = try await PushDevice.query(on: db).filter(\.$userID == row.userID).filter(\.$revokedAt == nil).sort(\.$id).all()
+        guard !devices.isEmpty else { return Result(state: "skipped", error: "no_device") }
+        let badge = prefs.badge ? await badge(for: user) : nil
+        var result = Result(state: "sent")
+        var retry: String?, permanent: String?
+        for device in devices {
+            let de = PushContent.isGerman(device.locale)
+            let message = PushMessage(title: de ? "Bestätigung nötig" : "Confirmation needed",
+                body: de ? "Ein Agent wartet auf deine Bestätigung." : "An agent is waiting for your confirmation.",
+                kind: "action_request", taskID: nil, projectID: nil, subjectID: event.subjectID, badge: badge, threadID: nil,
+                category: "TODO_CONFIRMATION", priority: 10, ttl: 24 * 3600)
+            let outcome = await sender.send(to: device, payload: try message.payload(), priority: message.priority, ttl: message.ttl, collapseKey: row.dedupeKey)
+            switch outcome {
+            case .delivered: result.delivered += 1
+            case .revoke: device.revokedAt = Date(); try await device.save(on: db); result.revoked += 1
+            case .retry(let why): retry = why
+            case .permanent(let why): permanent = why
+            }
+        }
+        if let retry, row.attempts + 1 < Self.maxAttempts {
+            return Result(state: "pending", error: retry, retryAfter: Self.backoff(attempt: row.attempts + 1), revoked: result.revoked, delivered: result.delivered)
+        }
+        if let why = retry ?? permanent, result.delivered == 0 { result.state = "failed"; result.error = why }
+        else if result.delivered == 0 { result.state = "skipped"; result.error = "all_devices_revoked" }
+        return result
     }
 
     func deliver(_ row: PushOutbox) async throws -> Result {
         guard let user = try await User.find(row.userID, on: db) else { return Result(state: "skipped", error: "account_gone") }
         let prefs = try await PushService.prefs(of: row.userID, on: db)
         guard prefs.categories[row.category] == true else { return Result(state: "skipped", error: "category_disabled") }
+        if row.category == PushCategory.confirmations.rawValue { return try await deliverConfirmation(row, user: user, prefs: prefs) }
         guard let data = row.payload.data(using: .utf8), let event = try? JSONDecoder().decode(PushEvent.self, from: data) else {
             return Result(state: "failed", error: "invalid_payload")
         }

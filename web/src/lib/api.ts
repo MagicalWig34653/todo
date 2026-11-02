@@ -1,5 +1,5 @@
 import type { AuthenticationPayload, CreationOptionsJSON, RegistrationPayload, RequestOptionsJSON } from './webauthn.js';
-import type { ForYouPage } from './forYou.js';
+import type { ActionRequest, ForYouPage } from './forYou.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -527,6 +527,8 @@ export interface CommandSummary {
 	activeAgents: number;
 	/** Projects whose repository sync is stale (ADR 0018); absent on older servers. */
 	staleProjects?: number;
+	/** Pending confirmation requests of agents (backend ADR 0026); absent on older servers. */
+	pendingConfirmations?: number;
 }
 /** contracts/project-sync.yaml */
 export type SyncState = 'fresh' | 'stale' | 'never';
@@ -810,6 +812,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('DELETE', `/projects/${c.projectID}/comments/${c.id}`, { version: c.version }),
 		forYou: (params: { cursor?: string | null; limit?: number; projectID?: string; mode?: string } = {}) =>
 			request<ForYouPage>('GET', `/feed${query(params)}`),
+		confirmActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/confirm`),
+		rejectActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/reject`),
 		performAction: (method: string, path: string, body: unknown) => request<unknown>(method, path, body),
 		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<FeedPage>('GET', `/activity${query({ projectID: params.projectID, before: params.before, limit: params.limit })}`),

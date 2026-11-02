@@ -1,4 +1,4 @@
-<!-- manual-version: 1.3.0 -->
+<!-- manual-version: 1.4.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -140,6 +140,16 @@ With the Claude Code plugin, hooks support this: the SessionStart text repeats t
 - [ ] Decisions the person must take are `ask_question`s on the task, not chat messages only.
 - [ ] End of session: statuses current, `record_sync` called.
 
+## Large actions need confirmation
+
+Irreversible or far-reaching actions (class C) never run directly: `delete_project {projectID, version?}`, `delete_task {taskID, version?}` and `transfer_project_owner {projectID, ownerType, ownerID, version}`. The call stores a confirmation request and answers with an error `confirmation_required` and an `actionRequestID` (JSON: `{error, actionRequestID, state: "pending", message}`). The user sees the request in Todolino ("Für dich" > "Braucht dich", with a summary such as "Projekt X mit 14 Aufgaben und 3 Unterprojekten löschen") and confirms or rejects it. Only after the confirmation the server runs the action, with the user's current rights and the limits of your connection (rights are checked again then).
+
+- Do NOT call the tool again; the same call while the request is open returns the same `actionRequestID`. Requests expire after 7 days.
+- Wait for the result with `wait_for_events` (hint `kind: "action_request"` with `actionRequestID`, no content) and read it with `get_action_request {id}`: `state` is `pending`, `rejected`, `expired`, `executed` or `failed`; `result` is `{ok, code}` (`deleted`, `owner_changed`, or the reason such as `forbidden`, `not_found`, `version_conflict`, `connection_revoked`).
+- `list_action_requests {state?}` lists the requests of your connection.
+- Delete a project only when the user clearly asked for it. Post a progress note or ask a question explaining why before you request it. All sub-projects must be in your grant, otherwise the call fails with `not_found`.
+- After `rejected` do not ask again unless the user tells you to.
+
 ## Tool reference
 
 All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID strings. Scopes are OAuth scopes of your connection; `tools/list` shows only the tools you may call. Errors are returned as tool results with `isError: true` and a short reason string (see "Errors and retries").
@@ -164,7 +174,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `ask_question` | tasks:write | Ask a structured, optionally blocking question. |
 | `list_open_questions` | tasks:read | Questions across projects, one project or one task. |
 | `get_question` | tasks:read | One question with its answer. |
-| `wait_for_events` | tasks:read | Wait up to 25 s for board changes; returns hints only (no content). Use a few rounds after a blocking question, then `get_question`. |
+| `wait_for_events` | tasks:read | Wait up to 25 s for board changes; returns hints only (no content). Use a few rounds after a blocking question or a confirmation request, then `get_question` / `get_action_request`. |
 | `answer_question` | tasks:write | Answer a question on behalf of the user (not your own). |
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
 | `list_pending_reviews` | tasks:read | Pending reviews. |
@@ -186,6 +196,11 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `find_project_by_repository` | projects:read | Find the project bound to a repository. |
 | `create_project` | projects:write | Create a project (optionally nested, optionally bound to a repository). |
 | `update_project` | projects:write | Change name, description, colour of a project (needs `version`). |
+| `delete_project` | projects:write | Request deletion of a project (needs the user's confirmation; answers `confirmation_required`). |
+| `delete_task` | tasks:write | Request deletion of a task (needs confirmation). |
+| `transfer_project_owner` | projects:write | Request an ownership transfer (needs confirmation). |
+| `list_action_requests` | (none) | Confirmation requests of this connection. |
+| `get_action_request` | (none) | State and result of one confirmation request. |
 | `bind_repository` | tasks:write | Bind a project to a repository / set the staleness threshold. |
 | `record_sync` | tasks:write | Record that the board was reconciled with the repository now. |
 | `get_sync_status` | projects:read | Sync state of one project (fresh, stale, never). |
@@ -204,6 +219,7 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 - `repository_already_bound`: another project of the same owner already has this repository; use `find_project_by_repository`.
 - `not_bound`: `record_sync` needs a repository binding; call `bind_repository`.
 - `insufficient_scope`: your connection lacks the OAuth scope. Tell the user which scope the tool needs.
+- `confirmation_required`: not a failure; the action waits for the user (see "Large actions need confirmation"). Do not repeat the call.
 - `not_found`: the object does not exist or is outside your grant (both look the same).
 - `forbidden`: the user's current role does not allow it (reading needs read, writing needs edit, brief editing needs manage).
 - `version_conflict`: someone changed the object; re-read it and apply your change again.

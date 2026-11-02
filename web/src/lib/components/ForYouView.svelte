@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { api, ApiError } from '#lib/api.js';
-	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ForYouAction, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
+	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ActionRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { startLiveRefresh, sameList } from '#lib/liveRefresh.js';
@@ -12,6 +12,7 @@
 	import PageHeader from './app/PageHeader.svelte';
 	import EmptyState from './app/EmptyState.svelte';
 	import OptionButtons from './overview/OptionButtons.svelte';
+	import ConfirmationCard from './overview/ConfirmationCard.svelte';
 	import Dialog from './app/Dialog.svelte';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 
@@ -19,6 +20,13 @@
 
 	let needs = $state<ForYouNeed[]>([]);
 	let needsTotal = $state(0);
+	let confirmations = $state<ForYouConfirmation[]>([]);
+	/** Requests decided on this page stay visible with their outcome until the page is left. */
+	let decided = $state<Record<string, { item: ForYouConfirmation; result: ActionRequest }>>({});
+	const confirmationCards = $derived([
+		...confirmations.filter((c) => !decided[c.id]).map((item) => ({ item, result: null as ActionRequest | null })),
+		...Object.values(decided).map((d) => ({ item: d.item, result: d.result as ActionRequest | null }))
+	]);
 	let posts = $state<ForYouPost[]>([]);
 	let next = $state<string | null>(null);
 	let loaded = $state(false);
@@ -34,6 +42,7 @@
 	function adopt(page: ForYouPage) {
 		if (!sameList(needs, page.needsYou)) needs = page.needsYou;
 		needsTotal = page.needsYouTotal;
+		if (!sameList(confirmations, page.confirmations ?? [])) confirmations = page.confirmations ?? [];
 		const merged = mergeFirstPage(posts, page.posts);
 		if (!sameList(posts, merged.posts)) posts = merged.posts;
 		if (!merged.keepCursor) next = page.nextCursor ?? null;
@@ -112,6 +121,12 @@
 		if (action.requiresInput && action.inputField === 'note' && noteFor !== item.id) noteFor = item.id;
 		else void run(item, action);
 	}
+	function onDecided(item: ForYouConfirmation, result: ActionRequest) {
+		decided[item.id] = { item, result };
+		confirmations = confirmations.filter((c) => c.id !== item.id);
+		void attempt(load);
+		void attempt(() => workspace.refreshLive());
+	}
 	function actor(p: ForYouPost): string {
 		return p.actor.name ?? (p.actor.type === 'Person' ? '' : t('forYou.agent'));
 	}
@@ -123,15 +138,18 @@
 
 	{#if unsupported}
 		<EmptyState title={t('forYou.unsupported')} icon={Sparkles} />
-	{:else if loaded && needs.length === 0 && posts.length === 0}
+	{:else if loaded && needs.length === 0 && posts.length === 0 && confirmationCards.length === 0}
 		<EmptyState title={t('forYou.empty')} icon={Sparkles}><p>{t('forYou.emptyHint')}</p></EmptyState>
 	{:else if loaded}
-		{#if needs.length > 0}
+		{#if needs.length > 0 || confirmationCards.length > 0}
 			<div class="flex flex-col gap-2" data-testid="needs-you">
 				<h3 class="text-muted-foreground flex items-baseline gap-2 text-xs font-semibold tracking-wide uppercase">
 					{t('forYou.needsYou')}
 					{#if needsTotal > needs.length}<span class="font-normal normal-case">{t('forYou.needsYouMore', { count: needsTotal - needs.length })}</span>{/if}
 				</h3>
+				{#each confirmationCards as c (c.item.id)}
+					<ConfirmationCard item={c.item} outcome={c.result} ondecided={onDecided} />
+				{/each}
 				{#each needs as item (item.id)}
 					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
 						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => onopen?.(item.projectID, item.taskID)}>

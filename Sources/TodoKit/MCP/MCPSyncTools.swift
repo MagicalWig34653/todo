@@ -152,7 +152,7 @@ extension MCPController {
             guard let version = try intArgument(a["version"], reason: "invalid_version") else { throw Abort(.badRequest, reason: "invalid_version") }
             let service = workflowService(user: user, grant: grant, db: db, settings: settings)
             return try .encoded(try await service.putBrief(uuid(a["projectID"]), AgentBriefRequest(text: requiredString(a, "text"), version: version)))
-        default: throw Abort(.badRequest)
+        default: return try await callActions(name, a, user: user, grant: grant, db: db)
         }
     }
 }

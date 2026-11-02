@@ -26,8 +26,10 @@ struct ExpiredCleanup: Sendable {
         var sessions = 0, challenges = 0, invitations = 0, recoveries = 0
         var rateLimits = 0, oauthSecrets = 0, pairings = 0, oauthClients = 0
         var syncTombstones = 0, syncSuperseded = 0, syncMutations = 0
+        /// Confirmation requests deleted (ADR 0026).
+        var actionRequests = 0
         var syncTotal: Int { syncTombstones + syncSuperseded + syncMutations }
-        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + syncTotal }
+        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + actionRequests + syncTotal }
     }
 
     private func purge<M: Model>(_ type: M.Type, on db: any Database, _ condition: (QueryBuilder<M>) -> QueryBuilder<M>) async throws -> Int
@@ -55,6 +57,9 @@ struct ExpiredCleanup: Sendable {
         r.oauthSecrets = try await purge(OAuthSecret.self, on: db) { $0.filter(\.$expiresAt < cutoff) }
         r.pairings = try await purge(RunnerPairing.self, on: db) { $0.filter(\.$expiresAt < cutoff) }
         r.rateLimits = try await purgeRateLimits(on: db)
+        // Open requests past their expiry become `expired`; decided and expired rows (the audit trail) go after 30 days.
+        try await ActionRequest.query(on: db).filter(\.$state == "pending").filter(\.$expiresAt < now).set(\.$state, to: "expired").update()
+        r.actionRequests = try await purge(ActionRequest.self, on: db) { $0.filter(\.$state != "pending").filter(\.$expiresAt < now.addingTimeInterval(-30 * 86_400)) }
         if let age = unusedClientRetention { r.oauthClients = try await purgeUnusedClients(on: db, olderThan: now.addingTimeInterval(-age)) }
         if let retention = syncRetention {
             let sync = try await SyncRetention(batchSize: batchSize).run(on: db, olderThan: now.addingTimeInterval(-retention))

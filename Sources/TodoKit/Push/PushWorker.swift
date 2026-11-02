@@ -200,10 +200,14 @@ struct PushTriggers: Sendable {
 
     /// Inserts the row unless the dedupe key exists for this account; returns whether it was new.
     func enqueue(_ userID: UUID, _ category: PushCategory, _ event: PushEvent, key: String) async throws -> Bool {
+        try await enqueueRaw(userID, category, String(decoding: try JSONEncoder().encode(event), as: UTF8.self), key: key)
+    }
+
+    func enqueueRaw(_ userID: UUID, _ category: PushCategory, _ payload: String, key: String) async throws -> Bool {
         if try await PushOutbox.query(on: db).filter(\.$userID == userID).filter(\.$dedupeKey == key).count() > 0 { return false }
         let row = PushOutbox()
         row.userID = userID; row.category = category.rawValue; row.dedupeKey = key
-        row.payload = String(decoding: try JSONEncoder().encode(event), as: UTF8.self)
+        row.payload = payload
         row.dueAt = now; row.state = "pending"; row.attempts = 0; row.nextAttemptAt = now
         do { try await row.save(on: db) } catch {
             // Lost a race with another writer on the unique key: that counts as already enqueued.
@@ -214,7 +218,7 @@ struct PushTriggers: Sendable {
     }
 
     func run() async throws -> Int {
-        try await reminders() + questions() + reviews() + comments()
+        try await reminders() + questions() + reviews() + comments() + confirmations()
     }
 
     private func reminders() async throws -> Int {
@@ -269,6 +273,19 @@ struct PushTriggers: Sendable {
                 let event = PushEvent(kind: "review", taskID: taskID, projectID: task.projectID, subjectID: rid, at: nil)
                 if try await enqueue(c.id, .agentReviews, event, key: "review:\(rid)") { count += 1 }
             }
+        }
+        return count
+    }
+
+    /// Open confirmation requests (ADR 0026) reach the account that must decide. The payload carries only the request id.
+    private func confirmations() async throws -> Int {
+        let who = enabled(.confirmations)
+        guard !who.isEmpty else { return 0 }
+        var count = 0
+        for r in try await ActionRequest.query(on: db).filter(\.$state == "pending").filter(\.$createdAt >= since).filter(\.$expiresAt > now).limit(200).all() {
+            guard let rid = r.id, let c = who.first(where: { $0.id == r.userID }) else { continue }
+            let payload = String(decoding: try JSONEncoder().encode(PushConfirmationEvent(subjectID: rid)), as: UTF8.self)
+            if try await enqueueRaw(c.id, .confirmations, payload, key: "confirmation:\(rid)") { count += 1 }
         }
         return count
     }

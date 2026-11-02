@@ -69,10 +69,13 @@ struct PushEvent: Codable, Equatable, Sendable {
     var at: Int?
 }
 
+/// Outbox payload of category `confirmations` (ADR 0026): only the request id.
+struct PushConfirmationEvent: Codable, Equatable, Sendable { var subjectID: UUID }
+
 enum PushCategory: String, CaseIterable, Sendable {
-    case reminders, agentQuestions = "agent_questions", agentReviews = "agent_reviews", assignments, comments
+    case reminders, agentQuestions = "agent_questions", agentReviews = "agent_reviews", assignments, comments, confirmations
     static let defaults: [String: Bool] = [
-        "reminders": true, "agent_questions": true, "agent_reviews": true, "assignments": false, "comments": false,
+        "reminders": true, "agent_questions": true, "agent_reviews": true, "assignments": false, "comments": false, "confirmations": true,
     ]
 }
 

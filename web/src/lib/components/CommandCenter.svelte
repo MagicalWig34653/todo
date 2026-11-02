@@ -278,6 +278,7 @@
 			<span>{t('cc.summary.agents', { count: summary.activeAgents })}</span>
 			<span>{t('cc.summary.questions', { count: summary.openQuestions })}</span>
 			<span>{t('cc.summary.reviews', { count: summary.pendingReviews })}</span>
+			{#if summary.pendingConfirmations}<span class="text-warning" data-testid="cc-confirmations">{t('cc.summary.confirmations', { count: summary.pendingConfirmations })}</span>{/if}
 			<span>{t('cc.summary.features', { count: summary.features })}</span>
 			<span>{t('cc.summary.backlog', { count: summary.backlog })}</span>
 			{#if scope === 'account' && summary.staleProjects}<span class="text-warning" data-testid="cc-stale-count">{t('sync.summary.stale', { count: summary.staleProjects })}</span>{/if}

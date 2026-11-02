@@ -45,8 +45,8 @@ export function orderedLanes(lanes: CommandLane[] | null | undefined, titles: (k
 }
 
 /** Number that deserves attention in the sidebar: open questions plus reviews waiting for a decision. */
-export function attentionCount(s: Pick<CommandSummary, 'openQuestions' | 'pendingReviews'> | null | undefined): number {
-	return (s?.openQuestions ?? 0) + (s?.pendingReviews ?? 0);
+export function attentionCount(s: Pick<CommandSummary, 'openQuestions' | 'pendingReviews'> & { pendingConfirmations?: number } | null | undefined): number {
+	return (s?.openQuestions ?? 0) + (s?.pendingReviews ?? 0) + (s?.pendingConfirmations ?? 0);
 }
 
 /** Open questions of all cards, newest first, de-duplicated by id (feature cards repeat subtask questions). */
