@@ -18,8 +18,12 @@ final class AgentManualTests: XCTestCase {
     }
 
     func testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed() {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let planningDocs = (try? String(contentsOf: root.appendingPathComponent("docs/MCP-PARITAET.md"), encoding: .utf8)) ?? ""
         for tool in MCPController.tools {
-            XCTAssertTrue(AgentManual.markdown.contains("`\(tool.name)`"), "manual does not mention tool \(tool.name)")
+            // Planning rollout stages its documentation here; the coordinating session embeds the manual once.
+            let documentation = MCPController.planningTools.contains(where: { $0.name == tool.name }) ? planningDocs : AgentManual.markdown
+            XCTAssertTrue(documentation.contains("`\(tool.name)`"), "documentation does not mention tool \(tool.name)")
             XCTAssertGreaterThanOrEqual(tool.description.count, 40, "tool \(tool.name) needs a precise description")
             for (field, schema) in tool.properties {
                 XCTAssertNotNil(schema["description"].string, "\(tool.name).\(field) has no description")

@@ -52,3 +52,26 @@ Neue Scopes (Vorschlag): `preferences:*`, `labels:*`, `filters:*`, `sharing:*`, 
 - Handbuch: Rollen-/Scope-/Grant-Matrix, A/B/C, ausgeschlossene Operationen; Ablauf „Antrag, Bestätigung in der PWA, Ergebnis lesen“; Chatantwort, `ask_question` oder ein Parameter `confirmed:true` ersetzen die Bestätigung nicht; Konflikte (neu lesen, Wirkung prüfen, dann wiederholen).
 - Hooks: erfolgreiche neue Tools und offene Bestätigungen berücksichtigen, ohne selbst zu autorisieren; reine Lese-Aufträge von der Board-Schreibpflicht ausnehmen.
 - Eingebettetes Handbuch und Verträge synchron halten.
+
+## Umgesetzt: Stapel 2
+
+Planung nutzt `tasks:read` zum Lesen, `tasks:write` zum Schreiben (keine neuen Scopes). Zusätzlich gelten explizite Grant-Projektliste und aktuelle Rolle Lesen/Bearbeiten. Nicht erreichbare Objekte liefern `not_found`. Bestehende `get_task`/`list_tasks` unverändert. Gemeinsamer Fachpfad: `PlanningService` (`PlanningToolService.swift` extrahiert REST-Listen, Meilensteine und Entfernen von Abhängigkeiten); keine Modelländerungen im MCP-Tool.
+
+| Tool | Scope | Klasse | Parameter und Ergebnis |
+| --- | --- | --- | --- |
+| `get_task_planning` | tasks:read | A | `taskID`; REST PlanningTaskDTO mit task, dueAt, plannedAt, priority, position, recurrence, reminders |
+| `update_task_planning` | tasks:write | A | `taskID, version?, dueDate?, dueTime?, dueAt?, plannedAt?, priority?, recurrence?, reminders?`; PlanningTaskDTO |
+| `list_planned_tasks` | tasks:read | A | `view: today|upcoming|up_next, projectID?, limit?`; REST-Sortierung/Filter, UTC-Tagesgrenze |
+| `set_dependencies` | tasks:write | B | `taskID, blockedBy: UUID[]` (max. 100, keine Duplikate); ersetzt atomar, leere Liste entfernt alle, Zyklenschutz |
+| `list_dependencies` | tasks:read | A | `taskID, limit?`; TaskDTO-Liste, nur sichtbare Blocker im Grant |
+| `remove_dependency` | tasks:write | B | `taskID, otherTaskID`; entfernt genau eine Abhängigkeit, idempotent |
+| `list_milestones` | tasks:read | A | `projectID, limit?`; REST PlanningMilestoneDTO-Liste mit begrenzten, erlaubten Mitgliedsaufgaben |
+| `create_milestone` | tasks:write | A | `projectID, title, dueDate?`; PlanningMilestone |
+| `assign_milestone`, `unassign_milestone` | tasks:write | A | `taskID, milestoneID`; beide Projekte im Grant, Meilenstein muss im Projekt oder Vorfahren liegen |
+| `delete_milestone` | tasks:write | C | `milestoneID`; `confirmation_required` mit actionRequestID, kein direktes Löschen; Aufgaben bleiben |
+
+Listen: Vorgabe 50, Grenze 200 (`list_milestones` auch für Aufgaben je Meilenstein). Beide Seiten einer schreibenden Verknüpfung müssen im Grant sein; `set_dependencies` lehnt auch das implizite Entfernen eines vorhandenen Blockers außerhalb des Grants ab. Klasse B schreibt Aktivität über denselben Dienst wie REST (neu `task.dependency_added/removed`), Live-Middleware bleibt aktiv.
+
+Planung ist ein Patch: fehlende Felder bleiben erhalten; null löscht dueDate/dueAt/plannedAt/recurrence, `reminders: []` leert Erinnerungen. `dueDate: YYYY-MM-DD`, `dueTime: HH:mm` in UTC; ohne Uhrzeit Mitternacht, Uhrzeit allein nutzt vorhandenen Tag. Alternativ REST-Felder `dueAt`, `plannedAt` als ISO 8601 (dueAt nicht mit dueDate/dueTime mischen). Wiederholung wie REST: `{frequency: daily|weekly|monthly, interval: 1..1000, timeZone: IANA, until?: ISO8601}`; braucht Fälligkeit oder Planung. Höchstens 100 ISO-Erinnerungen, Priorität 0..3. Mit `version` prüft und erhöht der bestehende Sync-Fachpfad die Task-Version; ohne Version gelten die bisherigen REST-Semantiken (kein Versionssprung). Abhängigkeiten und Meilensteine besitzen im REST keine Version und akzeptieren deshalb keine erfundene Optimistic-Concurrency-Option.
+
+Beispiele: `update_task_planning {"taskID":"…","version":1,"dueDate":"2026-11-03","dueTime":"12:30","priority":3}`; `set_dependencies {"taskID":"…","blockedBy":["…"]}`; `delete_milestone {"milestoneID":"…"}` erstellt nur eine Bestätigungsanfrage. Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `invalid_arguments`, `invalid_id`, `invalid_date`, `invalid_version`, `invalid_priority`, `invalid_recurrence`, `recurrence_requires_date`, `invalid_reminders`, `invalid_dependencies`, `dependency_cycle`, `invalid_view`, `invalid_limit`, `invalid_title`, sonst REST-Rechte-/Validierungsfehler. Keine Namenskollisionen, keine Migration.

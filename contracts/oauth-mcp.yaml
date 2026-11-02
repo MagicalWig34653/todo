@@ -205,4 +205,17 @@ x-mcp-tools:
   get_progress: {scope: 'agents:read', required: [taskID], arguments: {taskID: UUID}, result: 'Liste {job: AgentJobDTO, runs: [{id, generation, leaseUntil, endedAt, checkpoint: {contextRevision, sessionReference, nextStep}}]}', notes: 'Nur lesend. Nur Projekteigentümer (wie GET /v1/agents/jobs/{id}); Bearbeiter erhalten einen Fehler. Schreiben von Fortschritt/Checkpoints bleibt der Runner-API mit Geräte-Token und Generationsprüfung vorbehalten.'}
   list_attachments: {scope: 'attachments:read', required: [taskID], arguments: {taskID: UUID}, result: AttachmentDTO-Liste, notes: 'Nur Metadaten abgeschlossener Anhänge; keine Dateiinhalte, kein Objektschlüssel.'}
   get_attachment: {scope: 'attachments:read', required: [id], arguments: {id: UUID}, result: AttachmentDTO, notes: 'Nur Metadaten; ausstehende, fremde und unbekannte Anhänge sind not_found.'}
+
+  get_task_planning: {scope: 'tasks:read', required: [taskID], result: PlanningTaskDTO}
+  update_task_planning: {scope: 'tasks:write', required: [taskID], optional: [version, dueDate, dueTime, dueAt, plannedAt, priority, recurrence, reminders], result: PlanningTaskDTO}
+  list_planned_tasks: {scope: 'tasks:read', required: [view], optional: [projectID, limit], views: [today, upcoming, up_next]}
+  set_dependencies: {scope: 'tasks:write', class: B, required: [taskID, blockedBy]}
+  list_dependencies: {scope: 'tasks:read', required: [taskID], optional: [limit]}
+  remove_dependency: {scope: 'tasks:write', class: B, required: [taskID, otherTaskID]}
+  list_milestones: {scope: 'tasks:read', required: [projectID], optional: [limit]}
+  create_milestone: {scope: 'tasks:write', required: [projectID, title], optional: [dueDate]}
+  assign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
+  unassign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
+  delete_milestone: {scope: 'tasks:write', class: C, required: [milestoneID], result: confirmation_required}
+
 x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']
