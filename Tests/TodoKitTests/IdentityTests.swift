@@ -220,6 +220,31 @@ final class IdentityTests: XCTestCase {
         XCTAssertEqual(finish.status, .tooManyRequests)
     }
 
+    func testRateLimitCannotBeBypassedWithPathVariants() async throws {
+        let t = try await TestApp.make(password: true)
+        defer { Task { await t.shutdown() } }
+        var settings = IdentitySettings()
+        settings.window = 3600
+        settings.loginLimit = 1; settings.passwordLimit = 1; settings.registerLimit = 1; settings.recoveryLimit = 1
+        t.app.identitySettings = settings
+        let cases: [(String, [String: String], [String])] = [
+            ("/v1/auth/password/login", ["username": "nobody", "password": "wrong"],
+             ["/v1/auth/password/login/", "/v1//auth/password/login", "//v1/auth/password/login", "/v1/auth/password//login//",
+              "/V1/Auth/Password/Login", "/v1/auth/password/%6cogin", "/v1/auth%2Fpassword/login", "/v1/auth/password/login/%2F"]),
+            ("/v1/auth/register/begin", ["displayName": "A", "token": "wrong"], ["/v1/auth/register/begin/", "/v1//auth/register/begin"]),
+            ("/v1/identity/recovery/redeem", ["code": "wrong"], ["/v1/identity/recovery/redeem/", "/v1/identity//recovery/redeem"]),
+            ("/v1/auth/login/begin", [:], ["/v1/auth/login/begin/", "/v1/auth//login/begin"]),
+        ]
+        for (path, body, variants) in cases {
+            let first = try await t.json(.POST, path, body)
+            XCTAssertNotEqual(first.status, .tooManyRequests, path)
+            for variant in variants {
+                let r = try await t.json(.POST, variant, body)
+                XCTAssertEqual(r.status, .tooManyRequests, variant)
+            }
+        }
+    }
+
     func testMariaDBReplicaRateLimitAndRecoveryRaces() async throws {
         try XCTSkipUnless(TestApp.useMariaDB, "requires isolated MariaDB via TODO_TEST_DB")
         let a = try await TestApp.make()
