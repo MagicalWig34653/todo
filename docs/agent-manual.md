@@ -1,4 +1,4 @@
-<!-- manual-version: 1.2.0 -->
+<!-- manual-version: 1.3.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -99,6 +99,7 @@ Todolino is only useful if it is current. Treat the board as part of the reposit
 
 - `find_project_by_repository {repository}`: always call it before creating anything. One match = use it. Zero matches and `outsideGrant: 0` = the repository is new. `outsideGrant > 0` = a project exists for this account but this connection does not include it: do not create a duplicate, ask the user to reconnect (`/mcp` in Claude Code) and include the project.
 - `create_project {name, description?, parentID?, repository?, staleAfterDays?}`: creates the project and binds it; the connection's grant is extended automatically. Needs the scope `projects:write`.
+- `update_project {projectID, version, name?, description?, color?}`: rename a project or change its description/colour (only passed fields change; empty or null description clears it). Needs `version` from `list_projects`/`get_project_structure` (stale -> `version_conflict`), manage rights and the scope `projects:write`.
 - `bind_repository {projectID, repository?, staleAfterDays?}`: bind an existing project or change the staleness threshold (default 3 days).
 - `record_sync {projectID, summary, repoRef?}`: "the board matches the repository now". `get_sync_status {projectID}` and `get_stale_projects` read the state: `fresh` (synced within the threshold), `stale` (older) or `never`. The command center shows the state per project in `projects[].sync` and counts stale bound projects in `summary.staleProjects`.
 
@@ -184,6 +185,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `get_attachment` | attachments:read | One attachment's metadata. |
 | `find_project_by_repository` | projects:read | Find the project bound to a repository. |
 | `create_project` | projects:write | Create a project (optionally nested, optionally bound to a repository). |
+| `update_project` | projects:write | Change name, description, colour of a project (needs `version`). |
 | `bind_repository` | tasks:write | Bind a project to a repository / set the staleness threshold. |
 | `record_sync` | tasks:write | Record that the board was reconciled with the repository now. |
 | `get_sync_status` | projects:read | Sync state of one project (fresh, stale, never). |

@@ -45,7 +45,7 @@ Nach Netzverlust/Neustart zuerst lokale Prozess- und Auftragssituation abgleiche
 Werkzeuge nach fachlichen Fähigkeiten schneiden, beispielsweise:
 
 - `list_projects`, `list_tasks`, `get_task`, `get_project_context`
-- `create_task`, `update_task`, `add_comment`
+- `create_task`, `update_task`, `update_project` (Name, Beschreibung, Farbe; Scope projects:write, Version Pflicht, Rolle Verwalten), `add_comment`
 - `ask_question`, `list_answers`, `update_progress`
 - `begin_attachment_upload`, `complete_attachment_upload`, `list_attachments`, `get_attachment`
 - `submit_for_review`

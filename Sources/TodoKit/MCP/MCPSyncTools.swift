@@ -36,6 +36,14 @@ extension MCPController {
                           "parentID": Schema.uuid("Optional parent project id (must be in this connection's grant and manageable by the user)."),
                           "repository": repositoryField, "staleAfterDays": staleDaysField],
              required: ["name"]),
+        Tool(name: "update_project", scope: "projects:write",
+             description: "Change the name, description and/or colour of an existing project (only the fields you pass change). Needs the current project version (list_projects, get_project_structure; a stale version fails with version_conflict) and manage rights on a project of this connection's grant. An empty or null description clears it. Returns the updated project.",
+             properties: ["projectID": Schema.uuid("Project id."),
+                          "version": Schema.integer("Current project version.", min: 0),
+                          "name": Schema.string("New project name, 1 to 200 characters.", maxLength: 200),
+                          "description": Schema.string("New description (up to 10000 characters); empty string or null clears it."),
+                          "color": Schema.string("Colour as #RRGGBB.", maxLength: 7)],
+             required: ["projectID", "version"]),
         Tool(name: "bind_repository", scope: "tasks:write",
              description: "Bind an existing project to a repository identifier, or change the staleness threshold of an existing binding (omit repository then). One repository maps to one project per owner (repository_already_bound otherwise). Changing the repository of a bound project resets its sync history. Needs edit rights.",
              properties: ["projectID": Schema.uuid("Project id."), "repository": repositoryField, "staleAfterDays": staleDaysField],
@@ -108,6 +116,22 @@ extension MCPController {
                 "sync": try binding.map { try .encoded($0) } ?? .null,
                 "grantExtended": .bool(true),
                 "next": .string("Add the standard columns and the plan with import_plan (applyWorkflowColumns true), write the agent brief with set_agent_brief, then record_sync.")])
+        case "update_project":
+            let projectID = try uuid(a["projectID"])
+            guard let version = try intArgument(a["version"], reason: "invalid_version") else { throw Abort(.badRequest, reason: "invalid_version") }
+            guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
+            // An explicit null clears the description; an absent key leaves it unchanged.
+            var description = try optionalString(a, "description")
+            if case .object(let fields) = a, let value = fields["description"], value.isNull { description = "" }
+            let body = UpdateProjectRequest(version: version, name: try optionalString(a, "name"), parentID: nil, moveToRoot: nil,
+                                            description: description, color: try optionalString(a, "color"))
+            let dto = try await db.transaction { tx in
+                try await lockSharingGraph(on: tx)
+                return try await PlanningOperations.updateProject(user: user, db: tx, id: projectID, body: body)
+            }
+            return .object(["id": .string(dto.id.uuidString), "name": .string(dto.name), "version": .number(Double(dto.version)),
+                "description": dto.description.map { .string($0) } ?? .null, "color": dto.color.map { .string($0) } ?? .null,
+                "parentID": dto.parentID.flatMap { grant.projects.contains($0) ? .string($0.uuidString) : nil } ?? .null])
         case "bind_repository":
             return try .encoded(try await sync.bind(uuid(a["projectID"]), repository: optionalString(a, "repository"),
                 staleAfterDays: intArgument(a["staleAfterDays"], reason: "invalid_stale_after_days")))

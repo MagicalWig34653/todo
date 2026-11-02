@@ -26,6 +26,14 @@
 - Tests: swift 293 (20 übersprungen, 0 Fehler), vitest 238, build ok, `npm run check` nur bekannter `./$types`-Fehler (Worktree), Playwright Chromium settings-hub 11, passkey-flow 21, for-you 2 grün. MariaDB nicht getestet. Backend am Ende beendet.
 - Nächster Schritt: Merge, danach Deployment-Hinweis: Betreiber mit eigenem Monitoring auf `/health/ready`-Felder müssen auf `/v1/admin/health` umstellen.
 
+## Checkpoint 2.11.2026: MCP-Tool update_project (Agent update-project)
+
+- Board-Aufgabe `16087994-F0CD-4C32-8CA8-79AFE1EA57E1` (Kriterium 1; Kriterium 2 „mehrere Repositories“ wartet auf Nutzerentscheidung, nicht gebaut).
+- Neu: `update_project {projectID, version, name?, description?, color?}` (Scope `projects:write`, `MCPSyncTools.swift`). Ruft `PlanningOperations.updateProject` in Transaktion mit `lockSharingGraph`, Projekt muss im Grant stehen (sonst `not_found`). Rolle wie REST `PATCH /v1/projects/{id}`: Verwalten (nicht nur Bearbeiten); nur Leserecht, veraltete Version (`version_conflict`), leerer Name (`invalid_name`), ungültige Farbe -> Tool-Fehler. Nur übergebene Felder ändern sich; leere oder null Beschreibung löscht. Antwort: id, name, description, color, version, parentID. Änderungsfeed (`sync_changes`) entsteht über die Projekt-Middleware wie bei REST.
+- `list_projects` liefert Beschreibung, Farbe und Version bereits.
+- Doku: Agentenhandbuch 1.3.0 (neu eingebettet, Test-Erwartung angepasst), `docs/AGENTEN-UND-MCP.md`, `contracts/oauth-mcp.yaml` (x-mcp-tools), `contracts/command-center.yaml`.
+- Tests: `UpdateProjectToolTests` (5) grün; `swift test` komplett 286 Tests, 20 übersprungen, 0 Fehlschläge.
+
 ## Checkpoint 2.11.2026: PWA-Pfade auf Englisch (Agent routes-en)
 
 - Board-Aufgabe `7A033CA7-979F-47D7-8747-A6E89103800D`. Annahme zu „Routen soll auf Englisch sein“: gemeint sind die URL-Pfade der PWA (REST `/v1/...` war schon englisch); Anzeigetexte bleiben deutsch. Nur PWA, keine Backend-/Vertragsänderung (SPA-Fallback ist generisch, Mail-Links nutzen nur `/confirm-email`/`/recover`).

@@ -10,7 +10,7 @@ info:
     get_task_context, claim_task, release_task, post_progress, set_task_structure, add_criterion, set_criterion, ask_question,
     list_open_questions, get_question, answer_question, request_review, list_pending_reviews, decide_review, apply_agent_workflow_columns,
     add_attachment, begin_attachment, complete_attachment, list_builds, wait_for_events (Long-Poll bis 25 s, nur Hinweise
-    {changed, token, hints[{kind,taskID,projectID}]} auf Projekte des Grants, die das Konto sieht; Quelle live_events, ADR 0022) (Details: docs/agent-manual.md, tools/list). Neuer Scope attachments:write.
+    {changed, token, hints[{kind,taskID,projectID}]} auf Projekte des Grants, die das Konto sieht; Quelle live_events, ADR 0022) (Details: docs/agent-manual.md, tools/list). Neues Werkzeug update_project (projects:write). Neuer Scope attachments:write.
     Spaltenvorlage: POST /v1/projects/{id}/columns/template {"source":"agent_workflow"} (project-columns.yaml). Kein Sync-Feed.'
 security:
 - bearerAuth: []
