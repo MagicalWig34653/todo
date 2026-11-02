@@ -32,8 +32,19 @@ class Workspace {
 	#saving = new Map<string, Promise<unknown>>();
 	#imported = false;
 
+	/** Distinguishes "still loading" and "load failed" from "project really does not exist" on first load. */
+	projectsLoaded = $state(false);
+	projectsFailed = $state(false);
+
 	async reloadProjects() {
-		this.projects = await api.listProjects();
+		try {
+			this.projects = await api.listProjects();
+			this.projectsLoaded = true;
+			this.projectsFailed = false;
+		} catch (e) {
+			if (!this.projectsLoaded) this.projectsFailed = true;
+			throw e;
+		}
 	}
 	async reloadTasks() {
 		this.tasks = await api.listTasks();

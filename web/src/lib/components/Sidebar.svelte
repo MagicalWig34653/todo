@@ -83,8 +83,10 @@ export type View =
 	let addParent = $state('');
 	let bellOpen = $state(false);
 
-	// "Mehr" shows its entries while one of them is the current page.
-	const moreShown = $derived(moreOpen || moreViews.has(view));
+	// "Mehr" opens when the user navigates to one of its pages; afterwards the explicit toggle state is respected.
+	$effect(() => {
+		if (moreViews.has(view)) moreOpen = true;
+	});
 	const fullTree = $derived(buildTree(workspace.projects));
 	/** Own roots stay under "Meine Projekte"; roots owned by other people form "Mit mir geteilt". */
 	const tree = $derived(fullTree.filter((n) => isOwner(n.project)));
@@ -173,6 +175,9 @@ export type View =
 		drawerOpen ? 'fixed inset-y-0 left-0 z-50 flex w-[19rem] max-w-[88vw] shadow-pop' : 'hidden'
 	]}
 	aria-label={t('nav.sidebar')}
+	role={drawerOpen ? 'dialog' : undefined}
+	aria-modal={drawerOpen ? 'true' : undefined}
+	tabindex={drawerOpen ? -1 : undefined}
 >
 	<!-- Account menu, notifications, sidebar toggle -->
 	<div class="flex items-center gap-1 px-3 pt-3 pb-1">
@@ -233,11 +238,11 @@ export type View =
 			{@render navRow('filters', LayoutGrid, t('nav.filters'))}
 			{@render navRow('teams', Users, t('sidebar.teamsEntry'), workspace.invitations.length, '', true)}
 			<li>
-				<button class={row} aria-expanded={moreShown} onclick={() => (moreOpen = !moreShown)}>
+				<button class={row} aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)}>
 					<Ellipsis class="size-[18px] shrink-0 opacity-80" aria-hidden="true" />
 					<span class="truncate">{t('nav.more')}</span>
 				</button>
-				{#if moreShown}
+				{#if moreOpen}
 					<ul class="mt-0.5 flex flex-col gap-0.5 pl-3">
 						{#each MORE as m (m.v)}{@render navRow(m.v, m.icon, t(`nav.${m.v}` as MessageKey))}{/each}
 					</ul>

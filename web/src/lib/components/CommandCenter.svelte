@@ -5,7 +5,6 @@
 	import {
 		attentionCount,
 		cardsOf,
-		isEmptyOverview,
 		loadView,
 		orderedLanes,
 		saveView,
@@ -78,6 +77,10 @@
 	);
 	const items = $derived((cc?.items ?? []).filter((c) => shown(c.project.id)));
 	const updates = $derived(sortUpdates((cc?.updates ?? []).filter((u) => shown(u.projectID))));
+	/** One visible list per section drives cards, counters and empty states (management projects only in account scope). */
+	const visibleQuestions = $derived(questions.filter((q) => shown(q.projectID)));
+	const visibleReviews = $derived(reviews.filter((r) => shown(r.projectID)));
+	const boardEmpty = $derived(lanes.every((l) => l.cards.length === 0) && updates.length === 0);
 	const summary = $derived(cc?.summary);
 	const syncEntries = $derived((cc?.projects ?? []).filter((e) => shown(e.projectID)));
 	/** Project scope: the entry of the project itself (the response may also list its sub-projects). */
@@ -174,7 +177,25 @@
 		{ id: 'reviews', key: 'cc.section.reviews' },
 		{ id: 'updates', key: 'cc.section.updates' }
 	];
-	const countOf = (id: OverviewSection) => (id === 'questions' ? summary?.openQuestions : id === 'reviews' ? summary?.pendingReviews : undefined);
+	const countOf = (id: OverviewSection) =>
+		id === 'questions'
+			? loaded && section === 'questions'
+				? visibleQuestions.length
+				: summary?.openQuestions
+			: id === 'reviews'
+				? loaded && section === 'reviews'
+					? visibleReviews.length
+					: summary?.pendingReviews
+				: undefined;
+	/** Arrow keys, Home and End move between the tabs (roving tabindex); the focused tab is activated at once. */
+	function tabKey(e: KeyboardEvent) {
+		const i = sections.findIndex((s) => s.id === section);
+		const next = e.key === 'ArrowRight' ? (i + 1) % sections.length : e.key === 'ArrowLeft' ? (i - 1 + sections.length) % sections.length : e.key === 'Home' ? 0 : e.key === 'End' ? sections.length - 1 : -1;
+		if (next < 0) return;
+		e.preventDefault();
+		section = sections[next].id;
+		document.getElementById(`cc-tab-${sections[next].id}`)?.focus();
+	}
 	const who = (name: string | null | undefined) => name || t('cc.update.anonymous');
 </script>
 
@@ -212,13 +233,17 @@
 		</div>
 	{/if}
 
-	<div class="flex flex-wrap items-center gap-x-4 gap-y-2" role="tablist" aria-label={t('cc.sections')}>
+	<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+	<div class="flex flex-wrap items-center gap-x-4 gap-y-2" role="tablist" tabindex="-1" aria-label={t('cc.sections')} onkeydown={tabKey}>
 		{#each sections as s (s.id)}
 			{@const count = countOf(s.id)}
 			<button
 				type="button"
 				role="tab"
+				id="cc-tab-{s.id}"
 				aria-selected={section === s.id}
+				aria-controls="cc-panel"
+				tabindex={section === s.id ? 0 : -1}
 				data-testid="cc-section-{s.id}"
 				class={[
 					'-mb-px inline-flex min-h-9 items-center gap-1.5 border-b-2 px-1 text-sm font-medium transition-colors',
@@ -230,6 +255,7 @@
 				{#if count}<Badge variant={s.id === 'board' ? 'default' : 'accent'} data-testid="cc-count-{s.id}">{count}</Badge>{/if}
 			</button>
 		{/each}
+	</div>
 		{#if scope === 'project'}
 			<button
 				type="button"
@@ -283,11 +309,12 @@
 		<AgentBriefPanel {projectID} onchanged={refresh} />
 	{/if}
 
+	<div id="cc-panel" role="tabpanel" aria-labelledby="cc-tab-{section}" class="flex flex-col gap-4">
 	{#if !loaded}
 		<p class="text-muted-foreground text-sm">{t('cc.loading')}</p>
 	{:else if section === 'board'}
 		{#if view === 'kanban'}
-			{#if isEmptyOverview(cc)}
+			{#if boardEmpty}
 				<EmptyState title={t('cc.empty')} icon={Gauge}><p>{t('cc.emptyHint')}</p></EmptyState>
 			{/if}
 			<div class="-mx-4 flex snap-x snap-mandatory items-start gap-3 overflow-x-auto px-4 pb-3 menu:mx-0 menu:px-0" data-testid="cc-board">
@@ -346,11 +373,11 @@
 			{/if}
 		{/if}
 	{:else if section === 'questions'}
-		{#if questions.length === 0}
+		{#if visibleQuestions.length === 0}
 			<EmptyState title={t('cc.question.empty')} icon={Gauge}><p>{t('cc.question.emptyHint')}</p></EmptyState>
 		{/if}
 		<ul class="flex max-w-3xl flex-col gap-3" data-testid="cc-questions">
-			{#each questions.filter((q) => shown(q.projectID)) as q (q.id)}
+			{#each visibleQuestions as q (q.id)}
 				<li class="flex flex-col gap-1">
 					<QuestionAnswer
 						id={q.id}
@@ -366,11 +393,11 @@
 			{/each}
 		</ul>
 	{:else if section === 'reviews'}
-		{#if reviews.length === 0}
+		{#if visibleReviews.length === 0}
 			<EmptyState title={t('cc.review.empty')} icon={Gauge}><p>{t('cc.review.emptyHint')}</p></EmptyState>
 		{/if}
 		<ul class="flex max-w-3xl flex-col gap-3" data-testid="cc-reviews">
-			{#each reviews.filter((r) => shown(r.projectID)) as r (r.id)}
+			{#each visibleReviews as r (r.id)}
 				<li class="flex flex-col gap-1">
 					<ReviewDecision
 						taskID={r.taskID}
@@ -400,6 +427,7 @@
 			{/each}
 		</ul>
 	{/if}
+	</div>
 </section>
 
 <Dialog bind:open={detailOpen} title={detail ? t('cc.detail.title', { title: detailTitle(detail) }) : t('cc.title')} class="max-w-2xl" testid="cc-detail-dialog">
