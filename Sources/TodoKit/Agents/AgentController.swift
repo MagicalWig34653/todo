@@ -140,7 +140,8 @@ struct AgentController: RouteCollection {
             guard let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_project") }
             projects = [try await access.startAgent(in: id)]
         } else {
-            projects = try await access.visibleProjects().filter { $0.ownerID == user.id }
+            let (snapshot, ordered) = try await SharingAccess(user: user, db: req.db).snapshot()
+            projects = try ordered.filter { try snapshot.visibility($0).canTransferOwnership }
         }
         var taskID: UUID?
         if let raw = req.query[String.self, at: "taskID"] {

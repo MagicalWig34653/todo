@@ -92,6 +92,13 @@ struct WebRootMiddleware: AsyncMiddleware {
         response.headers.replaceOrAdd(
             name: .cacheControl, value: immutable ? "public, max-age=31536000, immutable" : "no-cache")
         response.headers.replaceOrAdd(name: "X-Content-Type-Options", value: "nosniff")
+        response.headers.replaceOrAdd(name: "Referrer-Policy", value: "same-origin")
+        // The app (including the OAuth consent route) must never be embedded in another site (clickjacking).
+        // Only frame-ancestors is set: a full script/style CSP would break SvelteKit's inline bootstrap script.
+        if (file as NSString).pathExtension.lowercased() == "html" {
+            response.headers.replaceOrAdd(name: "Content-Security-Policy", value: "frame-ancestors 'none'")
+            response.headers.replaceOrAdd(name: "X-Frame-Options", value: "DENY")
+        }
         return response
     }
 

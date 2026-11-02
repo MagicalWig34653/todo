@@ -1,5 +1,9 @@
 # Arbeitsplan
 
+## Checkpoint 1.11.2026 (Plugin: Board laufend nutzen, Plugin 1.1.0)
+
+Erledigt: Pflichtregeln im SessionStart-Kontext, schärfere Erinnerung nach Commits, Stop-Hook mit Board-Aktivitätsprüfung (Frageblock bleibt vorrangig), Skills, Vorlage, AGENTS.md, Agentenhandbuch 1.2.0, Update-Anleitung. Details und Tests: STATUS.md. Offen: Hooks in echter Sitzung erproben; Plugin-Update beim Nutzer.
+
 ## Checkpoint 1.11.2026 (Stop-Hook wartet auf Antwort, Option b Variante 2)
 
 Ziel: Sitzung endet nicht, solange eine eigene blockierende Frage offen ist. Gebaut: `claude-plugin/scripts/stop.sh` (fester Text, `wait_for_events` dann `get_question`, max. 6 Fortsetzungen, `stop_hook_active`-Schutz), Tests in `claude-plugin/tests/test-hooks.sh` (32 Prüfungen grün), Doku in `CLAUDE-CODE-EINRICHTUNG.md` und `PUSH-AN-CLAUDE-CODE.md`. Grenzen: trägt nur wenige Minuten (max. 8 Fortsetzungen durch Claude Code), nicht in einer echten Sitzung erprobt, `claude plugin validate` im Agentenlauf nicht ausführbar. Nächstes: manuell in Claude Code erproben, danach Spike für den `mcp_tool`-Hook (Variante 1).

@@ -2,10 +2,11 @@ import Fluent
 import Vapor
 
 extension ProjectAccess {
-    /// Agent execution is an independent capability; edit access must never imply it.
+    /// Agent execution is an independent capability; edit access must never imply it. It belongs to the *current*
+    /// owner (ProjectSharing owner, or the admin of the owning team), never to the creator field of the project.
     func startAgent(in projectID: UUID) async throws -> Project {
         let project = try await project(projectID)
-        guard project.ownerID == user.id else { throw Abort(.forbidden) }
+        guard try await SharingAccess(user: user, db: db).visibility(project).canTransferOwnership else { throw Abort(.forbidden) }
         return project
     }
 }
@@ -74,6 +75,32 @@ struct AgentRunDTO: Content {
 struct AgentService {
     static let leaseDuration: TimeInterval = 90
 
+    /// Called inside the ownership-transfer transaction (after the new owner is stored). Runner capabilities of anyone who
+    /// no longer owns the project end now: their open jobs are cancelled and their runs fenced (the repository slot stays
+    /// occupied until the runner confirms termination, like a human stop), and bindings nothing refers to are removed.
+    /// Bindings with history stay as inert rows: every later use re-checks the current owner.
+    static func revokeRunnerAccess(projectID: UUID, on db: any Database) async throws {
+        guard let project = try await Project.find(projectID, on: db) else { return }
+        let bindings = try await ProjectRunnerBinding.query(on: db).filter(\.$projectID == projectID).all()
+        for binding in bindings {
+            let bindingID = try binding.requireID()
+            if let device = try await RunnerDevice.find(binding.deviceID, on: db), let owner = try await User.find(device.ownerID, on: db),
+               try await SharingAccess(user: owner, db: db).visibility(project).canTransferOwnership { continue }
+            let jobs = try await AgentJob.query(on: db).filter(\.$bindingID == bindingID).all()
+            for job in jobs where ["queued", "claimed", "running", "waiting_for_answer"].contains(job.state) {
+                job.state = "cancelled"
+                try await WorkflowMirror.runnerWithdrawn(jobID: job.requireID(), on: db)
+                for run in try await AgentRun.query(on: db).filter(\.$jobID == job.requireID()).filter(\.$endedAt == nil).all() {
+                    run.generation += 1; run.leaseUntil = Date()
+                    try await run.save(on: db)
+                }
+                try await job.save(on: db)
+                try await event(job, kind: "owner_changed", on: db)
+            }
+            if jobs.isEmpty, try await AgentRun.query(on: db).filter(\.$bindingID == bindingID).count() == 0 { try await binding.delete(on: db) }
+        }
+    }
+
     static func text(_ value: String, max: Int = 4000) throws -> String {
         guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.count <= max else {
             throw Abort(.badRequest, reason: "invalid_agent_text")
@@ -108,7 +135,7 @@ struct AgentService {
                 throw Abort(.conflict, reason: "repository_busy_reconcile_first")
             }
             guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID,
-                  task.ownerID == device.ownerID, task.version == job.taskRevision else { throw Abort(.conflict, reason: "task_revision_changed") }
+                  task.version == job.taskRevision else { throw Abort(.conflict, reason: "task_revision_changed") }
             let run = try AgentRun(jobID: jobID, bindingID: binding.requireID(), deviceID: deviceID,
                                generation: 1, leaseUntil: Date().addingTimeInterval(leaseDuration), endedAt: nil)
             try await run.save(on: db)
@@ -128,8 +155,7 @@ struct AgentService {
                   let job = try await AgentJob.find(run.jobID, on: db),
                   let binding = try await ProjectRunnerBinding.find(run.bindingID, on: db) else { throw Abort(.notFound) }
             try await authorized(binding, device: device, on: db)
-            guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID,
-                  task.ownerID == device.ownerID else { throw Abort(.notFound) }
+            guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID else { throw Abort(.notFound) }
             guard run.generation == body.generation else { throw Abort(.conflict, reason: "stale_generation") }
             guard run.endedAt == nil else { throw Abort(.gone, reason: "run_ended") }
             if action == "reconcile" {

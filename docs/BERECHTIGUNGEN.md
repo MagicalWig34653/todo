@@ -95,7 +95,12 @@ Menschlicher Login, MCP/OAuth und Runner sind getrennte Rollen. Der wirksame Zug
 3. den bei der Zustimmung ausdrücklich **zugelassenen Projekten**,
 4. bei lokalen Läufen der Runner-Bindung und der Freigabe am Mac.
 
-Verliert die Person Rechte, verliert der Agent sie sofort; er kann seine Rechte nie selbst erweitern. „Aufgabe bearbeiten“ erlaubt nicht, Code auszuführen; das Starten von Agentenläufen ist eine eigene Fähigkeit und derzeit dem Eigentümer des Projekts vorbehalten. Verbindungen und Geräte sind einzeln widerrufbar (Konto, „Verbundene Anwendungen“, und Seite „Agenten“).
+Verliert die Person Rechte, verliert der Agent sie sofort; er kann seine Rechte nie selbst erweitern. „Aufgabe bearbeiten“ erlaubt nicht, Code auszuführen; das Starten von Agentenläufen ist eine eigene Fähigkeit und derzeit dem Eigentümer des Projekts vorbehalten. Maßgeblich ist immer das **aktuelle** Eigentum (Eigentümer laut Freigabe-Einstellungen, bei Teamprojekten die Teamadministration), nie das Erstellerfeld des Projekts. Bei einem **Eigentümerwechsel** endet die Runner-Fähigkeit der früheren Eigentümerin sofort: Bindungen und Aufträge werden bei jeder Nutzung neu gegen das aktuelle Eigentum geprüft (Anlegen, Freigeben, Anfordern, Heartbeat usw. scheitern). Im selben Schritt werden offene Aufträge ihrer Geräte (wartend, übernommen, laufend, wartet auf Antwort) abgebrochen und deren Läufe gesperrt (der Repository-Platz bleibt belegt, bis der Runner das Ende bestätigt, wie bei „Stoppen“); Bindungen ohne Verlauf werden gelöscht, solche mit Verlauf bleiben als wirkungslose Zeilen. Begründung: Abbrechen ist sicherer als stilles Neuautorisieren, weil das Gerät der früheren Eigentümerin weiter ihr gehört und die neue Eigentümerin ihre eigenen Geräte bindet. Weitere Folge: Aufgaben, die eine andere Person angelegt hat, dürfen vom Runner des aktuellen Eigentümers bearbeitet werden (die Prüfung „Aufgabe vom Gerätebesitzer erstellt“ entfiel).
+ Verbindungen und Geräte sind einzeln widerrufbar (Konto, „Verbundene Anwendungen“, und Seite „Agenten“).
+
+## Unteraufgaben und Projektgrenzen
+
+Eine Verknüpfung Unteraufgabe zu übergeordneter Aufgabe gilt nur innerhalb eines Projekts. Beim Verschieben einer Aufgabe in ein anderes Projekt werden ihre Verknüpfung zum Elternteil und die ihrer Unteraufgaben gelöst. Lesepfade (Aufgabenkontext, Command Center, MCP) vertrauen der Verknüpfung nie allein: Unteraufgaben zählen nur im selben Projekt wie ihr Elternteil, damit ein Leser des alten Projekts nichts aus einem verschobenen Kind erfährt. Bestandsdaten bereinigt die Migration `ClearCrossProjectSubtaskLinks`; bis dahin filtern die Leser.
 
 ## Klassisch und Projektmanagement
 

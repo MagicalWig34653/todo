@@ -1,5 +1,17 @@
 import Fluent
 import FluentSQL
+import Foundation
+
+/// Unused dynamically registered clients are purged by age (ADR-less security hardening); existing rows start their clock now.
+struct AddOAuthClientCreatedAt: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema("oauth_clients").field("created_at", .datetime).update()
+        try await OAuthClient.query(on: db).set(\.$createdAt, to: Date()).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema("oauth_clients").deleteField("created_at").update()
+    }
+}
 
 struct CreateOAuthSchema: AsyncMigration {
     func prepare(on db: any Database) async throws {

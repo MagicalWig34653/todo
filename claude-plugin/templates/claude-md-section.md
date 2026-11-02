@@ -1,9 +1,11 @@
 <!-- todolino:begin -->
 ## Todolino
 
-Dieses Projekt wird in Todolino geplant (Projekt-ID in `.todolino.json`). Todolino muss aktuell bleiben:
-- Sitzungsstart: `session_start` ausfuehren (Prompt `/mcp__todolino__session_start` bzw. Skill `todolino`) oder `get_sync_status` und `get_command_center` aufrufen.
-- Waehrend der Arbeit: `claim_task`, `post_progress` nach jedem sinnvollen Schritt, `ask_question` statt zu raten, `request_review` bei Fertigstellung.
-- Sitzungsende: Status aktualisieren und `record_sync` aufrufen. Eine Aufgabe gilt erst als erledigt, wenn Todolino sie widerspiegelt.
-- Ist das Board veraltet (`get_sync_status`), zuerst abgleichen (`sync_project`).
+Dieses Projekt wird in Todolino geplant (Projekt-ID in `.todolino.json`). Das Board laufend nutzen, nicht nur einmal am Ende:
+- Start: `session_start` (Skill `todolino`) oder `get_sync_status`, `get_command_center`, `list_open_questions`, `list_pending_reviews`; ist das Board veraltet, zuerst `sync_project`.
+- Vor der Arbeit: passende Aufgabe suchen oder mit `create_task` anlegen (keine Duplikate), dann `claim_task`.
+- Nach jedem abgeschlossenen Teilschritt und jedem Commit: `post_progress`.
+- Entscheidungen des Nutzers als `ask_question` an der Aufgabe stellen statt nur im Chat zu fragen.
+- Fertig: `request_review`, eigene Arbeit nie selbst auf erledigt setzen. Ende: `record_sync`.
+- Gestartete Agenten bekommen die Aufgaben-ID im Prompt und melden `post_progress` selbst; die Hauptsession stellt das Review.
 <!-- todolino:end -->

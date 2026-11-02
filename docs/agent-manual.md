@@ -116,6 +116,29 @@ Todolino is only useful if it is current. Treat the board as part of the reposit
 
 **What is written to the repository.** `setup_project` writes `.todolino.json` ({"schema": 1, "server", "projectID", "repository"}; no secrets, may be committed) and a short Todolino section between `<!-- todolino:begin -->` and `<!-- todolino:end -->` in CLAUDE.md or AGENTS.md. Update the section between the markers; never duplicate it.
 
+## Using the board while you work
+
+Calling only `record_sync` at the end of a session is not "using Todolino". The board is how the person follows your work, answers your decisions and reviews results, so use it during the work.
+
+1. **Start.** `session_start` (or `get_sync_status`, `get_command_center`, `list_open_questions {includeAnswered: true}`, `list_pending_reviews`). Handle answered questions, requested changes and tasks you already claimed before anything new.
+2. **Before work.** Find the task that matches the order (`list_tasks`, the command center, `list_plan_keys`). None exists: `create_task` (title, short description; never a duplicate), then `claim_task`. One task per order; split larger orders into subtasks.
+3. **During work.** `post_progress` after every finished sub-step and every commit (what is done, what is next, commit hash). Short, factual, no secrets.
+4. **Decisions.** A choice only the person can make (scope, naming, trade-off, risk) is an `ask_question` on the task, with options and your recommendation; use `blocking: true` when you cannot continue without it. Do not ask only in chat; chat is gone with the session, the question is not. Continue with unaffected work and read the answer later.
+5. **Finished.** `request_review` with a summary and, where relevant, screenshots. Never set your own work to `done`; the person decides in the review.
+6. **End.** Bring statuses up to date, `post_progress` for work in flight, then `record_sync {projectID, summary, repoRef}`.
+
+With the Claude Code plugin, hooks support this: the SessionStart text repeats the rules, the PostToolUse hook after `git commit` asks for `post_progress`, and the Stop hook reminds once per session when files were changed or commits made without any `post_progress`, `request_review` or `ask_question` call. Hooks send nothing to the server; the calls are yours.
+
+**Checklist for a main session that starts agents.**
+
+- [ ] The order has a task on the board (found or created, claimed by the main session or handed over deliberately).
+- [ ] Every spawned agent gets its own task or subtask ID, the project ID and the rules "claim_task, post_progress after each sub-step, ask_question instead of chat questions, no request_review, never mark done" in its prompt.
+- [ ] Agents work in separate worktrees with clear file ownership; the prompt names the files.
+- [ ] While agents run, check `get_command_center` / `list_open_questions` and answer or forward questions.
+- [ ] When an agent returns: verify the result (tests, diff), then the main session calls `request_review` with the summary.
+- [ ] Decisions the person must take are `ask_question`s on the task, not chat messages only.
+- [ ] End of session: statuses current, `record_sync` called.
+
 ## Tool reference
 
 All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID strings. Scopes are OAuth scopes of your connection; `tools/list` shows only the tools you may call. Errors are returned as tool results with `isError: true` and a short reason string (see "Errors and retries").

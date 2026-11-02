@@ -13,9 +13,9 @@ Das Plugin liegt in diesem Repository (`claude-plugin/`, Marketplace `.claude-pl
 5. In einem Projektverzeichnis sagen: „Richte das Projekt in Todolino ein“. Das Skill `todolino:setup` (oder `/todolino:setup`) liest README, AGENTS.md/CLAUDE.md, docs/, Plandateien und Git-Log, legt das Projekt per MCP an (oder findet das vorhandene über die Git-Remote), importiert Features, Aufgaben, Unteraufgaben und Kriterien idempotent, schreibt `.todolino.json` und einen kurzen Abschnitt in CLAUDE.md und ruft `record_sync` auf.
 
 Wirkung danach:
-- SessionStart-Hook: in Repositories mit `.todolino.json` bekommt der Agent den Kontext „an Todolino gebunden, Routine: session_start → arbeiten → post_progress → record_sync“; in Git-Repositories ohne Marker nur den Hinweis „noch nicht eingerichtet“.
+- SessionStart-Hook: in Repositories mit `.todolino.json` bekommt der Agent den Kontext „an Todolino gebunden, Pflichtregeln „Board laufend nutzen“: Lage prüfen (offene Fragen, Reviews, eigene Aufgaben), Aufgabe suchen oder anlegen und claimen, post_progress je Teilschritt, Entscheidungen als ask_question, request_review, record_sync; feste Texte, kein Netzwerk; in Git-Repositories ohne Marker nur den Hinweis „noch nicht eingerichtet“.
 - Stop-Hook: siehe „Durchsetzung und ihre Grenzen“.
-- PostToolUse-Hook nach `git commit`: Erinnerung an `post_progress`/`record_sync` (nur gebundene Repositories).
+- PostToolUse-Hook nach `git commit`: dringende Erinnerung, sofort `post_progress` auf der passenden Aufgabe zu schreiben (sonst `create_task` und `claim_task`), bei Fertigstellung `request_review` (nur gebundene Repositories).
 
 ## Weg B: ohne Plugin
 
@@ -50,6 +50,7 @@ Ohne Plugin gibt es keine Hooks; die Pflicht beruht dann nur auf diesem Textbaus
 
 Was erzwungen werden kann (nur mit Plugin, nur in Repositories mit `.todolino.json`):
 - Der Stop-Hook hält die Sitzung **höchstens einmal** auf, wenn in der Sitzung Dateien geändert wurden (Edit/Write im Transcript) und `record_sync` nie aufgerufen wurde, und nennt den Grund. Danach darf die Sitzung enden (kein Endlosloop, `stop_hook_active` und eine Marke je Sitzung).
+- Board-Aktivität: Gab es in der Sitzung Dateiänderungen oder Commits, aber im Transcript keinen Aufruf von `post_progress`, `request_review` oder `ask_question`, hält der Stop-Hook die Sitzung mit festem Text auf und verlangt das Board-Update vor dem Beenden (höchstens `TODOLINO_STOP_MAX` Mal, Standard 1, je Sitzung; dieser Block ersetzt dann die `record_sync`-Erinnerung). Nur Aufrufe als `tool_use` zählen, keine bloßen Erwähnungen.
 - Zusätzlich hält der Stop-Hook die Sitzung auf, solange eine **blockierende Frage** (`ask_question`) ohne anschließendes `get_question` offen ist: fester Text, der `wait_for_events` und danach `get_question` verlangt (keine Nutzertexte), höchstens 6 Fortsetzungen je Sitzung. Das trägt nur wenige Minuten (Claude Code erlaubt höchstens 8 aufeinanderfolgende Fortsetzungen), ist kein echtes Push und noch nicht in einer echten Sitzung erprobt. Siehe [PUSH-AN-CLAUDE-CODE.md](PUSH-AN-CLAUDE-CODE.md).
 - Fehler jeder Art (kein Transcript, unlesbare Eingabe, Zeitüberschreitung) führen dazu, dass der Hook nichts tut („fail-open“). Hooks nutzen kein Netzwerk und keine Tokens.
 - Abschalten für eine Sitzung: Umgebungsvariable `TODOLINO_HOOKS_OFF=1`.
@@ -59,6 +60,12 @@ Was nicht erzwungen werden kann:
 - Ohne Plugin, in Repositories ohne Marker, bei beendeten Sitzungen (Fenster schließen, Absturz, SessionEnd hat nach Doku keine Blockiermöglichkeit) oder wenn der Nutzer die Erinnerung nach dem ersten Block ignoriert, bleibt es bei der Erinnerung.
 - Hooks können nicht prüfen, ob Todolino erreichbar ist.
 - Serverseitig sichtbar ist nur die Aktualität (`fresh`/`stale`/`never` in der Steuerzentrale, `get_stale_projects`); der Server kann niemanden zum Abgleich zwingen.
+
+## Plugin aktualisieren (Version 1.1.0)
+
+Version 1.1.0 (1.11.2026): Pflichtregeln beim Sitzungsstart, schärfere Erinnerung nach Commits, Stop-Hook mit Board-Aktivitätsprüfung, überarbeitete Skills und CLAUDE.md-Vorlage, Agentenhandbuch 1.2.0 (Abschnitt „Using the board while you work“). Hooks wirken erst in neuen Sitzungen.
+
+Aktualisieren beim Nutzer (**Befehle nicht geprüft**; `claude plugin --help` war in dieser Umgebung nicht ausführbar, Angabe nach Claude-Code-Doku): Marketplace auffrischen mit `/plugin marketplace update todolino`, Plugin mit `/plugin update todolino@todolino` (Shell: `claude plugin update todolino@todolino`), danach Claude Code neu starten. Die installierte Version zeigt `/plugin`. Den Projektabschnitt „## Todolino“ erneuert `/todolino:setup` (zwischen den Markern) oder man übernimmt `claude-plugin/templates/claude-md-section.md` von Hand.
 
 ## Selbsttest
 

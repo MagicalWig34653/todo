@@ -96,6 +96,17 @@ struct AttachmentService: Sendable {
         guard AttachmentChecksum.sha256(data) == a.checksum else { throw Abort(.unprocessableEntity, reason: "attachment_checksum_mismatch") }
     }
 
+    /// Cheap pre-check done before the request body is read. Same conditions as `upload`, without locking or writing;
+    /// returns the owning account for per-account limits. Any failure is a uniform 404.
+    func checkUploadCapability(_ id: UUID, token: String, db: any Database) async throws -> UUID {
+        guard let a = try await Attachment.find(id, on: db), a.status == "pending",
+              let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first(),
+              session.expiresAt > Date(), !session.uploaded,
+              AuthSupport.constantTimeEquals(session.tokenHash, AuthSupport.hash(token))
+        else { throw Abort(.notFound) }
+        return a.ownerID
+    }
+
     /// Lock order is always attachment then upload session. Storage I/O finishes before releasing the lock;
     /// for the database store the blob rows commit in the same transaction as the session flag.
     func upload(_ id: UUID, token: String, data: Data, db: any Database) async throws {

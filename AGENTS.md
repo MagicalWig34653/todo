@@ -33,6 +33,10 @@ Vor Übergabe, Kontextwechsel oder Sessionende einen konsistenten Checkpoint sch
   - Jeder Agent-Auftrag nennt: AGENTS.md und aktuellen STATUS-Checkpoint lesen, konkretes Ziel, diese Regeln, Doku-Checkpoint in STATUS/ARBEITSPLAN, Commit auf dem Worktree-Branch (kein Push) und einen Kurzbericht (Commit, Branch, Tests mit Ergebnis, offene Punkte).
   - Die Hauptsession liest nur die Berichte, nicht die Transkripte, und führt die Branches nach Prüfung zusammen. Entscheidungen, die dem Nutzer gehören (z. B. Datenschutz), werden vorher erfragt.
 
+## Todolino laufend nutzen
+
+Das Board ist Teil der Arbeit, nicht nur ein Abschlussschritt (`record_sync` allein genügt nicht). Je Auftrag gibt es eine Aufgabe in Todolino (suchen, sonst `create_task`, dann `claim_task`); Entscheidungsfragen an den Nutzer gehören als `ask_question` an diese Aufgabe, nicht nur in den Chat; nach jedem Teilschritt und Commit `post_progress`; bei Fertigstellung `request_review`, nie selbst auf erledigt setzen. Startet eine Hauptsession Agenten, nennt sie die Aufgaben-ID im Agent-Prompt; die Agenten melden `post_progress` selbst, das Review stellt die Hauptsession. Details: `docs/agent-manual.md` („Board laufend nutzen“).
+
 ## Umsetzung und Abnahme
 
 Zuerst ausführbaren vertikalen Schnitt herstellen. Relevante Änderungen mit passenden Tests prüfen; unnötige Tests und unbelegte Erfolgsaussagen vermeiden. Bei Backendänderungen Linux/MariaDB und bei nativen Änderungen betroffene Apple-Targets berücksichtigen. Fehlende Geräte-/Infrastrukturprüfungen offen nennen.

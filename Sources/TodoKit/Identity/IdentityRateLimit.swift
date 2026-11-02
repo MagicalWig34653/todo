@@ -30,12 +30,22 @@ enum IdentityRateLimit {
 }
 
 struct IdentityRateMiddleware: AsyncMiddleware {
+    /// Mirrors the router: empty segments are ignored, matching is case-insensitive and
+    /// percent-encoding is decoded, so `/v1//auth/password/login/` or `%2F`-style variants hit the same limit.
+    static func normalizedPath(_ raw: String) -> String {
+        var path = raw
+        // Decode repeatedly (bounded) so double-encoded variants cannot slip past either.
+        for _ in 0..<3 { guard let d = path.removingPercentEncoding, d != path else { break }; path = d }
+        return "/" + path.lowercased().split(separator: "/").joined(separator: "/")
+    }
+
     func respond(to req: Request, chainingTo next: any AsyncResponder) async throws -> Response {
         let s = req.application.identitySettings
         let scope: String
         let limit: Int
-        switch req.url.path {
+        switch Self.normalizedPath(req.url.path) {
         case "/v1/auth/login/begin", "/v1/auth/login/finish": scope = "login"; limit = s.loginLimit
+        case "/oauth/register": scope = "oauth_register"; limit = s.oauthRegisterLimit
         case "/v1/auth/password/login": scope = "password"; limit = s.passwordLimit
         case "/v1/auth/register/begin": scope = "register"; limit = s.registerLimit
         case "/v1/identity/recovery/redeem", "/v1/identity/recovery/passkeys/begin", "/v1/identity/recovery/passkeys/finish": scope = "recovery"; limit = s.recoveryLimit

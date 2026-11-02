@@ -20,9 +20,9 @@
 <section class="flex max-w-3xl flex-col gap-2" data-testid="sync-list" aria-label={t('sync.listTitle')}>
 	<div class="flex flex-wrap items-center justify-between gap-2">
 		<h3 class="text-sm font-semibold">{t('sync.listTitle')}</h3>
-		<label class="flex items-center gap-2 text-xs">
+		<label class="flex max-w-full min-w-0 items-center gap-2 text-xs">
 			<span class="text-muted-foreground">{t('sync.filter')}</span>
-			<Select bind:value={filter} class="w-52 max-w-[55vw]" data-testid="sync-filter">
+			<Select bind:value={filter} class="w-52 max-w-[45vw]" data-testid="sync-filter">
 				{#each FILTERS as f (f)}
 					<option value={f}>{t(`sync.filter.${f}` as MessageKey)}</option>
 				{/each}
