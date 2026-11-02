@@ -120,3 +120,15 @@ struct WidenLongTextColumns: AsyncMigration {
 
     func revert(on db: any Database) async throws {}
 }
+
+/// `server_settings.value` was created with `.sql(.text)` (VARCHAR(255) on MariaDB), so an APNs key (.p8 PEM, about
+/// 250 to 300 characters after encryption and encoding) or an SMTP secret failed with "Data too long" (HTTP 500).
+/// Widens only; runs after `CreateServerSettings`.
+struct WidenServerSettingsValue: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase, sql.dialect.name == "mysql" else { return }
+        try await sql.raw("ALTER TABLE `server_settings` MODIFY `value` TEXT NULL").run()
+    }
+
+    func revert(on db: any Database) async throws {}
+}
