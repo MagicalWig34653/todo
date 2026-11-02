@@ -83,6 +83,34 @@ test('admin enables B again; B can sign in', async () => {
 	await expect(b.getByTestId('account-menu')).toBeVisible();
 });
 
+test('admin locks B again and hands B\'s project to C; C sees it under "Meine Projekte"', async () => {
+	await api(b, 'post', '/v1/projects', { name: 'Bens Projekt' });
+	const cID = ((await (await c.request.get('/v1/me')).json()) as { id: string }).id;
+	await a.getByTestId(`admin-disable-${bID}`).click();
+	await a.getByTestId('admin-lock-confirm').click();
+	const row = a.getByTestId('admin-accounts-locked').getByTestId(`admin-account-${bID}`);
+	await expect(row).toContainText('Gesperrt');
+
+	await row.getByTestId(`admin-transfer-${bID}`).click();
+	const dialog = a.getByTestId('admin-transfer-dialog');
+	await expect(dialog).toContainText('Bens Projekt');
+	// The next step needs a target.
+	await expect(dialog.getByTestId('admin-transfer-next')).toBeDisabled();
+	await dialog.getByLabel('Konto-ID der Person').fill(cID);
+	await dialog.getByTestId('admin-transfer-next').click();
+	await expect(dialog.getByTestId('admin-transfer-summary')).toContainText('1 Projekte');
+	await dialog.getByTestId('admin-transfer-submit').click();
+	await expect(dialog.getByTestId('admin-transfer-done')).toContainText('1 Projekte');
+	await dialog.getByTestId('admin-transfer-close').click();
+	// Nothing left to transfer: the action disappears.
+	await expect(row.getByTestId(`admin-transfer-${bID}`)).toHaveCount(0);
+	// B stays locked.
+	expect((await b.request.get('/v1/me')).status()).toBe(401);
+
+	await c.goto('/');
+	await expect(c.getByRole('region', { name: 'Meine Projekte' })).toContainText('Bens Projekt');
+});
+
 test('admin anonymizes B: irreversible, name replaced, no actions left', async () => {
 	await a.getByTestId(`admin-anonymize-${bID}`).click();
 	const dialog = a.getByTestId('admin-lock-dialog');

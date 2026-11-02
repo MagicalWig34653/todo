@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 2.11.2026: Admin überträgt Projekte gesperrter Konten (Agent owner-transfer)
+
+- Board-Aufgabe `3F23FF45-7A01-4D28-BEF1-8694F9DE23DA` (nicht auf erledigt gesetzt). Worktree-Branch, kein Push, keine Migration.
+- Backend: `Maintenance/ProjectTransfer.swift` (`GET /v1/admin/users/{id}/projects`, `POST .../transfer-projects`, `GET /v1/admin/teams`), `ownedProjects` im Admin-Nutzer (nur gesperrte Konten), neue Problem-Codes in `SettingsProblem.status`; Contract `contracts/admin-settings.yaml`. Regeln siehe docs/VERWALTUNG.md.
+- PWA: `ProjectTransferDialog.svelte` (Auswahl, Ziel, Bestätigung, Ergebnis), Aktion in `AdminAccounts.svelte` (Liste wird nach Sperren neu geladen), Helfer in `adminSettings.ts`, `PersonPicker` liefert optional den Namen; Texte am Ende von `de-settings.ts`.
+- Tests: `OwnerTransferTests` 7 (erst rot), vitest `project transfer helpers`, Playwright `account-lock` (6) um Übertragung an Person erweitert, `settings-hub` 11 und `permissions` 8 grün.
+- Grenzen: nur SQLite/Chromium; MariaDB-Pfad (Sperre über `lockSharingGraph`) nicht ausgeführt. `npm run check` meldet im Worktree mit symlinkten node_modules einen Umgebungsfehler (`./$types` in `+layout.svelte`), identisch bei einer Kopie des Hauptstands; im Hauptverzeichnis 0 Fehler. Team-Übertragung nur per API-Test, nicht im Browser.
+- Nächster Schritt: Review und Merge; keine Auslieferungsschritte nötig.
+
 ## Checkpoint 2.11.2026: Konten sperren und anonymisieren (Agent account-lock)
 
 - Board-Aufgabe `BDEA2A99-B205-4043-B4EE-4B8CBFA371E6` (nicht auf erledigt gesetzt, Review ausstehend). Nutzerentscheidung 1.11.: sperren und anonymisieren, nichts löschen. Details und Verhalten: `docs/VERWALTUNG.md` (Abschnitt „Konten sperren und anonymisieren“), Vertrag `contracts/admin-settings.yaml` (disable, enable, anonymize, `/v1/me/anonymize`, `/v1/me/export`, `AdminUser.status`).

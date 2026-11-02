@@ -82,3 +82,43 @@ describe('refreshAfterRoleChange', () => {
 		expect(calls).toBe(1);
 	});
 });
+
+import { canTransferProjects, expandSelection, followsParent, transferReady, type AdminUser, type OwnedProject } from '../src/lib/adminSettings.js';
+
+describe('project transfer helpers', () => {
+	const user = (over: Partial<AdminUser>): AdminUser => ({ id: 'u', displayName: 'U', isAdmin: false, status: 'disabled', ...over });
+	const rows: OwnedProject[] = [
+		{ id: 'p', name: 'P', taskCount: 2 },
+		{ id: 'c', name: 'C', parentID: 'p', parentName: 'P', taskCount: 0 },
+		{ id: 'g', name: 'G', parentID: 'c', parentName: 'C', taskCount: 1 },
+		{ id: 'x', name: 'X', parentID: 'other', parentName: 'Fremd', taskCount: 0 }
+	];
+
+	it('offers the action only for locked accounts that own projects', () => {
+		expect(canTransferProjects(user({ ownedProjects: 2 }))).toBe(true);
+		expect(canTransferProjects(user({ status: 'anonymized', ownedProjects: 1 }))).toBe(true);
+		expect(canTransferProjects(user({ ownedProjects: 0 }))).toBe(false);
+		expect(canTransferProjects(user({}))).toBe(false);
+		expect(canTransferProjects(user({ status: 'active', ownedProjects: 3 }))).toBe(false);
+	});
+
+	it('adds listed sub-projects of selected parents, nothing else', () => {
+		expect([...expandSelection(rows, ['p'])].sort()).toEqual(['c', 'g', 'p']);
+		expect([...expandSelection(rows, ['c'])].sort()).toEqual(['c', 'g']);
+		expect([...expandSelection(rows, ['x'])]).toEqual(['x']);
+		expect(expandSelection(rows, []).size).toBe(0);
+	});
+
+	it('marks rows that follow a listed parent', () => {
+		const sel = new Set(['p', 'c', 'g']);
+		expect(followsParent(rows, rows[1], sel)).toBe(true);
+		expect(followsParent(rows, rows[0], sel)).toBe(false);
+		expect(followsParent(rows, rows[3], new Set(['other', 'x']))).toBe(false);
+	});
+
+	it('needs a selection and a target', () => {
+		expect(transferReady({ type: 'person', id: 'a' }, new Set(['p']))).toBe(true);
+		expect(transferReady({ type: 'person', id: '' }, new Set(['p']))).toBe(false);
+		expect(transferReady({ type: 'team', id: 't' }, new Set())).toBe(false);
+	});
+});

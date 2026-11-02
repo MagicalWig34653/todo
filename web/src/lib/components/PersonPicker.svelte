@@ -6,7 +6,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 
 	/** `value` is the chosen account ID: either picked from the restricted directory or typed in. */
-	let { value = $bindable(''), idLabel }: { value: string; idLabel: string } = $props();
+	let { value = $bindable(''), idLabel, name = $bindable('') }: { value: string; idLabel: string; name?: string } = $props();
 
 	let term = $state('');
 	let results = $state<DirectoryUser[]>([]);
@@ -37,6 +37,7 @@
 	function pick(u: DirectoryUser) {
 		value = u.id;
 		pickedName = u.displayName;
+		name = u.displayName;
 		results = [];
 		term = '';
 		searched = false;
@@ -44,6 +45,7 @@
 	function clear() {
 		value = '';
 		pickedName = null;
+		name = '';
 	}
 </script>
 
