@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 2.11.2026: MCP Stapel 6 Board und persönlicher Zustand (Agent claude-code@mcp-s6)
+
+- Ziel: Board-Aufgabe `9A3AB757-A5BE-482C-9AAB-27217B3A44EB`; Spalten, Vorlagen, Aufgabenreihenfolge, Favoriten, Projekteinstellungen per MCP.
+- Implementiert: `MCPBoardTools.swift` (`update_column`, `apply_column_template`, `reorder_tasks`, `list_favorites`, `set_project_favorite`, `get_project_prefs`, `update_project_prefs`), Registrierung in `MCPController`, `PlanningService.reorderBoard` extrahiert (REST nutzt es). `set_project_position` und `delete_column` (Klasse C) existierten schon aus Stapel 1. Beschreibung in `docs/MCP-PARITAET.md` (Stapel 6).
+- Geprüft: `MCPBoardToolsTests` 11/11 (Erfolg, Scope, Grant, Rolle, kaputte Eingabe, version/revision-Konflikt, delete_column bleibt Anfrage). Vollständiger Lauf siehe Commit-Bericht.
+- Offen: Handbuch/Version/Plugin von der Hauptsession; Handbuch-Doku-Test rot bis dahin.
+
 ## Checkpoint 2.11.2026: MCP Stapel 5 Teilen und Teams (Agent claude-code@mcp-s5)
 
 - Neu: 8 Tools (`list_project_grants`, `get_project_visibility`, `set_project_grant`, `revoke_project_grant`, `list_teams`, `list_team_members`, `create_team`, `invite_team_member`) in `MCPSharingTools.swift`, neue Scopes `sharing:*`/`teams:*` (Consent, de.ts, Vertrag). `SharingController` nutzt jetzt `SharingOperations` (gleicher Fachpfad für REST/MCP).

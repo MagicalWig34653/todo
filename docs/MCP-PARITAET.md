@@ -162,3 +162,23 @@ Zwölf Tools in `MCPActivityTools.swift`, keine neuen Scopes, keine Migration. F
 Beispiele: `update_comment {"taskID":"…","commentID":"…","version":1,"body":"neu"}`; `list_activity {"limit":20}`; `read_attachment {"id":"…","preview":true}`; `delete_attachment {"attachmentID":"…"}` gibt `confirmation_required` mit `actionRequestID` zurück.
 
 Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `invalid_arguments`, `invalid_version`, `invalid_limit`, `invalid_id`, `invalid_text`, `invalid_cursor`, `invalid_idempotency_key`, `idempotency_conflict`, `not_comment_author`, `not_agent_comment`, `invalid_attachment`, `invalid_size`, `invalid_build_id`, `confirmation_required`. Entscheidung: Agenten dürfen mit `update_comment` keine Texte von Personen ändern, obwohl dasselbe Konto sie geschrieben hat (REST erlaubt dem Konto das). Handbuch und Version macht die Hauptsession.
+
+## Umgesetzt: Stapel 6 (Board und persönlicher Zustand)
+
+Sieben Tools in `MCPBoardTools.swift`, Tests `MCPBoardToolsTests` (11). Keine neuen Scopes, keine Migration. Fachpfad wie REST: `ColumnService`, `ProjectStateService`, `PlanningService.reorderBoard` (aus `PUT /v1/board/reorder` extrahiert, REST nutzt es jetzt auch). Scope, Grant-Projektliste und aktuelle Rolle werden geprüft; nicht erreichbar = `not_found`. Schon vorhanden aus Stapel 1: `set_project_position` und `delete_column` (Klasse C, Bestätigungsanfrage, per Test erneut belegt); `rename_column` bleibt.
+
+| Tool | Scope | Klasse | Parameter / Ergebnis |
+| --- | --- | --- | --- |
+| `update_column` | tasks:write | A | `id, version, name?, color? ("" entfernt), isDone?, index?` (mind. ein Feld); ColumnDTO |
+| `apply_column_template` | tasks:write | B | `projectID, source` (`status`, `agent_workflow` oder Projekt-ID im Grant); nur für Projekte ohne Spalten (`columns_exist`), Aufgaben werden nach Status eingeordnet; Spaltenliste |
+| `reorder_tasks` | tasks:write | A | `projectID, status, taskIDs[]` (alle Aufgaben des Status genau einmal, höchstens 1000); `{ok, count}` |
+| `list_favorites` | projects:read | A | keine; `[{projectID, position}]`, nur Projekte im Grant |
+| `set_project_favorite` | projects:write | A | `projectID, favorite, index?` (index nur mit favorite=true); Favoritenliste |
+| `get_project_prefs` | projects:read | A | `projectID`; view, sort, grouping, showCompleted, mode, modeSource, isFavorite, revision |
+| `update_project_prefs` | projects:write | A | `projectID, revision, view?, sort?, grouping?, showCompleted?, mode?`; gleicher strenger Decoder wie REST |
+
+Persönliche Einstellungen (Favoriten, Anzeige) sind kontoweit privat und erweitern keine Reichweite; Favoriten außerhalb des Grants erscheinen in der Verbindung nicht. Optimistic Concurrency: Spalten über `version` (`version_conflict`), Anzeige-Einstellungen über `revision` (`revision_conflict`), Reihenfolge über `board_changed`.
+
+Beispiele: `update_column {"id":"…","version":1,"name":"Review","color":"#ff0000"}`, `apply_column_template {"projectID":"…","source":"agent_workflow"}`, `reorder_tasks {"projectID":"…","status":"open","taskIDs":["…","…"]}`, `set_project_favorite {"projectID":"…","favorite":true,"index":0}`, `update_project_prefs {"projectID":"…","revision":0,"view":"board"}`.
+
+Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflict`, `board_changed`, `columns_exist`, `invalid_arguments`, `invalid_version`, `invalid_index`, `invalid_color`, `invalid_isDone`, `invalid_source`, `invalid_status`, `invalid_taskIDs`, `invalid_favorite`, `invalid_view|sort|grouping|mode|showCompleted`, `revision_required`, `empty_project_prefs`, `invalid_project_prefs`. Handbuch und Version macht die Hauptsession; der Test `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die sieben Tools fehl.

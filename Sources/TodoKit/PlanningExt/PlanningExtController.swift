@@ -61,16 +61,8 @@ struct PlanningExtController: RouteCollection {
     }
     @Sendable func reorder(_ req: Request) async throws -> HTTPStatus {
         let s = try await service(req), body = try req.content.decode(PlanningReorder.self)
-        guard TaskStatus.all.contains(body.status), Set(body.taskIDs).count == body.taskIDs.count else { throw Abort(.badRequest) }
         try await req.db.transaction { db in
-            let s = PlanningService(user: s.user, db: db)
-            try await s.lock(); _ = try await s.access.project(body.projectID, role: .edit)
-            let tasks = try await s.visibleTasks().filter { $0.projectID == body.projectID && $0.status == body.status }
-            guard Set(try tasks.map { try $0.requireID() }) == Set(body.taskIDs) else { throw Abort(.conflict, reason: "board_changed") }
-            for (position, id) in body.taskIDs.enumerated() {
-                let p = try await TaskPlanning.find(id, on: db) ?? TaskPlanning(taskID: id)
-                p.position = position; try await p.save(on: db)
-            }
+            try await PlanningService(user: s.user, db: db).reorderBoard(projectID: body.projectID, status: body.status, taskIDs: body.taskIDs)
         }
         return .noContent
     }
