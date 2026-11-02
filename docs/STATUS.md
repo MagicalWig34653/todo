@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 2.11.2026: Einladungslink mit Code (Agent claude-code@invite-link)
+
+- Board-Aufgabe `5F3E4803-FC1A-4674-A4CE-B1AD85838693` (nicht erledigt gesetzt, kein Review). Nur PWA, kein Backend, kein Push.
+- Link jetzt `/setup#code=<code>` (Fragment: geht weder an Server/Logs noch als Referer); alter `?token=` bleibt gültig. `web/src/lib/inviteLink.ts` (build/parse), Setup-Seite füllt das Feld, zeigt Hinweis und entfernt den Code per `history.replaceState` aus der Adresszeile. Admin-Einladungen zeigen/kopieren den neuen Link.
+- Fix: `describeError` zeigt bei `invalid_token` (403) die Meldung "Der Code ist ungültig, abgelaufen oder bereits verwendet." statt "Berechtigung fehlt".
+- Tests: vitest 277 grün (neu `inviteLink.test.ts`), Build grün, neuer `e2e/invite-link.spec.ts` grün (Chromium, frische SQLite: Link, Vorbelegung, URL bereinigt, Registrierung, zweite Nutzung zeigt Meldung).
+
 ## Checkpoint 2.11.2026: MCP Stapel 5 Teilen und Teams (Agent claude-code@mcp-s5)
 
 - Neu: 8 Tools (`list_project_grants`, `get_project_visibility`, `set_project_grant`, `revoke_project_grant`, `list_teams`, `list_team_members`, `create_team`, `invite_team_member`) in `MCPSharingTools.swift`, neue Scopes `sharing:*`/`teams:*` (Consent, de.ts, Vertrag). `SharingController` nutzt jetzt `SharingOperations` (gleicher Fachpfad für REST/MCP).

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
+	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
+	import { parseInviteCode } from '#lib/inviteLink.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { describeError } from '#lib/errors.js';
 	import { t } from '#lib/i18n/index.js';
@@ -9,7 +11,15 @@
 	import AuthShell from '#lib/components/app/AuthShell.svelte';
 	import { Label } from '#lib/components/ui/label/index.js';
 
-	let token = $state(page.url.searchParams.get('token') ?? '');
+	let token = $state(browser ? parseInviteCode(location.search, location.hash) : '');
+	let fromLink = $state(false);
+	onMount(() => {
+		// The code came with the link: remove it from the address bar so it is not kept in history or shared by accident.
+		if (token) {
+			fromLink = true;
+			history.replaceState(history.state, '', location.pathname);
+		}
+	});
 	let displayName = $state('');
 	let passkeyName = $state('');
 	let busy = $state(false);
@@ -32,6 +42,8 @@
 
 <AuthShell title={t('setup.title')}>
 	<p class="text-muted-foreground text-sm">{t('setup.intro')}</p>
+
+	{#if fromLink}<p class="text-sm" role="status" data-testid="setup-code-prefilled">{t('setup.codeFromLink')}</p>{/if}
 
 	<form class="flex flex-col gap-3" onsubmit={submit}>
 		<Label for="token">{t('setup.token')}</Label>

@@ -132,6 +132,7 @@ describe('api: planning extensions, filters, directory', () => {
 
 describe('error texts', () => {
 	it('explains dependency cycles and other 422 answers in German', () => {
+		expect(describeError(new ApiError(403, 'invalid_token'))).toBe(de['error.invalid_token']);
 		expect(describeError(new ApiError(422, 'dependency_cycle'))).toBe(de['error.dependency_cycle']);
 		expect(describeError(new ApiError(422, 'Unprocessable Entity'))).toBe(de['error.unprocessable']);
 		expect(describeError(new ApiError(400, 'recurrence_requires_date'))).toBe(de['error.recurrence_requires_date']);
