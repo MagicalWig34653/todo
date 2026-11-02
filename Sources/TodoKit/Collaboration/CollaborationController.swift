@@ -91,33 +91,17 @@ struct CollaborationController: RouteCollection {
     @Sendable func editComment(_ req: Request) async throws -> CommentDTO {
         _ = try await authorized(req, role: .comment)
         let input = try req.content.decode(CommentInput.self)
-        let updated = try await mutate(req, role: .comment) { db, taskID, userID in
-            let c = try await loadComment(req, taskID: taskID, on: db)
-            guard c.authorID == userID else { throw Abort(.forbidden, reason: "not_comment_author") }
-            try checkVersion(c.version, input.version)
-            c.body = try text(input.body); c.version += 1
-            try await c.save(on: db)
-            try await appendActivity(taskID: taskID, actorType: .person, actorID: userID, kind: "comment.updated", subjectID: c.id, on: db)
-            return try CommentDTO(c)
-        }
+        guard let version = input.version else { throw Abort(.badRequest, reason: "version_required") }
+        let updated = try await CommentService.edit(taskID: parameter(req, "id"), commentID: parameter(req, "resourceID"),
+            user: req.requireUser(), body: input.body, version: version, on: req.db)
         return try await named([updated], on: req.db)[0]
     }
     @Sendable func deleteComment(_ req: Request) async throws -> HTTPStatus {
         _ = try await authorized(req, role: .comment)
         let input = try req.content.decode(VersionInput.self)
-        return try await mutate(req, role: .comment) { db, taskID, userID in
-            let c = try await loadComment(req, taskID: taskID, on: db)
-            if c.authorID != userID {
-                // Moderation of foreign comments requires manage rights on the project.
-                guard let user = try await User.find(userID, on: db) else { throw Abort(.notFound) }
-                do { _ = try await ProjectAccess(user: user, db: db).task(taskID, role: .manage) }
-                catch { throw Abort(.forbidden, reason: "not_comment_author") }
-            }
-            try checkVersion(c.version, input.version)
-            try await c.delete(on: db)
-            try await appendActivity(taskID: taskID, actorType: .person, actorID: userID, kind: "comment.deleted", subjectID: c.id, on: db)
-            return .noContent
-        }
+        try await CommentService.delete(taskID: parameter(req, "id"), commentID: parameter(req, "resourceID"),
+            user: req.requireUser(), version: input.version, on: req.db)
+        return .noContent
     }
     @Sendable func criteria(_ req: Request) async throws -> [CriterionDTO] {
         let taskID = try await authorized(req)

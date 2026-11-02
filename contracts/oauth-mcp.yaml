@@ -223,6 +223,18 @@ x-mcp-tools:
   unassign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
   delete_milestone: {scope: 'tasks:write', class: C, required: [milestoneID], result: confirmation_required}
 
+  update_comment: {scope: 'comments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: taskID, commentID, version, body; Löschungen nur als Bestätigungsanfrage.'}
+  delete_comment: {scope: 'comments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: taskID, commentID, version?; Löschungen nur als Bestätigungsanfrage.'}
+  list_project_comments: {scope: 'projects:read', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID, limit?; Löschungen nur als Bestätigungsanfrage.'}
+  add_project_comment: {scope: 'comments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID, body, idempotencyKey?; Löschungen nur als Bestätigungsanfrage.'}
+  update_project_comment: {scope: 'comments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID, commentID, version, body; Löschungen nur als Bestätigungsanfrage.'}
+  delete_project_comment: {scope: 'comments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID, commentID, version?; Löschungen nur als Bestätigungsanfrage.'}
+  list_activity: {scope: 'tasks:read', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID?, limit?, before?; Löschungen nur als Bestätigungsanfrage.'}
+  read_attachment: {scope: 'attachments:read', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: id, preview?; Löschungen nur als Bestätigungsanfrage.'}
+  register_build: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID, buildID, label?, platform?; Löschungen nur als Bestätigungsanfrage.'}
+  begin_task_upload: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: taskID, filename, role, mediaType, size, checksum; Löschungen nur als Bestätigungsanfrage.'}
+  complete_task_upload: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID; Löschungen nur als Bestätigungsanfrage.'}
+  delete_attachment: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID; Löschungen nur als Bestätigungsanfrage.'}
 x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']
   search_tasks: {scope: 'tasks:read', required: [query], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
   list_labels: {scope: 'labels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}

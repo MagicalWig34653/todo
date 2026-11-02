@@ -116,3 +116,26 @@ Elf Tools, alle in `MCPDiscoveryTools.swift`. Fachpfad: `DiscoveryService`, geme
 Beispiele: `search_tasks {"query":"Anmeldung","limit":20}`, `create_label {"name":"Wichtig","color":"#ff0000"}`, `create_filter {"name":"Offen","query":{"status":"open"}}`, `set_task_labels {"taskID":"<UUID>","labelIDs":[]}`. Namen getrimmt 1–200 Zeichen, Farbe `#RRGGBB`, Suchtext höchstens 500 Zeichen, Limit 1–100 (Standard 50). Suchergebnisse werden vor dem Limit auf Grant-Projekte begrenzt; Label-Verknüpfungen erweitern die Reichweite nicht. Gespeicherte Filter mit explizitem Projekt außerhalb des Grants liefern `not_found`.
 
 Fehler: `insufficient_scope`, `not_found` (auch fremde Labels/Filter und entzogene Leserechte), `version_conflict`, `invalid_arguments`, `invalid_name`, `invalid_color`, `invalid_query`, `invalid_limit`, `invalid_version`; sonst REST-Validierungsfehler als Tool-Fehler. C-Tools liefern `confirmation_required` mit `actionRequestID`, führen noch nichts aus und prüfen Eigentum/Version erneut bei Bestätigung. Optionales Label-`color` ist additiv in REST und Sync, Migration `AddDiscoveryLabelColor` vor Serve ausführen. Die PWA zeigt für neue Aktionsarten den vorhandenen generischen Bestätigungstext und die serverseitige Zusammenfassung. Kein Toolname kollidiert; Handbuch-/Plugin-Update macht die Hauptsession.
+
+## Umgesetzt: Stapel 4
+
+Zwölf Tools in `MCPActivityTools.swift`, keine neuen Scopes, keine Migration. Fachpfad wie REST: `CommentService` (neu `edit`/`delete`, nun auch von den REST-Routen genutzt), `ProjectCommentService` (optionaler `actor`), `ActivityFeedService` (neu `allowedProjects`), `AttachmentService`, `WorkflowService.registerBuild`. Jedes Tool prüft Scope, Grant-Projektliste (bei Objekten über Aufgabe oder Anhang) und aktuelle Rolle; nicht erreichbar = `not_found`. Aktivität nennt die Verbindung (`integration`) als Akteurin.
+
+| Tool | Scope | Klasse | Parameter / Ergebnis |
+| --- | --- | --- | --- |
+| `update_comment` | comments:write | A | `taskID, commentID, version, body`; nur eigene Agentennachrichten (Texte von Personen: `not_agent_comment`); CommentDTO |
+| `delete_comment` | comments:write | C | `taskID, commentID, version?`; Bestätigungsanfrage (Autor oder manage) |
+| `list_project_comments` | projects:read | A | `projectID, limit?` (1..200, Standard 100, die neuesten); ProjectCommentDTO-Liste |
+| `add_project_comment` | comments:write | A | `projectID, body, idempotencyKey?`; Rolle comment nötig |
+| `update_project_comment` | comments:write | A | `projectID, commentID, version, body`; nur eigene Kommentare |
+| `delete_project_comment` | comments:write | C | `projectID, commentID, version?`; Bestätigungsanfrage |
+| `list_activity` | tasks:read | A | `projectID?, limit?` (1..100, Standard 50), `before?` (nextCursor); Aufgaben- und Projektereignisse, nur Grant-Projekte, die das Konto lesen darf |
+| `read_attachment` | attachments:read | A | `id, preview?`; `{attachment, build?, preview?: {mediaType, dataBase64}, previewOmitted?}`; Vorschau nur Bilder bis 1 MiB (`not_an_image`, `too_large`) |
+| `register_build` | attachments:write | A | `attachmentID, buildID, label?, platform?`; macht einen fertigen Anhang zum Build-Screenshot, idempotent, `build.added` einmal |
+| `begin_task_upload` | attachments:write | A | `taskID, filename, role (reference\|progress\|result), mediaType, size, checksum`; wie `begin_attachment`, aber mit wählbarer Rolle, ohne Build-Eintrag |
+| `complete_task_upload` | attachments:write | A | `attachmentID`; nur eigene Uploads auf erlaubter Aufgabe |
+| `delete_attachment` | attachments:write | C | `attachmentID`; Bestätigungsanfrage; Bestätigen blendet die Datei und ihren Build-Eintrag aus (Status `deleted`, Aktivität `attachment.deleted`), `cleanup-uploads` entfernt die Bytes |
+
+Beispiele: `update_comment {"taskID":"…","commentID":"…","version":1,"body":"neu"}`; `list_activity {"limit":20}`; `read_attachment {"id":"…","preview":true}`; `delete_attachment {"attachmentID":"…"}` gibt `confirmation_required` mit `actionRequestID` zurück.
+
+Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `invalid_arguments`, `invalid_version`, `invalid_limit`, `invalid_id`, `invalid_text`, `invalid_cursor`, `invalid_idempotency_key`, `idempotency_conflict`, `not_comment_author`, `not_agent_comment`, `invalid_attachment`, `invalid_size`, `invalid_build_id`, `confirmation_required`. Entscheidung: Agenten dürfen mit `update_comment` keine Texte von Personen ändern, obwohl dasselbe Konto sie geschrieben hat (REST erlaubt dem Konto das). Handbuch und Version macht die Hauptsession.

@@ -32,6 +32,8 @@ struct ActivityFeedService: Sendable {
 
     let user: User
     let db: any Database
+    /// Delegated clients (MCP) only see projects their grant lists; nil = every visible project.
+    var allowedProjects: Set<UUID>? = nil
 
     private struct Cursor { let time: Double; let id: String }
 
@@ -56,9 +58,14 @@ struct ActivityFeedService: Sendable {
         let access = ProjectAccess(user: user, db: db)
         var projects: [UUID: Project] = [:]
         if let projectID {
+            if let allowedProjects, !allowedProjects.contains(projectID) { throw Abort(.notFound) }
             projects[projectID] = try await access.project(projectID, role: .read)
         } else {
-            for project in try await access.visibleProjects() { projects[try project.requireID()] = project }
+            for project in try await access.visibleProjects() {
+                let id = try project.requireID()
+                if let allowedProjects, !allowedProjects.contains(id) { continue }
+                projects[id] = project
+            }
         }
         guard !projects.isEmpty else { return ActivityFeedPage(items: [], nextCursor: nil) }
         let ids = Array(projects.keys)

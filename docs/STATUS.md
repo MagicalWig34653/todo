@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 2.11.2026: MCP Stapel 4 Kommentare, Aktivität, Dateien (Agent claude-code@mcp-s4)
+
+- Board-Aufgabe `F872A031-B429-4B72-8C72-EC699D213443`. Worktree-Branch, kein Push, keine Migration, keine neuen Scopes. Beschreibung: `docs/MCP-PARITAET.md`, „Umgesetzt: Stapel 4“.
+- Neu: zwölf Tools in `MCPActivityTools.swift` (Kommentare ändern/löschen, Projektkommentare, `list_activity`, `read_attachment`, `register_build`, `begin_task_upload`/`complete_task_upload` mit Rolle, `delete_attachment`). Löschungen laufen als Bestätigungsanfrage (`delete_comment`, `delete_project_comment`, `delete_attachment` in `ConfirmableActions.activityActions`).
+- Refactor: REST-Kommentar-Ändern/-Löschen nutzt jetzt `CommentService.edit/delete`; `ProjectCommentService` und `ActivityFeedService` bekamen optionale Parameter (Akteur, Grant-Filter). Attachment-Cleanup entfernt auch Zeilen mit Status `deleted`.
+- Tests: `MCPActivityToolsTests` (Erfolg, Scope, Grant, Rolle, kaputte Eingabe, Versionskonflikt, Anfrage statt Ausführung). Gesamtlauf siehe Abschlussbericht des Agenten.
+- Nächster Schritt: Handbuch (agent-manual.md, Version, embed-Skript) um die zwölf Tools ergänzen; Branch mergen.
 ## Checkpoint 2.11.2026 (abends): Chat je Karte (Agent chat)
 
 - Board-Aufgabe `598FA538-9FE6-4379-A33B-38D5A942FA0D` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push.

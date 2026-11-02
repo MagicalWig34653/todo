@@ -169,7 +169,8 @@ struct AttachmentService: Sendable {
                     guard let current = try await Attachment.find(id, on: db) else { return false }
                     let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first()
                     let task = try await TodoTask.find(current.taskID, on: db)
-                    guard task == nil || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
+                    // "deleted" = removed through a confirmed delete_attachment request (no storage settings there).
+                    guard task == nil || current.status == "deleted" || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
                     try await store(for: current).delete(key: current.objectKey, db: db)
                     try await current.delete(on: db)
                     return true
