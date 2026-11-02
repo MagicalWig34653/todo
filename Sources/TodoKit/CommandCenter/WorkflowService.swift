@@ -410,7 +410,7 @@ struct WorkflowService: Sendable {
             _ = try await AgentService.humanTransition(jobID: jobID, decision: decision, user: user, on: db)
             if let note {
                 _ = try await CommentService.create(taskID: taskID, user: user, body: note, idempotencyKey: nil,
-                    actor: (actor.type, actor.id), scope: { [allowedProjects] t in
+                    actor: (actor.type, actor.id), target: .init(reviewID: linked.id), agentLabel: actor.type == .person ? nil : actor.label, scope: { [allowedProjects] t in
                         if let allowedProjects, !allowedProjects.contains(t.projectID) { throw Abort(.notFound) }
                     }, on: db)
             }
@@ -619,7 +619,7 @@ struct WorkflowService: Sendable {
         let criteria = try await AcceptanceCriterion.query(on: db).filter(\.$taskID == id).sort(\.$id).all()
         let notes = try await TaskProgressNote.query(on: db).filter(\.$taskID == id).sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(20).all()
         let progress = ProgressCalc.compute(task: task, children: children, criteria: criteria, latestPercent: notes.first(where: { $0.percent != nil })?.percent)
-        let comments = try await TaskComment.query(on: db).filter(\.$taskID == id).sort(\.$id).all()
+        let comments = try await TaskComment.query(on: db).filter(\.$taskID == id).sort(\.$createdAt).sort(\.$id).all()
         let names = try await displayNames(comments.map(\.authorID), on: db)
         let questions = try await TaskQuestion.query(on: db).filter(\.$taskID == id).sort(\.$createdAt).sort(\.$id).all()
         let review = try await TaskReview.query(on: db).filter(\.$taskID == id).sort(\.$createdAt, .descending).sort(\.$id, .descending).first()

@@ -30,3 +30,18 @@ struct CreateCollaborationSchema: AsyncMigration {
         }
     }
 }
+
+/// Chat per card: a comment may belong to a question or a review of its task, carries an author kind/label and a time.
+/// Additive; old rows keep NULL (task thread, person, unknown time).
+struct AddCommentThreads: AsyncMigration {
+    private static let columns: [(FieldKey, DatabaseSchema.DataType)] = [
+        ("question_id", .uuid), ("review_id", .uuid), ("author_kind", .string), ("author_label", .string), ("created_at", .datetime)
+    ]
+    func prepare(on db: any Database) async throws {
+        // One statement per column: SQLite cannot add several columns in one ALTER.
+        for (name, type) in Self.columns { try await db.schema(TaskComment.schema).field(name, type).update() }
+    }
+    func revert(on db: any Database) async throws {
+        for (name, _) in Self.columns { try await db.schema(TaskComment.schema).deleteField(name).update() }
+    }
+}

@@ -1,4 +1,4 @@
-<!-- manual-version: 1.6.0 -->
+<!-- manual-version: 1.7.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -18,7 +18,7 @@ The user decides; you propose and execute. If a decision is needed that the brie
 - **Task**: one card on the board. Status: `open`, `in_progress`, `in_review`, `done`. Optimistic concurrency: every task has a `version`; writes that pass a stale version fail with `version_conflict`.
 - **Feature**: a task with `kind=feature` or with at least one subtask. A subtask is a task whose parent is a feature of the same project (depth at most 2). Features show their percent progress on the overview.
 - **Board column**: a named column of one project. Columns are recognised by name; the standard workflow uses Backlog, Bereit, In Arbeit, Frage offen, Review, Erledigt.
-- **Comment**: free discussion on a task. Not tracked as a decision.
+- **Message (comment)**: one entry in the chat of a card. Every task, question and review has its own chat; people and agents write into it (`authorKind` is `person` or `agent`). Not tracked as a decision.
 - **Question**: a structured question on a task (prompt, optional answer options, blocking flag). It stays open until a person answers. Open questions of the whole project appear on the overview.
 - **Progress note**: a short status text with an optional percent that you post while working.
 - **Checkpoint**: the resume point of a local runner job (`nextStep`). Local runners store them automatically; MCP agents use progress notes.
@@ -33,6 +33,7 @@ The user decides; you propose and execute. If a decision is needed that the brie
 2. **Claim**: `claim_task {taskID, agentName}`. This sets the task to `in_progress`, records who works on it and moves the card to "In Arbeit". A second agent gets `already_claimed` unless it passes `takeOver: true`; never take over a task that another agent is actively working on without a reason.
 3. **Plan**: for a larger piece of work create the feature with `create_task`, mark it `set_task_structure {taskID, kind: "feature"}` and create subtasks with `create_task` plus `set_task_structure {taskID, parentTaskID}`. Optionally add acceptance criteria with `add_criterion`. Progress is then computed for you.
 4. **Work and report**: `post_progress {taskID, note, percent?}` after each meaningful step (not for every command). Tick criteria with `set_criterion {criterionID, completed}`. Mark blocked work with `set_task_structure {taskID, blockedReason}`; clear it with `blockedReason: null`.
+4a. **Read what people wrote**: new messages and replies come as chat messages. After a question, a review or a long step call `list_comments {taskID, authorKind: "person", since}` (or `wait_for_events`, hint `kind: "comment"`) and answer with `add_comment`. Pass `questionID` or `reviewID` to read or write in the chat of that question or review; without it you write into the task's own chat.
 5. **Ask when you need a decision**: `ask_question {taskID, prompt, options?, blocking: true}`. The card moves to "Frage offen". Continue with other tasks while it is open. Poll `get_question {questionID}` (or `list_open_questions {taskID, includeAnswered: true}`) until `state` is `answered`, then read `answer`. Never answer your own question. After a blocking question you may call `wait_for_events {since?, timeoutSeconds}` for at most a few rounds (it returns hints only: `changed`, `token`, `hints[{kind, taskID, projectID}]`; pass the returned `token` as `since` next time), then `get_question`; if still open, end the turn normally instead of looping.
 6. **Show the result**: attach screenshots of the finished build with `add_attachment` (or `begin_attachment` + `complete_attachment` for large files). Always pass the same `buildID` for screenshots of one build and a `platform` (for example `ios`, `macos`, `web`).
 7. **Request review**: `request_review {taskID, summary}`. The task moves to `in_review` and "Review". Do not set `done` yourself.
@@ -181,8 +182,8 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
 | `list_pending_reviews` | tasks:read | Pending reviews. |
 | `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). |
-| `list_comments` | tasks:read | Comments of a task. |
-| `add_comment` | comments:write | Post a comment. |
+| `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. |
+| `add_comment` | comments:write | Write a message into the chat of a task, question (`questionID`) or review (`reviewID`); optional `agentName`. |
 | `list_columns` | projects:read | Board with tasks per column. |
 | `move_task_to_column` | tasks:write | Move a card. |
 | `create_column` | tasks:write | Add a column. |
@@ -241,6 +242,8 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 Prompts: `setup_project`, `sync_project`, `session_start` (see "Project onboarding and keeping Todolino current").
 
 Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON), and the template `todo://projects/{projectID}/structure`.
+
+**Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
 

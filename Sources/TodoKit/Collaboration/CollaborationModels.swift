@@ -8,6 +8,13 @@ final class TaskComment: Model, @unchecked Sendable {
     @Field(key: "author_id") var authorID: UUID
     @Field(key: "body") var body: String
     @Field(key: "version") var version: Int
+    /// Optional thread: a message about a question or a review of the task (chat per card). Both nil = task thread.
+    @OptionalField(key: "question_id") var questionID: UUID?
+    @OptionalField(key: "review_id") var reviewID: UUID?
+    /// `person` (nil on old rows) or `agent` (written through MCP or by the runner).
+    @OptionalField(key: "author_kind") var authorKind: String?
+    @OptionalField(key: "author_label") var authorLabel: String?
+    @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     init() {}
     init(taskID: UUID, authorID: UUID, body: String) {
         self.taskID = taskID; self.authorID = authorID; self.body = body; version = 1
@@ -61,8 +68,16 @@ struct CommentDTO: Content {
     var authorName: String?
     let body: String
     let version: Int
+    var questionID: UUID?
+    var reviewID: UUID?
+    /// `person` or `agent`.
+    var authorKind: String = "person"
+    var authorLabel: String?
+    var createdAt: Date?
     init(_ c: TaskComment) throws {
         id = try c.requireID(); taskID = c.taskID; authorID = c.authorID; body = c.body; version = c.version
+        questionID = c.questionID; reviewID = c.reviewID; authorKind = c.authorKind ?? "person"
+        authorLabel = c.authorLabel; createdAt = c.createdAt
     }
     init(_ record: CommentIdempotency) {
         id = record.commentID; taskID = record.taskID; authorID = record.userID; body = record.requestBody; version = 1

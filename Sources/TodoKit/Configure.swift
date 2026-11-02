@@ -99,6 +99,7 @@ public func configureMigrations(_ app: Application) {
     configureServerSettings(app)
     app.migrations.add(WidenServerSettingsValue())
     configureLive(app)
+    app.migrations.add(AddCommentThreads())
     configureActionRequests(app)
     app.migrations.add(AddAccountLock())
     // Last: appends label upserts to the change log (needs the sync tables and the discovery tables).

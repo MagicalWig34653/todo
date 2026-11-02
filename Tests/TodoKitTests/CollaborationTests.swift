@@ -62,7 +62,9 @@ final class CollaborationTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(deleted.status, .noContent)
         let retry = try await request(f.test, .POST, f.path + "/comments", token: f.token, body: data, key: "retry-1")
         XCTAssertEqual(retry.status, .created)
-        XCTAssertEqual(retry.object as NSDictionary, created.object as NSDictionary)
+        // After a delete only the stored snapshot remains: same content, but no creation time.
+        func core(_ o: [String: Any]) -> NSDictionary { var o = o; o["createdAt"] = nil; return o as NSDictionary }
+        XCTAssertEqual(core(retry.object), core(created.object))
         let changed = try await request(f.test, .POST, f.path + "/comments", token: f.token, body: json(["body": "Other"]), key: "retry-1")
         XCTAssertEqual(changed.status, .conflict)
         let missing = try await request(f.test, .GET, path, token: f.token)
