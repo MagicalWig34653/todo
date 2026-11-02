@@ -1,7 +1,7 @@
 {
   "name": "todolino",
   "displayName": "Todolino",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Todolino MCP-Server, Skills zum Einrichten und Abgleichen von Projekten und Hooks, die erinnern, Todolino aktuell zu halten.",
   "author": { "name": "Todolino" },
   "homepage": "https://github.com/MagicalWig34653/todo",
