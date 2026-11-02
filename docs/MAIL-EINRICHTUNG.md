@@ -71,7 +71,7 @@ Das Passwort steht nie im Log und nie in einer API-Antwort. Fehler werden nur al
 ## 3. Prüfen
 
 - Der Start schlägt bei `MAIL_ENABLED=true` mit unvollständiger Konfiguration fehl, mit Meldung zur fehlenden Variable (`docker service logs todo_backend`, auch im Migrationstask). Im Log steht beim Start `mail enabled (SMTP host:port …)`.
-- `GET /health/ready` enthält informativ `"mail": {"enabled": true}`. Das beeinflusst den Status nie.
+- `GET /v1/admin/health` (nur Administratoren, nicht mehr anonym über `/health/ready`) enthält informativ `"mail": {"enabled": true}`. Das beeinflusst den Status nie.
 - **Test-Mail:** In der PWA unter *Konto > Allgemein > E-Mail* die Adresse eintragen, **Bestätigungsmail senden**, den Link in der Mail öffnen (24 Stunden gültig, einmalig). Danach erscheint **Test-Mail senden**. Der Server-Status („Der Server kann E-Mails senden“ oder „nicht aktiviert“) und die letzte Mail mit Ergebnis (gesendet, fehlgeschlagen + Fehlerklasse) stehen auf derselben Karte. Der Versand läuft über die Warteschlange und dauert wenige bis etwa 15 Sekunden.
 
 ## 4. Recovery-Code per Mail

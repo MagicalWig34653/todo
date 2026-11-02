@@ -15,6 +15,7 @@ struct S3Store: Sendable {
     let region: String
     /// Upper bound for a response body; set from ATTACHMENT_MAX_BYTES.
     var maxBytes: Int = AttachmentLimits.defaultMaxBytes
+    var protection: OutboundProtection = .standard
 
     init(endpoint: URL, bucket: String, accessKey: String?, secretKey: String?, region: String, maxBytes: Int = AttachmentLimits.defaultMaxBytes) {
         self.endpoint = endpoint; self.bucket = bucket; self.accessKey = accessKey; self.secretKey = secretKey
@@ -24,6 +25,7 @@ struct S3Store: Sendable {
     init(config: S3Config, maxBytes: Int = AttachmentLimits.defaultMaxBytes) {
         self.init(endpoint: config.endpoint, bucket: config.bucket, accessKey: config.accessKey, secretKey: config.secretKey,
                   region: config.region, maxBytes: maxBytes)
+        self.protection = config.protection
     }
 
     static func fromEnvironment(maxBytes: Int = AttachmentLimits.defaultMaxBytes) throws -> Self {
@@ -75,6 +77,11 @@ struct S3Store: Sendable {
     }
 
     func send(_ method: String, key: String, data: Data = Data()) async throws -> Data {
+        if protection != .off, let host = endpoint.host {
+            do { try await OutboundGuard.check(host: host, port: endpoint.port ?? (endpoint.scheme == "https" ? 443 : 80), protection: protection) }
+            catch is OutboundBlocked { throw Abort(.badGateway, reason: "outbound_target_blocked") }
+            catch { throw Abort(.badGateway, reason: "attachment_storage_failed") }
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpMaximumConnectionsPerHost = 4
         do {

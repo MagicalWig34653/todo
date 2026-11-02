@@ -24,11 +24,23 @@ struct WebRootMiddleware: AsyncMiddleware {
             return nil
         }
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-        guard FileManager.default.fileExists(atPath: canonical + "/index.html") else {
-            logger.warning("WEB_ROOT \(path) has no index.html: serving the API only")
+        let middleware = WebRootMiddleware(root: canonical)
+        guard middleware.indexFile != nil else {
+            logger.warning("WEB_ROOT \(path) has no index.html inside the directory: serving the API only")
             return nil
         }
-        return WebRootMiddleware(root: canonical)
+        return middleware
+    }
+
+    /// The start page: index.html resolved like any other file, so a symlink pointing outside the root is not served.
+    var indexFile: String? { Self.contained(root + "/index.html", in: root) }
+
+    private static func contained(_ path: String, in root: String) -> String? {
+        let candidate = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        guard candidate.hasPrefix(root + "/") else { return nil }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir), !isDir.boolValue else { return nil }
+        return candidate
     }
 
     func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
@@ -51,7 +63,8 @@ struct WebRootMiddleware: AsyncMiddleware {
             }
             let wantsHTML = request.headers[.accept].contains { $0.contains("text/html") }
             if wantsHTML, segments.first != "_app" {
-                return try await serve(root + "/index.html", immutable: false, request) ?? Response(status: .notFound)
+                guard let index = indexFile else { throw abort }
+                return try await serve(index, immutable: false, request) ?? Response(status: .notFound)
             }
             throw abort
         }
@@ -76,13 +89,9 @@ struct WebRootMiddleware: AsyncMiddleware {
 
     /// Maps URL segments to an existing regular file inside the root (no dot files, no symlink escape).
     private func resolve(_ segments: [String]) -> String? {
-        if segments.isEmpty { return root + "/index.html" }
+        if segments.isEmpty { return indexFile }
         if segments.contains(where: { $0.hasPrefix(".") }) { return nil }
-        let candidate = URL(fileURLWithPath: root + "/" + segments.joined(separator: "/")).resolvingSymlinksInPath().path
-        guard candidate.hasPrefix(root + "/") else { return nil }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir) else { return nil }
-        return isDir.boolValue ? nil : candidate
+        return Self.contained(root + "/" + segments.joined(separator: "/"), in: root)
     }
 
     private func serve(_ file: String, immutable: Bool, _ request: Request) async throws -> Response? {

@@ -118,6 +118,7 @@ struct PushService: Sendable {
 struct PushController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
         let v1 = routes.grouped("v1")
+        v1.get("push", "status", use: status)
         v1.post("push", "test", use: test)
         v1.post("push", "devices", use: register)
         v1.get("push", "devices", use: list)
@@ -136,6 +137,12 @@ struct PushController: RouteCollection {
         let (device, created) = try await service.register(req.content.decode(RegisterPushDeviceRequest.self))
         return try await PushDeviceDTO(device).encodeResponse(status: created ? .created : .ok, for: req)
     }
+    /// Signed-in users learn only whether push exists at all (the PWA hides its notification card otherwise).
+    @Sendable func status(_ req: Request) async throws -> PushServerStatus {
+        _ = try await req.requireUser()
+        return PushServerStatus(enabled: req.application.settings.apns.enabled)
+    }
+
     @Sendable func list(_ req: Request) async throws -> [PushDeviceDTO] {
         try await service(req).devices().map(PushDeviceDTO.init)
     }

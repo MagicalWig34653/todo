@@ -86,7 +86,7 @@ extension Request {
         return user
     }
 
-    private func checkSameOrigin() throws {
+    func checkSameOrigin() throws {
         guard headers.contentType == .json else { throw Abort(.unsupportedMediaType, reason: "json_required") }
         if let origin = headers.first(name: .origin), origin != application.settings.relyingPartyOrigin {
             throw Abort(.forbidden, reason: "origin_not_allowed")
@@ -94,4 +94,7 @@ extension Request {
     }
 
     var sessionTokenPresented: String? { presentedToken?.token }
+
+    /// True when the session is presented by cookie only (browser), i.e. the request needs the CSRF check.
+    var sessionPresentedByCookieOnly: Bool { presentedToken?.viaCookie == true }
 }

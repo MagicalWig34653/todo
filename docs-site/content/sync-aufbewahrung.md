@@ -22,7 +22,7 @@ Jedes Backend-Replikat startet bei `serve` einen Hintergrund-Task. Eine Zeile in
 | `CLEANUP_INTERVAL_MINUTES` | `360` | Minuten zwischen Läufen; `0` schaltet den Scheduler ab (dann `App cleanup-expired` per Cron planen). Gültig 0 bis 10080. |
 | `SYNC_RETENTION_DAYS` | `90` | Aufbewahrung in Tagen; `0` behält alles. Gültig 0 bis 3650. |
 
-Prüfen: `GET /health/ready` zeigt informativ `maintenance` mit `enabled`, `lastRunAt` und `lastStatus`; ein Fehler ändert die Bereitschaft nie.
+Prüfen: `GET /v1/admin/health` (Administrator) zeigt informativ `maintenance` mit `enabled`, `lastRunAt` und `lastStatus`; ein Fehler ändert die Bereitschaft nie.
 
 ## Stand
 

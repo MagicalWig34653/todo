@@ -30,6 +30,8 @@ public struct MailConfig: Sendable, Equatable {
     public var password: String?
     public var from = ""
     public var fromName = "Todolino"
+    /// Which connection targets the SMTP client may reach (resolved IP is checked at connect time).
+    var protection: OutboundProtection = .standard
 
     public init() {}
 

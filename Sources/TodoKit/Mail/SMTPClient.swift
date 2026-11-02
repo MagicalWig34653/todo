@@ -15,7 +15,7 @@ struct MailMessage: Sendable, Equatable {
 
 /// Why a delivery failed. Carries no server text, address or credential, so it is safe to log and store.
 struct MailSendError: Error, Equatable, CustomStringConvertible, Sendable {
-    enum Stage: String, Sendable { case connect, tls, auth, sender, recipient, data, timeout, protocolError = "protocol", message }
+    enum Stage: String, Sendable { case blocked, connect, tls, auth, sender, recipient, data, timeout, protocolError = "protocol", message }
     let stage: Stage
     /// SMTP reply code when the server answered with one.
     let code: Int?
@@ -189,6 +189,14 @@ struct SMTPClient: MailTransport {
         let (stream, continuation) = AsyncThrowingStream<SMTPReply, any Error>.makeStream()
         let context = tlsContext, name = serverName, implicit = config.security == .tls
         let channel: any Channel
+        let target: SocketAddress
+        do {
+            target = try await OutboundGuard.resolve(host: config.host, port: config.port, protection: config.protection, group: group)
+        } catch is OutboundBlocked {
+            throw MailSendError(stage: .blocked, code: nil)
+        } catch {
+            throw MailSendError(stage: .connect, code: nil)
+        }
         do {
             channel = try await ClientBootstrap(group: group).connectTimeout(.seconds(10))
                 .channelInitializer { channel in
@@ -199,7 +207,7 @@ struct SMTPClient: MailTransport {
                         try channel.pipeline.syncOperations.addHandler(SMTPReplyDecoder(continuation))
                     }
                 }
-                .connect(host: config.host, port: config.port).get()
+                .connect(to: target).get()
         } catch {
             throw MailSendError(stage: .connect, code: nil)
         }

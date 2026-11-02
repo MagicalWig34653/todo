@@ -147,7 +147,9 @@ struct UpdatePushPrefsRequest: Content {
     var badge: Bool?
 }
 
-/// Informational block in `/health/ready`; never influences readiness.
+struct PushServerStatus: Content, Equatable { var enabled: Bool }
+
+/// Informational block in `GET /v1/admin/health` (administrators only); never influences readiness.
 struct PushStatus: Content, Equatable {
     var enabled: Bool
     var environment: String

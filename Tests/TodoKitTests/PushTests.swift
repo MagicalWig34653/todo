@@ -450,11 +450,24 @@ final class PushTests: XCTestCase {
 
     func testHealthReportsPushStatusWithoutSecrets() async throws {
         let f = try await fixture(); defer { Task { await f.t.shutdown() } }
-        let on = try await f.t.json(.GET, "/health/ready")
+        let admin = try await MailTests.account(f.t, "Root", admin: true)
+        let user = try await MailTests.account(f.t, "Normal")
+        // Anonymous readiness carries no push detail; users learn only enabled, admins also the environment.
+        let anon = try await f.t.json(.GET, "/health/ready")
+        XCTAssertNil(anon.body?["push"])
+        let noAuth = try await f.t.json(.GET, "/v1/admin/health")
+        XCTAssertEqual(noAuth.status, .unauthorized)
+        let notAdmin = try await f.t.json(.GET, "/v1/admin/health", token: user.token)
+        XCTAssertEqual(notAdmin.status, .forbidden)
+        let status = try await f.t.json(.GET, "/v1/push/status", token: user.token)
+        XCTAssertEqual(status.body?["enabled"] as? Bool, true); XCTAssertNil(status.body?["environment"])
+        let statusAnon = try await f.t.json(.GET, "/v1/push/status")
+        XCTAssertEqual(statusAnon.status, .unauthorized)
+        let on = try await f.t.json(.GET, "/v1/admin/health", token: admin.token)
         XCTAssertEqual((on.body?["push"] as? [String: Any])?["enabled"] as? Bool, true)
         XCTAssertEqual((on.body?["push"] as? [String: Any])?["environment"] as? String, "production")
         f.t.app.settings.apns = Self.config(enabled: false)
-        let off = try await f.t.json(.GET, "/health/ready")
+        let off = try await f.t.json(.GET, "/v1/admin/health", token: admin.token)
         XCTAssertEqual((off.body?["push"] as? [String: Any])?["enabled"] as? Bool, false)
         XCTAssertNil((off.body?["push"] as? [String: Any])?["keyID"])
     }

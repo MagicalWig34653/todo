@@ -9,11 +9,18 @@ info:
     ohne Auslöser). Inhalt generisch, solange showContent false ist. Nachrichten tragen im userInfo auf oberster Ebene kind
     (reminder|question|review|comment|test), taskID, projectID, subjectID (Frage-/Review-/Kommentar-ID) und aps.thread-id = projectID,
     aps.category TODO_REMINDER|TODO_QUESTION|TODO_REVIEW|TODO_COMMENT, mutable-content 1 (Notification Service Extension möglich), optional aps.badge
-    (offene Fragen plus ausstehende Reviews, wenn badge true). Kein Sync-Feed. Zusätzlich /health/ready: push {enabled, environment}.'
+    (offene Fragen plus ausstehende Reviews, wenn badge true). Kein Sync-Feed. Ob der Server Push anbietet: GET /v1/push/status (angemeldet) {enabled}; Umgebung und Details nur für Administratoren in GET /v1/admin/health (push {enabled, environment}), nie anonym in /health/ready.'
 security:
 - bearerAuth: []
 - sessionCookie: []
 paths:
+  /v1/push/status:
+    get:
+      operationId: getPushServerStatus
+      summary: Bietet der Server Push an?
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {type: object, required: [enabled], properties: {enabled: {type: boolean}}}}}}
+        '401': {description: Nicht angemeldet}
   /v1/push/devices:
     post:
       operationId: registerPushDevice
