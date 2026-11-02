@@ -37,6 +37,11 @@ for f in ${STACK_EXTRA_FILES:-}; do compose_args+=(-c "$f"); done
 replicas=${BACKEND_REPLICAS:-3}
 if ! docker service inspect "${STACK}_backend" >/dev/null 2>&1; then
   BACKEND_REPLICAS=0 docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
+elif ! docker service inspect "${STACK}_migrate" >/dev/null 2>&1; then
+  # Backend runs but the one-shot migrate service is missing (removed by hand): recreate it
+  # without touching the running backend replica count.
+  current=$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "${STACK}_backend")
+  BACKEND_REPLICAS=$current docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
 fi
 old_tasks=$(docker service ps --no-trunc --format '{{.ID}}' "${STACK}_migrate")
 docker service scale "${STACK}_migrate=0" >/dev/null
