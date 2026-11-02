@@ -9,7 +9,8 @@ extension SettingsProblem {
     var status: HTTPStatus {
         switch code {
         case "invalid_setting", "setting_dependency", "setting_required", "invalid_env": return .unprocessableEntity
-        case "setting_locked", "version_conflict", "encryption_key_missing", "last_admin_required", "cannot_lock_self", "account_anonymized", "mail_disabled", "push_disabled": return .conflict
+        case "setting_locked", "version_conflict", "encryption_key_missing", "last_admin_required", "cannot_lock_self", "account_anonymized", "mail_disabled", "push_disabled",
+             "account_not_disabled", "transfer_target_disabled", "team_without_active_admin", "project_not_owned": return .conflict
         case "no_recipient": return .badRequest
         case "rate_limited": return .tooManyRequests
         case "mail_failed": return .badGateway
@@ -105,6 +106,8 @@ struct AdminUserDTO: Content {
     /// `active` | `disabled` | `anonymized`
     var status: String
     var disabledAt: Date?, anonymizedAt: Date?
+    /// Only for locked accounts in the user list: projects they still own (can be handed over).
+    var ownedProjects: Int?
     init(_ user: User) throws {
         id = try user.requireID(); displayName = user.displayName; isAdmin = user.isAdmin; username = user.username
         status = user.anonymizedAt != nil ? "anonymized" : (user.disabledAt != nil ? "disabled" : "active")
@@ -452,7 +455,13 @@ struct SettingsController: RouteCollection {
 
     @Sendable func users(_ req: Request) async throws -> [AdminUserDTO] {
         _ = try await req.requireAdmin()
-        return try await User.query(on: req.db).sort(\.$displayName).sort(\.$id).all().map { try AdminUserDTO($0) }
+        var result: [AdminUserDTO] = []
+        for user in try await User.query(on: req.db).sort(\.$displayName).sort(\.$id).all() {
+            var dto = try AdminUserDTO(user)
+            if user.isLocked { dto.ownedProjects = try await ProjectTransfer.owned(by: user.requireID(), on: req.db).count }
+            result.append(dto)
+        }
+        return result
     }
 
     /// At least one admin must remain: the check runs under row locks on all current admins.

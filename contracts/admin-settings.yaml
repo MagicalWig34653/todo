@@ -152,6 +152,81 @@ paths:
         '200': {description: Neuer Zustand, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
         '404': {description: Konto unbekannt}
         '409': {description: 'last_admin_required | cannot_lock_self', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/users/{id}/projects:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: listUserProjects
+      summary: Projekte, die ein gesperrtes Konto noch besitzt
+      description: 'Nur für gesperrte oder anonymisierte Konten (sonst 409 account_not_disabled). Wirksamer Eigentümer ist die Person (Sharing-Overlay vor projects.owner_id); Teamprojekte und
+        bereits übertragene Projekte erscheinen nicht.'
+      responses:
+        '200':
+          description: Besessene Projekte
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/OwnedProject'}
+        '403': {description: Nur Administratoren}
+        '404': {description: Konto unbekannt}
+        '409': {description: account_not_disabled, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/users/{id}/transfer-projects:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: transferUserProjects
+      summary: Projekte eines gesperrten Kontos übertragen
+      description: 'Setzt Eigentümer (ProjectSharing ownerType/ownerID) wie PUT /projects/{id}/owner, widerruft Runner-Bindungen und offene Jobs des früheren Eigentümers
+        und schreibt einen Audit-Eintrag (Schlüssel admin.transfer). Grants anderer Personen bleiben unverändert, das alte Konto bleibt gesperrt. projectIDs leer oder fehlend
+        = alle. Unterprojekte folgen dem Elternprojekt nur, wenn das gesperrte Konto sie ebenfalls besitzt; fremde Kinder bleiben. Alles in einer Transaktion.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to:
+                  type: object
+                  required: [type, id]
+                  properties:
+                    type: {type: string, enum: [person, team]}
+                    id: {type: string, format: uuid}
+                projectIDs: {type: array, items: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Übertragene Projekte
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transferred, projects, to]
+                properties:
+                  transferred: {type: integer}
+                  projects:
+                    type: array
+                    items: {type: object, required: [id, name], properties: {id: {type: string, format: uuid}, name: {type: string}}}
+                  to: {type: object, required: [type, id], properties: {type: {type: string}, id: {type: string, format: uuid}}}
+        '400': {description: invalid_principal}
+        '403': {description: Nur Administratoren}
+        '404': {description: Konto oder Ziel unbekannt}
+        '409': {description: 'account_not_disabled | transfer_target_disabled (Ziel gesperrt) | team_without_active_admin | project_not_owned', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/teams:
+    get:
+      operationId: listTransferTeams
+      summary: Teams, die Projekte übernehmen können
+      description: 'Teams mit mindestens einem angenommenen, aktiven Administrator (Auswahl für die Übertragung).'
+      responses:
+        '200':
+          description: Teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {type: object, required: [id, name, activeAdmins], properties: {id: {type: string, format: uuid}, name: {type: string}, activeAdmins: {type: integer}}}
+        '403': {description: Nur Administratoren}
   /v1/me/anonymize:
     post:
       operationId: anonymizeMe
@@ -268,6 +343,16 @@ components:
         status: {type: string, enum: [active, disabled, anonymized]}
         disabledAt: {type: string, format: date-time}
         anonymizedAt: {type: string, format: date-time}
+        ownedProjects: {type: integer, description: 'Nur bei gesperrten Konten in der Liste: Zahl der noch besessenen Projekte.'}
+    OwnedProject:
+      type: object
+      required: [id, name, taskCount]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        parentID: {type: string, format: uuid}
+        parentName: {type: string}
+        taskCount: {type: integer}
     Problem:
       type: object
       required: [error, reason, message]

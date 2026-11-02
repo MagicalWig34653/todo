@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth } from '#lib/auth.svelte.js';
-	import { adminSettings, lockActions, refreshAfterRoleChange, sortUsers, statusOf, type AdminUser, type LockAction } from '#lib/adminSettings.js';
+	import { adminSettings, canTransferProjects, lockActions, refreshAfterRoleChange, sortUsers, statusOf, type AdminUser, type LockAction } from '#lib/adminSettings.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -9,6 +9,7 @@
 	import Dialog from '../app/Dialog.svelte';
 	import Panel from '../app/Panel.svelte';
 	import RecoveryIssue from '../RecoveryIssue.svelte';
+	import ProjectTransferDialog from './ProjectTransferDialog.svelte';
 
 	let users = $state<AdminUser[]>([]);
 	let loaded = $state(false);
@@ -16,6 +17,7 @@
 	// Lock action waiting for confirmation.
 	let pending = $state<{ user: AdminUser; action: LockAction } | null>(null);
 	let dialogOpen = $state(false);
+	let transferFor = $state<AdminUser | null>(null);
 
 	const active = $derived(users.filter((u) => statusOf(u) === 'active'));
 	const locked = $derived(users.filter((u) => statusOf(u) !== 'active'));
@@ -50,8 +52,9 @@
 		const { user, action } = pending;
 		busyID = user.id;
 		const ok = await attempt(async () => {
-			const updated = await adminSettings.lock(user.id, action);
-			users = sortUsers(users.map((x) => (x.id === updated.id ? updated : x)));
+			await adminSettings.lock(user.id, action);
+			// Reload: locked accounts carry the number of projects they still own (for "Projekte übertragen").
+			users = sortUsers(await adminSettings.users());
 		});
 		busyID = null;
 		if (ok) dialogOpen = false;
@@ -87,6 +90,11 @@
 					{u.isAdmin ? t('settings.admin.accounts.revoke') : t('settings.admin.accounts.grant')}
 				</Button>
 			{/if}
+			{#if canTransferProjects(u)}
+				<Button size="sm" variant="outline" disabled={busyID === u.id} onclick={() => (transferFor = u)} data-testid="admin-transfer-{u.id}">
+					{t('settings.admin.transfer.action')}
+				</Button>
+			{/if}
 			{#each lockActions(u, auth.user?.id) as action (action)}
 				<Button
 					size="sm"
@@ -120,6 +128,10 @@
 	{/if}
 	<RecoveryIssue />
 </div>
+
+{#if transferFor}
+	<ProjectTransferDialog user={transferFor} ondone={load} onclose={() => (transferFor = null)} />
+{/if}
 
 <Dialog bind:open={dialogOpen} title={pending ? t(`settings.admin.accounts.confirm.${pending.action}.title` as MessageKey) : ''} testid="admin-lock-dialog">
 	{#if pending}

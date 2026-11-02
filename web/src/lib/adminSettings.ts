@@ -121,7 +121,11 @@ export const adminSettings = {
 	test: (kind: TestKind, body?: { to?: string }) => call<TestResult>('POST', `/settings/test/${kind}`, body ?? {}),
 	users: () => call<AdminUser[]>('GET', '/users'),
 	setAdmin: (id: string, isAdmin: boolean) => call<AdminUser>('PUT', `/users/${encodeURIComponent(id)}/admin`, { isAdmin }),
-	lock: (id: string, action: LockAction) => call<AdminUser>('POST', `/users/${encodeURIComponent(id)}/${action}`)
+	lock: (id: string, action: LockAction) => call<AdminUser>('POST', `/users/${encodeURIComponent(id)}/${action}`),
+	ownedProjects: (id: string) => call<OwnedProject[]>('GET', `/users/${encodeURIComponent(id)}/projects`),
+	transferProjects: (id: string, to: TransferTarget, projectIDs: string[]) =>
+		call<TransferResult>('POST', `/users/${encodeURIComponent(id)}/transfer-projects`, { to, projectIDs }),
+	transferTeams: () => call<TransferTeam[]>('GET', '/teams')
 };
 
 export type LockAction = 'disable' | 'enable' | 'anonymize';
@@ -137,6 +141,31 @@ export interface AdminUser {
 	status?: AccountStatus;
 	disabledAt?: string;
 	anonymizedAt?: string;
+	/** Only for locked accounts: projects they still own. */
+	ownedProjects?: number;
+}
+
+/** contracts/admin-settings.yaml OwnedProject */
+export interface OwnedProject {
+	id: string;
+	name: string;
+	parentID?: string;
+	parentName?: string;
+	taskCount: number;
+}
+export interface TransferTarget {
+	type: 'person' | 'team';
+	id: string;
+}
+export interface TransferResult {
+	transferred: number;
+	projects: { id: string; name: string }[];
+	to: TransferTarget;
+}
+export interface TransferTeam {
+	id: string;
+	name: string;
+	activeAdmins: number;
 }
 
 export const statusOf = (u: AdminUser): AccountStatus => u.status ?? 'active';
@@ -152,6 +181,35 @@ export function lockActions(u: AdminUser, selfID: string | undefined): LockActio
 	const status = statusOf(u);
 	if (status === 'anonymized' || u.id === selfID) return [];
 	return status === 'disabled' ? ['enable', 'anonymize'] : ['disable', 'anonymize'];
+}
+
+/** The "transfer projects" action is offered for locked or anonymized accounts that still own projects. */
+export function canTransferProjects(u: AdminUser): boolean {
+	return statusOf(u) !== 'active' && (u.ownedProjects ?? 0) > 0;
+}
+
+/**
+ * Selected IDs plus every listed sub-project whose parent is selected (the server moves owned children with their parent;
+ * the list shows exactly that so nobody is surprised).
+ */
+export function expandSelection(rows: OwnedProject[], selected: Iterable<string>): Set<string> {
+	const out = new Set(selected);
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const r of rows) if (r.parentID && out.has(r.parentID) && !out.has(r.id)) (out.add(r.id), (grew = true));
+	}
+	return out;
+}
+
+/** Rows that are selected only because their parent is: shown ticked and locked. */
+export function followsParent(rows: OwnedProject[], r: OwnedProject, selected: Set<string>): boolean {
+	return !!r.parentID && selected.has(r.parentID) && rows.some((x) => x.id === r.parentID);
+}
+
+/** Whether the target is complete enough to confirm. */
+export function transferReady(target: { type: 'person' | 'team'; id: string }, selected: Set<string>): boolean {
+	return selected.size > 0 && target.id.trim() !== '';
 }
 
 /** After an admin flag changed: refreshes the signed-in user's own profile when the change concerned themselves. */
