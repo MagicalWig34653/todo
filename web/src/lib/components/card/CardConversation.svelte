@@ -3,13 +3,13 @@
 	import TaskComments from '../TaskComments.svelte';
 
 	/**
-	 * "Unterhaltung" section of the card detail. Interface: the task the conversation belongs to and a change callback.
-	 * For now it shows the task's comments; a chat replaces this component without touching the detail window.
+	 * "Unterhaltung" section of the card detail. Interface: the task the conversation belongs to, a change callback and
+	 * a callback after a file was attached. For now it shows the task's comments; a chat replaces this component
+	 * without touching the detail window.
 	 */
-	let { taskID, onchanged }: { taskID: string; onchanged?: () => unknown } = $props();
+	let { taskID, onchanged, onattached }: { taskID: string; onchanged?: () => unknown; onattached?: () => unknown } = $props();
 </script>
 
-<section class="flex flex-col gap-2" aria-labelledby="conv-h-{taskID}" data-testid="card-conversation">
-	<h3 id="conv-h-{taskID}" class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('card.conversation')}</h3>
-	<TaskComments {taskID} {onchanged} />
+<section class="flex flex-col gap-2" aria-label={t('card.conversation')} data-testid="card-conversation">
+	<TaskComments {taskID} {onchanged} {onattached} chat />
 </section>

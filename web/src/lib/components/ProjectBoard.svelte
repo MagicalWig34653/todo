@@ -30,7 +30,7 @@
 		labelsByTask: Record<string, string[]>;
 		showDone: boolean;
 		reload: () => Promise<void>;
-		onopen: (task: Task) => void;
+		onopen: (task: Task, siblings?: Task[]) => void;
 	}
 	let { project, board, tasks, labelsByTask, showDone, reload, onopen }: Props = $props();
 	const canEdit = $derived(can(roleOf(project), 'addTask'));
@@ -311,7 +311,7 @@
 				{#if task.status === 'done'}<Check class="size-3" aria-hidden="true" />{/if}
 			</button>
 			<div class="min-w-0 flex-1">
-				<button type="button" class={['block w-full text-left break-words', task.status === 'done' && 'text-muted-foreground line-through']} onclick={() => onopen(task)}>{task.title}</button>
+				<button type="button" class={['block w-full text-left break-words', task.status === 'done' && 'text-muted-foreground line-through']} onclick={() => onopen(task, visible(lane))}>{task.title}</button>
 				{#if task.description.trim()}
 					<p class="text-muted-foreground mt-0.5 line-clamp-2 text-[13px] break-words">{snippet(task.description, 120)}</p>
 				{/if}
@@ -335,7 +335,7 @@
 		>
 			{#snippet trigger()}<Ellipsis class="size-4" aria-hidden="true" />{/snippet}
 			{#snippet children(close)}
-				<MenuItem onclick={() => { close(); onopen(task); }}>{t('board.openTask')}</MenuItem>
+				<MenuItem onclick={() => { close(); onopen(task, visible(lane)); }}>{t('board.openTask')}</MenuItem>
 				{#if real}
 					<MenuItem disabled={!canEdit} title={needEdit} onclick={() => { close(); moveByMenu(task, lane, -1); }}>{t('board.moveUp')}</MenuItem>
 					<MenuItem disabled={!canEdit} title={needEdit} onclick={() => { close(); moveByMenu(task, lane, 1); }}>{t('board.moveDown')}</MenuItem>

@@ -7,7 +7,8 @@
 	import { candidateTasks } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
-	let { task, onchanged }: { task: Task; onchanged?: () => unknown } = $props();
+	/** `compact` (card sidebar): no placeholder or hint; the add form shows only while `adding`. */
+	let { task, onchanged, compact = false, adding = true }: { task: Task; onchanged?: () => unknown; compact?: boolean; adding?: boolean } = $props();
 
 	let prerequisites = $state<Task[]>([]);
 	let projectTasks = $state<Task[]>([]);
@@ -44,7 +45,7 @@
 </script>
 
 <div class="flex flex-col gap-2" data-testid="dependencies">
-	{#if prerequisites.length === 0}<p class="text-muted-foreground text-xs">{t('dependencies.empty')}</p>{/if}
+	{#if prerequisites.length === 0 && !compact}<p class="text-muted-foreground text-xs">{t('dependencies.empty')}</p>{/if}
 	<ul class="flex flex-col gap-1">
 		{#each prerequisites as p (p.id)}
 			<li class="flex items-center gap-2 text-sm" data-testid="dependency">
@@ -56,12 +57,12 @@
 			</li>
 		{/each}
 	</ul>
-	<form class="flex flex-wrap gap-2" onsubmit={add}>
+	{#if adding}<form class="flex flex-wrap gap-2" onsubmit={add}>
 		<Select  aria-label={t('dependencies.pick')} bind:value={pick}>
 			<option value="">{t('dependencies.pick')}</option>
 			{#each options as o (o.id)}<option value={o.id}>{o.title}</option>{/each}
 		</Select>
 		<Button type="submit" size="sm" variant="outline" disabled={!pick}>{t('dependencies.add')}</Button>
-	</form>
-	<p class="text-muted-foreground text-xs">{t('dependencies.hint')}</p>
+	</form>{/if}
+	{#if !compact}<p class="text-muted-foreground text-xs">{t('dependencies.hint')}</p>{/if}
 </div>

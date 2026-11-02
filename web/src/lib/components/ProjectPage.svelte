@@ -410,7 +410,7 @@
 		<CommandCenter projectID={project.id} />
 	{:else if display.view === 'board'}
 		{#if board}
-			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={(task) => cardDetail.open({ type: 'task', id: task.id })} />
+			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={(task, siblings) => cardDetail.open({ type: 'task', id: task.id }, (siblings ?? [task]).map((x) => ({ type: 'task' as const, id: x.id })))} />
 		{/if}
 	{:else}
 		<TaskPanel {project} {tasks} {board} {display} {loaded} {reload} />

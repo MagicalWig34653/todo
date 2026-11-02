@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 2.11.2026 (spaeter): Karten-Detailansicht nach Referenzbild (Agent card-detail2)
+
+- Board-Aufgabe `DE4BED8F-C216-46C7-9429-6DB6D2BFBFBD` (nicht erledigt gesetzt). Umbau des Fensters, Datenfluss unveraendert.
+- Neu: Kopfzeile `card/CardHeader.svelte` (Breadcrumb `# Eltern / Projekt` klickbar, Hoch/Runter, "..."-Menue mit Link kopieren, Aufgabe/Projekt oeffnen, Loeschen mit Bestaetigung, Schliessen); `Dialog large` ohne eigenen Kopf, ab 768 px Fenster, darunter Vollbild. Hauptspalte: runde Checkbox, Titel und Beschreibung inline (`InlineEdit`, Markdown), `CardSubtasks` (+ Unteraufgabe = createTask + setTaskStructure), Kriterien, Anhaenge, Notizen, Unterhaltung (`TaskComments chat`: Avatar, rundes Feld "Kommentieren", Bueroklammer laedt Anhang, Enter sendet). Seitenleiste `SideSection`: Projekt, Datum, Prioritaet (P1 bis P4), Etiketten, Erinnerungen, Wiederholung, Abhaengigkeiten, Meilenstein (`TaskMilestone`), Details; `TaskPlanning side` speichert jede Aenderung sofort ueber dieselbe Merge-Logik. Frage/Review/Bestaetigung: gleicher Rahmen, Breadcrumb mit Aufgabe, Seitenleiste mit Typ, Status, Von, Zeit, Projekt, Miniaturen, "Zur Aufgabe".
+- Hoch/Runter: `cardDetail.open(ref, siblings)`, `step(+-1)` ersetzt die URL ohne neuen History-Eintrag; Geschwister liefern Board-Spalte, Projektliste, Fuer dich. Andere Einstiege (Suche, Aktivitaet, Steuerzentrale) uebergeben keine Liste, Pfeile sind dort deaktiviert. Tasten J/K/Pfeile bei Fokus im Kopf.
+- Grenzen: Projektwechsel einer Aufgabe gibt es in der API nicht, die Projektzeile navigiert nur. Premium-Felder des Referenzbilds nicht gebaut.
+- Geprueft (Chromium, frisches Backend je Spec): vitest 271+ gruen, `npm run check` ohne neue Fehler (bekannt: `./$types` in +layout.svelte bei Symlink-node_modules), Build ok; e2e card-detail 13, for-you 2, action-requests 2, question-overflow 7, ui-nav 6, ui-lists 4, passkey-flow 21, permissions 8, menus-and-modes 11 gruen. Screenshots nach /private/tmp/claude-501/card-detail2/. 200 % Schrift nur ueber question-overflow (Fuer dich), nicht im Fenster geprueft.
+
 ## Checkpoint 2.11.2026: Karten-Detailansicht in der PWA (Agent card-detail)
 
 - Board-Aufgabe `DE4BED8F-C216-46C7-9429-6DB6D2BFBFBD` (nicht auf erledigt gesetzt). Nutzerwunsch: jede Karte (Frage, Review, Aufgabe, Fortschritt, Build, Bestätigung) groß öffnen, Hintergrund geblurrt. Nur PWA, kein Backend-/Vertragsänderung (Lesepfade `GET /v1/action-requests/{id}`, `/v1/questions/{id}`, `/v1/tasks/{id}/context`, Anhänge waren vorhanden).

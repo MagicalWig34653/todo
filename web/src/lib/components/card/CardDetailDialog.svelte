@@ -5,6 +5,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import Dialog from '../app/Dialog.svelte';
 	import CardDetailBody from './CardDetailBody.svelte';
+	import CardHeader from './CardHeader.svelte';
 
 	/** The one large, blurred card detail window of the app (rendered by the Workspace). */
 	let { onopentask, onopenproject }: { onopentask: (projectID: string, taskID: string) => void; onopenproject: (projectID: string) => void } = $props();
@@ -39,7 +40,8 @@
 			}}
 		/>
 	{:else}
-		<div class="flex flex-col items-start gap-3" data-testid="card-invalid">
+		<CardHeader />
+		<div class="flex flex-col items-start gap-3 p-5" data-testid="card-invalid">
 			<p class="font-medium">{t('card.invalid.title')}</p>
 			<p class="text-muted-foreground text-sm">{t('card.invalid.hint')}</p>
 		</div>

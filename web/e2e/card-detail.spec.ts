@@ -7,7 +7,7 @@ import { expect, test, type Page } from '@playwright/test';
 // Covers the large card detail window: question, review, task/progress/screenshots and confirmation cards.
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 const ORIGIN = process.env.E2E_BASE_URL ?? 'http://localhost:25173';
-const SHOTS = '/private/tmp/claude-501/card-detail';
+const SHOTS = '/private/tmp/claude-501/card-detail2';
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
@@ -174,7 +174,7 @@ test('task from a progress post: description, timeline, gallery, conversation, l
 	expect(await gallery.getByTestId('gallery-image').getAttribute('alt')).not.toBe(first);
 	await gallery.getByTestId('gallery-prev').click();
 	expect(await gallery.getByTestId('gallery-image').getAttribute('alt')).toBe(first);
-	await expect(dialog().getByTestId('task-detail')).toBeVisible();
+	await expect(dialog().getByTestId('card-side')).toBeVisible();
 	await dialog().getByTestId('card-open-task').click();
 	await expect(dialog()).toHaveCount(0);
 	await expect(page).toHaveURL(new RegExp(`/project/${ids.project}(/list)?\\?task=${ids.task}$`));
@@ -266,4 +266,138 @@ test('320 px: full-screen sheet without horizontal overflow; light and dark scre
 		await expect(dialog()).toBeVisible();
 		await page.screenshot({ path: `${SHOTS}/task-desktop-${scheme}.png` });
 	}
+});
+
+
+test.describe('layout of the card window', () => {
+	let nav: { project: string; a: string; b: string; c: string } = { project: '', a: '', b: '', c: '' };
+	test.beforeAll(async () => {
+		const parent = await post<{ id: string }>('/v1/projects', { name: 'Elternprojekt' });
+		const project = await post<{ id: string }>('/v1/projects', { name: 'Unterprojekt', parentID: parent.id });
+		const mk = (title: string) => post<{ id: string }>('/v1/tasks', { projectID: project.id, title });
+		const [a, b, c] = [await mk('Nav A'), await mk('Nav B'), await mk('Nav C')];
+		nav = { project: project.id, a: a.id, b: b.id, c: c.id };
+		await post('/v1/labels', { name: 'Wichtig' });
+	});
+
+	test('1280 px: two columns, sidebar on the right with its blocks, breadcrumb link', async () => {
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await page.goto(`/project/${nav.project}/list?card=task:${nav.b}`);
+		await expect(dialog()).toBeVisible();
+		const main = await dialog().getByTestId('card-main').boundingBox();
+		const side = await dialog().getByTestId('card-side').boundingBox();
+		expect(side!.x).toBeGreaterThan(main!.x + main!.width - 2);
+		expect(side!.width).toBeGreaterThanOrEqual(260);
+		expect(side!.width).toBeLessThanOrEqual(330);
+		for (const id of ['side-project', 'side-date', 'side-priority', 'side-labels', 'side-reminders', 'side-recurrence']) await expect(dialog().getByTestId(id)).toBeVisible();
+		await expect(dialog().getByTestId('card-breadcrumb')).toContainText('Elternprojekt');
+		await expect(dialog().getByTestId('card-breadcrumb')).toContainText('Unterprojekt');
+		await expect(dialog().getByTestId('card-title')).toHaveValue('Nav B');
+		await page.screenshot({ path: `${SHOTS}/layout-desktop-light.png` });
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await page.screenshot({ path: `${SHOTS}/layout-desktop-dark.png` });
+		await page.emulateMedia({ colorScheme: 'light' });
+		await dialog().getByTestId('card-project').click();
+		await expect(dialog()).toHaveCount(0);
+		await expect(page).toHaveURL(new RegExp(`/project/${nav.project}`));
+	});
+
+	test('priority, date, label and reminder from the sidebar save', async () => {
+		await page.goto(`/project/${nav.project}/list?card=task:${nav.a}`);
+		await expect(dialog()).toBeVisible();
+		await dialog().getByTestId('side-priority-select').selectOption('3');
+		await dialog().getByTestId('side-date-add').click();
+		await dialog().getByLabel('Fällig').fill('2030-05-06T09:00');
+		await expect(dialog().getByTestId('side-due')).toContainText('2030');
+		await dialog().getByTestId('side-labels-add').click();
+		await dialog().getByLabel('Label hinzufügen').selectOption({ label: 'Wichtig' });
+		await expect(dialog().getByTestId('task-label')).toContainText('Wichtig');
+		await dialog().getByTestId('side-reminders-add').click();
+		await dialog().getByLabel('Neue Erinnerung').fill('2030-05-05T08:00');
+		const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/planning'));
+		await dialog().getByRole('button', { name: 'Erinnerung hinzufügen', exact: true }).last().click();
+		expect((await saved).status()).toBeLessThan(300);
+		await expect(dialog().getByTestId('reminder')).toHaveCount(1);
+		await page.reload();
+		await expect(dialog().getByTestId('side-priority-select')).toHaveValue('3');
+		await expect(dialog().getByTestId('side-due')).toContainText('2030');
+		await expect(dialog().getByTestId('reminder')).toHaveCount(1);
+		await expect(dialog().getByTestId('task-label')).toContainText('Wichtig');
+	});
+
+	test('up/down steps through the list, ends are disabled; checkbox completes; comment field sends', async () => {
+		await page.goto(`/project/${nav.project}/board`);
+		await expect(page.getByTestId('board-card').filter({ hasText: /Nav [ABC]/ })).toHaveCount(3);
+		const order = (await page.getByTestId('board-card').filter({ hasText: /Nav [ABC]/ }).allInnerTexts()).map((x) => x.match(/Nav [ABC]/)![0]);
+		expect(order.length).toBe(3);
+		await page.getByRole('button', { name: order[0], exact: true }).first().click();
+		await expect(dialog().getByTestId('card-title')).toHaveValue(order[0]);
+		await expect(dialog().getByTestId('card-prev')).toBeDisabled();
+		await dialog().getByTestId('card-next').click();
+		await expect(dialog().getByTestId('card-title')).toHaveValue(order[1]);
+		await dialog().getByTestId('card-next').click();
+		await expect(dialog().getByTestId('card-title')).toHaveValue(order[2]);
+		await expect(dialog().getByTestId('card-next')).toBeDisabled();
+		await dialog().getByTestId('card-prev').click();
+		await expect(dialog().getByTestId('card-title')).toHaveValue(order[1]);
+		await expect(page).toHaveURL(/card=task:/);
+
+		const box = dialog().getByLabel('Kommentar schreiben');
+		await box.fill('Hallo aus dem Fenster');
+		await box.press('Enter');
+		await expect(dialog().getByTestId('comment')).toContainText('Hallo aus dem Fenster');
+
+		await dialog().getByTestId('card-done').click();
+		await expect(dialog().getByTestId('card-done')).toHaveAttribute('aria-checked', 'true');
+		await dialog().getByTestId('card-done').click();
+		await expect(dialog().getByTestId('card-done')).toHaveAttribute('aria-checked', 'false');
+	});
+
+	test('title and description edit inline; subtask can be added', async () => {
+		await page.goto(`/project/${nav.project}/list?card=task:${nav.c}`);
+		const title = dialog().getByTestId('card-title');
+		await title.fill('Nav C neu');
+		await title.press('Enter');
+		await expect(title).toHaveValue('Nav C neu');
+		await dialog().getByTestId('card-description-view').click();
+		await dialog().getByTestId('card-description-input').fill('Text **fett**');
+		await dialog().getByTestId('card-description-input').press('Control+Enter');
+		await expect(dialog().getByTestId('card-description')).toContainText('fett');
+		await dialog().getByTestId('card-subtask-add').click();
+		await dialog().getByLabel('Titel der Unteraufgabe').fill('Teil 1');
+		await dialog().getByLabel('Titel der Unteraufgabe').press('Enter');
+		await expect(dialog().getByTestId('card-subtask')).toContainText('Teil 1');
+		await page.reload();
+		await expect(dialog().getByTestId('card-title')).toHaveValue('Nav C neu');
+	});
+
+	test('390 px: one column with the sidebar below, no overflow; question and review use the same frame', async () => {
+		await page.setViewportSize({ width: 390, height: 800 });
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.goto(`/for-you?card=task:${ids.task}`);
+			await expect(dialog()).toBeVisible();
+			const main = await dialog().getByTestId('card-main').boundingBox();
+			const side = await dialog().getByTestId('card-side').boundingBox();
+			expect(side!.y).toBeGreaterThanOrEqual(main!.y + main!.height - 2);
+			expect(side!.width).toBeLessThanOrEqual(390);
+			await noOverflow('390');
+			expect(await dialog().getByTestId('card-scroll').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+			await expect(dialog().getByTestId('card-header')).toBeInViewport();
+			await page.screenshot({ path: `${SHOTS}/layout-390-${scheme}.png` });
+		}
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.goto(`/for-you?card=task:${ids.reviewTask}`);
+		await expect(dialog().getByTestId('card-header')).toBeVisible();
+		await expect(dialog().getByTestId('card-side')).toBeVisible();
+		await page.goto(`/for-you`);
+		const q = page.getByTestId('needs-card').filter({ hasText: 'Fokusfrage ohne Optionen?' });
+		await q.locator('button[aria-labelledby^="need-t-"]').click();
+		await expect(dialog().getByTestId('card-type')).toHaveText('Frage');
+		await expect(dialog().getByTestId('card-crumb-task')).toContainText('Fokusaufgabe');
+		await dialog().getByTestId('card-next').click();
+		await noOverflow('390 question');
+		await page.setViewportSize({ width: 1280, height: 800 });
+	});
 });

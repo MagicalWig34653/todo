@@ -72,7 +72,7 @@
 		class={[
 			'fixed inset-0 z-[60] flex justify-center',
 			large
-				? 'items-stretch bg-black/40 p-0 backdrop-blur-md sm:items-center sm:p-6 dark:bg-black/65'
+				? 'items-stretch bg-black/40 p-0 backdrop-blur-md md:items-center md:p-6 dark:bg-black/65'
 				: ['overflow-y-auto bg-black/50 backdrop-blur-[2px]', sheet ? 'items-end p-0 sm:items-start sm:p-4 sm:pt-[12vh]' : 'items-start p-4 pt-[12vh]']
 		]}
 		data-large={large || undefined}
@@ -88,21 +88,23 @@
 			data-testid={testid}
 			class={cn(
 				'bg-popover text-popover-foreground shadow-pop relative w-full max-w-lg rounded-2xl border p-4 sm:p-5',
-				large && 'card-window flex max-w-[880px] min-w-0 flex-col overflow-hidden rounded-none border-0 p-0 sm:max-h-[90vh] sm:rounded-2xl sm:border',
+				large && 'card-window flex max-w-none min-w-0 flex-col overflow-hidden rounded-none border-0 p-0 md:h-[min(88vh,840px)] md:max-w-[1080px] md:rounded-2xl md:border',
 				sheet && 'rounded-b-none pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-b-2xl', className)
 			}
 			{onkeydown}
 		>
-			<div class={['flex items-center justify-between gap-2', large ? 'shrink-0 border-b px-4 py-2.5 sm:px-6' : 'mb-3']}>
-				<h2 class={['min-w-0 font-semibold [overflow-wrap:anywhere]', large ? 'text-base sm:text-lg' : 'text-base']}>{title}</h2>
+			{#if !large}
+			<div class="mb-3 flex items-center justify-between gap-2">
+				<h2 class="min-w-0 text-base font-semibold [overflow-wrap:anywhere]">{title}</h2>
 				<button type="button" class="text-muted-foreground hover:bg-muted hit-area relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg" aria-label={t('common.close')} onclick={() => (open = false)}>
 					<X class="size-4" aria-hidden="true" />
 				</button>
 			</div>
+			{/if}
 			{#if notice.text}
 				<div
 					role={notice.conflict ? 'status' : 'alert'}
-					class={['border-warning/30 bg-warning-soft text-foreground flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm', large ? 'mx-4 mt-3 sm:mx-6' : 'mb-3']}
+					class={['border-warning/30 bg-warning-soft text-foreground flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm', large ? 'mx-3 mt-2 md:mx-5' : 'mb-3']}
 					data-testid="notice"
 				>
 					<span>
@@ -113,7 +115,7 @@
 				</div>
 			{/if}
 			{#if large}
-				<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6" data-testid="card-scroll">{@render children()}</div>
+				<div class="flex min-h-0 min-w-0 flex-1 flex-col">{@render children()}</div>
 			{:else}
 				{@render children()}
 			{/if}

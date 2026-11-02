@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCardParam, cardOfConfirmation, cardOfNeed, cardOfPost, galleryOf, parseCardParam, relativeWhen } from '../src/lib/cardRef';
+import { buildCardParam, cardOfConfirmation, cardOfNeed, cardOfPost, galleryOf, neighborsOf, parseCardParam, projectChain, relativeWhen, sameCard, uniqueCards } from '../src/lib/cardRef';
 import { buildPath, parseRoute } from '../src/lib/routing';
 
 const ID = '3F23FF45-7A01-4D28-BEF1-8694F9DE23DA';
@@ -74,5 +74,46 @@ describe('gallery', () => {
 			{ id: 'a1', url: '/p/a1', label: 'Login' },
 			{ id: 'a2', url: '/p/a2', label: 'y.jpg' }
 		]);
+	});
+});
+
+describe('neighbours in the list a card was opened from', () => {
+	const a = { type: 'task' as const, id: 'aaaaaaaa-1' };
+	const b = { type: 'task' as const, id: 'bbbbbbbb-2' };
+	const c = { type: 'question' as const, id: 'cccccccc-3' };
+	it('finds previous and next', () => {
+		expect(neighborsOf([a, b, c], b)).toEqual({ prev: a, next: c, index: 1 });
+	});
+	it('has no previous at the start and no next at the end', () => {
+		expect(neighborsOf([a, b, c], a)).toMatchObject({ prev: null, next: b, index: 0 });
+		expect(neighborsOf([a, b, c], c)).toMatchObject({ prev: b, next: null, index: 2 });
+	});
+	it('is empty for an unknown card, an empty list or no card', () => {
+		expect(neighborsOf([a, b], c)).toEqual({ prev: null, next: null, index: -1 });
+		expect(neighborsOf([], a).index).toBe(-1);
+		expect(neighborsOf([a], null).index).toBe(-1);
+	});
+	it('compares type and id and drops duplicates', () => {
+		expect(sameCard(a, { ...a })).toBe(true);
+		expect(sameCard(a, { type: 'question', id: a.id })).toBe(false);
+		expect(uniqueCards([a, b, { ...a }, c])).toEqual([a, b, c]);
+	});
+});
+
+describe('project breadcrumb chain', () => {
+	const ps = [
+		{ id: 'g', parentID: null },
+		{ id: 'p', parentID: 'g' },
+		{ id: 'c', parentID: 'p' }
+	];
+	it('lists parent then project, outermost first', () => {
+		expect(projectChain(ps, 'c').map((x) => x.id)).toEqual(['p', 'c']);
+		expect(projectChain(ps, 'c', 3).map((x) => x.id)).toEqual(['g', 'p', 'c']);
+		expect(projectChain(ps, 'g').map((x) => x.id)).toEqual(['g']);
+	});
+	it('is empty for unknown projects and survives cycles', () => {
+		expect(projectChain(ps, 'x')).toEqual([]);
+		expect(projectChain(ps, null)).toEqual([]);
+		expect(projectChain([{ id: 'a', parentID: 'b' }, { id: 'b', parentID: 'a' }], 'a', 5).length).toBe(2);
 	});
 });

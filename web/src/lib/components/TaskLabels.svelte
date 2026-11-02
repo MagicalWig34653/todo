@@ -8,7 +8,8 @@
 	import { onMount } from 'svelte';
 	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 
-	let { taskID }: { taskID: string } = $props();
+	/** `compact` (card sidebar): no placeholder text; the picker shows only while `showPicker`. */
+	let { taskID, compact = false, showPicker = true }: { taskID: string; compact?: boolean; showPicker?: boolean } = $props();
 
 	let assigned = $state<Label[]>([]);
 	let all = $state<Label[]>([]);
@@ -54,8 +55,8 @@
 			<button aria-label={t('labels.remove', { name: l.name })} class="text-muted-foreground" onclick={() => remove(l)}>×</button>
 		</span>
 	{/each}
-	{#if assigned.length === 0}<span class="text-muted-foreground text-xs">{t('labels.none')}</span>{/if}
-	{#if free.length > 0}
+	{#if assigned.length === 0 && !compact}<span class="text-muted-foreground text-xs">{t('labels.none')}</span>{/if}
+	{#if showPicker && free.length > 0}
 		<Select
 			
 			aria-label={t('labels.add')}

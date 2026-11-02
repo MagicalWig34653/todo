@@ -101,3 +101,13 @@ export function candidateTasks(all: Task[], selfID: string | null, excluded: Tas
 export function milestoneProgress(tasks: Task[]): { done: number; total: number } {
 	return { done: tasks.filter((x) => x.status === 'done').length, total: tasks.length };
 }
+
+/** Display of the stored priority 0..3 as P1 (high) to P4 (none), the way task apps show it. */
+export function priorityTag(priority: number): 'P1' | 'P2' | 'P3' | 'P4' {
+	const p = Math.min(3, Math.max(0, Math.round(priority) || 0));
+	return `P${4 - p}` as 'P1' | 'P2' | 'P3' | 'P4';
+}
+/** Tailwind text colour class for a flag of the given stored priority. */
+export function priorityTone(priority: number): string {
+	return priority >= 3 ? 'text-destructive' : priority === 2 ? 'text-warning' : priority === 1 ? 'text-ui-accent' : 'text-muted-foreground';
+}

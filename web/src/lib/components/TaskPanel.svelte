@@ -160,7 +160,7 @@
 								onclick={() => (detailID = detailID === task.id ? null : task.id)}
 								>{t('task.details')}<ChevronDown class={['transition-transform', detailID === task.id && 'rotate-180']} aria-hidden="true" /></Button
 							>
-							<Button size="sm" variant="ghost" data-testid="task-open-large" aria-label={t('card.openLarge', { title: task.title })} title={t('card.openLarge', { title: task.title })} onclick={() => cardDetail.open({ type: 'task', id: task.id })}>
+							<Button size="sm" variant="ghost" data-testid="task-open-large" aria-label={t('card.openLarge', { title: task.title })} title={t('card.openLarge', { title: task.title })} onclick={() => cardDetail.open({ type: 'task', id: task.id }, groups.flatMap((g) => g.tasks).map((x) => ({ type: 'task' as const, id: x.id })))}>
 								<Maximize2 aria-hidden="true" />
 							</Button>
 							<Button size="sm" variant="ghost" disabled={!canEdit} title={needEdit} onclick={() => (editingID === task.id ? (editingID = null) : edit(task))}>

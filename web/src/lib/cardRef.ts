@@ -74,3 +74,30 @@ export function galleryOf(
 	}
 	return out;
 }
+
+export const sameCard = (a: CardRef | null | undefined, b: CardRef | null | undefined): boolean => !!a && !!b && a.type === b.type && a.id === b.id;
+
+/** The card before and after `ref` in the list it was opened from (null at the ends or when `ref` is not in the list). */
+export function neighborsOf(list: readonly CardRef[], ref: CardRef | null | undefined): { prev: CardRef | null; next: CardRef | null; index: number } {
+	const index = ref ? list.findIndex((c) => sameCard(c, ref)) : -1;
+	if (index < 0) return { prev: null, next: null, index: -1 };
+	return { prev: list[index - 1] ?? null, next: list[index + 1] ?? null, index };
+}
+
+/** Keeps the first occurrence of every card (lists may show the same task twice, e.g. as post and as need). */
+export function uniqueCards(list: readonly CardRef[]): CardRef[] {
+	const out: CardRef[] = [];
+	for (const c of list) if (!out.some((o) => sameCard(o, c))) out.push(c);
+	return out;
+}
+
+/** The project and its nearest ancestors (outermost first), at most `max` entries; cycles in bad data stop the walk. */
+export function projectChain<P extends { id: string; parentID: string | null }>(projects: readonly P[], id: string | null | undefined, max = 2): P[] {
+	const out: P[] = [];
+	let cur = id ? projects.find((p) => p.id === id) : undefined;
+	while (cur && out.length < max && !out.includes(cur)) {
+		out.unshift(cur);
+		cur = cur.parentID ? projects.find((p) => p.id === cur!.parentID) : undefined;
+	}
+	return out;
+}

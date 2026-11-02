@@ -2,7 +2,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { api, ApiError } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
-	import { cardOfConfirmation, cardOfNeed, cardOfPost } from '#lib/cardRef.js';
+	import { cardOfConfirmation, cardOfNeed, cardOfPost, uniqueCards } from '#lib/cardRef.js';
 	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ActionRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -28,6 +28,8 @@
 		...Object.values(decided).map((d) => ({ item: d.item, result: d.result as ActionRequest | null }))
 	]);
 	let posts = $state<ForYouPost[]>([]);
+	/** The cards in display order: what the window's up/down arrows step through. */
+	const orderedCards = $derived(uniqueCards([...confirmationCards.map((c) => cardOfConfirmation(c.item)), ...needs.map(cardOfNeed), ...posts.map(cardOfPost)]));
 	let next = $state<string | null>(null);
 	let loaded = $state(false);
 	let unsupported = $state(false);
@@ -148,11 +150,11 @@
 					{#if needsTotal > needs.length}<span class="font-normal normal-case">{t('forYou.needsYouMore', { count: needsTotal - needs.length })}</span>{/if}
 				</h3>
 				{#each confirmationCards as c (c.item.id)}
-					<ConfirmationCard item={c.item} outcome={c.result} ondecided={onDecided} onopen={() => cardDetail.open(cardOfConfirmation(c.item))} />
+					<ConfirmationCard item={c.item} outcome={c.result} ondecided={onDecided} onopen={() => cardDetail.open(cardOfConfirmation(c.item), orderedCards)} />
 				{/each}
 				{#each needs as item (item.id)}
 					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item))}>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards)}>
 							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(kindKey(item.kind))}</span>
 							<span id="need-t-{item.id}" class="text-sm font-semibold">{item.title}</span>
 							{#if item.detail}<span class="text-muted-foreground text-sm">{item.detail}</span>{/if}
@@ -189,7 +191,7 @@
 				<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('forYou.posts')}</h3>
 				{#each posts as post (post.id)}
 					<article class="bg-card flex flex-col gap-2 rounded-xl border p-3" data-testid="post-card" data-kind={post.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="post-t-{post.id}" aria-describedby="post-d-{post.id}" onclick={() => cardDetail.open(cardOfPost(post))}>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="post-t-{post.id}" aria-describedby="post-d-{post.id}" onclick={() => cardDetail.open(cardOfPost(post), orderedCards)}>
 							<span id="post-t-{post.id}" class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
 							{#if post.text}<span class="text-sm whitespace-pre-line">{post.text}</span>{/if}
 							{#if post.detail}<span class="text-muted-foreground text-sm">→ {post.detail}</span>{/if}

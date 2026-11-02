@@ -17,7 +17,11 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
+	import Flag from '@lucide/svelte/icons/flag';
+	import X from '@lucide/svelte/icons/x';
+	import SideSection from './card/SideSection.svelte';
+	import { priorityTag, priorityTone } from '#lib/planning.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { mergePlanning, planningForm, type PlanningField, type PlanningForm } from '#lib/planning-merge.js';
 
@@ -31,7 +35,14 @@
 		reminders: 'planning.reminders'
 	};
 
-	let { taskID, onsaved }: { taskID: string; onsaved: () => unknown } = $props();
+	/**
+	 * `side`: the card detail sidebar layout (blocks with "+", every change saves at once); `between` is rendered
+	 * between priority and reminders there (the labels block). Default: the form with one save button.
+	 */
+	let { taskID, onsaved, side = false, between }: { taskID: string; onsaved: () => unknown; side?: boolean; between?: Snippet } = $props();
+	let editDate = $state(false);
+	let editRecur = $state(false);
+	let editRem = $state(false);
 
 	let current = $state<PlanningTask | null>(null);
 	let due = $state('');
@@ -158,6 +169,7 @@
 	}
 </script>
 
+{#if !side}
 <div class="grid gap-2 sm:grid-cols-3" data-testid="planning-form">
 	<div class="flex flex-col gap-1">
 		<Label for="due-{taskID}">{t('planning.due')}</Label>
@@ -263,3 +275,96 @@
 		}}>{t('planning.clear')}</Button
 	>
 </div>
+{:else}
+	<div class="flex flex-col" data-testid="planning-side">
+		<SideSection title={t('card.side.date')} addLabel={t('card.side.dateEdit')} onadd={() => (editDate = !editDate)} active={editDate} testid="side-date">
+			{#if due || planned}
+				<ul class="flex flex-col gap-1">
+					{#if due}<li class="flex items-center justify-between gap-2" data-testid="side-due"><span>{t('planning.due')}: {formatWhen(fromLocalInput(due))}</span><button type="button" class="text-muted-foreground hover:text-foreground hit-area relative inline-flex size-6 items-center justify-center" aria-label={t('card.side.clear', { name: t('planning.due') })} onclick={() => { due = ''; void save(); }}><X class="size-3.5" aria-hidden="true" /></button></li>{/if}
+					{#if planned}<li class="flex items-center justify-between gap-2" data-testid="side-planned"><span>{t('planning.planned')}: {formatWhen(fromLocalInput(planned))}</span><button type="button" class="text-muted-foreground hover:text-foreground hit-area relative inline-flex size-6 items-center justify-center" aria-label={t('card.side.clear', { name: t('planning.planned') })} onclick={() => { planned = ''; void save(); }}><X class="size-3.5" aria-hidden="true" /></button></li>{/if}
+				</ul>
+			{/if}
+			{#if editDate}
+				<div class="flex flex-col gap-1">
+					<Label for="due-{taskID}">{t('planning.due')}</Label>
+					<Input id="due-{taskID}" type="datetime-local" disabled={!current} bind:value={due} onchange={() => void save()} />
+				</div>
+				<div class="flex flex-col gap-1">
+					<Label for="planned-{taskID}">{t('planning.planned')}</Label>
+					<Input id="planned-{taskID}" type="datetime-local" disabled={!current} bind:value={planned} onchange={() => void save()} />
+				</div>
+			{/if}
+		</SideSection>
+
+		<SideSection title={t('planning.priority')} testid="side-priority">
+			<label class="flex min-h-8 items-center gap-2">
+				<Flag class={['size-4 shrink-0', priorityTone(priority)]} aria-hidden="true" />
+				<Select
+					class="min-w-0 flex-1 [&_select]:border-transparent [&_select]:bg-transparent [&_select]:px-1 [&_select]:shadow-none"
+					aria-label={t('planning.priority')}
+					disabled={!current}
+					value={priority}
+					onchange={(e) => { priority = Number(e.currentTarget.value); void save(); }}
+					data-testid="side-priority-select"
+				>
+					{#each PRIORITIES as p (p)}
+						<option value={p}>{priorityTag(p)} · {t(`planning.priority.${p}` as MessageKey)}</option>
+					{/each}
+				</Select>
+			</label>
+		</SideSection>
+
+		{@render between?.()}
+
+		<SideSection title={t('planning.reminders')} addLabel={t('card.side.reminderAdd')} onadd={() => (editRem = !editRem)} active={editRem} testid="side-reminders">
+			{#if reminders.length > 0}
+				<ul class="flex flex-wrap gap-1">
+					{#each reminders as r (r)}
+						<li class="bg-secondary flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs" data-testid="reminder">
+							{formatWhen(r)}
+							<button type="button" class="text-muted-foreground hover:text-foreground hit-area relative inline-flex size-5 items-center justify-center" aria-label={t('planning.reminders.remove', { when: formatWhen(r) })} onclick={() => { reminders = removeReminder(reminders, r); void save(); }}><X class="size-3" aria-hidden="true" /></button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if editRem}
+				<div class="flex flex-wrap items-center gap-2">
+					<Input type="datetime-local" class="min-w-0 flex-1" aria-label={t('planning.reminders.new')} disabled={!current} bind:value={newReminder} />
+					<Button size="sm" variant="outline" disabled={!current || !fromLocalInput(newReminder)} onclick={() => { reminders = addReminder(reminders, newReminder); newReminder = ''; void save(); }}>{t('planning.reminders.add')}</Button>
+				</div>
+				<p class="text-muted-foreground text-xs">{t('planning.reminders.hint')}</p>
+			{/if}
+		</SideSection>
+
+		<SideSection title={t('planning.recurrence')} addLabel={t('card.side.recurrenceEdit')} onadd={() => (editRecur = !editRecur)} active={editRecur} testid="side-recurrence">
+			{#if frequency !== 'none'}
+				<p data-testid="side-recurrence-value">{t(`planning.recurrence.${frequency}` as MessageKey)}{interval > 1 ? ` · ${t('planning.recurrence.interval', { unit: t(`planning.recurrence.unit.${frequency}` as MessageKey) })} ${interval}` : ''}</p>
+			{/if}
+			{#if editRecur}
+				<div class="flex flex-col gap-2" data-testid="recurrence-form">
+					<Select aria-label={t('planning.recurrence.frequency')} disabled={!current} value={frequency} onchange={(e) => { frequency = e.currentTarget.value as Frequency; void save(); }}>
+						{#each FREQUENCIES as f (f)}
+							<option value={f}>{t(`planning.recurrence.${f}` as MessageKey)}</option>
+						{/each}
+					</Select>
+					{#if frequency !== 'none'}
+						<div class="flex flex-col gap-1">
+							<Label for="interval-{taskID}">{t('planning.recurrence.interval', { unit: t(`planning.recurrence.unit.${frequency}` as MessageKey) })}</Label>
+							<Input id="interval-{taskID}" class="w-24" type="number" min="1" max="1000" bind:value={interval} onchange={() => void save()} />
+						</div>
+						<div class="flex flex-col gap-1">
+							<Label for="until-{taskID}">{t('planning.recurrence.until')}</Label>
+							<Input id="until-{taskID}" type="datetime-local" bind:value={until} onchange={() => void save()} />
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</SideSection>
+		{#if conflictText}
+			<p class="text-warning pt-2 text-xs" role="status" data-testid="planning-conflict">{conflictText}</p>
+		{/if}
+		{#if invalid}
+			<p class="text-destructive pt-2 text-xs" role="alert" data-testid="recurrence-error">{t('planning.recurrence.needsDate')}</p>
+		{/if}
+	</div>
+{/if}
