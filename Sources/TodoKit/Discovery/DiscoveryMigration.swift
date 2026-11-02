@@ -22,3 +22,12 @@ struct CreateDiscoverySchema: AsyncMigration {
         }
     }
 }
+
+struct AddDiscoveryLabelColor: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(DiscoveryLabel.schema).field("color", .string).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(DiscoveryLabel.schema).deleteField("color").update()
+    }
+}

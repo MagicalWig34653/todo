@@ -4,6 +4,7 @@ import Vapor
 private struct LabelWrite: Content {
     let name: String
     let version: Int?
+    let color: String?
 }
 
 private struct FilterWrite: Content {
@@ -37,12 +38,6 @@ struct DiscoveryController: RouteCollection {
     private func id(_ req: Request, _ key: String = "id") throws -> UUID {
         guard let id = req.parameters.get(key, as: UUID.self) else { throw Abort(.badRequest) }
         return id
-    }
-
-    private func name(_ raw: String) throws -> String {
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest) }
-        return value
     }
 
     @Sendable func search(_ req: Request) async throws -> DiscoveryPage<DiscoveryHit> {
@@ -79,29 +74,18 @@ struct DiscoveryController: RouteCollection {
     @Sendable func createLabel(_ req: Request) async throws -> Response {
         let service = try await service(req)
         let body = try req.content.decode(LabelWrite.self)
-        let label = DiscoveryLabel(ownerID: try service.user.requireID(), name: try name(body.name))
-        try await label.save(on: req.db)
-        return try await DiscoveryLabelDTO(label).encodeResponse(status: .created, for: req)
+        return try await service.createLabel(name: body.name, color: body.color).encodeResponse(status: .created, for: req)
     }
 
     @Sendable func updateLabel(_ req: Request) async throws -> DiscoveryLabelDTO {
-        let user = try await req.requireUser()
+        let service = try await service(req)
         let body = try req.content.decode(LabelWrite.self)
-        let labelID = try id(req)
-        return try await req.db.transaction { db in
-            try await lockRow(table: DiscoveryLabel.schema, id: labelID, on: db)
-            let label = try await DiscoveryService(user: user, db: db).label(labelID)
-            guard body.version == label.version else { throw Abort(.conflict, reason: "version_conflict") }
-            label.name = try name(body.name)
-            label.version += 1
-            try await label.save(on: db)
-            return try DiscoveryLabelDTO(label)
-        }
+        guard let version = body.version else { throw Abort(.conflict, reason: "version_conflict") }
+        return try await service.updateLabel(id(req), version: version, name: body.name, color: body.color)
     }
 
     @Sendable func deleteLabel(_ req: Request) async throws -> HTTPStatus {
-        let service = try await service(req)
-        try await service.label(id(req)).delete(on: req.db)
+        try await service(req).deleteLabel(id(req))
         return .noContent
     }
 
@@ -121,22 +105,9 @@ struct DiscoveryController: RouteCollection {
     }
 
     private func changeLink(_ req: Request, attach: Bool) async throws -> HTTPStatus {
-        let user = try await req.requireUser()
-        let taskID = try id(req)
-        let labelID = try id(req, "labelID")
-        return try await req.db.transaction { db in
-            // Serialize repeated PUTs on the label; the unique pair also protects the database.
-            try await lockRow(table: DiscoveryLabel.schema, id: labelID, on: db)
-            let service = DiscoveryService(user: user, db: db)
-            _ = try await service.label(labelID)
-            _ = try await service.task(taskID)
-            let existing = try await DiscoveryTaskLabel.query(on: db)
-                .filter(\.$taskID == taskID).filter(\.$labelID == labelID).first()
-            if attach, existing == nil {
-                try await DiscoveryTaskLabel(taskID: taskID, labelID: labelID).save(on: db)
-            } else if !attach, let existing { try await existing.delete(on: db) }
-            return .noContent
-        }
+        let service = try await service(req)
+        try await service.setLabels(taskID: id(req), labelIDs: [id(req, "labelID")], replacing: false, attach: attach)
+        return .noContent
     }
 
     @Sendable func listFilters(_ req: Request) async throws -> DiscoveryPage<DiscoveryFilterDTO> {
@@ -160,33 +131,18 @@ struct DiscoveryController: RouteCollection {
     @Sendable func createFilter(_ req: Request) async throws -> Response {
         let service = try await service(req)
         let body = try req.content.decode(FilterWrite.self)
-        try await service.validate(body.criteria)
-        let filter = try DiscoverySavedFilter(ownerID: service.user.requireID(), name: name(body.name), criteria: body.criteria)
-        try await filter.save(on: req.db)
-        return try await DiscoveryFilterDTO(filter).encodeResponse(status: .created, for: req)
+        return try await service.createFilter(name: body.name, criteria: body.criteria).encodeResponse(status: .created, for: req)
     }
 
     @Sendable func updateFilter(_ req: Request) async throws -> DiscoveryFilterDTO {
-        let user = try await req.requireUser()
+        let service = try await service(req)
         let body = try req.content.decode(FilterWrite.self)
-        let filterID = try id(req)
-        return try await req.db.transaction { db in
-            try await lockRow(table: DiscoverySavedFilter.schema, id: filterID, on: db)
-            let service = DiscoveryService(user: user, db: db)
-            let filter = try await service.savedFilter(filterID)
-            guard body.version == filter.version else { throw Abort(.conflict, reason: "version_conflict") }
-            try await service.validate(body.criteria)
-            filter.name = try name(body.name)
-            filter.criteria = String(decoding: try JSONEncoder().encode(body.criteria), as: UTF8.self)
-            filter.version += 1
-            try await filter.save(on: db)
-            return try DiscoveryFilterDTO(filter)
-        }
+        guard let version = body.version else { throw Abort(.conflict, reason: "version_conflict") }
+        return try await service.updateFilter(id(req), version: version, name: body.name, criteria: body.criteria)
     }
 
     @Sendable func deleteFilter(_ req: Request) async throws -> HTTPStatus {
-        let service = try await service(req)
-        try await service.savedFilter(id(req)).delete(on: req.db)
+        try await service(req).deleteFilter(id(req))
         return .noContent
     }
 

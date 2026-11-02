@@ -6,6 +6,7 @@ final class DiscoveryLabel: Model, @unchecked Sendable {
     @ID(key: .id) var id: UUID?
     @Field(key: "owner_id") var ownerID: UUID
     @Field(key: "name") var name: String
+    @OptionalField(key: "color") var color: String?
     @Field(key: "version") var version: Int
     init() {}
     init(ownerID: UUID, name: String) {
@@ -60,9 +61,11 @@ struct DiscoveryCriteria: Content, Equatable {
 struct DiscoveryLabelDTO: Content {
     let id: UUID
     let name: String
+    let color: String?
     let version: Int
     init(_ label: DiscoveryLabel) throws {
         id = try label.requireID()
+        color = label.color
         name = label.name
         version = label.version
     }

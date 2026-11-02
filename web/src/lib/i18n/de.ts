@@ -1098,6 +1098,10 @@ export const de = {
 	'card.gallery.count': '{index} von {total}',
 	'card.gallery.fullscreen': 'Vollbild',
 	'card.gallery.show': 'Bild zeigen: {label}',
+	'scope.labels:read': 'Eigene private Labels lesen',
+	'scope.labels:write': 'Eigene private Labels verwalten und Aufgaben zuordnen',
+	'scope.filters:read': 'Eigene gespeicherte Filter lesen und ausführen',
+	'scope.filters:write': 'Eigene gespeicherte Filter verwalten',
 } as const;
 
 export type MessageKey = keyof typeof de;

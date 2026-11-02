@@ -59,7 +59,7 @@ extension MCPController {
             let r = try await ActionRequestService(user: user, db: db).get(uuid(a["id"]))
             guard r.grantID == (try grant.requireID()) else { throw Abort(.notFound) }
             return try .encoded(try ActionRequestDTO(r))
-        default: throw Abort(.badRequest)
+        default: return try await callProjectTools(name, a, user: user, grant: grant, db: db)
         }
     }
 }

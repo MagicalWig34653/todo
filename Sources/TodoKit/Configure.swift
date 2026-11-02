@@ -79,6 +79,8 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(CreatePlanningExtension())
 
     app.migrations.add(CreateDiscoverySchema())
+    // Before label backfills: the model now selects the optional color field.
+    app.migrations.add(AddDiscoveryLabelColor())
     app.migrations.add(CreateSharingSchema())
     app.migrations.add(CreateAgentSchema())
     configureAttachments(app)

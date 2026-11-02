@@ -52,3 +52,67 @@ Neue Scopes (Vorschlag): `preferences:*`, `labels:*`, `filters:*`, `sharing:*`, 
 - Handbuch: Rollen-/Scope-/Grant-Matrix, A/B/C, ausgeschlossene Operationen; Ablauf „Antrag, Bestätigung in der PWA, Ergebnis lesen“; Chatantwort, `ask_question` oder ein Parameter `confirmed:true` ersetzen die Bestätigung nicht; Konflikte (neu lesen, Wirkung prüfen, dann wiederholen).
 - Hooks: erfolgreiche neue Tools und offene Bestätigungen berücksichtigen, ohne selbst zu autorisieren; reine Lese-Aufträge von der Board-Schreibpflicht ausnehmen.
 - Eingebettetes Handbuch und Verträge synchron halten.
+
+## Umgesetzt: Stapel 1 (CRUD-Parität)
+
+Stand 2.11.2026, Code in `Sources/TodoKit/MCP/MCPProjectTools.swift`, Tests `MCPProjectToolsTests`. Alle Tools prüfen Scope, Grant-Projektliste und die aktuelle Rolle; nicht erreichbar = `not_found`. Handbuch noch nicht nachgezogen (macht die Hauptsession): der Test `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die vier neuen Tools fehl.
+
+| Tool | Scope | Klasse | Parameter | Fehlercodes |
+| --- | --- | --- | --- | --- |
+| `create_task` (erweitert) | tasks:write | A | `projectID`, `title`, optional `description`, `columnID` (Done-Spalte legt erledigt an), `dueDate` (ISO 8601 oder `YYYY-MM-DD`, UTC), `priority` 0..3 | `invalid_title`, `invalid_priority`, `invalid_due_date`, `not_found` |
+| `update_task` (umgestellt) | tasks:write | A | wie bisher | `version_conflict`, `invalid_status`, `invalid_title`, `not_found` |
+| `move_project` | projects:write | B | `projectID`, `version`, `parentID` (UUID oder null = oberste Ebene) | `version_conflict`, `project_cycle`, `invalid_version`, `invalid_parentID`, `not_found`, `forbidden` |
+| `set_project_position` | projects:write | A | `projectID`, `afterProjectID` (Geschwister oder null = zuerst); persönliche Reihenfolge | `invalid_after_project`, `invalid_afterProjectID`, `not_found` |
+| `update_criterion` | tasks:write | A | `criterionID`, `text`, optional `version` | `invalid_text`, `version_conflict`, `invalid_version`, `not_found` |
+| `delete_criterion` | tasks:write | C | `criterionID`, optional `version` | `confirmation_required`, `version_conflict`, `not_found` |
+| `delete_column` (abgesichert) | tasks:write | C | `id`, optional `version`, `moveTo` (Spalten-ID oder `none`) | `confirmation_required`, `invalid_move_to`, `version_conflict`, `not_found` |
+
+- `create_task`/`update_task` laufen über `PlanningOperations.createTask` bzw. `PlanningService.update` (dieselben Dienste wie `POST/PATCH /v1/tasks`): Aktivität (`task.created`, `task.updated`, `task.status_changed`, `task.moved`), Sync-Einträge, Spalten-Abgleich, Wiederholungsfolge beim Erledigen, Bereinigen von Abhängigkeiten, Meilensteinen und Unteraufgaben-Verknüpfungen beim Projektwechsel. Antwortformat unverändert (`TaskDTO`). `dueDate`/`priority` werden nach dem Anlegen über `PlanningService.put` gesetzt (eine Transaktion). Das Zielprojekt eines Wechsels muss im Grant liegen. Aktivität nennt wie REST die Person als Akteurin.
+- `move_project` nutzt `PlanningOperations.updateProject` (Zyklenschutz, `manage` an Quelle und Ziel). Antwort `{id, name, version, parentID}`.
+- `set_project_position` nutzt `ProjectStateService.position` (wie `PUT /v1/projects/{id}/position`, ohne Elternwechsel; dafür `move_project`). Antwort `{id, version, position}`.
+- `delete_column` und `delete_criterion` legen nur eine Bestätigungsanfrage an (ADR 0026, Aktionen `delete_column`/`delete_criterion` in `ConfirmableActions`; Auswirkung `targetType` column bzw. criterion). Beim Bestätigen laufen `ColumnService.delete` (Aufgaben ziehen um) bzw. das Löschen mit Aktivität `criterion.deleted`. Beispiel: `delete_column {id, moveTo: "none"}` gibt `confirmation_required` mit `actionRequestID` zurück; Ergebnis über `get_action_request`.
+- Namensabweichung zum Plan: `request_project_deletion`/`request_task_deletion` bleiben bei den bestehenden `delete_project`/`delete_task`.
+
+## Umgesetzt: Stapel 2
+
+Planung nutzt `tasks:read` zum Lesen, `tasks:write` zum Schreiben (keine neuen Scopes). Zusätzlich gelten explizite Grant-Projektliste und aktuelle Rolle Lesen/Bearbeiten. Nicht erreichbare Objekte liefern `not_found`. Bestehende `get_task`/`list_tasks` unverändert. Gemeinsamer Fachpfad: `PlanningService` (`PlanningToolService.swift` extrahiert REST-Listen, Meilensteine und Entfernen von Abhängigkeiten); keine Modelländerungen im MCP-Tool.
+
+| Tool | Scope | Klasse | Parameter und Ergebnis |
+| --- | --- | --- | --- |
+| `get_task_planning` | tasks:read | A | `taskID`; REST PlanningTaskDTO mit task, dueAt, plannedAt, priority, position, recurrence, reminders |
+| `update_task_planning` | tasks:write | A | `taskID, version?, dueDate?, dueTime?, dueAt?, plannedAt?, priority?, recurrence?, reminders?`; PlanningTaskDTO |
+| `list_planned_tasks` | tasks:read | A | `view: today|upcoming|up_next, projectID?, limit?`; REST-Sortierung/Filter, UTC-Tagesgrenze |
+| `set_dependencies` | tasks:write | B | `taskID, blockedBy: UUID[]` (max. 100, keine Duplikate); ersetzt atomar, leere Liste entfernt alle, Zyklenschutz |
+| `list_dependencies` | tasks:read | A | `taskID, limit?`; TaskDTO-Liste, nur sichtbare Blocker im Grant |
+| `remove_dependency` | tasks:write | B | `taskID, otherTaskID`; entfernt genau eine Abhängigkeit, idempotent |
+| `list_milestones` | tasks:read | A | `projectID, limit?`; REST PlanningMilestoneDTO-Liste mit begrenzten, erlaubten Mitgliedsaufgaben |
+| `create_milestone` | tasks:write | A | `projectID, title, dueDate?`; PlanningMilestone |
+| `assign_milestone`, `unassign_milestone` | tasks:write | A | `taskID, milestoneID`; beide Projekte im Grant, Meilenstein muss im Projekt oder Vorfahren liegen |
+| `delete_milestone` | tasks:write | C | `milestoneID`; `confirmation_required` mit actionRequestID, kein direktes Löschen; Aufgaben bleiben |
+
+Listen: Vorgabe 50, Grenze 200 (`list_milestones` auch für Aufgaben je Meilenstein). Beide Seiten einer schreibenden Verknüpfung müssen im Grant sein; `set_dependencies` lehnt auch das implizite Entfernen eines vorhandenen Blockers außerhalb des Grants ab. Klasse B schreibt Aktivität über denselben Dienst wie REST (neu `task.dependency_added/removed`), Live-Middleware bleibt aktiv.
+
+Planung ist ein Patch: fehlende Felder bleiben erhalten; null löscht dueDate/dueAt/plannedAt/recurrence, `reminders: []` leert Erinnerungen. `dueDate: YYYY-MM-DD`, `dueTime: HH:mm` in UTC; ohne Uhrzeit Mitternacht, Uhrzeit allein nutzt vorhandenen Tag. Alternativ REST-Felder `dueAt`, `plannedAt` als ISO 8601 (dueAt nicht mit dueDate/dueTime mischen). Wiederholung wie REST: `{frequency: daily|weekly|monthly, interval: 1..1000, timeZone: IANA, until?: ISO8601}`; braucht Fälligkeit oder Planung. Höchstens 100 ISO-Erinnerungen, Priorität 0..3. Mit `version` prüft und erhöht der bestehende Sync-Fachpfad die Task-Version; ohne Version gelten die bisherigen REST-Semantiken (kein Versionssprung). Abhängigkeiten und Meilensteine besitzen im REST keine Version und akzeptieren deshalb keine erfundene Optimistic-Concurrency-Option.
+
+Beispiele: `update_task_planning {"taskID":"…","version":1,"dueDate":"2026-11-03","dueTime":"12:30","priority":3}`; `set_dependencies {"taskID":"…","blockedBy":["…"]}`; `delete_milestone {"milestoneID":"…"}` erstellt nur eine Bestätigungsanfrage. Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `invalid_arguments`, `invalid_id`, `invalid_date`, `invalid_version`, `invalid_priority`, `invalid_recurrence`, `recurrence_requires_date`, `invalid_reminders`, `invalid_dependencies`, `dependency_cycle`, `invalid_view`, `invalid_limit`, `invalid_title`, sonst REST-Rechte-/Validierungsfehler. Keine Namenskollisionen, keine Migration.
+## Umgesetzt: Stapel 3
+
+Elf Tools, alle in `MCPDiscoveryTools.swift`. Fachpfad: `DiscoveryService`, gemeinsam mit REST; keine direkten Modellmutationen im MCP. `query` bei Filtern ist Suchtext oder REST-Kriterien `{q?, projectID?, labelID?, status?}`. Labels/Filter sind private Kontometadaten und dürfen kontoweit gelesen/gepflegt werden; Aufgabeninhalte kommen ausschließlich aus aktuell lesbaren Grant-Projekten. Bestehende Verbindungen bekommen die neuen Scopes nicht automatisch.
+
+| Tool | Scope | Klasse | Parameter / Ergebnis |
+| --- | --- | --- | --- |
+| `search_tasks` | tasks:read | A | `query, projectID?, status?, limit?` → DiscoveryPage nur mit Aufgaben |
+| `list_labels` | labels:read | A | keine → höchstens 100 eigene Labels |
+| `create_label` | labels:write | A | `name, color?` → Label mit Version |
+| `update_label` | labels:write | A | `labelID, version, name?, color?` → Label |
+| `set_task_labels` | labels:write | A | `taskID, labelIDs[]` (höchstens 100) → `{ok:true}`; ersetzt nur eigene Zuordnungen |
+| `delete_label` | labels:write | C | `labelID, version?` → Bestätigungsanfrage |
+| `list_filters` | filters:read | A | keine → höchstens 100 eigene Filter |
+| `create_filter` | filters:write | A | `name, query` → Filter mit REST-`criteria` und Version |
+| `update_filter` | filters:write | A | `filterID, version, name?, query?` → Filter |
+| `run_filter` | filters:read + tasks:read | A | `filterID, limit?` → DiscoveryPage nur mit Aufgaben |
+| `delete_filter` | filters:write | C | `filterID, version?` → Bestätigungsanfrage |
+
+Beispiele: `search_tasks {"query":"Anmeldung","limit":20}`, `create_label {"name":"Wichtig","color":"#ff0000"}`, `create_filter {"name":"Offen","query":{"status":"open"}}`, `set_task_labels {"taskID":"<UUID>","labelIDs":[]}`. Namen getrimmt 1–200 Zeichen, Farbe `#RRGGBB`, Suchtext höchstens 500 Zeichen, Limit 1–100 (Standard 50). Suchergebnisse werden vor dem Limit auf Grant-Projekte begrenzt; Label-Verknüpfungen erweitern die Reichweite nicht. Gespeicherte Filter mit explizitem Projekt außerhalb des Grants liefern `not_found`.
+
+Fehler: `insufficient_scope`, `not_found` (auch fremde Labels/Filter und entzogene Leserechte), `version_conflict`, `invalid_arguments`, `invalid_name`, `invalid_color`, `invalid_query`, `invalid_limit`, `invalid_version`; sonst REST-Validierungsfehler als Tool-Fehler. C-Tools liefern `confirmation_required` mit `actionRequestID`, führen noch nichts aus und prüfen Eigentum/Version erneut bei Bestätigung. Optionales Label-`color` ist additiv in REST und Sync, Migration `AddDiscoveryLabelColor` vor Serve ausführen. Die PWA zeigt für neue Aktionsarten den vorhandenen generischen Bestätigungstext und die serverseitige Zusammenfassung. Kein Toolname kollidiert; Handbuch-/Plugin-Update macht die Hauptsession.

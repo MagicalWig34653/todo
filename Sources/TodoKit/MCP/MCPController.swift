@@ -103,7 +103,7 @@ struct MCPController: RouteCollection {
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
     /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
-    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools
+    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools + projectTools + planningTools + discoveryTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)
@@ -126,6 +126,12 @@ struct MCPController: RouteCollection {
         let a: JSONValue = a.isNull ? .object([:]) : a
         guard case .object(let args) = a, let tool = Self.tools.first(where: { $0.name == name }),
               Set(args.keys).isSubset(of: Set(tool.properties.keys)), tool.required.allSatisfy({ args[$0] != nil }) else { throw Abort(.badRequest, reason: "invalid_arguments") }
+        if Self.planningTools.contains(where: { $0.name == name }) {
+            return try await callPlanning(name, a, user: user, grant: grant, db: db)
+        }
+        if Self.discoveryTools.contains(where: { $0.name == name }) {
+            return try await callDiscovery(name, a, user: user, grant: grant, db: db)
+        }
         switch name {
         case "list_projects":
             var result: [JSONValue] = []
@@ -149,35 +155,8 @@ struct MCPController: RouteCollection {
             let task = try await ProjectAccess(user: user, db: db).task(uuid(a["id"]))
             _ = try await project(task.projectID, user: user, grant: grant, db: db)
             return try .encoded(TaskDTO(task))
-        case "create_task":
-            let b = try a.decode(CreateTaskRequest.self)
-            let t = try await db.transaction { db -> TodoTask in
-                try await lockSharingGraph(on: db)
-                _ = try await project(b.projectID, user: user, grant: grant, db: db, role: .edit)
-                let t = TodoTask(ownerID: try user.requireID(), projectID: b.projectID, title: try cleanTitle(b.title), details: b.description ?? "")
-                try await t.save(on: db); return t
-            }
-            return try .encoded(TaskDTO(t))
-        case "update_task":
-            let id = try uuid(a["id"]), b = try a.decode(UpdateTaskRequest.self)
-            return try await db.transaction { db in
-                try await lockSharingGraph(on: db)
-                try await lockRow(table: TodoTask.schema, id: id, on: db)
-                let t = try await ProjectAccess(user: user, db: db).task(id)
-                _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
-                guard t.version == b.version else { throw Abort(.conflict, reason: "version_conflict") }
-                let before = t.status
-                if let p = b.projectID {
-                    _ = try await project(p, user: user, grant: grant, db: db, role: .edit)
-                    if p != t.projectID { t.columnID = nil; t.boardPosition = 0 }
-                    t.projectID = p
-                }
-                if let title = b.title { t.title = try cleanTitle(title) }
-                if let d = b.description { t.details = d }
-                if let s = b.status { guard TaskStatus.all.contains(s) else { throw Abort(.badRequest, reason: "invalid_status") }; t.status = s }
-                if t.status != before || b.projectID != nil { try await ColumnService.reconcile(t, on: db) }
-                t.version += 1; try await t.save(on: db); return try .encoded(TaskDTO(t))
-            }
+        case "create_task": return try await callCreateTask(a, user: user, grant: grant, db: db)
+        case "update_task": return try await callUpdateTask(a, user: user, grant: grant, db: db)
         case "list_comments":
             let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)
             let comments = try await TaskComment.query(on: db).filter(\.$taskID == task.requireID()).sort(\.$id).all()
@@ -260,23 +239,7 @@ struct MCPController: RouteCollection {
                     UpdateColumnRequest(version: version, name: name, color: nil, isDone: nil, index: nil))
                 return try .encoded(ColumnDTO(column))
             }
-        case "delete_column":
-            let id = try uuid(a["id"])
-            let version = try intArgument(a["version"], reason: "invalid_arguments")
-            var moveTo: UUID??
-            if !a["moveTo"].isNull {
-                guard let raw = a["moveTo"].string else { throw Abort(.badRequest, reason: "invalid_move_to") }
-                if raw == "none" { moveTo = .some(nil) }
-                else if let target = UUID(uuidString: raw) { moveTo = .some(target) }
-                else { throw Abort(.badRequest, reason: "invalid_move_to") }
-            }
-            let target = moveTo
-            try await db.transaction { db in
-                try await lockSharingGraph(on: db)
-                try await grantedColumn(id, user: user, grant: grant, db: db)
-                try await ColumnService(user: user, db: db).delete(id, moveTo: target, expectedVersion: version)
-            }
-            return .object(["deleted": .bool(true)])
+        case "delete_column": return try await callDeleteColumn(a, user: user, grant: grant, db: db)
         default: return try await callWorkflow(name, a, user: user, grant: grant, db: db, settings: settings)
         }
     }

@@ -198,11 +198,41 @@ x-mcp-tools:
   update_project: {scope: 'projects:write', required: [projectID, version], arguments: {projectID: UUID, version: integer, name: 'string 1-200', description: 'string bis 10000, leer/null löscht', color: '#RRGGBB'}, result: '{id, name, description, color, version, parentID}; Fehler version_conflict, invalid_name, not_found (außerhalb des Grants), Rolle Verwalten wie PATCH /v1/projects/{id}'}
   list_tasks: {scope: 'tasks:read', required: [projectID], arguments: {projectID: UUID}, result: TaskDTO-Liste}
   get_task: {scope: 'tasks:read', required: [id], arguments: {id: UUID}, result: TaskDTO}
-  create_task: {scope: 'tasks:write', required: [projectID, title], arguments: {projectID: UUID, title: string, description: string}, result: TaskDTO}
+  create_task: {scope: 'tasks:write', required: [projectID, title], arguments: {projectID: UUID, title: string, description: string, columnID: UUID, dueDate: 'ISO 8601 oder YYYY-MM-DD', priority: 'integer 0-3'}, result: TaskDTO, notes: 'Wie POST /v1/tasks (PlanningOperations): Aktivität, Spalte; dueDate/priority über PlanningService.'}
   update_task: {scope: 'tasks:write', required: [id, version], arguments: {id: UUID, version: integer, title: string, description: string, status: 'open|in_progress|in_review|done', projectID: UUID}, result: TaskDTO}
   list_comments: {scope: 'tasks:read', required: [taskID], arguments: {taskID: UUID}, result: 'CommentDTO-Liste (wie GET /v1/tasks/{id}/comments)'}
   add_comment: {scope: 'comments:write', required: [taskID, body], arguments: {taskID: UUID, body: 'string, getrimmt, 1-10000 Zeichen', idempotencyKey: 'string, 1-200 ASCII-Zeichen ohne Leerzeichen'}, result: CommentDTO, notes: 'Gleicher Dienst wie POST /v1/tasks/{id}/comments (Rolle comment live geprüft, Idempotenz, Aktivität). Aktivität nennt actorType=Integration mit der Grant-ID; Autor bleibt der Benutzer.'}
   get_progress: {scope: 'agents:read', required: [taskID], arguments: {taskID: UUID}, result: 'Liste {job: AgentJobDTO, runs: [{id, generation, leaseUntil, endedAt, checkpoint: {contextRevision, sessionReference, nextStep}}]}', notes: 'Nur lesend. Nur Projekteigentümer (wie GET /v1/agents/jobs/{id}); Bearbeiter erhalten einen Fehler. Schreiben von Fortschritt/Checkpoints bleibt der Runner-API mit Geräte-Token und Generationsprüfung vorbehalten.'}
   list_attachments: {scope: 'attachments:read', required: [taskID], arguments: {taskID: UUID}, result: AttachmentDTO-Liste, notes: 'Nur Metadaten abgeschlossener Anhänge; keine Dateiinhalte, kein Objektschlüssel.'}
   get_attachment: {scope: 'attachments:read', required: [id], arguments: {id: UUID}, result: AttachmentDTO, notes: 'Nur Metadaten; ausstehende, fremde und unbekannte Anhänge sind not_found.'}
+  move_project: {scope: 'projects:write', required: [projectID, version, parentID], arguments: {projectID: UUID, version: integer, parentID: 'UUID oder null'}, result: '{id, name, version, parentID}; Fehler version_conflict, project_cycle, not_found'}
+  set_project_position: {scope: 'projects:write', required: [projectID, afterProjectID], arguments: {projectID: UUID, afterProjectID: 'UUID oder null'}, result: '{id, version, position}'}
+  update_criterion: {scope: 'tasks:write', required: [criterionID, text], arguments: {criterionID: UUID, text: 'string 1-2000', version: integer}, result: CriterionDTO}
+  delete_criterion: {scope: 'tasks:write', required: [criterionID], arguments: {criterionID: UUID, version: integer}, result: 'Bestätigungsanfrage (confirmation_required), Klasse C'}
+  delete_column: {scope: 'tasks:write', required: [id], arguments: {id: UUID, version: integer, moveTo: 'UUID oder none'}, result: 'Bestätigungsanfrage (confirmation_required), Klasse C'}
+
+  get_task_planning: {scope: 'tasks:read', required: [taskID], result: PlanningTaskDTO}
+  update_task_planning: {scope: 'tasks:write', required: [taskID], optional: [version, dueDate, dueTime, dueAt, plannedAt, priority, recurrence, reminders], result: PlanningTaskDTO}
+  list_planned_tasks: {scope: 'tasks:read', required: [view], optional: [projectID, limit], views: [today, upcoming, up_next]}
+  set_dependencies: {scope: 'tasks:write', class: B, required: [taskID, blockedBy]}
+  list_dependencies: {scope: 'tasks:read', required: [taskID], optional: [limit]}
+  remove_dependency: {scope: 'tasks:write', class: B, required: [taskID, otherTaskID]}
+  list_milestones: {scope: 'tasks:read', required: [projectID], optional: [limit]}
+  create_milestone: {scope: 'tasks:write', required: [projectID, title], optional: [dueDate]}
+  assign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
+  unassign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
+  delete_milestone: {scope: 'tasks:write', class: C, required: [milestoneID], result: confirmation_required}
+
 x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']
+  search_tasks: {scope: 'tasks:read', required: [query], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  list_labels: {scope: 'labels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  create_label: {scope: 'labels:write', required: [name], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  update_label: {scope: 'labels:write', required: [labelID, version], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  set_task_labels: {scope: 'labels:write', required: [taskID, labelIDs], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  delete_label: {scope: 'labels:write', required: [labelID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  list_filters: {scope: 'filters:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  create_filter: {scope: 'filters:write', required: [name, query], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  update_filter: {scope: 'filters:write', required: [filterID, version], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  run_filter: {scope: 'filters:read', required: [filterID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  delete_filter: {scope: 'filters:write', required: [filterID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write']
