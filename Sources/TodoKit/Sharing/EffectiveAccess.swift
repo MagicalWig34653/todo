@@ -67,7 +67,9 @@ struct SharingAccess {
 
     func validatePrincipal(type: String, id: UUID) async throws {
         switch type {
-        case "person": guard try await User.find(id, on: db) != nil else { throw Abort(.notFound) }
+        case "person":
+            guard let person = try await User.find(id, on: db) else { throw Abort(.notFound) }
+            if person.isLocked { throw Abort(.conflict, reason: "account_disabled") }
         case "team": _ = try await requireTeam(id)
         default: throw Abort(.badRequest, reason: "invalid_principal")
         }

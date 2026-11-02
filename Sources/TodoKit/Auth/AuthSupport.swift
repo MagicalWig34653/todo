@@ -76,6 +76,7 @@ extension Request {
             session.expiresAt > Date(),
             let user = try await User.find(session.$user.id, on: db)
         else { throw Abort(.unauthorized) }
+        if user.isLocked { throw Abort(.unauthorized, reason: "account_disabled") }
         return user
     }
 

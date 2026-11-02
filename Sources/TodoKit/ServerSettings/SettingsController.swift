@@ -9,7 +9,7 @@ extension SettingsProblem {
     var status: HTTPStatus {
         switch code {
         case "invalid_setting", "setting_dependency", "setting_required", "invalid_env": return .unprocessableEntity
-        case "setting_locked", "version_conflict", "encryption_key_missing", "last_admin_required", "mail_disabled", "push_disabled": return .conflict
+        case "setting_locked", "version_conflict", "encryption_key_missing", "last_admin_required", "cannot_lock_self", "account_anonymized", "mail_disabled", "push_disabled": return .conflict
         case "no_recipient": return .badRequest
         case "rate_limited": return .tooManyRequests
         case "mail_failed": return .badGateway
@@ -100,7 +100,17 @@ struct SettingsTestResult: Content {
     var durationMs: Int?
     var details: [String: String]?
 }
-struct AdminUserDTO: Content { let id: UUID, displayName: String, isAdmin: Bool; var username: String? }
+struct AdminUserDTO: Content {
+    let id: UUID, displayName: String, isAdmin: Bool; var username: String?
+    /// `active` | `disabled` | `anonymized`
+    var status: String
+    var disabledAt: Date?, anonymizedAt: Date?
+    init(_ user: User) throws {
+        id = try user.requireID(); displayName = user.displayName; isAdmin = user.isAdmin; username = user.username
+        status = user.anonymizedAt != nil ? "anonymized" : (user.disabledAt != nil ? "disabled" : "active")
+        disabledAt = user.disabledAt; anonymizedAt = user.anonymizedAt
+    }
+}
 struct SetAdminBody: Content { let isAdmin: Bool }
 
 // MARK: - Controller
@@ -412,9 +422,7 @@ struct SettingsController: RouteCollection {
 
     @Sendable func users(_ req: Request) async throws -> [AdminUserDTO] {
         _ = try await req.requireAdmin()
-        return try await User.query(on: req.db).sort(\.$displayName).sort(\.$id).all().map {
-            AdminUserDTO(id: try $0.requireID(), displayName: $0.displayName, isAdmin: $0.isAdmin, username: $0.username)
-        }
+        return try await User.query(on: req.db).sort(\.$displayName).sort(\.$id).all().map { try AdminUserDTO($0) }
     }
 
     /// At least one admin must remain: the check runs under row locks on all current admins.
@@ -428,7 +436,7 @@ struct SettingsController: RouteCollection {
             }
             guard let user = try await User.find(id, on: db) else { throw Abort(.notFound) }
             if user.isAdmin == body.isAdmin { return user }
-            if !body.isAdmin, try await User.query(on: db).filter(\.$isAdmin == true).count() <= 1 {
+            if !body.isAdmin, try await User.query(on: db).filter(\.$isAdmin == true).filter(\.$disabledAt == nil).count() <= 1 {
                 throw SettingsProblem(code: "last_admin_required", key: nil, message: "Mindestens ein Administrator muss bleiben.")
             }
             user.isAdmin = body.isAdmin
@@ -436,7 +444,7 @@ struct SettingsController: RouteCollection {
             try await record(db, key: "admin.role", action: "admin", admin: actor, version: nil, detail: body.isAdmin ? "granted" : "revoked")
             return user
         }
-        return AdminUserDTO(id: try updated.requireID(), displayName: updated.displayName, isAdmin: updated.isAdmin, username: updated.username)
+        return try AdminUserDTO(updated)
     }
 }
 

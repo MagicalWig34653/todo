@@ -10,7 +10,12 @@ final class User: Model, @unchecked Sendable {
     @Field(key: "is_admin") var isAdmin: Bool
     /// Set to 1 only for the first user; the unique constraint makes bootstrap atomic across replicas.
     @OptionalField(key: "bootstrap_slot") var bootstrapSlot: Int?
+    /// Account lock (disable and anonymize, never delete): see `AccountLock`.
+    @OptionalField(key: "disabled_at") var disabledAt: Date?
+    @OptionalField(key: "disabled_by") var disabledBy: UUID?
+    @OptionalField(key: "anonymized_at") var anonymizedAt: Date?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
+    var isLocked: Bool { disabledAt != nil }
     init() {}
     init(displayName: String, isAdmin: Bool) {
         self.displayName = displayName

@@ -105,6 +105,69 @@ paths:
         '200': {description: Neuer Zustand, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
         '404': {description: Konto unbekannt}
         '409': {description: last_admin_required, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/users/{id}/disable:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: disableUser
+      summary: Konto sperren
+      description: 'Beendet sofort alle Sitzungen, widerruft OAuth-Grants, sperrt Runner- und Push-Geräte, bricht offene Agenten-Jobs
+        ab, entfernt Recovery-Codes und offene Einladungen des Kontos. Anmeldung (Passkey, Passwort, Recovery) liefert danach 403
+        account_disabled, MCP- und REST-Token sind ungültig. Daten bleiben. Idempotent. Audit-Schlüssel admin.account.'
+      responses:
+        '200': {description: Neuer Zustand, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
+        '404': {description: Konto unbekannt}
+        '409': {description: 'last_admin_required (letzter aktiver Administrator) | cannot_lock_self (eigenes Konto über die Admin-Route)', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/users/{id}/enable:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: enableUser
+      summary: Gesperrtes Konto wieder entsperren
+      description: 'Nur solange das Konto nicht anonymisiert ist (sonst 409 account_anonymized). Widerrufene Grants und Sitzungen kommen nicht zurück.'
+      responses:
+        '200': {description: Neuer Zustand, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
+        '404': {description: Konto unbekannt}
+        '409': {description: account_anonymized, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/admin/users/{id}/anonymize:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: anonymizeUser
+      summary: Konto sperren und anonymisieren (unumkehrbar)
+      description: 'Sperrt wie disable und entfernt zusätzlich Benutzername, Passwort, Passkeys, Recovery, E-Mail-Adresse und Push-Daten. Der
+        Anzeigename wird zu "Ehemaliges Mitglied" (auch in Listen, Kommentaren, Teams und Audit). Projekte, Aufgaben und Kommentare bleiben.
+        Die Administratorrolle entfällt. Idempotent.'
+      responses:
+        '200': {description: Neuer Zustand, content: {application/json: {schema: {$ref: '#/components/schemas/AdminUser'}}}}
+        '404': {description: Konto unbekannt}
+        '409': {description: 'last_admin_required | cannot_lock_self', content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/me/anonymize:
+    post:
+      operationId: anonymizeMe
+      summary: Eigenes Konto sperren und anonymisieren
+      description: 'Wie anonymizeUser für das eigene Konto, nur mit ausdrücklicher Bestätigung. Nicht für den letzten aktiven Administrator (409
+        last_admin_required). Beendet die Sitzung (Cookie wird gelöscht).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [confirm], properties: {confirm: {type: string, enum: [ANONYMIZE]}}}
+      responses:
+        '204': {description: Konto gesperrt und anonymisiert}
+        '400': {description: confirmation_required, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '401': {description: Keine Sitzung}
+        '409': {description: last_admin_required, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /v1/me/export:
+    get:
+      operationId: exportMe
+      summary: Datenexport des eigenen Kontos
+      description: 'JSON-Download (account, projects, tasks, comments, labels) nur mit eigenen Daten, ohne Geheimnisse (kein Passwort-Hash,
+        keine Passkeys, Token, Push-Token). Höchstens 20 MiB, sonst 413 export_too_large.'
+      responses:
+        '200': {description: Export als Datei todolino-export.json, content: {application/json: {schema: {type: object}}}}
+        '401': {description: Keine Sitzung}
+        '413': {description: export_too_large}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
@@ -186,12 +249,15 @@ components:
         details: {type: object, additionalProperties: {type: string}}
     AdminUser:
       type: object
-      required: [id, displayName, isAdmin]
+      required: [id, displayName, isAdmin, status]
       properties:
         id: {type: string, format: uuid}
         displayName: {type: string}
         isAdmin: {type: boolean}
         username: {type: string}
+        status: {type: string, enum: [active, disabled, anonymized]}
+        disabledAt: {type: string, format: date-time}
+        anonymizedAt: {type: string, format: date-time}
     Problem:
       type: object
       required: [error, reason, message]
