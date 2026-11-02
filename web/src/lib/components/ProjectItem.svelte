@@ -58,6 +58,13 @@
 		return flatten(buildTree(all)).filter((x) => !blocked.has(x.project.id));
 	});
 
+	/** Focus and select the name field as soon as the form appears (rename keeps the old name selected). */
+	function focusFirst(node: HTMLElement) {
+		const input = node.querySelector('input');
+		input?.focus();
+		input?.select();
+	}
+
 	function open(next: Mode) {
 		mode = next;
 		text = next === 'rename' ? project.name : '';
@@ -182,16 +189,31 @@
 	</div>
 
 	{#if mode !== 'none'}
-		<div class="bg-card my-1 flex flex-col gap-2 rounded-lg border p-2 shadow-card" style:margin-left="{depth * 14 + 26}px">
+		<div class="bg-card my-1 mr-1 flex min-w-0 flex-col gap-2 rounded-lg border p-2 shadow-card" style:margin-left="{Math.min(depth * 14 + 26, 56)}px">
 			{#if mode === 'rename' || mode === 'sub'}
-				<form class="flex gap-1" onsubmit={submit}>
+				<form
+					class="flex min-w-0 flex-col gap-2"
+					onsubmit={submit}
+					use:focusFirst
+					data-testid="project-name-form"
+				>
 					<Input
+						class="w-full min-w-0"
+						onkeydown={(e) => {
+							if (e.key === 'Escape') {
+								e.preventDefault();
+								e.stopPropagation();
+								open('none');
+							}
+						}}
 						bind:value={text}
 						aria-label={mode === 'rename' ? t('common.rename') : t('projects.subPlaceholder')}
 						placeholder={mode === 'sub' ? t('projects.subPlaceholder') : ''}
 					/>
-					<Button type="submit" size="lg">{t('common.save')}</Button>
-					<Button type="button" size="lg" variant="ghost" onclick={() => open('none')}>{t('common.cancel')}</Button>
+					<div class="flex justify-end gap-1">
+						<Button type="button" size="lg" variant="ghost" onclick={() => open('none')}>{t('common.cancel')}</Button>
+						<Button type="submit" size="lg">{t('common.save')}</Button>
+					</div>
 				</form>
 			{:else if mode === 'move'}
 				<label class="flex items-center gap-2 text-sm">
