@@ -15,6 +15,7 @@ Todolino is the user's task and project board. The MCP server `todolino` (tools 
    - After every finished sub-step and every commit: `post_progress` (what is done, what is next). The Stop hook reminds if a session changed files without any board call.
    - Decisions the user must make: `ask_question` on the task (`blocking: true` if work depends on it) instead of asking only in chat. Read the answer later with `list_open_questions`.
    - Finished: `request_review`. Never mark your own work done.
+   - Writing style for everything people read on the board (reviews, questions, progress, comments, task descriptions): short and in bullet points. The headline is the task title, not the text. `request_review`: one sentence of result, then at most 4 bullets (new, checked with numbers, what to look at, open). `ask_question`: the situation in one or two lines, 2 to 4 concrete options, your recommendation first. `post_progress`: one or two sentences. Lists of findings go into the task description or subtasks, not into progress notes. No file lists, hashes or repeated titles.
    - Spawned agents: the main session creates and names the task, puts its ID in the agent prompt, the agent reports with `post_progress` itself, the main session requests the review.
    - After a blocking `ask_question`: at most a few rounds of `wait_for_events` (pass the returned token as `since`), then `get_question`; if still open, end normally.
    - End: bring statuses up to date and call `record_sync {projectID, summary, repoRef}`.

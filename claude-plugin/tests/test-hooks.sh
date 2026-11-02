@@ -21,6 +21,7 @@ EOF2
 )
 has "start bound mentions project id" "11111111-2222-3333-4444-555555555555" "$out"
 has "start bound is SessionStart JSON" '"hookEventName":"SessionStart"' "$out"
+has "start bound asks for short bullet-point board texts" "bullet points" "$out"
 out=$("$here/scripts/session-start.sh" <<EOF2
 {"cwd":"$plain"}
 EOF2

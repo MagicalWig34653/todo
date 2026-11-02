@@ -7,5 +7,6 @@ Dieses Projekt wird in Todolino geplant (Projekt-ID in `.todolino.json`). Das Bo
 - Nach jedem abgeschlossenen Teilschritt und jedem Commit: `post_progress`.
 - Entscheidungen des Nutzers als `ask_question` an der Aufgabe stellen statt nur im Chat zu fragen.
 - Fertig: `request_review`, eigene Arbeit nie selbst auf erledigt setzen. Ende: `record_sync`.
+- Texte am Board kurz und in Stichpunkten: Überschrift = Aufgabentitel; Review: ein Satz Ergebnis + höchstens 4 Stichpunkte (neu, geprüft, ansehen, offen); Frage: 1 bis 2 Zeilen + 2 bis 4 Optionen, Empfehlung zuerst; Fortschritt: 1 bis 2 Sätze.
 - Gestartete Agenten bekommen die Aufgaben-ID im Prompt und melden `post_progress` selbst; die Hauptsession stellt das Review.
 <!-- todolino:end -->

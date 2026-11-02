@@ -35,6 +35,7 @@ Vor Übergabe, Kontextwechsel oder Sessionende einen konsistenten Checkpoint sch
 
 ## Todolino laufend nutzen
 
+- Texte am Board kurz und in Stichpunkten (Nutzerwunsch 2.11.2026): Überschrift = Aufgabentitel; Review = ein Satz Ergebnis + höchstens 4 Stichpunkte (neu, geprüft mit Zahlen, ansehen, offen); Frage = 1 bis 2 Zeilen + 2 bis 4 Optionen, Empfehlung zuerst; Fortschritt = 1 bis 2 Sätze; Befundlisten in die Aufgabenbeschreibung oder als Unteraufgaben. Rückfragen immer als `ask_question` am Board, nicht im Chat.
 Das Board ist Teil der Arbeit, nicht nur ein Abschlussschritt (`record_sync` allein genügt nicht). Je Auftrag gibt es eine Aufgabe in Todolino (suchen, sonst `create_task`, dann `claim_task`); Entscheidungsfragen an den Nutzer gehören als `ask_question` an diese Aufgabe, nicht nur in den Chat; nach jedem Teilschritt und Commit `post_progress`; bei Fertigstellung `request_review`, nie selbst auf erledigt setzen. Startet eine Hauptsession Agenten, nennt sie die Aufgaben-ID im Agent-Prompt; die Agenten melden `post_progress` selbst, das Review stellt die Hauptsession. Details: `docs/agent-manual.md` („Board laufend nutzen“).
 
 ## Umsetzung und Abnahme

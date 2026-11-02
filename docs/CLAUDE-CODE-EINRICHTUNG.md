@@ -61,9 +61,9 @@ Was nicht erzwungen werden kann:
 - Hooks können nicht prüfen, ob Todolino erreichbar ist.
 - Serverseitig sichtbar ist nur die Aktualität (`fresh`/`stale`/`never` in der Steuerzentrale, `get_stale_projects`); der Server kann niemanden zum Abgleich zwingen.
 
-## Plugin aktualisieren (Version 1.1.0)
+## Plugin aktualisieren (Version 1.2.0)
 
-Version 1.1.0 (1.11.2026): Pflichtregeln beim Sitzungsstart, schärfere Erinnerung nach Commits, Stop-Hook mit Board-Aktivitätsprüfung, überarbeitete Skills und CLAUDE.md-Vorlage, Agentenhandbuch 1.2.0 (Abschnitt „Using the board while you work“). Hooks wirken erst in neuen Sitzungen.
+Version 1.2.0 (2.11.2026): Board-Texte kurz und in Stichpunkten (Sitzungsstart, Erinnerung nach Commit, Skill, CLAUDE.md-Vorlage). Version 1.1.0 (1.11.2026): Pflichtregeln beim Sitzungsstart, schärfere Erinnerung nach Commits, Stop-Hook mit Board-Aktivitätsprüfung, überarbeitete Skills und CLAUDE.md-Vorlage, Agentenhandbuch 1.2.0 (Abschnitt „Using the board while you work“). Hooks wirken erst in neuen Sitzungen.
 
 Aktualisieren beim Nutzer (**Befehle nicht geprüft**; `claude plugin --help` war in dieser Umgebung nicht ausführbar, Angabe nach Claude-Code-Doku): Marketplace auffrischen mit `/plugin marketplace update todolino`, Plugin mit `/plugin update todolino@todolino` (Shell: `claude plugin update todolino@todolino`), danach Claude Code neu starten. Die installierte Version zeigt `/plugin`. Den Projektabschnitt „## Todolino“ erneuert `/todolino:setup` (zwischen den Markern) oder man übernimmt `claude-plugin/templates/claude-md-section.md` von Hand.
 
