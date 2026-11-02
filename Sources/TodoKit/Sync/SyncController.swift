@@ -36,6 +36,7 @@ struct SyncPlanningDTO: Content {
 struct SyncLabelDTO: Content {
     let id: UUID
     let name: String
+    var color: String? = nil
     let version: Int
     let taskIDs: [UUID]
 
@@ -47,7 +48,7 @@ struct SyncLabelDTO: Content {
             do { _ = try await access.task(link.taskID); ids.append(link.taskID) }
             catch let error as any AbortError where error.status == .notFound || error.status == .forbidden { continue }
         }
-        return SyncLabelDTO(id: try label.requireID(), name: label.name, version: label.version, taskIDs: ids)
+        return SyncLabelDTO(id: try label.requireID(), name: label.name, color: label.color, version: label.version, taskIDs: ids)
     }
 }
 

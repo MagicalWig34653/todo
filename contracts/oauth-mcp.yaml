@@ -224,3 +224,15 @@ x-mcp-tools:
   delete_milestone: {scope: 'tasks:write', class: C, required: [milestoneID], result: confirmation_required}
 
 x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']
+  search_tasks: {scope: 'tasks:read', required: [query], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  list_labels: {scope: 'labels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  create_label: {scope: 'labels:write', required: [name], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  update_label: {scope: 'labels:write', required: [labelID, version], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  set_task_labels: {scope: 'labels:write', required: [taskID, labelIDs], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  delete_label: {scope: 'labels:write', required: [labelID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  list_filters: {scope: 'filters:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  create_filter: {scope: 'filters:write', required: [name, query], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  update_filter: {scope: 'filters:write', required: [filterID, version], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  run_filter: {scope: 'filters:read', required: [filterID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+  delete_filter: {scope: 'filters:write', required: [filterID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
+x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write']
