@@ -1,5 +1,10 @@
 # Status
 
+## Checkpoint 2.11.2026 (UI-Review Fixes A: Eingaben, Listen, Suche; Agent ui-a)
+
+- Board-Aufgabe `A8D9649E-DC9D-41D4-8969-BF5DBEFCFFDA`. Befunde 1-7 der Codex-Liste umgesetzt: QuickAdd-Entwurf bleibt bei Projektänderung (untrack); Für-dich-Feed führt den Live-Refresh per `mergeFirstPage` zusammen (ältere Seiten und Cursor bleiben) und Karten haben `aria-labelledby`/`describedby`; Agent-Brief-Editor gesperrt bis zur ersten Antwort, bearbeitete Entwürfe werden nie überschrieben; neue gemeinsame `TaskRow` (Abhaken/Wieder öffnen, Projektlink) und Statusaktion in `TaskDetail standalone` für Heute/Anstehend/Als Nächstes; Planungslisten reagieren auf `workspace.tasks`, `changeTick` und `startLiveRefresh` (Sequenzschutz); Suche öffnet Aufgaben per `?task=` (`lib/navigate.ts`), Sequenznummer, Suchstatus, 44/32-px-Trefferflächen; Kommentare/Anhänge mit Skeleton, Fehler getrennt von Leere, Busy-Guard „Wird gesendet …“, Entwurf bleibt bei Fehler.
+- Tests: vitest 227 grün (neu `mergeFirstPage`), `e2e/ui-lists.spec.ts` (4), for-you 2, passkey-flow 20, menus-and-modes 11, question-overflow 7 grün (Chromium). Grenze: Live-Refresh pausiert bei offenem Dialog, der QuickAdd-Test prüft daher nur Erhalt des Textes über ein Poll-Intervall. `npm run check` meldet nur den bekannten `+layout.svelte ./$types`-Fehler. Inbox nutzt noch eigene Zeile (nicht auf `TaskRow` umgestellt).
+
 ## Checkpoint 1.11.2026 (Sicherheitsfixes Codex-Review, Teil B; Agent sec-b)
 
 - Board-Aufgabe `22A03719-111B-4A6E-B88F-722DA4786B1E`. Branch `worktree-agent-a0febff622a14a99f`.
