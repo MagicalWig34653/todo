@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
@@ -22,7 +23,7 @@
 	$effect(() => {
 		void taskKey;
 		pick = '';
-		attempt(load);
+		untrack(() => attempt(load));
 	});
 
 	async function add(e: Event) {

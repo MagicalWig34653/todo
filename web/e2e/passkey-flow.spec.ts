@@ -1359,3 +1359,55 @@ test('sync freshness chips, threshold edit, agent revoke/stop UI', async () => {
 	await device.getByTestId('device-revoke-confirm').click();
 	await expect(device.getByTestId('device-status')).toHaveText('Widerrufen');
 });
+
+test('planning form merges changes of another client and reports conflicting edits', async () => {
+	await openProject('Küche');
+	await setView('Liste');
+	const task = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
+	const loaded = page.waitForResponse((r) => r.url().includes('/v1/planning/tasks/') && r.request().method() === 'GET');
+	await task.getByRole('button', { name: 'Details' }).click();
+	const stored = await (await loaded).json();
+	const detail = task.getByTestId('task-detail');
+	await expect(detail.getByLabel('Fällig')).toBeEnabled();
+
+	// Another client (same account, plain API call) changes the due date: the untouched field follows without a reload.
+	const put = (patch: Record<string, unknown>) =>
+		page.evaluate(
+			async ([id, body]) => {
+				const r = await fetch(`/v1/planning/tasks/${id}`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(body)
+				});
+				return r.status;
+			},
+			[
+				stored.task.id,
+				{ dueAt: stored.dueAt, plannedAt: stored.plannedAt, priority: stored.priority, recurrence: stored.recurrence, reminders: stored.reminders, ...patch }
+			] as const
+		);
+	const tomorrow = new Date(Date.now() + 36 * 3600 * 1000);
+	tomorrow.setMinutes(0, 0, 0);
+	expect(await put({ dueAt: tomorrow.toISOString() })).toBe(200);
+	const p = (n: number) => String(n).padStart(2, '0');
+	const local = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:00`;
+	await expect(detail.getByLabel('Fällig')).toHaveValue(local(tomorrow), { timeout: 15000 });
+
+	// Edited here and changed there: the local edit stays, the other field is merged, and the conflict is announced.
+	await detail.getByLabel('Fällig').fill(localToday(20));
+	const later = new Date(tomorrow.getTime() + 24 * 3600 * 1000);
+	expect(await put({ dueAt: later.toISOString(), priority: 2 })).toBe(200);
+	await expect(detail.getByLabel('Priorität')).toHaveValue('2', { timeout: 15000 });
+	await expect(detail.getByLabel('Fällig')).toHaveValue(localToday(20));
+	await expect(detail.getByTestId('planning-conflict')).toContainText('zwischenzeitlich geändert');
+
+	// Saving afterwards overwrites knowingly and keeps the other client's priority.
+	const [saved] = await Promise.all([
+		page.waitForResponse((r) => r.url().includes('/v1/planning/tasks/') && r.request().method() === 'PUT'),
+		detail.getByRole('button', { name: 'Planung speichern' }).click()
+	]);
+	expect(saved.status()).toBe(200);
+	const result = await saved.json();
+	expect(result.priority).toBe(2);
+	expect(new Date(result.dueAt).getHours()).toBe(20);
+});

@@ -17,6 +17,19 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import { onMount } from 'svelte';
+	import { startLiveRefresh } from '#lib/liveRefresh.js';
+	import { mergePlanning, planningForm, type PlanningField, type PlanningForm } from '#lib/planning-merge.js';
+
+	const FIELD_LABELS: Record<PlanningField, MessageKey> = {
+		due: 'planning.due',
+		planned: 'planning.planned',
+		priority: 'planning.priority',
+		frequency: 'planning.recurrence',
+		interval: 'planning.recurrence',
+		until: 'planning.recurrence',
+		reminders: 'planning.reminders'
+	};
 
 	let { taskID, onsaved }: { taskID: string; onsaved: () => unknown } = $props();
 
@@ -30,19 +43,47 @@
 	let reminders = $state<string[]>([]);
 	let newReminder = $state('');
 	let invalid = $state(false);
+	let conflictText = $state('');
 
 	const FREQUENCIES: Frequency[] = ['none', 'daily', 'weekly', 'monthly'];
 
+	/** What the form was last synchronised with; the base for the three-way merge with newer server state. */
+	let base: PlanningForm | null = null;
+
+	const formNow = (): PlanningForm => ({ due, planned, priority, frequency, interval, until, reminders: [...reminders] });
+	function apply(f: PlanningForm) {
+		due = f.due;
+		planned = f.planned;
+		priority = f.priority;
+		frequency = f.frequency as Frequency;
+		interval = f.interval;
+		until = f.until;
+		reminders = [...f.reminders];
+	}
+	/** Replaces the whole form with the stored planning (first load, after a save). */
 	function adopt(pt: PlanningTask) {
 		current = pt;
-		due = toLocalInput(pt.dueAt);
-		planned = toLocalInput(pt.plannedAt);
-		priority = pt.priority;
-		frequency = pt.recurrence?.frequency ?? 'none';
-		interval = pt.recurrence?.interval ?? 1;
-		until = toLocalInput(pt.recurrence?.until);
-		reminders = [...pt.reminders];
+		base = planningForm(pt);
+		apply(base);
 		invalid = false;
+		conflictText = '';
+	}
+	/** Takes newer server state into untouched fields and keeps local edits; returns the fields changed on both sides. */
+	function sync(pt: PlanningTask): PlanningField[] {
+		if (!base) {
+			adopt(pt);
+			return [];
+		}
+		const merged = mergePlanning(base, formNow(), planningForm(pt));
+		current = pt;
+		base = merged.base;
+		apply(merged.form);
+		return merged.conflicts;
+	}
+	function announceConflicts(fields: PlanningField[]) {
+		const names = [...new Set(fields.map((f) => t(FIELD_LABELS[f])))].join(', ');
+		// Inline instead of the global notice: other loads on the page clear that one before it can be read.
+		conflictText = t('planning.conflict', { fields: names });
 	}
 
 	/** Primitive on purpose: a list refresh hands in a new task object with the same id; only another id may reload the form. */
@@ -58,17 +99,48 @@
 	$effect(() => {
 		void taskKey;
 		current = null;
+		base = null;
 		attempt(load);
 	});
 
+	/** Live refresh: merge what others saved into untouched fields (no guardEditing, the merge protects local edits). */
+	async function refreshQuiet() {
+		if (!current) return;
+		const my = ++loadSeq;
+		try {
+			const pt = await api.getPlanning(taskKey);
+			if (my !== loadSeq) return;
+			const conflicts = sync(pt);
+			if (conflicts.length > 0) announceConflicts(conflicts);
+		} catch {
+			/* silent refresh: keep what the form shows */
+		}
+	}
+	onMount(() => startLiveRefresh(refreshQuiet));
+
 	async function save() {
 		if (!current) return;
-		// Keep the stored time zone of an existing rule; new rules use the browser's.
-		const recurrence = buildRecurrence(frequency, interval, until, current.recurrence?.timeZone);
-		invalid = recurrenceNeedsDate(recurrence, due, planned);
+		invalid = recurrenceNeedsDate(buildRecurrence(frequency, interval, until, current.recurrence?.timeZone), due, planned);
 		if (invalid) return;
 		const my = ++loadSeq;
+		let held = false;
+		let heldFields: PlanningField[] = [];
 		const ok = await attempt(async () => {
+			// Re-read first: fields untouched here follow what others saved meanwhile, and a field edited on both sides
+			// is reported instead of silently overwritten (the planning route has no revision to check against).
+			const conflicts = sync(await api.getPlanning(taskID));
+			if (conflicts.length > 0) {
+				held = true;
+				heldFields = conflicts;
+				return;
+			}
+			// Keep the stored time zone of an existing rule; new rules use the browser's.
+			const recurrence = buildRecurrence(frequency, interval, until, current?.recurrence?.timeZone);
+			invalid = recurrenceNeedsDate(recurrence, due, planned);
+			if (invalid) {
+				held = true;
+				return;
+			}
 			const saved = await api.putPlanning(taskID, {
 				dueAt: fromLocalInput(due),
 				plannedAt: fromLocalInput(planned),
@@ -78,6 +150,10 @@
 			});
 			if (my === loadSeq) adopt(saved);
 		}, load);
+		if (held) {
+			if (heldFields.length > 0) announceConflicts(heldFields);
+			return;
+		}
 		if (ok) await onsaved();
 	}
 </script>
@@ -127,6 +203,9 @@
 		</div>
 	{/if}
 </fieldset>
+{#if conflictText}
+	<p class="text-warning mt-1 text-xs" role="status" data-testid="planning-conflict">{conflictText}</p>
+{/if}
 {#if invalid}
 	<p class="text-destructive mt-1 text-xs" role="alert" data-testid="recurrence-error">{t('planning.recurrence.needsDate')}</p>
 {/if}

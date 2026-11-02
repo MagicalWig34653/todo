@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Label } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
@@ -23,7 +24,7 @@
 	}
 	$effect(() => {
 		void taskID;
-		attempt(load);
+		untrack(() => attempt(load));
 	});
 	onMount(() =>
 		startLiveRefresh(async () => {

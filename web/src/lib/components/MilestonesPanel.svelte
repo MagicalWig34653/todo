@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type MilestoneWithTasks, type Project, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
@@ -28,7 +29,7 @@
 		loaded = false;
 		deletingID = null;
 		picks = {};
-		attempt(load);
+		untrack(() => attempt(load));
 	});
 
 	async function create(e: Event) {

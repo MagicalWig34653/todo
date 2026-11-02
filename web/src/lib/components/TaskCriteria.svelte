@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { api, type Criterion } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
@@ -19,7 +20,7 @@
 	}
 	$effect(() => {
 		void taskID;
-		attempt(load);
+		untrack(() => attempt(load));
 	});
 	onMount(() =>
 		startLiveRefresh(async () => {

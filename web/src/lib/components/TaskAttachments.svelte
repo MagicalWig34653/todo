@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Attachment, type AttachmentRole } from '#lib/api.js';
 	import { ATTACHMENT_ROLES, checkFile, formatSize, isImage, sha256Hex } from '#lib/attachments.js';
@@ -21,7 +22,7 @@
 	}
 	$effect(() => {
 		void taskID;
-		attempt(load);
+		untrack(() => attempt(load));
 	});
 	onMount(() =>
 		startLiveRefresh(async () => {

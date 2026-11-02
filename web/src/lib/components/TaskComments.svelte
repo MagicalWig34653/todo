@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
 	import { api, type Comment } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
@@ -30,7 +31,7 @@
 	$effect(() => {
 		void taskID;
 		editingID = null;
-		attempt(load);
+		untrack(() => attempt(load));
 	});
 
 	async function add(e: Event) {

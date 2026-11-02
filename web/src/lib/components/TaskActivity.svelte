@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
 	import { api, type Activity } from '#lib/api.js';
 	import { de } from '#lib/i18n/de.js';
@@ -32,7 +33,7 @@
 	$effect(() => {
 		void taskID;
 		void refreshKey;
-		attempt(() => load());
+		untrack(() => attempt(() => load()));
 	});
 
 	function label(kind: string): string {

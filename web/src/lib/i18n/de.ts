@@ -443,6 +443,7 @@ export const de = {
 	'planning.recurrence.interval': 'Alle … {unit}',
 	'planning.recurrence.until': 'Wiederholen bis (einschließlich)',
 	'planning.recurrence.needsDate': 'Eine Wiederholung braucht ein Fälligkeits- oder Planungsdatum.',
+	'planning.conflict': 'Die Planung wurde zwischenzeitlich geändert ({fields}). Deine Eingabe bleibt stehen, die übrigen Felder sind aktualisiert. Speichere erneut, um den Wert zu überschreiben.',
 	'planning.reminders': 'Erinnerungen',
 	'planning.reminders.empty': 'Keine Erinnerungen.',
 	'planning.reminders.new': 'Neue Erinnerung',
