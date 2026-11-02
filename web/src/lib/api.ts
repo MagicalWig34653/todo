@@ -288,7 +288,16 @@ export interface Comment {
 	authorName?: string | null;
 	body: string;
 	version: number;
+	/** Set when the message belongs to the chat of a question or a review; both unset = chat of the task. */
+	questionID?: string | null;
+	reviewID?: string | null;
+	/** Messages written through MCP or by the runner are `agent`; old rows may lack the field (= person). */
+	authorKind?: 'person' | 'agent';
+	authorLabel?: string | null;
+	createdAt?: string | null;
 }
+/** Which chat of a task: its own (`task`), or the chat of one question or review. */
+export type CommentThread = { questionID: string } | { reviewID: string } | 'task';
 export interface Criterion {
 	id: string;
 	taskID: string;
@@ -907,8 +916,12 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('DELETE', `/tasks/${taskID}/labels/${labelID}`),
 
 		// Collaboration (contracts/collaboration.yaml)
-		listComments: (taskID: string) => request<Comment[]>('GET', `/tasks/${taskID}/comments`),
-		createComment: (taskID: string, body: string) => request<Comment>('POST', `/tasks/${taskID}/comments`, { body }),
+		listComments: (taskID: string, thread?: CommentThread) => {
+			const q = !thread ? '' : thread === 'task' ? '?thread=task' : 'questionID' in thread ? `?questionID=${thread.questionID}` : `?reviewID=${thread.reviewID}`;
+			return request<Comment[]>('GET', `/tasks/${taskID}/comments${q}`);
+		},
+		createComment: (taskID: string, body: string, thread?: CommentThread) =>
+			request<Comment>('POST', `/tasks/${taskID}/comments`, { body, ...(thread && thread !== 'task' ? thread : {}) }),
 		updateComment: (c: Comment, body: string) =>
 			request<Comment>('PATCH', `/tasks/${c.taskID}/comments/${c.id}`, { body, version: c.version }),
 		deleteComment: (c: Comment) =>

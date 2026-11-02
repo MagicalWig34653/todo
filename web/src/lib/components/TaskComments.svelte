@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-	import { onMount } from 'svelte';
-	import { api, type Comment } from '#lib/api.js';
+	import { onMount, tick, untrack } from 'svelte';
+	import { api, type Comment, type CommentThread } from '#lib/api.js';
+	import { relativeWhen } from '#lib/cardRef.js';
+	import { formatWhen } from '#lib/planning.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -12,11 +13,17 @@
 	import { AttachProblem, attachFile } from '#lib/attachFile.js';
 	import type { MessageKey } from '#lib/i18n/index.js';
 	import Avatar from './app/Avatar.svelte';
+	import Bot from '@lucide/svelte/icons/bot';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
 	import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
 
-	/** `chat` (card detail): avatar + rounded "Kommentieren" field with a paperclip above the history; `onattached` runs after a file was uploaded. */
-	let { taskID, onchanged, chat = false, onattached }: { taskID: string; onchanged?: () => unknown; chat?: boolean; onattached?: () => unknown } = $props();
+	/**
+	 * `chat` (card detail): message bubbles by author (you right, others and agents left), relative time, the rounded
+	 * composer with a paperclip below the history; `onattached` runs after a file was uploaded.
+	 * `thread` selects whose chat it is: the task's own (default) or one question's / review's.
+	 */
+	let { taskID, onchanged, chat = false, onattached, thread = 'task' }: { taskID: string; onchanged?: () => unknown; chat?: boolean; onattached?: () => unknown; thread?: CommentThread } = $props();
+	const threadKey = $derived(JSON.stringify(thread));
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let attaching = $state(false);
 	let attachProblem = $state<string | null>(null);
@@ -44,6 +51,7 @@
 		}
 	}
 	function composerKey(e: KeyboardEvent) {
+		// Enter and Ctrl/Cmd+Enter send, Shift+Enter inserts a line break.
 		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 			e.preventDefault();
 			(e.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
@@ -58,10 +66,26 @@
 	let loaded = $state(false);
 	let loadFailed = $state(false);
 	let sending = $state(false);
+	let scroller = $state<HTMLElement | null>(null);
+	let stickToEnd = true;
+	function onscroll() {
+		if (scroller) stickToEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
+	}
+	/** New messages scroll into view only when the reader was already at the end. */
+	$effect(() => {
+		void items.length;
+		if (!chat || !stickToEnd) return;
+		tick().then(() => {
+			if (scroller) scroller.scrollTop = scroller.scrollHeight;
+		});
+	});
+	const isMine = (c: Comment) => c.authorKind !== 'agent' && c.authorID === auth.user?.id;
+	const authorOf = (c: Comment) =>
+		c.authorKind === 'agent' ? c.authorLabel?.trim() || t('comments.agent') : isMine(c) ? t('comments.mine') : personName(c.authorName, t('comments.other'));
 
 	async function load() {
 		try {
-			items = await api.listComments(taskID);
+			items = await api.listComments(taskID, thread);
 			loadFailed = false;
 		} catch (e) {
 			loadFailed = true;
@@ -74,12 +98,16 @@
 	async function refresh() {
 		if (editingID) return;
 		const before = items;
-		const next = await api.listComments(taskID);
+		const key = threadKey;
+		const next = await api.listComments(taskID, thread);
+		if (key !== threadKey) return;
 		if (!editingID && items === before && !sameList(items, next)) items = next;
 	}
-	onMount(() => startLiveRefresh(refresh));
+	// The chat lives in the card window (a dialog); it must keep refreshing there. Refresh never touches the draft.
+	onMount(() => startLiveRefresh(refresh, { allowInDialog: chat }));
 	$effect(() => {
 		void taskID;
+		void threadKey;
 		editingID = null;
 		loaded = false;
 		untrack(() => attempt(load));
@@ -92,7 +120,7 @@
 		sending = true;
 		try {
 			// The draft stays in the field until the server accepted it.
-			if (await attempt(async () => (items = [...items, await api.createComment(taskID, v)]), load)) {
+			if (await attempt(async () => (items = [...items, await api.createComment(taskID, v, thread)]), load)) {
 				body = '';
 				await onchanged?.();
 			}
@@ -148,8 +176,51 @@
 	{#if attachProblem}<p role="alert" class="text-destructive text-xs">{attachProblem}</p>{/if}
 {/snippet}
 
+{#snippet bubbles()}
+	<ul class="flex max-h-80 min-h-0 flex-col gap-3 overflow-y-auto py-1" bind:this={scroller} {onscroll} data-testid="chat-history" aria-live="polite">
+		{#each items as c (c.id)}
+			{@const mine = isMine(c)}
+			{@const agent = c.authorKind === 'agent'}
+			<li class="flex max-w-[85%] flex-col gap-0.5 {mine ? 'items-end self-end' : 'items-start self-start'}" data-testid="comment" data-author-kind={agent ? 'agent' : 'person'} data-mine={mine}>
+				<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
+					{#if agent}<Bot class="size-3.5" aria-hidden="true" />{/if}
+					<span data-testid="comment-author">{authorOf(c)}</span>
+					{#if c.createdAt}<time datetime={c.createdAt} title={formatWhen(c.createdAt)} data-testid="comment-time">{relativeWhen(c.createdAt)}</time>{/if}
+				</div>
+				{#if editingID === c.id}
+					<div class="w-full min-w-64">
+						<Textarea bind:value={draft} aria-label={t('comments.edit')} />
+						<div class="mt-1 flex gap-1">
+							<Button size="sm" onclick={() => save(c)}>{t('common.save')}</Button>
+							<Button size="sm" variant="ghost" onclick={() => (editingID = null)}>{t('common.cancel')}</Button>
+						</div>
+					</div>
+				{:else}
+					<p class="rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap {mine ? 'bg-ui-accent text-ui-accent-foreground rounded-br-md' : agent ? 'bg-ui-accent-soft rounded-bl-md' : 'bg-muted rounded-bl-md'}">{c.body}</p>
+					{#if mine}
+						<span class="flex gap-1">
+							<Button size="xs" variant="ghost" onclick={() => ((editingID = c.id), (draft = c.body))}>{t('comments.edit')}</Button>
+							<Button size="xs" variant="ghost" onclick={() => remove(c)}>{t('common.delete')}</Button>
+						</span>
+					{/if}
+				{/if}
+			</li>
+		{/each}
+	</ul>
+{/snippet}
+
+{#if chat}
+	<div class="flex flex-col gap-2">
+		{#if !loaded}
+			<div class="bg-muted/60 h-16 animate-pulse rounded-md" role="status" aria-label={t('common.loading')} data-testid="comments-loading"></div>
+		{:else if loadFailed && items.length === 0}
+			<p class="text-destructive text-xs" role="alert" data-testid="comments-error">{t('common.loadFailed')} <button type="button" class="underline" onclick={() => attempt(load)}>{t('common.retry')}</button></p>
+		{:else if items.length === 0}<p class="text-muted-foreground text-xs">{t('card.chat.empty')}</p>{/if}
+		{#if items.length > 0}{@render bubbles()}{/if}
+		{@render composer()}
+	</div>
+{:else}
 <div class="flex flex-col gap-2">
-	{#if chat}{@render composer()}{/if}
 	{#if !loaded}
 		<div class="bg-muted/60 h-16 animate-pulse rounded-md" role="status" aria-label={t('common.loading')} data-testid="comments-loading"></div>
 	{:else if loadFailed && items.length === 0}
@@ -180,8 +251,9 @@
 			</li>
 		{/each}
 	</ul>
-	{#if !chat}<form class="flex flex-col gap-1" onsubmit={add}>
+	<form class="flex flex-col gap-1" onsubmit={add}>
 		<Textarea bind:value={body} placeholder={t('comments.new')} aria-label={t('comments.new')} disabled={sending} />
 		<div><Button type="submit" size="sm" disabled={sending || !body.trim()}>{sending ? t('common.sending') : t('comments.add')}</Button></div>
-	</form>{/if}
+	</form>
 </div>
+{/if}

@@ -8,9 +8,10 @@ function fakeDoc(visible = true) {
 		visibilityState: visible ? 'visible' : 'hidden',
 		activeElement: null as unknown,
 		menu: false,
+		dialog: false,
 		addEventListener(n: string, h: Handler) { handlers.set(n, [...(handlers.get(n) ?? []), h]); },
 		removeEventListener(n: string, h: Handler) { handlers.set(n, (handlers.get(n) ?? []).filter((x) => x !== h)); },
-		querySelector() { return doc.menu ? {} : null; },
+		querySelector(sel: string) { return doc.menu || (doc.dialog && sel.includes('dialog')) ? {} : null; },
 		fire(n: string) { for (const h of handlers.get(n) ?? []) h(); },
 		count() { return [...handlers.values()].reduce((a, b) => a + b.length, 0); },
 		show(v: boolean) { doc.visibilityState = v ? 'visible' : 'hidden'; doc.fire('visibilitychange'); }
@@ -309,6 +310,22 @@ describe('bundling', () => {
 		doc.menu = false;
 		await tick(1_100);
 		expect(fn).toHaveBeenCalledTimes(2);
+		live.stop();
+	});
+	it('allowInDialog subscribers keep refreshing while a dialog is open, others wait', async () => {
+		const server = fakeServer({ '/v1/capabilities': [caps()], '/v1/sync/head': [() => json(200, { token: 'a' })], '/v1/sync/wait': [hang] });
+		const live = make(server);
+		const chat = vi.fn();
+		const other = vi.fn();
+		live.subscribe(chat, { allowInDialog: true });
+		live.subscribe(other);
+		live.start();
+		await tick();
+		doc.dialog = true;
+		live.poke();
+		await tick(2_000);
+		expect(chat).toHaveBeenCalledTimes(1);
+		expect(other).not.toHaveBeenCalled();
 		live.stop();
 	});
 	it('guardEditing subscribers wait while a text field holds input', async () => {

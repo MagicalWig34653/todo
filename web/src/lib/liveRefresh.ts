@@ -15,11 +15,14 @@ const CHANNEL_NAME = 'todolino-live';
 export interface SubscribeOptions {
 	/** Skip while the user is typing into a field that holds text or edits inline (retried every second). */
 	guardEditing?: boolean;
+	/** Keep refreshing while a dialog is open (the chat inside the card window); open menus and lists still defer. */
+	allowInDialog?: boolean;
 }
 
 interface Sub {
 	fn: () => Promise<unknown> | unknown;
 	guardEditing: boolean;
+	allowInDialog: boolean;
 	running: boolean;
 	again: boolean;
 	deferred: boolean;
@@ -85,7 +88,7 @@ export function createLiveRefresh(overrides: Partial<LiveEnv> = {}) {
 	function busy(sub: Sub): boolean {
 		if (dragging) return true;
 		const d = env.doc;
-		if (d.querySelector?.('[role="menu"],[role="listbox"],[role="dialog"]')) return true;
+		if (d.querySelector?.(sub.allowInDialog ? '[role="menu"],[role="listbox"]' : '[role="menu"],[role="listbox"],[role="dialog"]')) return true;
 		if (!sub.guardEditing) return false;
 		const a = d.activeElement as (HTMLElement & { value?: string; type?: string }) | null | undefined;
 		if (!a) return false;
@@ -148,7 +151,7 @@ export function createLiveRefresh(overrides: Partial<LiveEnv> = {}) {
 			}, wait);
 	}
 	function subscribe(fn: Sub['fn'], opts: SubscribeOptions = {}): () => void {
-		const sub: Sub = { fn, guardEditing: !!opts.guardEditing, running: false, again: false, deferred: false };
+		const sub: Sub = { fn, guardEditing: !!opts.guardEditing, allowInDialog: !!opts.allowInDialog, running: false, again: false, deferred: false };
 		subs.add(sub);
 		return () => {
 			subs.delete(sub);

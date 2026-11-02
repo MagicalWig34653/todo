@@ -401,3 +401,83 @@ test.describe('layout of the card window', () => {
 		await page.setViewportSize({ width: 1280, height: 800 });
 	});
 });
+
+// Chat per card: people and agents write into the chat of a task, a question and a review.
+async function connectAgent(projectID: string, scope: string): Promise<string> {
+	const reg = await page.request.post('/oauth/register', { ...json, data: { client_name: 'Chat-Agent', redirect_uris: ['https://client.example/cb'], token_endpoint_auth_method: 'none' } });
+	const clientID = ((await reg.json()) as { client_id: string }).client_id;
+	const verifier = randomBytes(40).toString('hex');
+	const challenge = createHash('sha256').update(verifier).digest('base64url');
+	const authorize = await page.request.get('/oauth/authorize', {
+		params: { response_type: 'code', client_id: clientID, redirect_uri: 'https://client.example/cb', scope, state: 's', resource: `${ORIGIN}/mcp`, code_challenge: challenge, code_challenge_method: 'S256' }
+	});
+	const consentToken = ((await authorize.json()) as { consent_token: string }).consent_token;
+	const consent = await page.request.post('/oauth/consent', { ...json, data: { consent_token: consentToken, approve: true, project_ids: [projectID] } });
+	const code = new URL(((await consent.json()) as { redirect_uri: string }).redirect_uri).searchParams.get('code');
+	const token = await page.request.post('/oauth/token', {
+		...json, data: { grant_type: 'authorization_code', client_id: clientID, resource: `${ORIGIN}/mcp`, code, redirect_uri: 'https://client.example/cb', code_verifier: verifier }
+	});
+	return ((await token.json()) as { access_token: string }).access_token;
+}
+
+test('chat: bubbles by author, agent reply arrives live, draft survives, question and review have their own chat', async () => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	const saved = access;
+	access = await connectAgent(ids.project, 'projects:read tasks:read tasks:write comments:write');
+	try {
+		await page.goto(`/for-you?card=task:${ids.focusTask}`);
+		await expect(dialog().getByTestId('card-header')).toBeVisible();
+		const task = dialog().locator('[data-testid="card-conversation"][data-thread="task"]');
+		const field = task.getByLabel('Kommentar schreiben');
+		await field.fill('Erste Zeile');
+		await field.press('Shift+Enter');
+		await field.pressSequentially('Zweite Zeile');
+		await field.press('Control+Enter');
+		const mine = task.locator('[data-testid="comment"][data-mine="true"]');
+		await expect(mine).toHaveCount(1);
+		await expect(mine).toContainText('Zweite Zeile');
+		await expect(mine.getByTestId('comment-author')).toHaveText('Du');
+		await expect(mine.getByTestId('comment-time')).toHaveText('gerade eben');
+
+		// An agent answers through MCP; a half-written draft in the field is not touched by the live refresh.
+		await field.fill('Noch nicht abgeschickt');
+		const reply = await mcp('add_comment', { taskID: ids.focusTask, body: 'Verstanden, ich mache weiter.', agentName: 'claude-code@chat' });
+		expect(reply.isError, reply.text).toBe(false);
+		const agent = task.locator('[data-testid="comment"][data-author-kind="agent"]');
+		await expect(agent).toHaveCount(1, { timeout: 15_000 });
+		await expect(agent.getByTestId('comment-author')).toHaveText('claude-code@chat');
+		await expect(agent).toContainText('Verstanden, ich mache weiter.');
+		await expect(field).toHaveValue('Noch nicht abgeschickt');
+		await field.fill('');
+
+		// The question card has its own chat, separate from the task chat.
+		await page.goto('/for-you');
+		const q = page.getByTestId('needs-card').filter({ hasText: 'Fokusfrage ohne Optionen?' });
+		await q.locator('button[aria-labelledby^="need-t-"]').click();
+		const qChat = dialog().locator('[data-testid="card-conversation"][data-thread="question"]');
+		await expect(qChat).toBeVisible();
+		await expect(qChat.getByTestId('comment')).toHaveCount(0);
+		await qChat.getByLabel('Kommentar schreiben').fill('Was meinst du genau?');
+		await qChat.getByLabel('Kommentar schreiben').press('Enter');
+		await expect(qChat.getByTestId('comment')).toHaveCount(1);
+		const questionID = new URL(page.url()).searchParams.get('card')!.split(':')[1];
+		const answer = await mcp('add_comment', { taskID: ids.focusTask, body: 'Die Frage betrifft die Reihenfolge.', questionID, agentName: 'claude-code@chat' });
+		expect(answer.isError, answer.text).toBe(false);
+		await expect(qChat.locator('[data-author-kind="agent"]')).toHaveCount(1, { timeout: 15_000 });
+		const listed = await mcp('list_comments', { taskID: ids.focusTask, questionID, authorKind: 'person' });
+		expect(JSON.parse(listed.text).map((c: { body: string }) => c.body)).toEqual(['Was meinst du genau?']);
+		await page.screenshot({ path: `${SHOTS}/chat-question.png` });
+
+		// Review card.
+		await page.goto(`/for-you?card=task:${ids.reviewTask}`);
+		const rChat = dialog().locator('[data-testid="card-conversation"][data-thread="review"]');
+		await expect(rChat).toBeVisible();
+		await rChat.getByLabel('Kommentar schreiben').fill('Bitte noch den Dunkelmodus zeigen');
+		await rChat.getByTestId('comment-send').click();
+		await expect(rChat.getByTestId('comment')).toHaveCount(1);
+		await expect(dialog().locator('[data-testid="card-conversation"][data-thread="task"]').getByTestId('comment')).toHaveCount(0);
+		await page.screenshot({ path: `${SHOTS}/chat-review.png` });
+	} finally {
+		access = saved;
+	}
+});

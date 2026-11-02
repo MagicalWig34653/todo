@@ -21,6 +21,21 @@ describe('api client', () => {
 		expect(JSON.parse(calls[0].init?.body as string)).toEqual({ version: 1, name: 'x' });
 	});
 
+	it('addresses the chat of a task, a question or a review', async () => {
+		const calls: { url: string; init?: RequestInit }[] = [];
+		const api = createApi(async (url, init) => (calls.push({ url, init }), Response.json([])));
+		await api.listComments('t');
+		await api.listComments('t', 'task');
+		await api.listComments('t', { questionID: 'q' });
+		await api.listComments('t', { reviewID: 'r' });
+		expect(calls.map((c) => c.url)).toEqual(['/v1/tasks/t/comments', '/v1/tasks/t/comments?thread=task', '/v1/tasks/t/comments?questionID=q', '/v1/tasks/t/comments?reviewID=r']);
+		await api.createComment('t', 'hi');
+		await api.createComment('t', 'hi', 'task');
+		await api.createComment('t', 'hi', { questionID: 'q' });
+		await api.createComment('t', 'hi', { reviewID: 'r' });
+		expect(calls.slice(4).map((c) => JSON.parse(c.init?.body as string))).toEqual([{ body: 'hi' }, { body: 'hi' }, { body: 'hi', questionID: 'q' }, { body: 'hi', reviewID: 'r' }]);
+	});
+
 	it('uses moveToRoot when moving to the top level', async () => {
 		const { calls, api } = recorder(Response.json({}));
 		await api.moveProject({ id: 'p', parentID: 'q', name: 'a', version: 3 }, null);
