@@ -181,7 +181,7 @@
 {#snippet controls()}
 	<div class="flex flex-wrap items-center gap-2">
 		{#if section === 'board'}
-			<div class="inline-flex rounded-lg border p-0.5" role="group" aria-label={t('cc.view')}>
+			<div class="inline-flex max-w-full flex-wrap rounded-lg border p-0.5" role="group" aria-label={t('cc.view')}>
 				<Button size="sm" variant={view === 'kanban' ? 'default' : 'ghost'} aria-pressed={view === 'kanban'} data-testid="cc-view-kanban" onclick={() => setView('kanban')}>
 					<Columns3 aria-hidden="true" />{t('cc.view.kanban')}
 				</Button>

@@ -101,6 +101,27 @@ final class BuildArtifact: Model, @unchecked Sendable {
     init() {}
 }
 
+/// Removes subtask links that cross a project boundary (children moved to another project before moves unlinked them).
+/// Reads additionally ignore such links, so this only cleans up stored data.
+struct ClearCrossProjectSubtaskLinks: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        let links = try await TaskWorkflow.query(on: db).filter(\.$parentTaskID != nil).all()
+        guard !links.isEmpty else { return }
+        var projectOf: [UUID: UUID] = [:]
+        let ids = Array(Set(links.compactMap(\.id) + links.compactMap(\.parentTaskID)))
+        var index = 0
+        while index < ids.count {
+            let chunk = Array(ids[index..<min(index + 400, ids.count)]); index += 400
+            for task in try await TodoTask.query(on: db).field(\.$id).field(\.$projectID).filter(\.$id ~~ chunk).all() { projectOf[task.id!] = task.projectID }
+        }
+        for link in links {
+            guard let id = link.id, let parent = link.parentTaskID else { continue }
+            if projectOf[id] == nil || projectOf[id] != projectOf[parent] { link.parentTaskID = nil; try await link.save(on: db) }
+        }
+    }
+    func revert(on db: any Database) async throws {}
+}
+
 struct CreateCommandCenter: AsyncMigration {
     func prepare(on db: any Database) async throws {
         let text = DatabaseSchema.DataType.sql(raw: "TEXT")

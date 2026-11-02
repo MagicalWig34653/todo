@@ -637,10 +637,17 @@ struct WorkflowService: Sendable {
         guard !parents.isEmpty else { return [:] }
         let links = try await TaskWorkflow.query(on: db).filter(\.$parentTaskID ~~ parents).all()
         guard !links.isEmpty else { return [:] }
+        // A link is never trusted on its own: a child only counts when it lives in the same project as its parent,
+        // so a child moved elsewhere (or a legacy cross-project link) cannot be read through the old parent.
+        let parentProject = Dictionary(uniqueKeysWithValues: try await TodoTask.query(on: db).field(\.$id).field(\.$projectID)
+            .filter(\.$id ~~ parents).all().map { ($0.id!, $0.projectID) })
         let tasks = try await TodoTask.query(on: db).filter(\.$id ~~ links.map { $0.id! }).sort(\.$createdAt).sort(\.$id).all()
         var result: [UUID: [TodoTask]] = [:]
         let parentOf = Dictionary(uniqueKeysWithValues: links.map { ($0.id!, $0.parentTaskID!) })
-        for task in tasks { if let p = parentOf[task.id!] { result[p, default: []].append(task) } }
+        for task in tasks {
+            guard let p = parentOf[task.id!], parentProject[p] == task.projectID else { continue }
+            result[p, default: []].append(task)
+        }
         return result
     }
 }
