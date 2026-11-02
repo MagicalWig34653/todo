@@ -58,12 +58,73 @@ export interface ForYouNeed {
 	createdAt?: string | null;
 	actions: ForYouAction[];
 }
+/** Confirmation request of an agent (backend ADR 0026, contracts/action-requests.yaml). */
+export interface ActionImpact {
+	targetType: 'project' | 'task' | string;
+	targetID: string;
+	targetName: string;
+	subprojects: number;
+	tasks: number;
+	newOwnerName?: string | null;
+	destructive: boolean;
+}
+export interface ActionRequest {
+	id: string;
+	tool: 'delete_project' | 'delete_task' | 'transfer_project_owner' | string;
+	state: 'pending' | 'confirmed' | 'rejected' | 'expired' | 'executed' | 'failed';
+	summary: string;
+	impact: ActionImpact;
+	agentLabel?: string | null;
+	result?: { ok: boolean; code: string } | null;
+	createdAt?: string | null;
+	decidedAt?: string | null;
+	executedAt?: string | null;
+	expiresAt: string;
+}
+/** Feed card of a pending request; same fields as the request plus the paths the card posts to. */
+export interface ForYouConfirmation {
+	id: string;
+	tool: string;
+	summary: string;
+	impact: ActionImpact;
+	agentLabel?: string | null;
+	createdAt?: string | null;
+	expiresAt: string;
+	confirmPath: string;
+	rejectPath: string;
+}
+
+/** Second step before confirming: deleting a project asks for its name, everything else for a tick. */
+export function confirmGate(c: Pick<ForYouConfirmation, 'tool' | 'impact'>): 'name' | 'check' {
+	return c.tool === 'delete_project' ? 'name' : 'check';
+}
+/** The typed text must equal the name (surrounding blanks are ignored, case counts). */
+export function nameMatches(typed: string, name: string): boolean {
+	return typed.trim() === name.trim() && name.trim() !== '';
+}
+/** i18n key of the outcome line of a decided request. */
+export function outcomeKey(r: Pick<ActionRequest, 'tool' | 'state' | 'result'>): string {
+	if (r.state === 'rejected') return 'confirm.done.rejected';
+	if (r.state === 'expired') return 'confirm.done.expired';
+	if (r.state === 'failed') return 'confirm.done.failed';
+	if (r.state === 'executed') {
+		return ({ delete_project: 'confirm.done.projectDeleted', delete_task: 'confirm.done.taskDeleted', transfer_project_owner: 'confirm.done.ownerChanged' } as Record<string, string>)[r.tool] ?? 'confirm.done.executed';
+	}
+	return 'confirm.done.executed';
+}
+/** i18n key of a failure reason (`result.code`); unknown codes fall back to a generic text. */
+export function failureKey(code: string | undefined): string {
+	return ({ forbidden: 'confirm.fail.forbidden', not_found: 'confirm.fail.notFound', version_conflict: 'confirm.fail.conflict', connection_revoked: 'confirm.fail.revoked' } as Record<string, string>)[code ?? ''] ?? 'confirm.fail.other';
+}
+
 export interface ForYouPage {
 	generatedAt: string;
 	mode: string;
 	projectID?: string | null;
 	needsYou: ForYouNeed[];
 	needsYouTotal: number;
+	/** Open confirmation requests of agents; absent on older servers. */
+	confirmations?: ForYouConfirmation[];
 	posts: ForYouPost[];
 	nextCursor?: string | null;
 }

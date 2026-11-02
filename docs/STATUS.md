@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 2.11.2026: Bestätigungsanfragen für große MCP-Aktionen (Agent confirm)
+
+- Board-Aufgabe `DA2A65BA-66CC-485A-82D0-5E8BAC286E64` (nicht auf erledigt gesetzt, kein Review angefordert). Entscheidung und Aufbau: `docs/adr/0026-bestaetigungsanfragen-mcp.md`, Vertrag `contracts/action-requests.yaml`, Agentenhandbuch 1.4.0 (Abschnitt „Large actions need confirmation“), `docs/AGENTEN-UND-MCP.md`.
+- Backend: Tabelle `action_requests` und `live_events.ref_id` (additive Migrationen; vor dem Start `App migrate --yes`), `Sources/TodoKit/ActionRequests/` (Modell, Registry `ConfirmableActions`, Dienst, Routen `/v1/action-requests`), MCP-Tools `delete_project`, `delete_task`, `transfer_project_owner`, `list_action_requests`, `get_action_request` (`MCP/MCPActionTools.swift`; Fehler `confirmation_required`), `wait_for_events`-Hinweis `action_request`, Feed-Feld `confirmations[]`, `summary.pendingConfirmations`, Push-Kategorie `confirmations`, Aufräumen in `cleanup-expired`.
+- PWA: `ConfirmationCard.svelte` (in `ForYouView.svelte`), Helfer in `forYou.ts`, Attention-Badge zählt Bestätigungen, Push-Kategorie in den Benachrichtigungseinstellungen, Texte am Ende von `de.ts`.
+- Tests: `swift test` komplett 319 (20 übersprungen, 0 Fehlschläge; neu `ActionRequestTests` 13: Anfrage statt Löschung, Idempotenz, Bestätigen löscht, doppelt = einmal, Ablehnen, fremdes Konto 404, Projekt/Unterprojekt außerhalb des Grants, Ablauf und Aufräumen, Rechte beim Ausführen neu geprüft, widerrufene Verbindung, Aufgabe löschen und Eigentum übertragen, Scope und Tool-Liste, Feed und Zähler, `wait_for_events`-Hinweis); vitest 249 (neu `confirmations.test.ts` 4); `npm run build` grün; `npm run check` nur der bekannte `./$types`-Fehler; Playwright Chromium je frische SQLite: `action-requests` 2 (echte OAuth-Verbindung mit PKCE ruft `delete_project` auf, Karte, Namen tippen, Löschen, Ablehnen, 320 px), `for-you` 2, `passkey-flow` 21, alle grün. Backend-Tests entstanden nach der Implementierung (nicht strikt rot-zuerst).
+- Grenzen: nur SQLite/Chromium; MariaDB nicht ausgeführt. Eigentumswechsel bildet `setOwner` nach (Controller bewusst unberührt). Keine Verlaufsansicht entschiedener Anfragen, Apple-App kennt das Feld/die Kategorie noch nicht.
+- Nächster Schritt: Review und Merge des Branches `worktree-agent-ab810397cd9361190`; bei Auslieferung `App migrate --yes`; danach ggf. Verlaufsansicht und Apple-Karte.
+
 ## Checkpoint 2.11.2026: Konten sperren und anonymisieren (Agent account-lock)
 
 - Board-Aufgabe `BDEA2A99-B205-4043-B4EE-4B8CBFA371E6` (nicht auf erledigt gesetzt, Review ausstehend). Nutzerentscheidung 1.11.: sperren und anonymisieren, nichts löschen. Details und Verhalten: `docs/VERWALTUNG.md` (Abschnitt „Konten sperren und anonymisieren“), Vertrag `contracts/admin-settings.yaml` (disable, enable, anonymize, `/v1/me/anonymize`, `/v1/me/export`, `AdminUser.status`).

@@ -29,6 +29,7 @@ export const deNotify = {
 	'notify.prefs.agent_reviews': 'Ergebnisse zur Prüfung (Reviews)',
 	'notify.prefs.assignments': 'Zuweisungen',
 	'notify.prefs.comments': 'Neue Kommentare',
+	'notify.prefs.confirmations': 'Bestätigungen für große Aktionen von Agenten',
 	'notify.prefs.showContent': 'Aufgabentitel und Texte in der Benachrichtigung zeigen',
 	'notify.prefs.showContent.hint': 'Aus (empfohlen): Der Sperrbildschirm zeigt nur allgemeine Hinweise. An: Titel und Kurztexte werden über Apples Server gesendet.',
 	'notify.prefs.badge': 'Anzahl offener Rückfragen und Reviews am App-Symbol',

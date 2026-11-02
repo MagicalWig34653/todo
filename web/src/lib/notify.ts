@@ -1,7 +1,7 @@
 import type { EmailStatus, PushTestResult } from '#lib/api.js';
 
 /** Preference categories in display order (keys match contracts/push.yaml). */
-export const PUSH_CATEGORIES = ['reminders', 'agent_questions', 'agent_reviews', 'assignments', 'comments'] as const;
+export const PUSH_CATEGORIES = ['reminders', 'agent_questions', 'agent_reviews', 'assignments', 'comments', 'confirmations'] as const;
 export type PushCategory = (typeof PUSH_CATEGORIES)[number];
 
 /** Server defaults; used until the stored preferences arrive. */
@@ -10,7 +10,8 @@ export const PUSH_DEFAULTS: Record<PushCategory, boolean> = {
 	agent_questions: true,
 	agent_reviews: true,
 	assignments: false,
-	comments: false
+	comments: false,
+	confirmations: true
 };
 
 export type TestSummary = { total: number; sent: number; none: boolean };
