@@ -109,7 +109,12 @@ paths:
     post:
       operationId: decideReview
       summary: '{decision: accept|request_changes, note?}'
-      responses: {'200': {description: ReviewDTO}, '409': {description: no_pending_review}}
+      responses: {'200': {description: 'ReviewDTO (undoUntil = Ende des Rückgängig-Fensters, nur bei Entscheidung durch eine Person)'}, '409': {description: no_pending_review}}
+  /v1/tasks/{id}/review/undo:
+    post:
+      operationId: undoReviewDecision
+      summary: 'Nimmt die letzte Review-Entscheidung der Person binnen 5 Minuten zurück; Review wieder pending, Aufgabe in Status/Spalte davor (ADR 0027)'
+      responses: {'200': {description: 'ReviewDTO (pending)'}, '409': {description: 'nothing_to_undo, not_undoable, undo_window_expired, already_acted_on'}}
   /v1/tasks/{id}/structure:
     put:
       operationId: setTaskStructure

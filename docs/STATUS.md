@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 2.11.2026 (spaet): Review-Entscheidung rueckgaengig (Agent claude-code@review-undo)
+
+- Board-Aufgabe `0CBF8B46-7901-4FA9-B8EB-41B1F2C56A74` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push. ADR 0027.
+- Backend: `POST /v1/tasks/{id}/review/undo` (`WorkflowService.undoReviewDecision`), Fenster 5 Minuten (`WorkflowLimits.reviewUndoWindow`, serverseitig), Migration `AddReviewUndo` (additiv; vor Serve `App migrate --yes`). Regel: nur der Entscheider, nur Nicht-Runner-Reviews, Aufgabenversion unveraendert, kein Agent-/Run-Eintrag nach der Entscheidung, sonst 409 (`undo_window_expired`, `already_acted_on`, `not_undoable`, `nothing_to_undo`). Review wieder `pending`, Aufgabe in Status/Spalte davor, Aktivitaet `review.undone` und Chat-Eintrag. `ReviewDTO.undoUntil` neu.
+- PWA: `ReviewUndoBar` (Knopf "Rueckgaengig", Restzeit) im Ergebnis der Karte, `ReviewUndoToast` ausserhalb des Kartenfensters. MCP unveraendert (docs/MCP-PARITAET.md).
+- Tests: `ReviewUndoTests` 5 gruen; `swift test` gesamt ohne Fehlschlag in den ausgegebenen Suiten (SQLite); vitest 275 gruen, Build ok; Playwright Chromium `review-undo` 2 gruen (frische SQLite).
+- Grenzen: MariaDB, Firefox/WebKit, Apple-App nicht geprueft; Folgeaufgabe wiederkehrender Aufgaben bleibt nach Rueckgaengig bestehen; Spaltenwiederherstellung nur indirekt getestet (Fixture ohne Rollenspalten).
+
 ## Checkpoint 2.11.2026: MCP Stapel 5 Teilen und Teams (Agent claude-code@mcp-s5)
 
 - Neu: 8 Tools (`list_project_grants`, `get_project_visibility`, `set_project_grant`, `revoke_project_grant`, `list_teams`, `list_team_members`, `create_team`, `invite_team_member`) in `MCPSharingTools.swift`, neue Scopes `sharing:*`/`teams:*` (Consent, de.ts, Vertrag). `SharingController` nutzt jetzt `SharingOperations` (gleicher Fachpfad für REST/MCP).

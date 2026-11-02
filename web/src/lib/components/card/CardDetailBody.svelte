@@ -22,6 +22,7 @@
 	import ConfirmationCard from '../overview/ConfirmationCard.svelte';
 	import QuestionAnswer from '../overview/QuestionAnswer.svelte';
 	import ReviewDecision from '../overview/ReviewDecision.svelte';
+	import ReviewUndoBar from '../overview/ReviewUndoBar.svelte';
 	import TaskActivity from '../TaskActivity.svelte';
 	import TaskAttachments from '../TaskAttachments.svelte';
 	import TaskCriteria from '../TaskCriteria.svelte';
@@ -320,6 +321,7 @@
 						<section class="flex flex-col gap-2 rounded-xl border p-3" data-testid="card-review-result">
 							<h3 class="font-semibold">{t(review.state === 'accepted' ? 'card.review.accepted' : review.state === 'changes_requested' ? 'card.review.changes' : 'card.review.withdrawn')}</h3>
 							<p class="text-muted-foreground text-xs">{[review.requestedByLabel, when(review.decidedAt ?? review.createdAt)].filter(Boolean).join(' · ')}</p>
+							{#if review.undoUntil}<ReviewUndoBar taskID={task.id} until={review.undoUntil} onundone={changed} />{/if}
 							<Markdown text={review.summary} />
 							{#if review.decisionNote}<p class="border-l-2 pl-2 [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="review-note-shown">{review.decisionNote}</p>{/if}
 							<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />

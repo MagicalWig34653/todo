@@ -48,6 +48,8 @@ enum WorkflowLimits {
     static let maxText = 4000
     static let maxBrief = 20_000
     static let inlineAttachmentBytes = 5 * 1024 * 1024
+    /// A person may take back a review decision for this long (server-enforced, ADR 0020).
+    static let reviewUndoWindow: TimeInterval = 5 * 60
 }
 
 /// Business rules for questions, progress, reviews, builds, briefs and claims. REST and MCP use the same
@@ -430,6 +432,7 @@ struct WorkflowService: Sendable {
                 do { _ = try await ProjectAccess(user: owner, db: tx).project(task.projectID, role: .manage) }
                 catch { throw Abort(.forbidden, reason: "not_the_reviewer") }
             }
+            let previousStatus = task.status, previousColumn = task.columnID
             r.state = decision == "accept" ? "accepted" : "changes_requested"
             r.decidedBy = userID; r.decidedAt = Date(); r.decisionNote = note; r.version += 1
             try await r.save(on: tx)
@@ -440,8 +443,48 @@ struct WorkflowService: Sendable {
                 try await Self.place(task, role: .working, on: tx)
             }
             try await Self.commit(task, owner: owner, on: tx)
+            r.undoStatus = previousStatus; r.undoColumnID = previousColumn; r.undoTaskVersion = task.version
+            try await r.save(on: tx)
             try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id,
                 kind: decision == "accept" ? "review.accepted" : "review.changes_requested", subjectID: r.id, on: tx)
+            return try ReviewDTO(r)
+        }
+    }
+
+    /// Takes back the latest decision of a pending-less review within `reviewUndoWindow`. Only the deciding person,
+    /// only for non-runner reviews, and only while nothing else happened: the task version is unchanged and no
+    /// non-person actor (agent) wrote activity since the decision. The review returns to `pending`.
+    func undoReviewDecision(_ taskID: UUID, actor: WorkflowActor) async throws -> ReviewDTO {
+        let owner = user, userID = try user.requireID()
+        return try await mutate(taskID, role: .edit) { task, tx in
+            let id = try task.requireID()
+            guard let r = try await TaskReview.query(on: tx).filter(\.$taskID == id)
+                .sort(\.$createdAt, .descending).sort(\.$id, .descending).first(),
+                  r.state == "accepted" || r.state == "changes_requested" else { throw Abort(.conflict, reason: "nothing_to_undo") }
+            guard r.agentJobID == nil, r.decidedBy == userID, let decidedAt = r.decidedAt,
+                  let status = r.undoStatus, let version = r.undoTaskVersion else { throw Abort(.conflict, reason: "not_undoable") }
+            guard Date().timeIntervalSince(decidedAt) <= WorkflowLimits.reviewUndoWindow else { throw Abort(.conflict, reason: "undo_window_expired") }
+            let decisionSequence = try await ActivityEvent.query(on: tx).filter(\.$taskID == id).filter(\.$subjectID == r.id)
+                .filter(\.$kind ~~ ["review.accepted", "review.changes_requested"]).sort(\.$sequence, .descending).first()?.sequence ?? 0
+            let agentActed = try await ActivityEvent.query(on: tx).filter(\.$taskID == id).filter(\.$actorType != .person)
+                .filter(\.$sequence > decisionSequence).count() > 0
+            guard task.version == version, !agentActed else { throw Abort(.conflict, reason: "already_acted_on") }
+            let wasAccepted = r.state == "accepted"
+            task.status = status
+            if let column = r.undoColumnID, try await ProjectColumn.find(column, on: tx)?.projectID == task.projectID {
+                task.columnID = column
+                task.boardPosition = try await TodoTask.query(on: tx).filter(\.$projectID == task.projectID)
+                    .filter(\.$columnID == column).filter(\.$id != id).count()
+            } else { try await ColumnService.reconcile(task, on: tx) }
+            task.version += 1
+            try await task.save(on: tx)
+            r.state = "pending"; r.decidedBy = nil; r.decidedAt = nil; r.decisionNote = nil
+            r.undoStatus = nil; r.undoColumnID = nil; r.undoTaskVersion = nil; r.version += 1
+            try await r.save(on: tx)
+            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "task.status_changed", subjectID: nil, on: tx)
+            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "review.undone", subjectID: r.id, on: tx)
+            _ = try await CommentService.create(taskID: id, user: owner, body: wasAccepted ? "Freigabe zurückgenommen." : "Änderungswunsch zurückgenommen.",
+                idempotencyKey: nil, actor: (actor.type, actor.id), target: .init(reviewID: r.id), on: tx)
             return try ReviewDTO(r)
         }
     }

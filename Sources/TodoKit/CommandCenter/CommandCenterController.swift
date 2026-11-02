@@ -22,6 +22,7 @@ struct CommandCenterController: RouteCollection {
         v1.post("tasks", ":id", "questions", use: ask)
         v1.post("tasks", ":id", "review", use: requestReview)
         v1.post("tasks", ":id", "review", "decision", use: decide)
+        v1.post("tasks", ":id", "review", "undo", use: undoDecision)
         v1.put("tasks", ":id", "structure", use: setStructure)
         v1.get("tasks", ":id", "builds", use: builds)
         v1.post("builds", use: registerBuild)
@@ -120,6 +121,9 @@ struct CommandCenterController: RouteCollection {
         let body = try req.content.decode(ReviewDecisionRequest.self)
         return try await service(req).decideReview(id(req), decision: body.decision, note: body.note, actor: actor(req))
     }
+    @Sendable func undoDecision(_ req: Request) async throws -> ReviewDTO {
+        try await service(req).undoReviewDecision(id(req), actor: actor(req))
+    }
     @Sendable func setStructure(_ req: Request) async throws -> WorkflowDTO {
         try await service(req).setStructure(id(req), req.content.decode(StructureRequest.self), actor: actor(req))
     }
@@ -133,4 +137,5 @@ struct CommandCenterController: RouteCollection {
 func configureCommandCenter(_ app: Application) {
     app.migrations.add(CreateCommandCenter())
     app.migrations.add(ClearCrossProjectSubtaskLinks())
+    app.migrations.add(AddReviewUndo())
 }

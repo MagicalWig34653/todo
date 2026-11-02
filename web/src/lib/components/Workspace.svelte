@@ -22,6 +22,7 @@
 	import CommandCenter from './CommandCenter.svelte';
 	import ForYouView from './ForYouView.svelte';
 	import CardDetailDialog from './card/CardDetailDialog.svelte';
+	import ReviewUndoToast from './overview/ReviewUndoToast.svelte';
 	import ActivityView from './ActivityView.svelte';
 	import PlanningView from './PlanningView.svelte';
 	import SearchView from './SearchView.svelte';
@@ -414,6 +415,7 @@
 
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
 
+<ReviewUndoToast />
 <CardDetailDialog onopentask={openTask} onopenproject={openProject} />
 
 <Dialog bind:open={shortcutsOpen} title={t('help.keys.overlay')} testid="shortcuts-overlay">

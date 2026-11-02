@@ -1153,6 +1153,8 @@ export const de = {
 	'card.side.project': 'Projekt',
 	'card.side.labels': 'Etiketten',
 	'card.side.dependencies': 'Abhängigkeiten',
+	'cc.review.undo': 'Rückgängig',
+	'cc.review.undoLeft': 'noch {time}',
 } as const;
 
 export type MessageKey = keyof typeof de;

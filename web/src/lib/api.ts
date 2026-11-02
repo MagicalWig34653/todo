@@ -644,6 +644,8 @@ export interface Review {
 	decisionNote?: string | null;
 	createdAt?: string | null;
 	version: number;
+	/** End of the undo window after a person's decision; absent when not undoable. */
+	undoUntil?: string | null;
 }
 export interface AgentBrief {
 	projectID: string;
@@ -1023,6 +1025,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<Review[]>('GET', `/reviews${query({ projectID: p.projectID, state: p.state ?? 'pending', limit: p.limit })}`),
 		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string) =>
 			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined }),
+		undoReviewDecision: (taskID: string) => request<Review>('POST', `/tasks/${taskID}/review/undo`),
 		taskContext: (taskID: string) => request<TaskContext>('GET', `/tasks/${taskID}/context`),
 		setTaskStructure: (taskID: string, body: { kind?: string; parentTaskID?: string | null }) => request<unknown>('PUT', `/tasks/${taskID}/structure`, body),
 		projectStructure: (projectID: string) => request<ProjectStructure>('GET', `/projects/${projectID}/structure`),

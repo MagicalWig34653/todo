@@ -162,3 +162,7 @@ Zwölf Tools in `MCPActivityTools.swift`, keine neuen Scopes, keine Migration. F
 Beispiele: `update_comment {"taskID":"…","commentID":"…","version":1,"body":"neu"}`; `list_activity {"limit":20}`; `read_attachment {"id":"…","preview":true}`; `delete_attachment {"attachmentID":"…"}` gibt `confirmation_required` mit `actionRequestID` zurück.
 
 Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `invalid_arguments`, `invalid_version`, `invalid_limit`, `invalid_id`, `invalid_text`, `invalid_cursor`, `invalid_idempotency_key`, `idempotency_conflict`, `not_comment_author`, `not_agent_comment`, `invalid_attachment`, `invalid_size`, `invalid_build_id`, `confirmation_required`. Entscheidung: Agenten dürfen mit `update_comment` keine Texte von Personen ändern, obwohl dasselbe Konto sie geschrieben hat (REST erlaubt dem Konto das). Handbuch und Version macht die Hauptsession.
+
+## Review-Undo (ADR 0027)
+
+Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.
