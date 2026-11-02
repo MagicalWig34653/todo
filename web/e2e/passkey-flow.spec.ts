@@ -422,7 +422,11 @@ test('recurrence, reminders, dependencies, milestones and filter changes', async
 	await page.getByTestId('saved-filter').getByRole('button', { name: 'Speichern' }).click();
 	await expect(page.getByTestId('saved-filter')).toContainText('Putzplan');
 	await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('Einkauf');
-	await page.getByRole('button', { name: 'Filter Putzplan mit der aktuellen Suche überschreiben' }).click();
+	// Applying before the overwrite is stored would run the old criteria.
+	await Promise.all([
+		page.waitForResponse((r) => /\/v1\/filters\//.test(r.url()) && r.request().method() === 'PATCH' && r.ok()),
+		page.getByRole('button', { name: 'Filter Putzplan mit der aktuellen Suche überschreiben' }).click()
+	]);
 	await page.getByLabel('Suchen in Titeln, Beschreibungen und Projekten').fill('');
 	await page.getByRole('button', { name: 'Filter Putzplan anwenden' }).click();
 	await expect(page.getByTestId('search-hit').filter({ hasText: 'Einkaufen' })).toBeVisible();
@@ -673,13 +677,18 @@ test('sidebar order: drag and drop, move under a parent, menu alternatives, cycl
 
 	// A drop the client cannot see as a cycle but the server rejects (tree changed on another device): 422 message.
 	const alpha = await apiProjects().then((l) => l.find((p) => p.name === 'Alpha')!);
+	const betaID = await projectID('Beta');
+	// Keep the sidebar stale on purpose: a live refresh between the PATCH and the drop would show the real tree and the client would refuse the drop itself.
+	const frozen = (url: URL) => url.pathname === '/v1/projects' || url.pathname === '/v1/sync/wait' || url.pathname === '/v1/sync/head';
+	await page.route(frozen, (route) => route.abort());
 	await page.evaluate(async ([id, ver, parent]) => {
 		await fetch(`/v1/projects/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: ver, parentID: parent }) });
-	}, [alpha.id, alpha.version, await projectID('Beta')] as const);
+	}, [alpha.id, alpha.version, betaID] as const);
 	// Stale UI: Gamma and Alpha are still roots here. Dropping Gamma into Alpha would make Gamma its own descendant.
 	await dragProject(sidebarItem('Gamma'), sidebarItem('Alpha'), 0.5);
 	await expect(page.getByTestId('notice')).toContainText('nicht in sich selbst');
 	await page.getByTestId('notice').getByRole('button', { name: 'Abbrechen' }).click();
+	await page.unroute(frozen);
 });
 
 test('project comments panel', async () => {
