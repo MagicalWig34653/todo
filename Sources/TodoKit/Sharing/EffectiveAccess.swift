@@ -112,19 +112,68 @@ struct SharingSnapshot {
 }
 
 extension SharingAccess {
-    /// All projects (sorted like the lists) plus the sharing rows and grants they need, in four queries.
+    /// Only the projects that can matter for this account, plus their sharing rows and grants.
+    /// Seeds: projects it owns (person or via an accepted team), projects with a grant for it or its teams.
+    /// Then all descendants (inherited rights) and all ancestors (inheritance chain, hidden parents).
+    /// Every other project has no role for this account, so `visibility` equals `SharingAccess.visibility`
+    /// for all loaded projects; unloaded ones are simply not readable (and unrelated cycles are not touched).
     func snapshot() async throws -> (snapshot: SharingSnapshot, ordered: [Project]) {
+        let uid = try user.requireID()
         let teams = try await memberships()
-        let ordered = try await Project.query(on: db).sort(\.$createdAt).sort(\.$id).all()
-        let sharing = Dictionary(uniqueKeysWithValues: try await ProjectSharing.query(on: db).all().map { ($0.projectID, $0) })
-        let grants = Dictionary(grouping: try await ProjectGrant.query(on: db).all(), by: \.projectID)
-        let projects = Dictionary(uniqueKeysWithValues: try ordered.map { (try $0.requireID(), $0) })
-        return (SharingSnapshot(uid: try user.requireID(), teamIDs: Set(teams.map(\.teamID)), admins: Set(teams.filter(\.isAdmin).map(\.teamID)),
-                                projects: projects, sharing: sharing, grants: grants), ordered)
+        let teamIDs = Set(teams.map(\.teamID))
+        var loaded: [UUID: Project] = [:]
+        func add(_ rows: [Project]) throws -> [Project] {
+            var fresh: [Project] = []
+            for p in rows { if loaded.updateValue(p, forKey: try p.requireID()) == nil { fresh.append(p) } }
+            return fresh
+        }
+        func chunks<T>(_ values: [T]) -> [[T]] { stride(from: 0, to: values.count, by: 500).map { Array(values[$0..<min($0 + 500, values.count)]) } }
+
+        var seedIDs = Set<UUID>()
+        let ownedRows = try await ProjectSharing.query(on: db).filter(\.$ownerType == "person").filter(\.$ownerID == uid).all()
+        seedIDs.formUnion(ownedRows.map(\.projectID))
+        if !teamIDs.isEmpty {
+            seedIDs.formUnion(try await ProjectSharing.query(on: db).filter(\.$ownerType == "team").filter(\.$ownerID ~~ teamIDs).all().map(\.projectID))
+            seedIDs.formUnion(try await ProjectGrant.query(on: db).filter(\.$principalType == "team").filter(\.$principalID ~~ teamIDs).all().map(\.projectID))
+        }
+        seedIDs.formUnion(try await ProjectGrant.query(on: db).filter(\.$principalType == "person").filter(\.$principalID == uid).all().map(\.projectID))
+        // Projects without an overlay row are owned by projects.owner_id (a superset is harmless).
+        var frontier = try add(try await Project.query(on: db).filter(\.$ownerID == uid).all())
+        for chunk in chunks(Array(seedIDs)) { frontier += try add(try await Project.query(on: db).filter(\.$id ~~ chunk).all()) }
+        // Descendants, level by level.
+        var level = frontier
+        while !level.isEmpty {
+            var next: [Project] = []
+            for chunk in chunks(try level.map { try $0.requireID() }) {
+                next += try add(try await Project.query(on: db).filter(\.$parentID ~~ chunk).all())
+            }
+            level = next
+        }
+        // Ancestors, level by level (also of the ancestors themselves; the seen set stops cycles).
+        level = Array(loaded.values)
+        while !level.isEmpty {
+            let missing = Set(level.compactMap(\.parentID)).filter { loaded[$0] == nil }
+            var next: [Project] = []
+            for chunk in chunks(Array(missing)) { next += try add(try await Project.query(on: db).filter(\.$id ~~ chunk).all()) }
+            level = next
+        }
+        let ids = Array(loaded.keys)
+        var sharing: [UUID: ProjectSharing] = [:], grants: [UUID: [ProjectGrant]] = [:]
+        for chunk in chunks(ids) {
+            for row in try await ProjectSharing.query(on: db).filter(\.$projectID ~~ chunk).all() { sharing[row.projectID] = row }
+            for g in try await ProjectGrant.query(on: db).filter(\.$projectID ~~ chunk).all() { grants[g.projectID, default: []].append(g) }
+        }
+        let ordered = loaded.values.sorted {
+            let (a, b) = ($0.createdAt, $1.createdAt)
+            if a != b { return (a ?? .distantPast) < (b ?? .distantPast) }
+            return ($0.id?.uuidString ?? "") < ($1.id?.uuidString ?? "")
+        }
+        return (SharingSnapshot(uid: uid, teamIDs: teamIDs, admins: Set(teams.filter(\.isAdmin).map(\.teamID)),
+                                projects: loaded, sharing: sharing, grants: grants), ordered)
     }
 }
 
-private extension Optional where Wrapped == UUID {
+extension Optional where Wrapped == UUID {
     func asyncFlatMap<T>(_ transform: (UUID) async throws -> T?) async rethrows -> T? {
         guard let value = self else { return nil }
         return try await transform(value)

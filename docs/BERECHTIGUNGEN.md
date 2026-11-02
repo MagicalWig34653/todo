@@ -148,6 +148,14 @@ Nichts hiervon ist umgesetzt; es sind Vorschläge zur Entscheidung.
 - **Teams mit Untergruppen** und Rollen im Team (Mitglied, Betrachter).
 - **Freigabelinks** (nur Lesen, mit Ablauf) für Außenstehende.
 
+## Performance
+
+Der Rechte-Snapshot (`SharingAccess.snapshot()`, genutzt von `/v1/projects`, `/v1/tasks`, Agentenliste) lädt nur, was für das Konto zählen kann: eigene Projekte, Projekte seiner akzeptierten Teams, Projekte mit Freigabe für das Konto oder seine Teams, dazu alle Nachfahren (geerbte Rechte) und alle Vorfahren (Vererbungskette, versteckte Eltern), samt Sharing-Zeilen und Freigaben nur dieser Projekte. Alle anderen Projekte haben für das Konto keine Rolle. Das Ergebnis ist identisch zu `SharingAccess.visibility` (Äquivalenztest `SharingSnapshotEquivalenceTests`). Ein Zyklus ohne Bezug zum Konto wird nicht mehr berührt.
+
+`SyncRecorder.visibility(on:)` (Vorher/Nachher-Vergleich unter der Graph-Sperre, auch bei `/v1/teams`-Änderungen) bildet je Konto einen begrenzten Snapshot statt einer Prüfung je Konto und Projekt; `readers(of:)` lädt nur die Vererbungskette des Projekts und die betroffenen Konten. Messung (SQLite, 3000 fremde und 50 eigene Projekte): Snapshot 6 ms statt 96 ms für das frühere Vollladen.
+
+Offen: Der Vorher/Nachher-Vergleich läuft noch über alle Projekte (je Konto begrenzt, aber ohne Einschränkung auf den betroffenen Teilbaum).
+
 ## Screenshots
 
 Alle Aufnahmen erzeugt `web/screenshots/capture.mjs` mit erfundenen Demo-Daten gegen ein frisches Backend, Desktop, Dunkel und Mobil, siehe Seite „Screenshots“ der Dokumentation.

@@ -27,10 +27,36 @@ enum SyncRecorder {
         for user in audience { try await SyncTombstoneAudience(seq: seq, userID: user).save(on: db) }
     }
 
+    /// Accounts that can read the project: only the inheritance chain, its sharing rows and grants are loaded,
+    /// candidates are its owner, grantees and members of the involved teams (everyone else has no role).
     static func readers(of project: Project, on db: any Database) async throws -> [UUID] {
+        var chain: [UUID: Project] = [:]
+        var current: Project? = project
+        while let p = current {
+            let id = try p.requireID()
+            guard chain.updateValue(p, forKey: id) == nil else { throw Abort(.conflict, reason: "project_cycle") }
+            if try await ProjectSharing.query(on: db).filter(\.$projectID == id).first()?.inherits == false { break }
+            current = try await p.parentID.asyncFlatMap { try await Project.find($0, on: db) }
+        }
+        let ids = Array(chain.keys)
+        let sharing = Dictionary(uniqueKeysWithValues: try await ProjectSharing.query(on: db).filter(\.$projectID ~~ ids).all().map { ($0.projectID, $0) })
+        let grants = Dictionary(grouping: try await ProjectGrant.query(on: db).filter(\.$projectID ~~ ids).all(), by: \.projectID)
+        var people = Set<UUID>(), teamIDs = Set<UUID>()
+        for p in chain.values {
+            let row = sharing[try p.requireID()]
+            if row?.ownerType == "team" { teamIDs.insert(row!.ownerID) } else { people.insert(row?.ownerID ?? p.ownerID) }
+        }
+        for g in grants.values.joined() { if g.principalType == "team" { teamIDs.insert(g.principalID) } else { people.insert(g.principalID) } }
+        let members = teamIDs.isEmpty ? [] : try await TeamMembership.query(on: db).filter(\.$teamID ~~ teamIDs).filter(\.$accepted == true).all()
+        people.formUnion(members.map(\.userID))
+        guard !people.isEmpty else { return [] }
         var result: [UUID] = []
-        for user in try await User.query(on: db).all() {
-            if try await SharingAccess(user: user, db: db).visibility(project).role != nil { result.append(try user.requireID()) }
+        for user in try await User.query(on: db).filter(\.$id ~~ people).all() {
+            let uid = try user.requireID()
+            let mine = members.filter { $0.userID == uid }
+            let snapshot = SharingSnapshot(uid: uid, teamIDs: Set(mine.map(\.teamID)), admins: Set(mine.filter(\.isAdmin).map(\.teamID)),
+                                           projects: chain, sharing: sharing, grants: grants)
+            if try snapshot.visibility(project).role != nil { result.append(uid) }
         }
         return result
     }
@@ -42,13 +68,21 @@ enum SyncRecorder {
 
     /// Transaction-local comparison only; all authoritative rights and emitted events live in the database.
     /// Callers already hold lockSharingGraph before their first read and keep it until commit.
+    /// One bounded snapshot per account (only its reachable projects) instead of a check per account and project.
     static func visibility(on db: any Database) async throws -> VisibilitySnapshot {
         var readers: [UUID: Set<UUID>] = [:]
         var parents: [UUID: UUID] = [:]
         for project in try await Project.query(on: db).all() {
             let id = try project.requireID()
-            readers[id] = Set(try await self.readers(of: project, on: db))
+            readers[id] = []
             parents[id] = project.parentID
+        }
+        for user in try await User.query(on: db).all() {
+            let uid = try user.requireID()
+            let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
+            for project in ordered where try snapshot.visibility(project).role != nil {
+                readers[try project.requireID()]?.insert(uid)
+            }
         }
         return VisibilitySnapshot(readers: readers, parents: parents)
     }
