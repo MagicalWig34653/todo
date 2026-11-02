@@ -1021,7 +1021,7 @@ test('command center: kanban, list, questions, reviews, updates, project scope, 
 	await cardIn('running', 'Login-Seite bauen').getByTestId('oc-title').click();
 	const detail = page.getByTestId('card-dialog');
 	await expect(detail.getByTestId('detail-notes')).toContainText('Grundgerüst steht');
-	await expect(detail.getByRole('img')).toBeVisible();
+	await expect(detail.getByTestId('gallery-image')).toBeVisible();
 	await page.keyboard.press('Escape');
 
 	// ---- project scope: tab on the project page ------------------------------------------------------------------------
