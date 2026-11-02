@@ -84,6 +84,19 @@ struct FeedNeedsYouDTO: Content {
     let actions: [FeedActionDTO]
 }
 
+/// Open confirmation request of an agent (ADR 0026). Separate from `needsYou`, whose items are task-bound.
+struct FeedConfirmationDTO: Content {
+    let id: UUID
+    let tool: String
+    let summary: String
+    let impact: ActionImpact
+    let agentLabel: String?
+    let createdAt: Date?
+    let expiresAt: Date
+    let confirmPath: String
+    let rejectPath: String
+}
+
 struct FeedResponse: Content {
     let generatedAt: Date
     /// all | classic | management (all = management)
@@ -92,6 +105,8 @@ struct FeedResponse: Content {
     let needsYou: [FeedNeedsYouDTO]
     /// Items that need you in total (needsYou is capped).
     let needsYouTotal: Int
+    /// Open confirmation requests (first page only, at most 20); absent on older servers.
+    var confirmations: [FeedConfirmationDTO] = []
     let posts: [FeedPostDTO]
     /// nil = end of the feed. Opaque; only valid together with the same filters.
     let nextCursor: String?

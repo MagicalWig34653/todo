@@ -10,7 +10,11 @@ extension MCPController {
                           "timeoutSeconds": Schema.integer("How long to wait at most (default 20).", min: 1, max: 25)])
     ]
 
-    struct EventHint: Encodable { let kind: String; let taskID: String; let projectID: String }
+    struct EventHint: Encodable {
+        let kind: String; var taskID: String? = nil; var projectID: String? = nil
+        /// kind action_request: a confirmation request of this connection was decided (read it with get_action_request).
+        var actionRequestID: String? = nil
+    }
     struct EventsResponse: Encodable { let changed: Bool; let token: String; let hints: [EventHint] }
 
     static func hintKind(_ table: String) -> String {
@@ -43,6 +47,7 @@ extension MCPController {
                 // Re-read the grant: projects may have been withdrawn, or the grant revoked, while waiting.
                 guard let current = try await OAuthGrant.find(grantID, on: db), !current.revoked else { throw Abort(.unauthorized) }
                 hints = try await visibleHints(after: after, user: user, grant: current, db: db)
+                hints += try await decidedRequestHints(after: after, grant: current, db: db)
             }
             return try .encoded(EventsResponse(changed: changed, token: snap.token, hints: hints))
         }
@@ -70,6 +75,15 @@ extension MCPController {
                 }
             }
         }
+    }
+
+    /// Decisions on confirmation requests of this connection (ADR 0026); ids only, no content.
+    private func decidedRequestHints(after: Int, grant: OAuthGrant, db: any Database) async throws -> [EventHint] {
+        let grantID = try grant.requireID()
+        let ids = Array(Set(try await LiveToken.refHints(after: after, kind: ActionRequest.schema, on: db)))
+        guard !ids.isEmpty else { return [] }
+        let rows = try await ActionRequest.query(on: db).filter(\.$id ~~ ids).filter(\.$grantID == grantID).filter(\.$state != "pending").sort(\.$id).all()
+        return rows.compactMap { $0.id.map { EventHint(kind: "action_request", actionRequestID: $0.uuidString) } }
     }
 
     /// Hints on projects the grant lists AND the account can currently read; everything else is dropped.

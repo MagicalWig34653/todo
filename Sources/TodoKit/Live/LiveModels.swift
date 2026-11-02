@@ -34,6 +34,10 @@ func configureLive(_ app: Application) {
 
 /// Models whose events are about one task; their hint rows carry the task id.
 protocol LiveTaskScoped { var liveTaskID: UUID? { get } }
+/// Models whose hint rows carry their own id instead (action requests; MCP `wait_for_events` reports decisions).
+protocol LiveRefScoped { var liveRefID: UUID? { get } }
+extension ActionRequest: LiveRefScoped { var liveRefID: UUID? { id } }
+
 extension TaskComment: LiveTaskScoped { var liveTaskID: UUID? { taskID } }
 extension TaskQuestion: LiveTaskScoped { var liveTaskID: UUID? { taskID } }
 extension TaskReview: LiveTaskScoped { var liveTaskID: UUID? { taskID } }
@@ -46,13 +50,13 @@ extension BuildArtifact: LiveTaskScoped { var liveTaskID: UUID? { taskID } }
 struct LiveEventMiddleware<M: Fluent.Model>: AsyncModelMiddleware {
     typealias Model = M
     func create(model: M, on db: any Database, next: any AnyAsyncModelResponder) async throws {
-        try await next.create(model, on: db); try await LiveToken.touch(M.schema, task: (model as? any LiveTaskScoped)?.liveTaskID, on: db)
+        try await next.create(model, on: db); try await LiveToken.touch(M.schema, task: (model as? any LiveTaskScoped)?.liveTaskID, ref: (model as? any LiveRefScoped)?.liveRefID, on: db)
     }
     func update(model: M, on db: any Database, next: any AnyAsyncModelResponder) async throws {
-        try await next.update(model, on: db); try await LiveToken.touch(M.schema, task: (model as? any LiveTaskScoped)?.liveTaskID, on: db)
+        try await next.update(model, on: db); try await LiveToken.touch(M.schema, task: (model as? any LiveTaskScoped)?.liveTaskID, ref: (model as? any LiveRefScoped)?.liveRefID, on: db)
     }
     func delete(model: M, force: Bool, on db: any Database, next: any AnyAsyncModelResponder) async throws {
-        try await next.delete(model, force: force, on: db); try await LiveToken.touch(M.schema, task: (model as? any LiveTaskScoped)?.liveTaskID, on: db)
+        try await next.delete(model, force: force, on: db); try await LiveToken.touch(M.schema, task: (model as? any LiveTaskScoped)?.liveTaskID, ref: (model as? any LiveRefScoped)?.liveRefID, on: db)
     }
 }
 
@@ -64,7 +68,7 @@ func registerLiveMiddleware(_ app: Application) {
     use(AgentJob.self); use(AgentQuestion.self); use(AgentAnswer.self)
     use(ProjectComment.self); use(ProjectActivityEvent.self); use(ProjectUserState.self)
     use(PlanningDependency.self); use(PlanningMilestone.self); use(PlanningMilestoneTask.self)
-    use(UserPreferences.self)
+    use(UserPreferences.self); use(ActionRequest.self)
     // Sharing: invitations, membership changes, team projects and grants must reach the other account's open views.
     use(Team.self); use(TeamMembership.self); use(ProjectGrant.self)
 }
@@ -75,9 +79,11 @@ enum LiveToken {
     static let window = 500
     static let keep = 5000
 
-    static func touch(_ kind: String, task: UUID? = nil, on db: any Database) async throws {
+    static func touch(_ kind: String, task: UUID? = nil, ref: UUID? = nil, on db: any Database) async throws {
         guard let sql = db as? any SQLDatabase else { return }
-        if let task {
+        if let ref {
+            try await sql.raw("INSERT INTO live_events (kind, ref_id) VALUES (\(bind: kind), \(bind: ref))").run()
+        } else if let task {
             try await sql.raw("INSERT INTO live_events (kind, task_id) VALUES (\(bind: kind), \(bind: task))").run()
         } else {
             try await sql.raw("INSERT INTO live_events (kind) VALUES (\(bind: kind))").run()
@@ -101,6 +107,13 @@ enum LiveToken {
             guard let task = try row.decode(column: "task_id", as: UUID?.self) else { return nil }
             return TaskHint(kind: try row.decode(column: "kind", as: String.self), taskID: task)
         }
+    }
+
+    /// Ids of rows that reference an entity directly (action requests) newer than `afterID`, oldest first.
+    static func refHints(after afterID: Int, kind: String, limit: Int = 200, on db: any Database) async throws -> [UUID] {
+        guard let sql = db as? any SQLDatabase else { return [] }
+        let rows = try await sql.raw("SELECT ref_id FROM live_events WHERE id > \(bind: afterID) AND kind = \(bind: kind) AND ref_id IS NOT NULL ORDER BY id DESC LIMIT \(literal: limit)").all()
+        return try rows.reversed().compactMap { try $0.decode(column: "ref_id", as: UUID?.self) }
     }
 
     struct Snapshot: Equatable, Sendable {

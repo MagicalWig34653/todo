@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: Todolino Bestätigungsanfragen
+  version: 1.0.0
+  description: 'ADR 0026. Große oder unumkehrbare MCP-Aktionen (delete_project, delete_task, transfer_project_owner) werden nicht ausgeführt,
+    sondern als Anfrage gespeichert. Nur der Kontoinhaber, dessen Verbindung sie ausgelöst hat, sieht und entscheidet sie (fremde Konten: 404).
+    Bestätigen führt die Aktion mit den aktuellen Rechten des Kontos und den Grenzen der Verbindung aus (OAuth-Grant: nicht widerrufen, alle
+    betroffenen Projekte enthalten); schlägt das fehl, ist state=failed mit result.code. Zweites Bestätigen liefert dasselbe Ergebnis ohne
+    erneute Ausführung. Anfragen laufen nach 7 Tagen ab (410 beim Entscheiden); abgelaufene und alte entschiedene Zeilen räumt cleanup-expired auf.
+    Der Feed (GET /v1/feed) liefert offene Anfragen zusätzlich im Feld confirmations[]; GET /v1/command-center summary.pendingConfirmations zählt sie.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/action-requests:
+    get:
+      operationId: listActionRequests
+      summary: Eigene Bestätigungsanfragen (neueste zuerst, höchstens 100)
+      parameters:
+      - {name: state, in: query, schema: {type: string, enum: [all, pending, confirmed, rejected, expired, executed, failed]}}
+      responses:
+        '200': {description: 'ActionRequest[]'}
+        '400': {description: invalid_state}
+        '401': {description: nicht angemeldet}
+  /v1/action-requests/{id}:
+    get:
+      operationId: getActionRequest
+      summary: Eine Bestätigungsanfrage
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: ActionRequest}
+        '404': {description: unbekannt oder fremd}
+  /v1/action-requests/{id}/confirm:
+    post:
+      operationId: confirmActionRequest
+      summary: Bestätigen und ausführen
+      description: 'Antwort ActionRequest mit state=executed (result.ok=true) oder state=failed (result.code = Grund, z. B. forbidden, not_found,
+        version_conflict, connection_revoked). Idempotent für entschiedene Anfragen. 409 already_decided nach Ablehnen, 410 request_expired.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: ActionRequest}
+        '404': {description: unbekannt oder fremd}
+        '409': {description: already_decided}
+        '410': {description: request_expired}
+  /v1/action-requests/{id}/reject:
+    post:
+      operationId: rejectActionRequest
+      summary: Ablehnen (nichts wird ausgeführt)
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: ActionRequest mit state=rejected}
+        '404': {description: unbekannt oder fremd}
+        '409': {description: already_decided (bereits ausgeführt)}
+        '410': {description: request_expired}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: session}
+  schemas:
+    ActionRequest:
+      type: object
+      required: [id, tool, state, summary, impact, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        tool: {type: string, enum: [delete_project, delete_task, transfer_project_owner]}
+        state: {type: string, enum: [pending, confirmed, rejected, expired, executed, failed]}
+        summary: {type: string, description: 'Deutscher Satz, was passieren würde.'}
+        impact: {$ref: '#/components/schemas/ActionImpact'}
+        agentLabel: {type: string, nullable: true}
+        result: {type: object, nullable: true, properties: {ok: {type: boolean}, code: {type: string}}}
+        createdAt: {type: string, format: date-time}
+        decidedAt: {type: string, format: date-time, nullable: true}
+        executedAt: {type: string, format: date-time, nullable: true}
+        expiresAt: {type: string, format: date-time}
+    ActionImpact:
+      type: object
+      required: [targetType, targetID, targetName, subprojects, tasks, destructive]
+      properties:
+        targetType: {type: string, enum: [project, task]}
+        targetID: {type: string, format: uuid}
+        targetName: {type: string}
+        subprojects: {type: integer}
+        tasks: {type: integer}
+        newOwnerName: {type: string, nullable: true}
+        destructive: {type: boolean, description: 'true: Clients verlangen einen zweiten Schritt (Namen eintippen oder Haken).'}

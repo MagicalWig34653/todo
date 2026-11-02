@@ -49,13 +49,21 @@ struct FeedService: Sendable {
         let scope = try await CommandCenterScope.resolve(user: user, db: db, projectID: projectID, includeSubprojects: true, allowed: allowedProjects)
         var needs: [FeedNeedsYouDTO] = []
         var total = 0
+        var confirmations: [FeedConfirmationDTO] = []
+        if cursor == nil, mode != "classic", projectID == nil, allowedProjects == nil {
+            confirmations = try await ActionRequestService.pending(of: user.requireID(), on: db).items.map {
+                let id = try $0.requireID()
+                return FeedConfirmationDTO(id: id, tool: $0.tool, summary: $0.summary, impact: $0.impact, agentLabel: $0.agentLabel,
+                    createdAt: $0.createdAt, expiresAt: $0.expiresAt, confirmPath: "/v1/action-requests/\(id)/confirm", rejectPath: "/v1/action-requests/\(id)/reject")
+            }
+        }
         if cursor == nil {
             let all = try await needsYou(scope: scope, classic: mode == "classic", now: now)
             total = all.count
             needs = Array(all.prefix(Self.maxNeedsYou))
         }
         let (posts, next) = try await posts(scope: scope, kinds: mode == "classic" ? Self.classicKinds : Self.managementKinds, cursor: cursor, limit: limit)
-        return FeedResponse(generatedAt: now, mode: mode, projectID: projectID, needsYou: needs, needsYouTotal: total, posts: posts, nextCursor: next)
+        return FeedResponse(generatedAt: now, mode: mode, projectID: projectID, needsYou: needs, needsYouTotal: total, confirmations: confirmations, posts: posts, nextCursor: next)
     }
 
     // MARK: Needs you

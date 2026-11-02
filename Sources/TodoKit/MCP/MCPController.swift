@@ -77,6 +77,11 @@ struct MCPController: RouteCollection {
                     : try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db, settings: req.application.settings)
                 let text = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(false)])
+            } catch let pending as ConfirmationRequired {
+                let text = String(decoding: try JSONEncoder().encode(JSONValue.object([
+                    "error": .string("confirmation_required"), "actionRequestID": .string(pending.requestID.uuidString), "state": .string("pending"),
+                    "message": .string("Wartet auf Bestätigung des Nutzers in Todolino. Mit wait_for_events oder get_action_request auf das Ergebnis warten, nicht erneut auslösen.")])), as: UTF8.self)
+                result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(true)])
             } catch {
                 let message = (error as? any AbortError).map { $0.status == .notFound ? "not_found" : $0.reason } ?? "invalid_arguments"
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(message)])]), "isError": .bool(true)])
@@ -98,7 +103,7 @@ struct MCPController: RouteCollection {
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
     /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
-    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools
+    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)
