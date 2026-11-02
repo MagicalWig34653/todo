@@ -32,6 +32,13 @@
 - Nachweis: neuer Spec `web/e2e/question-overflow.spec.ts` (Frage per API mit 4 Optionen: kurz, ~200 Zeichen, langes Wort ohne Leerzeichen, 500 Zeichen). Prüft kein Nachfahre ragt über die Karte, scrollWidth <= clientWidth von Karte, Seite und Body bei 320/390 px hell/dunkel, 200 % Schrift (Für dich, Überblick-Fragen, Board-Karte, Detaildialog), Fokus, Antwort senden. Ohne Fix rot (Elemente 1464/1685/3452 px bei 304 px Karte), mit Fix 7/7 grün. Specs for-you, menus-and-modes, passkey-flow, question-overflow je 2 Läufe grün; vitest 226 grün; `npm run build` grün; `npm run check` nur der bekannte Symlink-Fehler `./$types`.
 - Screenshots (nicht im Repo): `/private/tmp/claude-501/pwa-overflow/before` und `after`. Grenzen: nur Chromium, SQLite; nicht geprüft: Safari/Firefox.
 
+## Checkpoint 2.11.2026: Planungsformular, Zwei-Clients-Merge, Rest-Flakes
+
+- Weitere Ursache Test 7: Lade-Effekte in `TaskDependencies`, `MilestonesPanel`, `TaskCriteria`, `TaskLabels`, `TaskAttachments`, `TaskComments`, `TaskActivity` liefen bei jedem Listen-Refresh neu; jetzt `untrack` um `load`.
+- Codex-Befund (P2): `TaskPlanning.svelte` übernimmt fremde Änderungen per Drei-Wege-Merge (`web/src/lib/planning-merge.ts`, vitest `tests/planning-merge.test.ts`): unberührte Felder folgen dem Server (Live-Refresh, Abo ohne guardEditing), beidseitig geänderte Felder bleiben lokal und werden inline gemeldet (`planning-conflict`); Speichern liest vorher neu und hält bei Konflikt an. Der Server hat für die Planung keine Revisionsprüfung; ein verlustfreier Schutz bräuchte `version` im PUT (offen). E2E-Test mit zweitem Client (API-Aufruf) ergänzt (Test 21).
+- Läufe (Port 25875, frische DB je Lauf): Test 7 und neuer Test 21 in 30/30 Läufen grün; Gesamtspec 21/30 grün. Verbleibende, nicht behobene Flakes anderer Tests: `invited person` (432), `sidebar order` (624), `teams, sharing` (337), `oauth consent` (1079), je 1 bis 4 von 30. vitest 230 grün.
+- Grenze: `npm run check` im Worktree scheitert am node_modules-Symlink (`./$types`), im Hauptordner geprüft.
+
 ## Checkpoint 1.11.2026: Flake passkey-flow Test 7 behoben
 
 - Ursache: `TaskPlanning.svelte` rief `api.getPlanning(taskID)` synchron im `$effect` auf; die Prop `taskID` hängt am Task-Objekt, und jeder Listen-Refresh (neues Objekt, gleiche ID) ließ den Effekt neu laufen: Formular zurückgesetzt (`current = null`, deaktiviert) und mit veralteter Antwort überschrieben, Eingaben/gespeicherter Stand gingen verloren (Test sah kein `recurrence-error`/`task-chips`).
