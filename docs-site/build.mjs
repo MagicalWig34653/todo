@@ -448,7 +448,7 @@ function renderShots(page) {
 <h2 id="pwa-desktop">PWA am Desktop</h2>${g(shots.desktop, 'wideshots')}
 <h2 id="berechtigungen">Berechtigungen und Teilen</h2><p>Erklärung des Modells unter <a href="berechtigungen.html">Berechtigungen und Teilen</a>.</p>${g(shots.berechtigungen, 'wideshots')}${g(shots.berechtigungenMobil, 'phone')}
 <h2 id="einstellungen">Einstellungen, Hilfe und Verwaltung</h2><p>Mehr dazu unter <a href="verwaltung.html">Einstellungen, Hilfe, Verwaltung</a>.</p>${g(shots.einstellungen, 'wideshots')}
-<h2 id="fuer-dich">Für dich</h2><p>Die Startansicht (<code>/</code> öffnet <code>/fuer-dich</code>): was dich braucht und was in deinen Projekten passiert.</p>${g(shots.fuerdich, 'wideshots')}
+<h2 id="fuer-dich">Für dich</h2><p>Die Startansicht (<code>/</code> öffnet <code>/for-you</code>): was dich braucht und was in deinen Projekten passiert.</p>${g(shots.fuerdich, 'wideshots')}
 <h2 id="modi">Klassisch und Projektmanagement</h2><p>Je Projekt wählbar über „Anzeige“.</p>${g(shots.modi, 'wideshots')}
 <h2 id="steuerzentrale">Steuerzentrale und Agenten (PWA)</h2><p>Mehr dazu unter <a href="steuerzentrale.html">Steuerzentrale und Agenten-Kanban</a>.</p>${g(shots.agents, 'wideshots')}
 <h2 id="pwa-mobil">PWA auf dem Smartphone</h2>${g(shots.mobil, 'phone')}

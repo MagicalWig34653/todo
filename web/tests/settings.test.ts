@@ -29,8 +29,8 @@ describe('settings navigation', () => {
 	it('finds entries and builds paths', () => {
 		expect(findEntry('passkeys')?.label).toBe('settings.passkeys');
 		expect(findEntry('nix')).toBeUndefined();
-		expect(settingsPath()).toBe('/einstellungen');
-		expect(settingsPath('email')).toBe('/einstellungen/email');
+		expect(settingsPath()).toBe('/settings');
+		expect(settingsPath('email')).toBe('/settings/email');
 	});
 	it('searches titles and keywords', () => {
 		const t = (k: keyof typeof de) => de[k];
@@ -42,23 +42,23 @@ describe('settings navigation', () => {
 });
 
 describe('redirect mapping of old paths', () => {
-	it('/konto and /konto/<x> become /einstellungen[/<x>]', () => {
+	it('/konto and /konto/<x> become /settings[/<x>]', () => {
 		const redirect = (p: string) => buildPath(parseRoute(p));
-		expect(redirect('/konto')).toBe('/einstellungen');
-		expect(redirect('/konto/berechtigungen')).toBe('/einstellungen/berechtigungen');
-		expect(redirect('/konto/verwaltung')).toBe('/einstellungen/verwaltung-konten');
-		expect(redirect('/konto/passkeys')).toBe('/einstellungen/passkeys');
-		expect(redirect('/einstellungen/email')).toBe('/einstellungen/email');
+		expect(redirect('/konto')).toBe('/settings');
+		expect(redirect('/konto/berechtigungen')).toBe('/settings/permissions');
+		expect(redirect('/konto/verwaltung')).toBe('/settings/admin-accounts');
+		expect(redirect('/konto/passkeys')).toBe('/settings/passkeys');
+		expect(redirect('/settings/email')).toBe('/settings/email');
 	});
 	it('every legacy alias points at a real entry', () => {
 		for (const target of Object.values(LEGACY_AREAS)) expect(findEntry(target), target).toBeDefined();
 		expect(normalizeArea(undefined)).toBeUndefined();
 	});
 	it('help routes round-trip', () => {
-		expect(parseRoute('/hilfe')).toEqual({ view: 'help', area: undefined });
-		expect(parseRoute('/hilfe/claude-code').area).toBe('claude-code');
-		expect(buildPath({ view: 'help', area: 'ueber' })).toBe('/hilfe/ueber');
-		expect(parseRoute('/hilfe/a/b').view).toBe('notfound');
+		expect(parseRoute('/help')).toEqual({ view: 'help', area: undefined });
+		expect(parseRoute('/help/claude-code').area).toBe('claude-code');
+		expect(buildPath({ view: 'help', area: 'ueber' })).toBe('/help/about');
+		expect(parseRoute('/help/a/b').view).toBe('notfound');
 	});
 });
 
@@ -67,7 +67,7 @@ describe('help navigation', () => {
 		expect(HELP_PAGES.map((p) => p.id)).toEqual(['erste-schritte', 'tastaturkuerzel', 'claude-code', 'agentenhandbuch', 'ueber']);
 		for (const p of HELP_PAGES) expect(de[p.description]).toMatch(/\S/);
 		expect(findHelpPage('claude-code')?.label).toBe('help.claude');
-		expect(helpPath('ueber')).toBe('/hilfe/ueber');
+		expect(helpPath('ueber')).toBe('/help/about');
 	});
 });
 

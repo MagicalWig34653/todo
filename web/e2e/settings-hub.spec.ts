@@ -64,7 +64,7 @@ test('hub: reachable from the user menu, groups and one description per entry', 
 	await panelInViewport(admin, 'Kontomenü');
 	await shot(admin, 'benutzermenue');
 	await admin.getByTestId('menu-settings').click();
-	await expect(admin).toHaveURL(/\/einstellungen$/);
+	await expect(admin).toHaveURL(/\/settings$/);
 	await expect(admin.getByTestId('view-heading')).toHaveText('Einstellungen');
 	const nav = admin.getByRole('navigation', { name: 'Einstellungsbereiche' });
 	for (const group of ['Profil', 'Sicherheit', 'Darstellung', 'Benachrichtigungen & E-Mail', 'Berechtigungen & Zugriff', 'Verbundene Apps & Agenten', 'Daten & Datenschutz', 'Verwaltung']) {
@@ -76,7 +76,7 @@ test('hub: reachable from the user menu, groups and one description per entry', 
 	await expect(admin.getByTestId('settings-card-passkeys')).toContainText('Mit welchen Geräten und Schlüsseln du dich anmeldest.');
 	await shot(admin, 'einstellungen');
 	await nav.getByRole('link', { name: 'Passkeys' }).click();
-	await expect(admin).toHaveURL(/\/einstellungen\/passkeys$/);
+	await expect(admin).toHaveURL(/\/settings\/passkeys$/);
 	await expect(admin.getByTestId('passkey-item')).toHaveCount(1);
 	await expect(nav.getByRole('link', { name: 'Passkeys' })).toHaveAttribute('aria-current', 'page');
 	// Own pages still work: appearance, notifications, email, permissions, connected apps.
@@ -91,7 +91,7 @@ test('hub: reachable from the user menu, groups and one description per entry', 
 });
 
 test('settings search finds entries by keyword', async () => {
-	await admin.goto('/einstellungen');
+	await admin.goto('/settings');
 	await admin.getByTestId('settings-search').fill('smtp');
 	await expect(admin.getByTestId('settings-search-results').getByRole('link', { name: 'E-Mail-Server' })).toBeVisible();
 	await admin.getByTestId('settings-search').fill('zzzz');
@@ -100,13 +100,13 @@ test('settings search finds entries by keyword', async () => {
 
 test('old /konto paths redirect to the hub', async () => {
 	await admin.goto('/konto');
-	await expect(admin).toHaveURL(/\/einstellungen$/);
+	await expect(admin).toHaveURL(/\/settings$/);
 	await admin.goto('/konto/berechtigungen');
-	await expect(admin).toHaveURL(/\/einstellungen\/berechtigungen$/);
+	await expect(admin).toHaveURL(/\/settings\/permissions$/);
 	await admin.goto('/konto/verwaltung');
-	await expect(admin).toHaveURL(/\/einstellungen\/verwaltung-konten$/);
+	await expect(admin).toHaveURL(/\/settings\/admin-accounts$/);
 	await expect(admin.getByTestId('recovery-issue')).toBeVisible();
-	await admin.goto('/einstellungen/gibt-es-nicht');
+	await admin.goto('/settings/gibt-es-nicht');
 	await expect(admin.getByTestId('settings-notfound')).toBeVisible();
 });
 
@@ -117,7 +117,7 @@ test('theme switch in the user menu', async () => {
 	await expect(admin.getByTestId('theme-dark')).toHaveAttribute('aria-pressed', 'true');
 	await shot(admin, 'benutzermenue-dunkel');
 	await admin.keyboard.press('Escape');
-	await admin.goto('/hilfe/claude-code');
+	await admin.goto('/help/claude-code');
 	await expect(admin.getByTestId('claude-origin')).toBeVisible();
 	await shot(admin, 'claude-code-verbinden-dunkel');
 	await admin.getByTestId('account-menu').click();
@@ -127,7 +127,7 @@ test('theme switch in the user menu', async () => {
 });
 
 test('help menu lists the help pages and external links', async () => {
-	await admin.goto('/heute');
+	await admin.goto('/today');
 	await admin.getByTestId('help-menu').click();
 	await panelInViewport(admin, 'Hilfemenü');
 	for (const name of ['Erste Schritte', 'Tastaturkürzel', 'Claude Code verbinden', 'Agentenhandbuch', 'Über Todolino']) {
@@ -138,14 +138,14 @@ test('help menu lists the help pages and external links', async () => {
 	await expect(dialog.getByRole('link', { name: 'Dokumentation' })).toHaveAttribute('href', 'https://magicalwig34653.github.io/todo/');
 	await shot(admin, 'hilfemenue');
 	await dialog.getByRole('button', { name: 'Erste Schritte' }).click();
-	await expect(admin).toHaveURL(/\/hilfe\/erste-schritte$/);
+	await expect(admin).toHaveURL(/\/help\/getting-started$/);
 	await expect(admin.getByTestId('help-start')).toBeVisible();
 });
 
 test('keyboard shortcuts page and the ? overlay', async () => {
-	await admin.goto('/hilfe/tastaturkuerzel');
+	await admin.goto('/help/shortcuts');
 	await expect(admin.getByTestId('shortcut-list')).toContainText('Aufgabe schnell hinzufügen');
-	await admin.goto('/heute');
+	await admin.goto('/today');
 	await expect(admin.getByTestId('view-heading')).toBeVisible();
 	await admin.keyboard.press('?');
 	await expect(admin.getByTestId('shortcuts-overlay')).toBeVisible();
@@ -155,7 +155,7 @@ test('keyboard shortcuts page and the ? overlay', async () => {
 });
 
 test('Claude Code page shows the real origin, /mcp and checks the connection', async () => {
-	await admin.goto('/hilfe/claude-code');
+	await admin.goto('/help/claude-code');
 	await expect(admin.getByTestId('claude-origin')).toHaveText(origin);
 	await expect(admin.getByTestId('claude-cmd-marketplace')).toHaveText('/plugin marketplace add MagicalWig34653/todo');
 	await expect(admin.getByTestId('claude-cmd-install')).toHaveText('/plugin install todolino@todolino');
@@ -167,27 +167,27 @@ test('Claude Code page shows the real origin, /mcp and checks the connection', a
 	await expect(admin.getByTestId('claude-check-results')).toContainText(`${origin}/mcp`);
 	await shot(admin, 'claude-code-verbinden');
 	// The same page is part of the settings hub.
-	await admin.goto('/einstellungen/mcp');
+	await admin.goto('/settings/mcp');
 	await expect(admin.getByTestId('claude-origin')).toHaveText(origin);
 });
 
 test('agent manual and about page', async () => {
-	await admin.goto('/hilfe/agentenhandbuch');
+	await admin.goto('/help/agent-manual');
 	await expect(admin.getByTestId('manual-content')).toBeVisible();
 	await expect(admin.getByTestId('manual-version')).toContainText('Version');
-	await admin.goto('/hilfe/ueber');
+	await admin.goto('/help/about');
 	await expect(admin.getByTestId('about-status')).toHaveText('bereit');
 	await expect(admin.getByTestId('about-origin')).toHaveText(origin);
 	await expect(admin.getByRole('link', { name: 'Problem melden (GitHub)' })).toHaveAttribute('href', /github\.com\/MagicalWig34653\/todo\/issues/);
-	await admin.goto('/hilfe');
+	await admin.goto('/help');
 	await expect(admin.getByTestId('help-landing').getByRole('link')).toHaveCount(5);
 	await shot(admin, 'hilfe');
-	await admin.goto('/hilfe/gibt-es-nicht');
+	await admin.goto('/help/gibt-es-nicht');
 	await expect(admin.getByTestId('help-notfound')).toBeVisible();
 });
 
 test('administration: invitation, system status, honest gaps', async () => {
-	await admin.goto('/einstellungen/verwaltung-einladungen');
+	await admin.goto('/settings/admin-invitations');
 	await admin.getByTestId('invite-create').click();
 	const code = (await admin.getByTestId('invite-code').innerText()).trim();
 	expect(code.length).toBeGreaterThan(20);
@@ -230,10 +230,10 @@ test('non-admins see no administration, neither in menu, hub nor by URL', async 
 	await expect(member.getByTestId('menu-settings')).toBeVisible();
 	await expect(member.getByTestId('menu-admin')).toHaveCount(0);
 	await member.keyboard.press('Escape');
-	await member.goto('/einstellungen');
+	await member.goto('/settings');
 	await expect(member.getByRole('navigation', { name: 'Einstellungsbereiche' }).getByRole('heading', { name: 'Verwaltung' })).toHaveCount(0);
 	await expect(member.getByTestId('settings-landing').getByRole('link')).toHaveCount(12);
-	await member.goto('/einstellungen/verwaltung-einladungen');
+	await member.goto('/settings/admin-invitations');
 	await expect(member.getByTestId('admin-denied')).toBeVisible();
 	await expect(member.getByTestId('invite-create')).toHaveCount(0);
 	await member.goto('/konto/verwaltung');
@@ -243,7 +243,7 @@ test('non-admins see no administration, neither in menu, hub nor by URL', async 
 
 test('mobile 390px: list then detail, menus inside the viewport, no horizontal scroll', async () => {
 	await member.setViewportSize({ width: 390, height: 844 });
-	await member.goto('/einstellungen');
+	await member.goto('/settings');
 	// List screen: entries with descriptions, no content column yet.
 	await expect(member.getByTestId('settings-nav')).toBeVisible();
 	await expect(member.getByTestId('settings-content')).toBeHidden();
@@ -251,12 +251,12 @@ test('mobile 390px: list then detail, menus inside the viewport, no horizontal s
 	await noOverflow(member, 'settings list');
 	await shot(member, 'einstellungen-mobil');
 	await member.getByTestId('settings-link-passkeys').click();
-	await expect(member).toHaveURL(/\/einstellungen\/passkeys$/);
+	await expect(member).toHaveURL(/\/settings\/passkeys$/);
 	await expect(member.getByTestId('settings-nav')).toBeHidden();
 	await expect(member.getByTestId('passkey-item')).toHaveCount(1);
 	await noOverflow(member, 'passkeys');
 	await member.getByTestId('settings-back').click();
-	await expect(member).toHaveURL(/\/einstellungen$/);
+	await expect(member).toHaveURL(/\/settings$/);
 	await member.getByTestId('settings-link-mcp').click();
 	await expect(member.getByTestId('claude-cmd-mcp')).toBeVisible();
 	await noOverflow(member, 'claude code');
@@ -268,7 +268,7 @@ test('mobile 390px: list then detail, menus inside the viewport, no horizontal s
 	await panelInViewport(member, 'Hilfemenü');
 	await shot(member, 'hilfemenue-mobil');
 	await member.keyboard.press('Escape');
-	await member.goto('/hilfe');
+	await member.goto('/help');
 	await expect(member.getByTestId('help-nav')).toBeVisible();
 	await expect(member.getByTestId('help-content')).toBeHidden();
 	await noOverflow(member, 'help list');

@@ -48,7 +48,7 @@ test('mobile drawer: focus moves in, is trapped, Escape closes and focus returns
 
 test('error from a sharing action is visible inside the open dialog', async () => {
 	const project = await (await page.request.post('/v1/projects', { ...json, data: { name: 'Fehlerprojekt' } })).json();
-	await page.goto(`/projekt/${project.id}`);
+	await page.goto(`/project/${project.id}`);
 	await page.getByTestId('share-open').click();
 	const dialog = page.getByTestId('share-dialog');
 	await expect(dialog).toBeVisible();
@@ -70,7 +70,7 @@ test('reloading a project page shows a skeleton, never "nicht gefunden"', async 
 		await new Promise((r) => setTimeout(r, 1200));
 		await route.continue();
 	});
-	await page.goto(`/projekt/${project.id}`);
+	await page.goto(`/project/${project.id}`);
 	await expect(page.getByTestId('project-loading')).toBeVisible();
 	await expect(page.getByTestId('not-found')).toHaveCount(0);
 	await expect(page.getByTestId('project-loading')).toHaveCount(0);
@@ -80,7 +80,7 @@ test('reloading a project page shows a skeleton, never "nicht gefunden"', async 
 
 test('"Mehr" can be closed on its own pages', async () => {
 	await page.setViewportSize({ width: 1200, height: 800 });
-	await page.goto('/agenten');
+	await page.goto('/agents');
 	const more = page.getByRole('navigation', { name: 'Seitenleiste' }).getByRole('button', { name: 'Mehr' });
 	await expect(more).toHaveAttribute('aria-expanded', 'true');
 	await more.click();
@@ -88,7 +88,7 @@ test('"Mehr" can be closed on its own pages', async () => {
 });
 
 test('overview tabs: arrow keys, Home and End move between sections', async () => {
-	await page.goto('/ueberblick');
+	await page.goto('/overview');
 	const tabs = page.getByRole('tab');
 	await tabs.first().focus();
 	await page.keyboard.press('ArrowRight');
@@ -104,7 +104,7 @@ test('overview tabs: arrow keys, Home and End move between sections', async () =
 test('board check control has at least a 32 px hit area', async () => {
 	const project = await (await page.request.post('/v1/projects', { ...json, data: { name: 'Trefferprojekt' } })).json();
 	await page.request.post('/v1/tasks', { ...json, data: { projectID: project.id, title: 'Treffer' } });
-	await page.goto(`/projekt/${project.id}/board`);
+	await page.goto(`/project/${project.id}/board`);
 	const check = page.getByTestId('board-card-check').first();
 	await expect(check).toBeVisible();
 	const size = await check.evaluate((el) => {

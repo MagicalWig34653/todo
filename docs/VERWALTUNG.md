@@ -6,18 +6,20 @@ Stand 31.10.2026. Struktur der Einstellungen, des Hilfebereichs und der Verwaltu
 
 | Pfad | Inhalt | Quelle im Code |
 |---|---|---|
-| `/einstellungen` | Landing: alle Bereiche mit je einer Beschreibungszeile, Suche; mobil Liste, dann Detail | `web/src/lib/settingsNav.ts`, `SettingsView.svelte` |
-| `/einstellungen/profil` | Anzeigename, Benutzername, Rolle, Konto-ID | `settings/ProfilePage.svelte` |
-| `/einstellungen/passkeys` `wiederherstellung` `sitzungen` | Sicherheit | `settings/*Page.svelte` |
-| `/einstellungen/darstellung` | Hell/Dunkel, Akzent, Glow, Transparenz | `AppearanceSettings.svelte` |
-| `/einstellungen/benachrichtigungen` `email` | Push-Einstellungen, E-Mail-Adresse | `NotificationSettings.svelte`, `EmailSettings.svelte` |
-| `/einstellungen/berechtigungen` | Wer greift worauf zu | `AccessOverview.svelte` |
-| `/einstellungen/verbindungen` `runner` `mcp` | OAuth-Verbindungen, Runner-Geräte (Verweis auf Agenten), Claude Code verbinden | `OAuthGrants.svelte`, `settings/RunnerPage.svelte`, `help/ClaudeConnect.svelte` |
-| `/einstellungen/daten` | Export/Löschen: ehrlicher Platzhalter | `settings/DataPage.svelte` |
-| `/einstellungen/verwaltung-*` | nur Administratoren: `konten`, `einladungen`, `system` sowie die **Server-Einstellungen** (ADR 0025, [KONFIGURATION.md](KONFIGURATION.md)): `server` (Überblick, Schlüssel, Änderungsprotokoll), `mail`, `push`, `speicher`, `anmeldung`, `limits`, `live`, `aufraeumen`, `instanz`, `apple` | `settings/Admin*.svelte`, `settings/Server*.svelte` |
-| `/hilfe`, `/hilfe/<seite>` | `erste-schritte`, `tastaturkuerzel`, `claude-code`, `agentenhandbuch`, `ueber` | `helpNav.ts`, `HelpView.svelte`, `help/*` |
+| `/settings` | Landing: alle Bereiche mit je einer Beschreibungszeile, Suche; mobil Liste, dann Detail | `web/src/lib/settingsNav.ts`, `SettingsView.svelte` |
+| `/settings/profile` | Anzeigename, Benutzername, Rolle, Konto-ID | `settings/ProfilePage.svelte` |
+| `/settings/passkeys` `recovery` `sessions` | Sicherheit | `settings/*Page.svelte` |
+| `/settings/appearance` | Hell/Dunkel, Akzent, Glow, Transparenz | `AppearanceSettings.svelte` |
+| `/settings/notifications` `email` | Push-Einstellungen, E-Mail-Adresse | `NotificationSettings.svelte`, `EmailSettings.svelte` |
+| `/settings/permissions` | Wer greift worauf zu | `AccessOverview.svelte` |
+| `/settings/connections` `runner` `mcp` | OAuth-Verbindungen, Runner-Geräte (Verweis auf Agenten), Claude Code verbinden | `OAuthGrants.svelte`, `settings/RunnerPage.svelte`, `help/ClaudeConnect.svelte` |
+| `/settings/data` | Export/Löschen: ehrlicher Platzhalter | `settings/DataPage.svelte` |
+| `/settings/admin-*` | nur Administratoren: `accounts`, `invitations`, `system` sowie die **Server-Einstellungen** (ADR 0025, [KONFIGURATION.md](KONFIGURATION.md)): `server` (Überblick, Schlüssel, Änderungsprotokoll), `mail`, `push`, `storage`, `sign-in`, `limits`, `live`, `cleanup`, `instance`, `apple` | `settings/Admin*.svelte`, `settings/Server*.svelte` |
+| `/help`, `/help/<page>` | `getting-started`, `shortcuts`, `claude-code`, `agent-manual`, `about` | `helpNav.ts`, `HelpView.svelte`, `help/*` |
 
-Alte Pfade: `/konto` wird zu `/einstellungen`, `/konto/<bereich>` zu `/einstellungen/<bereich>`, `/konto/verwaltung` zu `/einstellungen/verwaltung-konten` (Umleitung beim Start, `routing.ts` und `LEGACY_AREAS`).
+Alle URL-Pfade der PWA sind englisch (Entscheidung 2.11.2026; Anzeigetexte bleiben deutsch): `/for-you`, `/today`, `/inbox`, `/upcoming`, `/up-next`, `/search`, `/overview`, `/activity`, `/agents`, `/teams`, `/filter`, `/filter/<id>`, `/labels/<id>`, `/project/<id>[/list|board|overview|comments]`, `/task/<id>`, `/settings`, `/help`. Die Testids (`settings-link-<id>`) und i18n-Schlüssel behalten die internen deutschen Ids; die Zuordnung Id zu URL-Segment steht in `SETTINGS_SLUGS` (`settingsNav.ts`) und `HELP_SLUGS` (`helpNav.ts`).
+
+Alte Pfade (weiter gültig, werden beim Start per `history.replaceState` auf den englischen Pfad umgeschrieben; Lesezeichen, Mail-Links, App-Deep-Links, Plugin-Anleitung): `/fuer-dich`, `/heute`, `/eingang`, `/anstehend`, `/als-naechstes`, `/suche`, `/ueberblick`, `/aktivitaet`, `/agenten`, `/projekt/<id>/liste|ueberblick|kommentare`, `/aufgabe/<id>`, `/einstellungen[/<bereich>]`, `/hilfe[/<seite>]`, `/konto[/<bereich>]` (`/konto/verwaltung` wird `/settings/admin-accounts`). Umsetzung: `routing.ts` (`LEGACY_SIMPLE`, `LEGACY_SUBS`), `normalizeArea`/`LEGACY_AREAS`, `normalizeHelpArea`. Das Backend liefert für alle diese Pfade den SPA-Fallback (keine reservierten Segmente betroffen); Mail-Links nutzen nur `/confirm-email` und `/recover`.
 
 Menüs oben rechts: Hilfemenü (Fragezeichen) und Benutzermenü (Avatar mit Einstellungen, Berechtigungen, Verwaltung nur für Admins, Darstellung hell/dunkel/System, Hilfe, Abmelden). Beide liegen im Viewport (gemeinsame `Popover`-Positionierung). Tastaturkürzel: `Q` Schnell-Hinzufügen, `?` Kürzel-Übersicht, `Esc` schließen; G-Kombinationen gibt es nicht.
 

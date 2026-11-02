@@ -740,7 +740,7 @@ test('project comments panel', async () => {
 
 		// The owner sees the guest by name and may delete the foreign comment (manage).
 		await page.reload();
-		// /kommentare in the URL reopens the dialog after a reload.
+		// /comments in the URL reopens the dialog after a reload.
 		await expect(page.getByTestId('project-comments-dialog')).toBeVisible();
 		await closeDialogs();
 		await page.getByTestId('project-comments-open').click();
@@ -1121,7 +1121,7 @@ test('oauth consent page and grant management', async () => {
 	await expect(page.getByTestId('consent-invalid')).toBeVisible();
 
 	// Grant list and revoke.
-	await page.goto('/einstellungen/verbindungen');
+	await page.goto('/settings/connections');
 	const grant = page.getByTestId('oauth-grant').filter({ hasText: clientID });
 	await expect(grant).toContainText('Projekte lesen, Aufgaben lesen');
 	await expect(grant).toContainText('Haushalt');
@@ -1149,7 +1149,7 @@ test('oauth consent page and grant management', async () => {
 	await connection.getByTestId('mcp-toggle').click();
 	await expect(connection).toContainText('hat Zugriff');
 	await page.keyboard.press('Escape');
-	await page.goto('/einstellungen/verbindungen');
+	await page.goto('/settings/connections');
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).click();
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).last().click();
 	await expect(page.getByTestId('oauth-info')).toHaveText('Der Zugriff wurde widerrufen.');
@@ -1158,7 +1158,7 @@ test('oauth consent page and grant management', async () => {
 });
 
 test('account: passkeys, sessions and recovery', async () => {
-	await page.goto('/einstellungen/passkeys');
+	await page.goto('/settings/passkeys');
 	await expect(page.getByTestId('passkey-item')).toHaveCount(1);
 	await page.getByLabel('Name des neuen Passkeys').fill('Zweiter');
 	await page.getByRole('button', { name: 'Passkey hinzufügen' }).click();
@@ -1278,7 +1278,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.evaluate(() => localStorage.clear());
 	await page.reload();
-	await page.goto('/einstellungen/darstellung');
+	await page.goto('/settings/appearance');
 	const html = page.locator('html');
 	await expect(page.getByTestId('appearance')).toBeVisible();
 	await expect(page.getByTestId('appearance-sync')).toHaveAttribute('data-state', 'saved');
@@ -1316,7 +1316,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await expect(html).toHaveAttribute('data-glow', 'strong');
 
 	if (SHOTS) {
-		await page.goto('/einstellungen/darstellung');
+		await page.goto('/settings/appearance');
 		await page.locator('section:has(> [data-testid="appearance"])').screenshot({ path: `${SHOTS}/darstellung-dunkel.png` });
 	}
 
@@ -1325,7 +1325,7 @@ test('appearance settings persist locally and in the account', async () => {
 	await page.reload();
 	await expect(html).toHaveClass(/dark/, { timeout: 10_000 });
 	await expect(html).toHaveAttribute('data-glow', 'strong');
-	await page.goto('/einstellungen/darstellung');
+	await page.goto('/settings/appearance');
 	await expect(page.getByTestId('accent-current')).toHaveText('Aktuell: #B45309');
 	await page.setViewportSize({ width: 1280, height: 720 });
 });

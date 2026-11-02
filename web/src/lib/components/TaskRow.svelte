@@ -51,7 +51,7 @@
 		{#if chips}<TaskChips pt={chips} status={task.status} />{/if}
 		{#if project}
 			<a
-				href="/projekt/{project.id}"
+				href="/project/{project.id}"
 				class="text-muted-foreground hover:text-foreground inline-flex min-h-8 items-center gap-1 text-xs"
 				data-testid="task-project-link"
 				onclick={(e) => { e.preventDefault(); openProjectRoute(project.id); }}

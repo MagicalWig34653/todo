@@ -72,7 +72,7 @@ for (const width of [320, 390]) {
 			if (width === 320 && scheme === 'light') await ask('Fuer dich');
 			await page.emulateMedia({ colorScheme: scheme });
 			await page.setViewportSize({ width, height: 900 });
-			await page.goto('/fuer-dich');
+			await page.goto('/for-you');
 			const card = page.getByTestId('needs-card').filter({ hasText: 'Frage Fuer dich' });
 			await expect(card).toBeVisible();
 			await shot(`for-you-${width}-${scheme}`);
@@ -89,7 +89,7 @@ for (const width of [320, 390]) {
 test('For you: 200% font size keeps options inside the card', async () => {
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.setViewportSize({ width: 320, height: 900 });
-	await page.goto('/fuer-dich');
+	await page.goto('/for-you');
 	await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
 	const card = page.getByTestId('needs-card').filter({ hasText: 'Frage Fuer dich' });
 	await expect(card).toBeVisible();
@@ -101,14 +101,14 @@ test('Overview card and task detail: long options wrap (320px, 200%)', async () 
 	const { projectID } = await ask('Ueberblick');
 	// The overview only lists projects in "Projektmanagement" mode.
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.goto(`/projekt/${projectID}`);
+	await page.goto(`/project/${projectID}`);
 	await page.getByTestId('display-menu').click();
 	await page.getByTestId('mode-management').click();
 	await page.keyboard.press('Escape');
 	await expect(page.getByTestId('project-tabs')).toBeVisible();
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.setViewportSize({ width: 320, height: 900 });
-	await page.goto('/ueberblick');
+	await page.goto('/overview');
 	await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
 	await page.getByRole('tab', { name: /Offene Fragen/ }).click();
 	await expect(page.getByTestId('question').first()).toBeVisible();
@@ -129,7 +129,7 @@ test('Overview card and task detail: long options wrap (320px, 200%)', async () 
 
 test('answering with a long option sends it', async () => {
 	await page.setViewportSize({ width: 390, height: 900 });
-	await page.goto('/fuer-dich');
+	await page.goto('/for-you');
 	const card = page.getByTestId('needs-card').filter({ hasText: 'Frage Fuer dich' });
 	await card.getByRole('button', { name: /^Sehr ausfuehrliche/ }).click();
 	await expect(card).toHaveCount(0);

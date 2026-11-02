@@ -1,12 +1,12 @@
 import type { MessageKey } from './i18n/index.js';
 
 /**
- * Structure of the settings hub (`/einstellungen/<bereich>`), modelled on the grouped settings navigation of a
+ * Structure of the settings hub (`/settings/<slug>`), modelled on the grouped settings navigation of a
  * mature PWA: left list in groups on wide screens, grouped list -> detail on phones, one description line per entry.
  * Pure data and helpers only; the components map entry ids to pages (SettingsView.svelte).
  */
 export interface SettingsEntry {
-	/** URL segment: `/einstellungen/<id>`. */
+	/** Internal id (also test id and i18n key part); the URL segment is its English slug, see SETTINGS_SLUGS. */
 	id: string;
 	label: MessageKey;
 	/** One explanatory line, shown on the landing page and on phones. */
@@ -106,13 +106,40 @@ export const SERVER_CATEGORY_BY_ENTRY: Record<string, string> = {
 	'verwaltung-apple': 'apple'
 };
 
+/** Entry id -> English URL slug (`/settings/<slug>`). Ids that are missing here are their own slug. */
+export const SETTINGS_SLUGS: Record<string, string> = {
+	profil: 'profile',
+	wiederherstellung: 'recovery',
+	sitzungen: 'sessions',
+	darstellung: 'appearance',
+	benachrichtigungen: 'notifications',
+	berechtigungen: 'permissions',
+	verbindungen: 'connections',
+	daten: 'data',
+	'verwaltung-konten': 'admin-accounts',
+	'verwaltung-einladungen': 'admin-invitations',
+	'verwaltung-server': 'admin-server',
+	'verwaltung-mail': 'admin-mail',
+	'verwaltung-push': 'admin-push',
+	'verwaltung-speicher': 'admin-storage',
+	'verwaltung-anmeldung': 'admin-sign-in',
+	'verwaltung-limits': 'admin-limits',
+	'verwaltung-live': 'admin-live',
+	'verwaltung-aufraeumen': 'admin-cleanup',
+	'verwaltung-instanz': 'admin-instance',
+	'verwaltung-apple': 'admin-apple',
+	'verwaltung-system': 'admin-system'
+};
+const ID_OF_SLUG: Record<string, string> = Object.fromEntries(Object.entries(SETTINGS_SLUGS).map(([id, slug]) => [slug, id]));
+export const slugOfEntry = (id: string) => SETTINGS_SLUGS[id] ?? id;
+
 /** Old `/konto/<bereich>` values and the one-segment admin page of the first permission build. */
 export const LEGACY_AREAS: Record<string, string> = { verwaltung: 'verwaltung-konten', allgemein: 'profil', general: 'profil' };
 
-/** Area segment from an old or new URL -> current entry id (unknown values are kept so the hub can show "not found"). */
+/** Area segment from an old (German) or new (English) URL -> current entry id (unknown values are kept so the hub can show "not found"). */
 export function normalizeArea(area: string | undefined): string | undefined {
 	if (!area) return undefined;
-	return LEGACY_AREAS[area] ?? area;
+	return LEGACY_AREAS[area] ?? ID_OF_SLUG[area] ?? area;
 }
 
 /** Groups the viewer may see; admin-only groups and entries disappear for everybody else. */
@@ -128,7 +155,7 @@ export function findEntry(id: string | undefined): SettingsEntry | undefined {
 	return undefined;
 }
 
-export const settingsPath = (id?: string) => (id ? `/einstellungen/${encodeURIComponent(id)}` : '/einstellungen');
+export const settingsPath = (id?: string) => (id ? `/settings/${encodeURIComponent(slugOfEntry(id))}` : '/settings');
 
 /** Entries matching all words of a query by title or keywords. */
 export function searchSettings(groups: SettingsGroup[], query: string, title: (key: MessageKey) => string): SettingsEntry[] {

@@ -56,7 +56,7 @@ test.afterAll(async () => {
 });
 
 test('overview: key present, environment-only values read-only, empty change log', async () => {
-	await admin.goto('/einstellungen/verwaltung-server');
+	await admin.goto('/settings/admin-server');
 	await expect(admin.getByTestId('server-key')).toHaveAttribute('data-configured', 'true');
 	const fixed = admin.getByTestId('server-fixed');
 	await expect(fixed).toContainText('Datenbank-Verbindung');
@@ -67,7 +67,7 @@ test('overview: key present, environment-only values read-only, empty change log
 
 test('mail: dependency errors are explained, then mail is switched on without restart and the test mail arrives', async () => {
 	test.setTimeout(90_000);
-	await admin.goto('/einstellungen/verwaltung-mail');
+	await admin.goto('/settings/admin-mail');
 	await expect(admin.getByTestId('server-settings-mail')).toBeVisible();
 	await expect(field(admin, 'mail.enabled')).toHaveAttribute('data-origin', 'default');
 	// Not enabled yet: the test says so.
@@ -109,7 +109,7 @@ test('mail: dependency errors are explained, then mail is switched on without re
 });
 
 test('secrets: set, shown only as "gesetzt" with fingerprint, never in the page or the API', async () => {
-	await admin.goto('/einstellungen/verwaltung-speicher');
+	await admin.goto('/settings/admin-storage');
 	await expect(admin.getByTestId('server-no-key')).toHaveCount(0);
 	await expect(admin.getByTestId('srv-secret-attachments.s3AccessKey')).toContainText('nicht gesetzt');
 	await admin.getByTestId('srv-secret-change-attachments.s3AccessKey').click();
@@ -132,7 +132,7 @@ test('secrets: set, shown only as "gesetzt" with fingerprint, never in the page 
 });
 
 test('environment wins: a variable locks the setting; restart-only settings are marked; reset returns to the default', async () => {
-	await admin.goto('/einstellungen/verwaltung-aufraeumen');
+	await admin.goto('/settings/admin-cleanup');
 	const locked = field(admin, 'maintenance.cleanupIntervalMinutes');
 	await expect(locked).toHaveAttribute('data-locked', 'true');
 	await expect(locked).toHaveAttribute('data-origin', 'env');
@@ -157,7 +157,7 @@ test('environment wins: a variable locks the setting; restart-only settings are 
 });
 
 test('conflict: a change by someone else is reported instead of overwritten', async () => {
-	await admin.goto('/einstellungen/verwaltung-limits');
+	await admin.goto('/settings/admin-limits');
 	await expect(admin.getByTestId('srv-input-limits.loginLimit')).toHaveValue('60');
 	// Another admin session saves first.
 	const other = await admin.request.put('/v1/admin/settings/limits.loginLimit', { ...json, data: { value: 70, version: 0 } });
@@ -174,7 +174,7 @@ test('conflict: a change by someone else is reported instead of overwritten', as
 });
 
 test('change log lists who changed what, without values', async () => {
-	await admin.goto('/einstellungen/verwaltung-server');
+	await admin.goto('/settings/admin-server');
 	const rows = admin.getByTestId('server-audit-row');
 	await expect(rows.first()).toBeVisible();
 	await expect(admin.getByTestId('server-audit')).toContainText('Anna Admin');
@@ -194,11 +194,11 @@ test('a non-admin does not see the area and the API refuses', async ({ browser }
 	await member.getByLabel('Anzeigename').fill('Max Mitglied');
 	await member.getByRole('button', { name: 'Passkey erstellen' }).click();
 	await expect(member.getByTestId('account-menu')).toBeVisible();
-	await member.goto('/einstellungen');
+	await member.goto('/settings');
 	await expect(member.getByTestId('settings-hub')).toBeVisible();
 	await expect(member.getByTestId('settings-group-admin')).toHaveCount(0);
 	await expect(member.getByTestId('settings-link-verwaltung-mail')).toHaveCount(0);
-	await member.goto('/einstellungen/verwaltung-mail');
+	await member.goto('/settings/admin-mail');
 	await expect(member.getByTestId('admin-denied')).toBeVisible();
 	await expect(member.getByTestId('server-settings-mail')).toHaveCount(0);
 	expect((await member.request.get('/v1/admin/settings')).status()).toBe(403);
@@ -207,14 +207,14 @@ test('a non-admin does not see the area and the API refuses', async ({ browser }
 
 test('mobile: the form fits the screen', async () => {
 	await admin.setViewportSize({ width: 390, height: 844 });
-	await admin.goto('/einstellungen/verwaltung-mail');
+	await admin.goto('/settings/admin-mail');
 	await expect(admin.getByTestId('server-settings-mail')).toBeVisible();
 	await noOverflow(admin, 'verwaltung-mail');
 	await shot(admin, 'server-mail-mobil');
-	await admin.goto('/einstellungen/verwaltung-speicher');
+	await admin.goto('/settings/admin-storage');
 	await expect(admin.getByTestId('server-settings-attachments')).toBeVisible();
 	await noOverflow(admin, 'verwaltung-speicher');
-	await admin.goto('/einstellungen/verwaltung-server');
+	await admin.goto('/settings/admin-server');
 	await expect(admin.getByTestId('server-overview')).toBeVisible();
 	await noOverflow(admin, 'verwaltung-server');
 	await admin.setViewportSize({ width: 1280, height: 900 });

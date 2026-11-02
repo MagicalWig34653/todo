@@ -28,7 +28,7 @@ test.afterAll(async () => {
 test('empty state, then needs-you card with options and a progress post; answering removes the card', async () => {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/');
-	await expect(page).toHaveURL(/\/fuer-dich$/);
+	await expect(page).toHaveURL(/\/for-you$/);
 	await expect(page.getByTestId('view-heading')).toHaveText('Für dich');
 	await expect(page.getByText('Alles ruhig')).toBeVisible();
 
@@ -37,7 +37,7 @@ test('empty state, then needs-you card with options and a progress post; answeri
 	expect((await page.request.post(`/v1/tasks/${task.id}/progress-notes`, { ...json, data: { note: 'Halbzeit erreicht', percent: 50 } })).status()).toBe(201);
 	expect((await page.request.post(`/v1/tasks/${task.id}/questions`, { ...json, data: { prompt: 'Mobil zuerst?', options: ['Ja', 'Nein'], blocking: true } })).status()).toBe(201);
 
-	await page.goto('/fuer-dich');
+	await page.goto('/for-you');
 	const card = page.getByTestId('needs-card').filter({ hasText: 'Mobil zuerst?' });
 	await expect(card).toBeVisible();
 	await expect(page.getByTestId('post-card').filter({ hasText: 'Halbzeit erreicht' })).toBeVisible();
@@ -47,7 +47,7 @@ test('empty state, then needs-you card with options and a progress post; answeri
 
 	// Tapping a card opens the task in its project.
 	await page.getByTestId('post-card').filter({ hasText: 'Halbzeit erreicht' }).getByRole('button').first().click();
-	await expect(page).toHaveURL(/\/projekt\/.+\?task=/);
+	await expect(page).toHaveURL(/\/project\/.+\?task=/);
 });
 
 test('mobile: Für dich is the first tab', async () => {

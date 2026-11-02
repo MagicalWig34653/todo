@@ -25,7 +25,7 @@
 	import ClaudeConnect from './help/ClaudeConnect.svelte';
 
 	/**
-	 * Settings hub. `area` is the URL segment (`/einstellungen/<area>`). Wide screens: group list on the left, page on the
+	 * Settings hub. `area` is the URL segment (`/settings/<slug>`). Wide screens: group list on the left, page on the
 	 * right (landing page = all entries with description). Phones: the list is its own screen, an entry opens the page.
 	 * New pages hook in here: add the entry to lib/settingsNav.ts and one `{:else if}` branch below.
 	 */
@@ -91,7 +91,7 @@
 
 		<div class={['flex min-w-0 flex-col gap-4', id === undefined && 'hidden md:flex']} data-testid="settings-content">
 			{#if id !== undefined}
-				<a class="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm md:hidden" href="/einstellungen" data-testid="settings-back" onclick={(ev) => open(ev, undefined)}>
+				<a class="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm md:hidden" href="/settings" data-testid="settings-back" onclick={(ev) => open(ev, undefined)}>
 					<ChevronLeft class="size-4" aria-hidden="true" />{t('settings.back')}
 				</a>
 			{/if}

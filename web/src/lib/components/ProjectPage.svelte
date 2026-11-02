@@ -201,14 +201,14 @@
 	$effect(() => {
 		if (!detailOpen) detail = null;
 	});
-	// ---- URL state: /projekt/<id>/<liste|board|ueberblick|kommentare>?task=<id> -------------------------------------
+	// ---- URL state: /project/<id>/<list|board|overview|comments>?task=<id> -------------------------------------
 	let routeApplied = $state(false);
 	$effect(() => {
 		if (routeApplied || !workspace.prefsLoaded) return;
 		routeApplied = true;
-		if (sub === 'ueberblick') tab = 'overview';
-		else if (sub === 'kommentare') commentsOpen = true;
-		else if ((sub === 'board' || sub === 'liste') && (sub === 'board') !== (display.view === 'board')) setDisplay({ view: sub === 'board' ? 'board' : 'list' });
+		if (sub === 'overview') tab = 'overview';
+		else if (sub === 'comments') commentsOpen = true;
+		else if ((sub === 'board' || sub === 'list') && (sub === 'board') !== (display.view === 'board')) setDisplay({ view: sub === 'board' ? 'board' : 'list' });
 	});
 	let taskApplied = $state(false);
 	$effect(() => {
@@ -219,7 +219,7 @@
 	});
 	$effect(() => {
 		if (!routeApplied) return;
-		const current: ProjectSub = commentsOpen ? 'kommentare' : tab === 'overview' ? 'ueberblick' : display.view === 'board' ? 'board' : 'liste';
+		const current: ProjectSub = commentsOpen ? 'comments' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
 		const task = detailOpen ? detail?.id : undefined;
 		// Deep link to a task still loading: keep ?task= until it was applied or is known to be missing.
 		const keep = taskID && !taskApplied ? taskID : task;

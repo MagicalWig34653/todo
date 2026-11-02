@@ -34,7 +34,7 @@ test('quick add keeps the typed text when projects change in the background', as
 	await page.setViewportSize({ width: 1280, height: 800 });
 	const project = await (await page.request.post('/v1/projects', { ...json, data: { name: 'Listenprojekt' } })).json();
 	projectID = project.id;
-	await page.goto('/heute');
+	await page.goto('/today');
 	await expect(page.getByTestId('project-item').getByRole('button', { name: 'Listenprojekt', exact: true }).first()).toBeVisible();
 	await page.keyboard.press('q');
 	const input = page.getByTestId('quick-add').getByLabel('Titel', { exact: true });
@@ -53,7 +53,7 @@ test('quick add keeps the typed text when projects change in the background', as
 test('today list: appears via live refresh, complete from the row, project link', async () => {
 	const task = await (await page.request.post('/v1/tasks', { ...json, data: { projectID, title: 'Heute fällig' } })).json();
 	taskID = task.id;
-	await page.goto('/heute');
+	await page.goto('/today');
 	// Created and planned elsewhere after the view opened: shows up without reload.
 	await page.request.put(`/v1/planning/tasks/${task.id}`, { ...json, data: planning(due()) });
 	const row = page.getByTestId('planning-item').filter({ hasText: 'Heute fällig' });
@@ -69,21 +69,21 @@ test('today list: appears via live refresh, complete from the row, project link'
 	const row2 = page.getByTestId('planning-item').filter({ hasText: 'Zweite Aufgabe' });
 	await expect(row2).toBeVisible({ timeout: 20_000 });
 	await row2.getByTestId('task-project-link').click();
-	await expect(page).toHaveURL(new RegExp(`/projekt/${projectID}`));
+	await expect(page).toHaveURL(new RegExp(`/project/${projectID}`));
 });
 
 test('search opens the task itself, also a completed one', async () => {
-	await page.goto('/suche');
+	await page.goto('/search');
 	await page.getByPlaceholder('Suchen in Titeln, Beschreibungen und Projekten').fill('Heute fällig');
 	await page.getByRole('button', { name: 'Suchen', exact: true }).click();
 	const hit = page.getByTestId('search-hit').filter({ hasText: 'Heute fällig' });
 	await expect(hit).toBeVisible();
 	await hit.getByRole('button', { name: 'Heute fällig' }).click();
-	await expect(page).toHaveURL(new RegExp(`/projekt/${projectID}.*task=${taskID}`));
+	await expect(page).toHaveURL(new RegExp(`/project/${projectID}.*task=${taskID}`));
 });
 
 test('comments: a failed send keeps the draft and the button label returns', async () => {
-	await page.goto(`/projekt/${projectID}?task=${taskID}`);
+	await page.goto(`/project/${projectID}?task=${taskID}`);
 	const area = page.getByTestId('task-detail').first();
 	await expect(area).toBeVisible();
 	await page.route('**/v1/tasks/*/comments', (route) => (route.request().method() === 'POST' ? route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }) : route.continue()));

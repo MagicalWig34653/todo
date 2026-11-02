@@ -46,7 +46,7 @@ describe('for you feed helpers', () => {
 		expect(postTitleKey({ kind: 'future' })).toBe('forYou.post.other');
 	});
 	it('routes /fuer-dich and the root to the feed', () => {
-		expect(parseRoute('/fuer-dich')).toEqual({ view: 'forYou' });
-		expect(buildPath({ view: 'forYou' })).toBe('/fuer-dich');
+		expect(parseRoute('/for-you')).toEqual({ view: 'forYou' });
+		expect(buildPath({ view: 'forYou' })).toBe('/for-you');
 	});
 });

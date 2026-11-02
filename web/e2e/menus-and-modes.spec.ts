@@ -198,9 +198,9 @@ test('quick add: Q opens, chips appear live, Enter keeps the field open, Esc clo
 test('url routing: reload keeps the view, deep link, back button, unknown ids', async () => {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/');
-	await expect(page).toHaveURL(/\/fuer-dich$/);
+	await expect(page).toHaveURL(/\/for-you$/);
 	await page.getByTestId('project-item').getByRole('button', { name: 'Menüprojekt', exact: true }).first().click();
-	await expect(page).toHaveURL(/\/projekt\/[0-9A-Fa-f-]+\/(liste|board)$/);
+	await expect(page).toHaveURL(/\/project\/[0-9A-Fa-f-]+\/(list|board)$/);
 	await page.getByTestId('display-menu').click();
 	await page.getByRole('dialog', { name: 'Anzeige' }).getByRole('button', { name: 'Board' }).click();
 	await page.keyboard.press('Escape');
@@ -210,17 +210,17 @@ test('url routing: reload keeps the view, deep link, back button, unknown ids', 
 	await expect(page).toHaveURL(boardURL);
 	await expect(page.getByTestId('board')).toBeVisible();
 	// Deep link in a fresh navigation, then history.
-	await page.goto('/eingang');
+	await page.goto('/inbox');
 	await expect(page.getByTestId('view-heading')).toHaveText('Eingang');
 	await page.goto(boardURL);
 	await expect(page.getByTestId('board')).toBeVisible();
 	await page.getByRole('button', { name: 'Anstehend', exact: true }).first().click();
-	await expect(page).toHaveURL(/\/anstehend$/);
+	await expect(page).toHaveURL(/\/upcoming$/);
 	await page.goBack();
 	await expect(page).toHaveURL(boardURL);
 	await expect(page.getByTestId('board')).toBeVisible();
 	// Friendly 404s.
-	await page.goto('/projekt/00000000-0000-0000-0000-000000000000/liste');
+	await page.goto('/project/00000000-0000-0000-0000-000000000000/list');
 	await expect(page.getByTestId('not-found')).toContainText('Projekt nicht gefunden');
 	await page.goto('/gibt-es-nicht');
 	await expect(page.getByTestId('not-found')).toContainText('Seite nicht gefunden');

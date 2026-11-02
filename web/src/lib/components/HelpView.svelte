@@ -10,7 +10,7 @@
 	import ManualPage from './help/ManualPage.svelte';
 	import StartPage from './help/StartPage.svelte';
 
-	/** Help area (`/hilfe/<seite>`): landing list, same list -> detail pattern as the settings hub. */
+	/** Help area (`/help/<slug>`): landing list, same list -> detail pattern as the settings hub. */
 	let { area, onarea, onsettings }: { area?: string; onarea: (a: string | undefined) => void; onsettings: () => void } = $props();
 	const page = $derived(findHelpPage(area));
 	const unknown = $derived(area !== undefined && !page);
@@ -39,7 +39,7 @@
 		</nav>
 		<div class={['flex min-w-0 flex-col gap-4', area === undefined && 'hidden md:flex']} data-testid="help-content">
 			{#if area !== undefined}
-				<a class="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm md:hidden" href="/hilfe" onclick={(e) => open(e, undefined)}>
+				<a class="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm md:hidden" href="/help" onclick={(e) => open(e, undefined)}>
 					<ChevronLeft class="size-4" aria-hidden="true" />{t('helpmenu.all')}
 				</a>
 			{/if}
