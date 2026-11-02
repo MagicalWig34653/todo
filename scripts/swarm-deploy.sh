@@ -41,7 +41,10 @@ elif ! docker service inspect "${STACK}_migrate" >/dev/null 2>&1; then
   # Backend runs but the one-shot migrate service is missing (removed by hand): recreate it
   # without touching the running backend replica count.
   current=$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "${STACK}_backend")
-  BACKEND_REPLICAS=$current docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
+  running_image=$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "${STACK}_backend")
+  running_tag=${running_image%%@*}; running_tag=${running_tag##*:}
+  # Keep the backend on the image it runs now; it is updated only after the migration succeeded.
+  TODO_IMAGE_TAG=$running_tag BACKEND_REPLICAS=$current docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
 fi
 old_tasks=$(docker service ps --no-trunc --format '{{.ID}}' "${STACK}_migrate")
 docker service scale "${STACK}_migrate=0" >/dev/null
