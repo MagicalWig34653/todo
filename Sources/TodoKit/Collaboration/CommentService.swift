@@ -74,4 +74,49 @@ enum CommentService {
             return try CommentDTO(c)
         }
     }
+
+    /// Author edits own comment (REST and MCP). `agentOnly` additionally limits an integration to comments written by agents.
+    static func edit(
+        taskID: UUID, commentID: UUID, user: User, body raw: String, version: Int,
+        actor: (type: ActivityActorType, id: UUID)? = nil, agentOnly: Bool = false,
+        scope: @escaping @Sendable (TodoTask) throws -> Void = { _ in }, on database: any Database
+    ) async throws -> CommentDTO {
+        try scope(try await ProjectAccess(user: user, db: database).task(taskID, role: .comment))
+        let body = try text(raw)
+        return try await database.transaction { db in
+            try await lockRow(table: TodoTask.schema, id: taskID, on: db)
+            try scope(try await ProjectAccess(user: user, db: db).task(taskID, role: .comment))
+            let userID = try user.requireID()
+            guard let c = try await TaskComment.find(commentID, on: db), c.taskID == taskID else { throw Abort(.notFound) }
+            guard c.authorID == userID else { throw Abort(.forbidden, reason: "not_comment_author") }
+            if agentOnly, c.authorKind != "agent" { throw Abort(.forbidden, reason: "not_agent_comment") }
+            guard c.version == version else { throw Abort(.conflict, reason: "version_conflict") }
+            c.body = body; c.version += 1
+            try await c.save(on: db)
+            try await appendActivity(taskID: taskID, actorType: actor?.type ?? .person, actorID: actor?.id ?? userID, kind: "comment.updated", subjectID: c.id, on: db)
+            return try CommentDTO(c)
+        }
+    }
+
+    /// Author, or a user with manage rights, deletes a comment. `version` must match when given by MCP; REST always passes it.
+    static func delete(
+        taskID: UUID, commentID: UUID, user: User, version: Int?,
+        actor: (type: ActivityActorType, id: UUID)? = nil, on database: any Database
+    ) async throws {
+        _ = try await ProjectAccess(user: user, db: database).task(taskID, role: .comment)
+        try await database.transaction { db in
+            try await lockRow(table: TodoTask.schema, id: taskID, on: db)
+            _ = try await ProjectAccess(user: user, db: db).task(taskID, role: .comment)
+            let userID = try user.requireID()
+            guard let c = try await TaskComment.find(commentID, on: db), c.taskID == taskID else { throw Abort(.notFound) }
+            if c.authorID != userID {
+                // Moderation of foreign comments requires manage rights on the project.
+                do { _ = try await ProjectAccess(user: user, db: db).task(taskID, role: .manage) }
+                catch { throw Abort(.forbidden, reason: "not_comment_author") }
+            }
+            if let version, c.version != version { throw Abort(.conflict, reason: "version_conflict") }
+            try await c.delete(on: db)
+            try await appendActivity(taskID: taskID, actorType: actor?.type ?? .person, actorID: actor?.id ?? userID, kind: "comment.deleted", subjectID: c.id, on: db)
+        }
+    }
 }

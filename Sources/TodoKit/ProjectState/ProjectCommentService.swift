@@ -52,7 +52,7 @@ struct ProjectCommentService: Sendable {
         return try await named(rows.map(ProjectCommentDTO.init))
     }
 
-    func create(_ projectID: UUID, body raw: String, idempotencyKey: String?) async throws -> ProjectCommentDTO {
+    func create(_ projectID: UUID, body raw: String, idempotencyKey: String?, actor: (type: ActivityActorType, id: UUID)? = nil) async throws -> ProjectCommentDTO {
         _ = try await access.project(projectID, role: .comment)
         let body = try CommentService.text(raw)
         let hash = try CommentService.keyHash(idempotencyKey)
@@ -75,14 +75,14 @@ struct ProjectCommentService: Sendable {
                 saved.requestBody = body; saved.commentID = try comment.requireID(); saved.createdAt = Date()
                 try await saved.save(on: db)
             }
-            try await appendProjectActivity(projectID: projectID, actorType: .person, actorID: userID,
+            try await appendProjectActivity(projectID: projectID, actorType: actor?.type ?? .person, actorID: actor?.id ?? userID,
                 kind: "comment.created", subjectID: comment.id, on: db)
             return try ProjectCommentDTO(comment)
         }
         return try await named([dto])[0]
     }
 
-    func edit(_ projectID: UUID, commentID: UUID, body raw: String, version: Int) async throws -> ProjectCommentDTO {
+    func edit(_ projectID: UUID, commentID: UUID, body raw: String, version: Int, actor: (type: ActivityActorType, id: UUID)? = nil) async throws -> ProjectCommentDTO {
         _ = try await access.project(projectID, role: .comment)
         let body = try CommentService.text(raw)
         let userID = try user.requireID()
@@ -94,14 +94,14 @@ struct ProjectCommentService: Sendable {
             guard c.version == version else { throw Abort(.conflict, reason: "version_conflict") }
             c.body = body; c.version += 1
             try await c.save(on: db)
-            try await appendProjectActivity(projectID: projectID, actorType: .person, actorID: userID,
+            try await appendProjectActivity(projectID: projectID, actorType: actor?.type ?? .person, actorID: actor?.id ?? userID,
                 kind: "comment.updated", subjectID: c.id, on: db)
             return try ProjectCommentDTO(c)
         }
         return try await named([dto])[0]
     }
 
-    func delete(_ projectID: UUID, commentID: UUID, version: Int) async throws {
+    func delete(_ projectID: UUID, commentID: UUID, version: Int?, actor: (type: ActivityActorType, id: UUID)? = nil) async throws {
         _ = try await access.project(projectID, role: .comment)
         let userID = try user.requireID()
         try await db.transaction { db in
@@ -114,9 +114,9 @@ struct ProjectCommentService: Sendable {
                 do { _ = try await access.project(projectID, role: .manage) }
                 catch { throw Abort(.forbidden, reason: "not_comment_author") }
             }
-            guard c.version == version else { throw Abort(.conflict, reason: "version_conflict") }
+            if let version, c.version != version { throw Abort(.conflict, reason: "version_conflict") }
             try await c.delete(on: db)
-            try await appendProjectActivity(projectID: projectID, actorType: .person, actorID: userID,
+            try await appendProjectActivity(projectID: projectID, actorType: actor?.type ?? .person, actorID: actor?.id ?? userID,
                 kind: "comment.deleted", subjectID: c.id, on: db)
         }
     }
