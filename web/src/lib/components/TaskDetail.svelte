@@ -25,7 +25,7 @@
 				await api.updateTask(task, { status: task.status === 'done' ? 'open' : 'done' });
 				await onplanned?.();
 				await workspace.reloadTasks();
-			}, () => onplanned?.());
+			}, async () => { await onplanned?.(); });
 		} finally {
 			statusBusy = false;
 		}

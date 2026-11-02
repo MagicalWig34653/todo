@@ -37,7 +37,7 @@
 				await api.updateTask(task, { status: done ? 'open' : 'done' });
 				await onchanged();
 				await workspace.reloadTasks();
-			}, () => onchanged());
+			}, async () => { await onchanged(); });
 		} finally {
 			busy = false;
 		}
