@@ -167,3 +167,12 @@ Gebaut und geprüft: siehe STATUS (gleicher Titel) und [VERWALTUNG.md](VERWALTUN
 ## Checkpoint 31.10.2026 (Konfiguration über die PWA, Backend)
 
 Siehe STATUS.md (gleicher Titel) und ADR 0025. Backend, Vertrag `contracts/admin-settings.yaml`, `docs/KONFIGURATION.md`, Deploy-Anpassungen und 16 Tests sind fertig (SQLite; MariaDB ungeprüft). **Nächster Schritt:** PWA-Verwaltungsbereich im Hub (`/einstellungen/verwaltung/<kategorie>`), generiert aus `GET /v1/admin/settings`, mit Playwright (Admin vs. Nicht-Admin, Mail-Test gegen smtp-sink) und Screenshots; danach Image-Tag prüfen und dem Nutzer die Schritte (Migration, optional Konfigurationsschlüssel, Env-Variablen entfernen, die in der PWA änderbar sein sollen) nennen.
+
+## MCP-Parität Stapel 2 – Planung (2.11.2026, codex@mcp-s2)
+
+- [x] Elf Planungstools, Scope-/Grant-/Rollenprüfung, gemeinsame REST-Dienste; Meilenstein-Löschen als Bestätigungsanfrage.
+- [x] Toolbeschreibung in MCP-PARITAET, Statuscheckpoint; keine Migration und kein neuer Scope.
+- [x] Neue Planungstests 10/10 grün, YAML-Vertrag und Diffprüfung grün. Vollsuite: 336 Tests, 20 übersprungen, 310 bestanden, 7 Fehlermeldungen in 6 bestehenden Socket-Tests (Sandbox `bind` EPERM); genaue Grenzen und Befehl in STATUS.
+- [x] Vollsuite ausgewertet und Checkpoint auf `worktree-agent-aac1025bcab6b48b6` geschrieben (kein Push, keine Migration, keine laufenden eigenen Jobs).
+- [ ] Lokaler Commit `Add MCP planning tools with shared REST operations`: blockiert durch Sandbox-Verbot von `index.lock` im gemeinsamen Git-Verzeichnis außerhalb des Worktrees. Hauptsession muss alle zwölf Dateien erneut explizit stagen (Index enthält drei neue Dateien in älterem Stand) und committen. Vollständiger Patch: `/private/tmp/codex-s2.patch`.
+- [ ] Hauptsession: Board-Fortschritt nachtragen (Werkzeuge fehlen); Merge/Review, Handbuch gesammelt einbetten und Dokumentationstest wieder vereinheitlichen; vollständige Suite außerhalb Socket-Sandbox sowie spätere Linux/MariaDB-Prüfung.

@@ -43,28 +43,7 @@ struct PlanningExtController: RouteCollection {
         return try await req.db.transaction { db in try await PlanningService(user: s.user, db: db).put(id, data: data) }
     }
     private func list(_ req: Request, mode: String) async throws -> [PlanningTaskDTO] {
-        let s = try await service(req)
-        var calendar = Calendar(identifier: .gregorian)
-        let zone = try req.query.get(String?.self, at: "timeZone") ?? "UTC"
-        guard let timeZone = TimeZone(identifier: zone) else { throw Abort(.badRequest) }
-        calendar.timeZone = timeZone
-        let start = calendar.startOfDay(for: Date()), end = calendar.date(byAdding: .day, value: 1, to: start)!
-        var result: [PlanningTaskDTO] = []
-        for task in try await s.visibleTasks() where task.status != "done" {
-            let p = try await TaskPlanning.find(task.requireID(), on: req.db)
-            if mode == "up-next" {
-                if try await s.blocked(task.requireID()) { continue }
-            } else {
-                guard let due = p?.dueAt else { continue }
-                if mode == "today" ? !(due >= start && due < end) : due < end { continue }
-            }
-            result.append(try PlanningTaskDTO(task, p))
-        }
-        return result.sorted { a, b in
-            if mode == "up-next", a.priority != b.priority { return a.priority > b.priority }
-            if a.dueAt != b.dueAt { return (a.dueAt ?? .distantFuture) < (b.dueAt ?? .distantFuture) }
-            return a.task.id.uuidString < b.task.id.uuidString
-        }
+        try await service(req).plannedTasks(mode: mode, timeZone: req.query.get(String?.self, at: "timeZone") ?? "UTC")
     }
     @Sendable func today(_ req: Request) async throws -> [PlanningTaskDTO] { try await list(req, mode: "today") }
     @Sendable func upcoming(_ req: Request) async throws -> [PlanningTaskDTO] { try await list(req, mode: "upcoming") }
@@ -96,14 +75,7 @@ struct PlanningExtController: RouteCollection {
         return .noContent
     }
     @Sendable func dependencies(_ req: Request) async throws -> [TaskDTO] {
-        let s = try await service(req), id = try param(req)
-        _ = try await s.task(id)
-        var result: [TaskDTO] = []
-        for edge in try await PlanningDependency.query(on: req.db).filter(\.$taskID == id).all() {
-            do { result.append(try await TaskDTO(s.task(edge.prerequisiteID))) }
-            catch let error as AbortError where error.status == .notFound { continue }
-        }
-        return result
+        try await service(req).dependencies(param(req)).map { try TaskDTO($0) }
     }
     @Sendable func addDependency(_ req: Request) async throws -> HTTPStatus {
         let s = try await service(req), id = try param(req), body = try req.content.decode(PlanningDependencyInput.self)
@@ -112,56 +84,23 @@ struct PlanningExtController: RouteCollection {
     }
     @Sendable func removeDependency(_ req: Request) async throws -> HTTPStatus {
         let s = try await service(req), id = try param(req), other = try param(req, "other")
-        try await req.db.transaction { db in
-            let s = PlanningService(user: s.user, db: db)
-            try await s.lock(); _ = try await s.task(id, role: .edit); _ = try await s.task(other)
-            try await PlanningDependency.query(on: db).filter(\.$taskID == id).filter(\.$prerequisiteID == other).delete()
-        }
+        try await req.db.transaction { db in try await PlanningService(user: s.user, db: db).removeDependency(id, prerequisite: other) }
         return .noContent
-    }
-    private func milestone(_ id: UUID, service s: PlanningService, role: ProjectRole = .read) async throws -> PlanningMilestone {
-        guard let m = try await PlanningMilestone.find(id, on: s.db) else { throw Abort(.notFound) }
-        _ = try await s.access.project(m.projectID, role: role)
-        return m
     }
     @Sendable func createMilestone(_ req: Request) async throws -> PlanningMilestone {
         let s = try await service(req), body = try req.content.decode(PlanningMilestoneInput.self)
-        _ = try await s.access.project(body.projectID, role: .edit)
-        let title = body.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title.count <= 200 else { throw Abort(.badRequest) }
-        let m = PlanningMilestone(projectID: body.projectID, title: title, dueAt: body.dueAt)
-        try await m.save(on: req.db); return m
+        return try await s.createMilestone(projectID: body.projectID, title: body.title, dueAt: body.dueAt)
     }
     @Sendable func milestones(_ req: Request) async throws -> [PlanningMilestoneDTO] {
-        let s = try await service(req), project = try req.query.get(UUID.self, at: "projectID")
-        _ = try await s.access.project(project)
-        var result: [PlanningMilestoneDTO] = []
-        for m in try await PlanningMilestone.query(on: req.db).filter(\.$projectID == project).all() {
-            var tasks: [TaskDTO] = []
-            for link in try await PlanningMilestoneTask.query(on: req.db).filter(\.$milestoneID == m.requireID()).all() {
-                do {
-                    let t = try await s.task(link.taskID)
-                    if try await s.access.isSelfOrDescendant(t.projectID, of: project) { tasks.append(try TaskDTO(t)) }
-                } catch let error as AbortError where error.status == .notFound { continue }
-            }
-            result.append(PlanningMilestoneDTO(milestone: m, tasks: tasks))
-        }
-        return result
+        try await service(req).milestones(req.query.get(UUID.self, at: "projectID"))
     }
     @Sendable func deleteMilestone(_ req: Request) async throws -> HTTPStatus {
-        let s = try await service(req)
-        try await milestone(param(req), service: s, role: .edit).delete(on: req.db); return .noContent
+        try await service(req).deleteMilestone(param(req)); return .noContent
     }
     private func membership(_ req: Request, remove: Bool) async throws -> HTTPStatus {
         let s = try await service(req), id = try param(req), other = try param(req, "other")
         try await req.db.transaction { db in
-            let s = PlanningService(user: s.user, db: db)
-            try await s.lock()
-            let m = try await milestone(id, service: s, role: .edit), t = try await s.task(other, role: .edit)
-            guard try await s.access.isSelfOrDescendant(t.projectID, of: m.projectID) else { throw Abort(.unprocessableEntity) }
-            let query = PlanningMilestoneTask.query(on: db).filter(\.$milestoneID == id).filter(\.$taskID == other)
-            if remove { try await query.delete() }
-            else if try await query.first() == nil { try await PlanningMilestoneTask(id, other).save(on: db) }
+            try await PlanningService(user: s.user, db: db).milestoneMembership(id, taskID: other, remove: remove)
         }
         return .noContent
     }

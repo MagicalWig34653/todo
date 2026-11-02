@@ -85,6 +85,7 @@ struct PlanningService: Sendable {
         }
         if !edges.contains(where: { $0.taskID == id && $0.prerequisiteID == prerequisite }) {
             try await PlanningDependency(id, prerequisite).save(on: db)
+            try await appendActivity(taskID: id, actorType: .person, actorID: user.requireID(), kind: "task.dependency_added", subjectID: prerequisite, on: db)
         }
     }
 

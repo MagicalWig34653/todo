@@ -210,4 +210,17 @@ x-mcp-tools:
   update_criterion: {scope: 'tasks:write', required: [criterionID, text], arguments: {criterionID: UUID, text: 'string 1-2000', version: integer}, result: CriterionDTO}
   delete_criterion: {scope: 'tasks:write', required: [criterionID], arguments: {criterionID: UUID, version: integer}, result: 'Bestätigungsanfrage (confirmation_required), Klasse C'}
   delete_column: {scope: 'tasks:write', required: [id], arguments: {id: UUID, version: integer, moveTo: 'UUID oder none'}, result: 'Bestätigungsanfrage (confirmation_required), Klasse C'}
+
+  get_task_planning: {scope: 'tasks:read', required: [taskID], result: PlanningTaskDTO}
+  update_task_planning: {scope: 'tasks:write', required: [taskID], optional: [version, dueDate, dueTime, dueAt, plannedAt, priority, recurrence, reminders], result: PlanningTaskDTO}
+  list_planned_tasks: {scope: 'tasks:read', required: [view], optional: [projectID, limit], views: [today, upcoming, up_next]}
+  set_dependencies: {scope: 'tasks:write', class: B, required: [taskID, blockedBy]}
+  list_dependencies: {scope: 'tasks:read', required: [taskID], optional: [limit]}
+  remove_dependency: {scope: 'tasks:write', class: B, required: [taskID, otherTaskID]}
+  list_milestones: {scope: 'tasks:read', required: [projectID], optional: [limit]}
+  create_milestone: {scope: 'tasks:write', required: [projectID, title], optional: [dueDate]}
+  assign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
+  unassign_milestone: {scope: 'tasks:write', required: [taskID, milestoneID]}
+  delete_milestone: {scope: 'tasks:write', class: C, required: [milestoneID], result: confirmation_required}
+
 x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']
