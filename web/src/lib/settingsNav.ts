@@ -14,6 +14,8 @@ export interface SettingsEntry {
 	/** Extra German search terms. */
 	keywords: string;
 	adminOnly?: boolean;
+	/** Page exists but its main function is not available yet; shown with a "Bald" hint. */
+	soon?: boolean;
 }
 export interface SettingsGroup {
 	id: string;
@@ -67,7 +69,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 	{
 		id: 'data',
 		label: 'settings.group.data',
-		entries: [{ id: 'daten', label: 'settings.daten', description: 'settings.daten.description', keywords: 'export löschen datenschutz dsgvo auskunft download' }]
+		entries: [{ id: 'daten', label: 'settings.daten', description: 'settings.daten.description', keywords: 'export löschen datenschutz dsgvo auskunft download', soon: true }]
 	},
 	{
 		id: 'admin',

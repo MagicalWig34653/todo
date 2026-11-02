@@ -1,7 +1,9 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { cn } from '#lib/utils.js';
 	import { t } from '#lib/i18n/index.js';
+	import { notice } from '#lib/notice.svelte.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import X from '@lucide/svelte/icons/x';
 
 	/** Modal dialog: backdrop click and Escape close it, focus moves in, Tab stays inside, focus returns on close. */
@@ -26,12 +28,14 @@
 		if (!open || !box) return;
 		returnTo = document.activeElement as HTMLElement | null;
 		(box.querySelector<HTMLElement>('[data-autofocus]') ?? focusables()[0] ?? box).focus();
+		untrack(() => notice.dialogs++);
 		const esc = (e: KeyboardEvent) => {
 			if (e.key === 'Escape' && !e.defaultPrevented) open = false;
 		};
 		document.addEventListener('keydown', esc);
 		return () => {
 			document.removeEventListener('keydown', esc);
+			untrack(() => notice.dialogs--);
 			returnTo?.focus?.();
 		};
 	});
@@ -73,6 +77,19 @@
 					<X class="size-4" aria-hidden="true" />
 				</button>
 			</div>
+			{#if notice.text}
+				<div
+					role={notice.conflict ? 'status' : 'alert'}
+					class="border-warning/30 bg-warning-soft text-foreground mb-3 flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm"
+					data-testid="notice"
+				>
+					<span>
+						{#if notice.conflict}<strong>{t('conflict.title')}.</strong>{/if}
+						{notice.text}
+					</span>
+					<Button variant="ghost" size="xs" onclick={() => notice.clear()}>{t('common.cancel')}</Button>
+				</div>
+			{/if}
 			{@render children()}
 		</div>
 	</div>

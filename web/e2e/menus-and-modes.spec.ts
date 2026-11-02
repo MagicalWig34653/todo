@@ -39,7 +39,7 @@ const popover = () => page.locator('div[role="dialog"]:not([aria-modal])').last(
 
 async function openDrawerIfNeeded() {
 	const menu = page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Menü' });
-	const nav = page.getByRole('navigation', { name: 'Seitenleiste' });
+	const nav = page.locator('#main-nav:visible');
 	await expect(nav.or(menu)).toBeVisible();
 	if (!(await nav.isVisible())) await menu.click();
 	await expect(nav).toBeVisible();

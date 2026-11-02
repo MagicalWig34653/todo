@@ -5,6 +5,8 @@ import { describeError } from './errors.js';
 class Notice {
 	text = $state<string | null>(null);
 	conflict = $state(false);
+	/** Open modal dialogs; while > 0 the notice is shown inside the dialog instead of the page banner behind it. */
+	dialogs = $state(0);
 
 	clear() {
 		this.text = null;
