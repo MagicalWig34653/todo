@@ -69,7 +69,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 	{
 		id: 'data',
 		label: 'settings.group.data',
-		entries: [{ id: 'daten', label: 'settings.daten', description: 'settings.daten.description', keywords: 'export löschen datenschutz dsgvo auskunft download', soon: true }]
+		entries: [{ id: 'daten', label: 'settings.daten', description: 'settings.daten.description', keywords: 'export löschen datenschutz dsgvo auskunft download sperren anonymisieren konto' }]
 	},
 	{
 		id: 'admin',
