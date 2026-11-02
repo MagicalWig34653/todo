@@ -19,25 +19,50 @@ enum CommentService {
         return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Optional thread target. A question or review must belong to the same task.
+    struct Target: Sendable { var questionID: UUID? = nil; var reviewID: UUID? = nil }
+
+    static func validate(_ target: Target, taskID: UUID, on db: any Database) async throws {
+        if target.questionID != nil && target.reviewID != nil { throw Abort(.badRequest, reason: "invalid_thread") }
+        if let q = target.questionID {
+            guard let row = try await TaskQuestion.find(q, on: db), row.taskID == taskID else { throw Abort(.notFound, reason: "question_not_found") }
+        }
+        if let r = target.reviewID {
+            guard let row = try await TaskReview.find(r, on: db), row.taskID == taskID else { throw Abort(.notFound, reason: "review_not_found") }
+        }
+    }
+
     /// `scope` lets a delegated client (OAuth grant) narrow access; it runs on the authorized task.
     static func create(
         taskID: UUID, user: User, body: String, idempotencyKey: String?,
-        actor: (type: ActivityActorType, id: UUID)? = nil,
+        actor: (type: ActivityActorType, id: UUID)? = nil, target: Target = Target(), agentLabel: String? = nil,
         scope: @escaping @Sendable (TodoTask) throws -> Void = { _ in }, on database: any Database
     ) async throws -> CommentDTO {
         try scope(try await ProjectAccess(user: user, db: database).task(taskID, role: .comment))
         let body = try text(body)
+        let label = try agentLabel.map { raw -> String in
+            let v = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !v.isEmpty, v.count <= 100 else { throw Abort(.badRequest, reason: "invalid_agent_name") }
+            return v
+        }
         let hash = try keyHash(idempotencyKey)
         return try await database.transaction { db in
             try await lockRow(table: TodoTask.schema, id: taskID, on: db)
             try scope(try await ProjectAccess(user: user, db: db).task(taskID, role: .comment))
             let userID = try user.requireID()
+            try await validate(target, taskID: taskID, on: db)
             if let hash, let saved = try await CommentIdempotency.query(on: db)
                 .filter(\.$taskID == taskID).filter(\.$userID == userID).filter(\.$keyHash == hash).first() {
                 guard saved.requestBody == body else { throw Abort(.conflict, reason: "idempotency_conflict") }
+                if let original = try await TaskComment.find(saved.commentID, on: db) { return try CommentDTO(original) }
                 return CommentDTO(saved)
             }
             let c = TaskComment(taskID: taskID, authorID: userID, body: body)
+            c.questionID = target.questionID; c.reviewID = target.reviewID
+            // Person = REST/PWA; integration or run = agent.
+            let isAgent = (actor?.type ?? .person) != .person
+            c.authorKind = isAgent ? "agent" : "person"
+            c.authorLabel = isAgent ? label : nil
             try await c.save(on: db)
             if let hash {
                 let saved = CommentIdempotency()

@@ -159,16 +159,37 @@ struct MCPController: RouteCollection {
         case "update_task": return try await callUpdateTask(a, user: user, grant: grant, db: db)
         case "list_comments":
             let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)
-            let comments = try await TaskComment.query(on: db).filter(\.$taskID == task.requireID()).sort(\.$id).all()
-            return try .encoded(comments.map(CommentDTO.init))
+            var query = try TaskComment.query(on: db).filter(\.$taskID == task.requireID())
+            // Chat per card: questionID/reviewID select one card's messages, thread=task only the task's own chat.
+            if let q = try optionalUUID(a, "questionID") { query = query.filter(\.$questionID == q) }
+            else if let r = try optionalUUID(a, "reviewID") { query = query.filter(\.$reviewID == r) }
+            else if let thread = try optionalString(a, "thread") {
+                guard thread == "task" else { throw Abort(.badRequest, reason: "invalid_thread") }
+                query = query.filter(\.$questionID == .null).filter(\.$reviewID == .null)
+            }
+            if let kind = try optionalString(a, "authorKind") {
+                switch kind {
+                case "person": query = query.group(.or) { $0.filter(\.$authorKind == "person").filter(\.$authorKind == .null) }
+                case "agent": query = query.filter(\.$authorKind == "agent")
+                default: throw Abort(.badRequest, reason: "invalid_author_kind")
+                }
+            }
+            if let since = try optionalString(a, "since") {
+                guard let date = ISO8601DateFormatter().date(from: since) else { throw Abort(.badRequest, reason: "invalid_since") }
+                query = query.filter(\.$createdAt > date)
+            }
+            let comments = try await query.sort(\.$createdAt).sort(\.$id).all()
+            let names = try await displayNames(comments.map(\.authorID), on: db)
+            return try .encoded(comments.map { var c = try CommentDTO($0); c.authorName = names[$0.authorID]; return c })
         case "add_comment":
             guard let body = a["body"].string else { throw Abort(.badRequest, reason: "invalid_arguments") }
             let taskID = try uuid(a["taskID"])
             if !a["idempotencyKey"].isNull && a["idempotencyKey"].string == nil { throw Abort(.badRequest, reason: "invalid_idempotency_key") }
             let projects = grant.projects, grantID = try grant.requireID()
             // Same service as REST; the grant's project list is checked again on the locked task.
+            let target = CommentService.Target(questionID: try optionalUUID(a, "questionID"), reviewID: try optionalUUID(a, "reviewID"))
             let dto = try await CommentService.create(taskID: taskID, user: user, body: body, idempotencyKey: a["idempotencyKey"].string,
-                actor: (.integration, grantID), scope: { t in guard projects.contains(t.projectID) else { throw Abort(.notFound) } }, on: db)
+                actor: (.integration, grantID), target: target, agentLabel: try optionalString(a, "agentName"), scope: { t in guard projects.contains(t.projectID) else { throw Abort(.notFound) } }, on: db)
             return try .encoded(dto)
         case "get_progress":
             let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)

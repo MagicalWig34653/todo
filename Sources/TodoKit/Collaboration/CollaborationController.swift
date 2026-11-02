@@ -2,7 +2,7 @@ import Crypto
 import Fluent
 import Vapor
 
-private struct CommentInput: Content { let body: String; let version: Int? }
+private struct CommentInput: Content { let body: String; let version: Int?; let questionID: UUID?; let reviewID: UUID? }
 private struct CriterionInput: Content { let text: String?; let completed: Bool?; let version: Int? }
 private struct VersionInput: Content { let version: Int }
 struct ActivityPage: Content { let items: [ActivityDTO]; let nextCursor: String? }
@@ -68,7 +68,12 @@ struct CollaborationController: RouteCollection {
     }
     @Sendable func comments(_ req: Request) async throws -> [CommentDTO] {
         let taskID = try await authorized(req)
-        return try await named(TaskComment.query(on: req.db).filter(\.$taskID == taskID).sort(\.$id).all().map(CommentDTO.init), on: req.db)
+        // Filters: ?questionID= / ?reviewID= select one card's chat, ?thread=task only the task's own chat. No filter = everything.
+        var query = TaskComment.query(on: req.db).filter(\.$taskID == taskID)
+        if let q = req.query[UUID.self, at: "questionID"] { query = query.filter(\.$questionID == q) }
+        else if let r = req.query[UUID.self, at: "reviewID"] { query = query.filter(\.$reviewID == r) }
+        else if req.query[String.self, at: "thread"] == "task" { query = query.filter(\.$questionID == .null).filter(\.$reviewID == .null) }
+        return try await named(query.sort(\.$createdAt).sort(\.$id).all().map(CommentDTO.init), on: req.db)
     }
     @Sendable func comment(_ req: Request) async throws -> CommentDTO {
         let taskID = try await authorized(req)
@@ -80,7 +85,7 @@ struct CollaborationController: RouteCollection {
         let keys = req.headers["Idempotency-Key"]
         guard keys.count <= 1 else { throw Abort(.badRequest, reason: "invalid_idempotency_key") }
         let dto = try await CommentService.create(taskID: parameter(req, "id"), user: req.requireUser(),
-            body: input.body, idempotencyKey: keys.first, on: req.db)
+            body: input.body, idempotencyKey: keys.first, target: .init(questionID: input.questionID, reviewID: input.reviewID), on: req.db)
         return try await named([dto], on: req.db)[0].encodeResponse(status: .created, for: req)
     }
     @Sendable func editComment(_ req: Request) async throws -> CommentDTO {

@@ -299,6 +299,7 @@
 							{:else}
 								<p class="text-muted-foreground">{t('card.withdrawn')}</p>
 							{/if}
+							<CardConversation taskID={task.id} thread={{ questionID: data.question.id }} title={t('card.chat.question')} onchanged={() => onchanged?.()} onattached={changed} />
 						</section>
 					{/if}
 
@@ -306,9 +307,11 @@
 						<section class="flex flex-col gap-3" data-testid="card-decide">
 							{#each openQuestions as q (q.id)}
 								<QuestionAnswer id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel} size="default" onanswered={changed} />
+								<CardConversation taskID={task.id} thread={{ questionID: q.id }} title={t('card.chat.question')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/each}
 							{#if review && review.state === 'pending'}
 								<ReviewDecision taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} markdown ondecided={changed} />
+								<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/if}
 						</section>
 					{/if}
@@ -319,6 +322,7 @@
 							<p class="text-muted-foreground text-xs">{[review.requestedByLabel, when(review.decidedAt ?? review.createdAt)].filter(Boolean).join(' · ')}</p>
 							<Markdown text={review.summary} />
 							{#if review.decisionNote}<p class="border-l-2 pl-2 [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="review-note-shown">{review.decisionNote}</p>{/if}
+							<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />
 						</section>
 					{/if}
 

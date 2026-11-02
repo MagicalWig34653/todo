@@ -1,5 +1,15 @@
 # Status
 
+## Checkpoint 2.11.2026 (abends): Chat je Karte (Agent chat)
+
+- Board-Aufgabe `598FA538-9FE6-4379-A33B-38D5A942FA0D` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push.
+- Backend: Migration `AddCommentThreads` (additiv: `comments.question_id`, `review_id`, `author_kind`, `author_label`, `created_at`; alte Zeilen NULL = Aufgaben-Chat, Person, ohne Zeit). `CommentService.create` nimmt `target` (Frage oder Review derselben Aufgabe, sonst 404/400) und `agentLabel` (max. 100); Rechte unveraendert (`.comment`, Grant-Scope). REST: `GET /v1/tasks/{id}/comments?questionID|reviewID|thread=task`, POST mit `questionID`/`reviewID`; DTO um `questionID`, `reviewID`, `authorKind`, `authorLabel`, `createdAt` erweitert. Live-Event ueber bestehende Middleware (Hinweis `comment`). Review-Notiz bei Runner-Entscheid landet im Review-Chat.
+- MCP: `list_comments` (Filter `questionID`, `reviewID`, `thread`, `authorKind`, `since`) und `add_comment` (`questionID`, `reviewID`, `agentName`); keine neuen Tools/Scopes. Handbuch 1.7.0 (eingebettet), `contracts/collaboration.yaml` und `oauth-mcp.yaml` angepasst.
+- PWA: `TaskComments` im Chat-Modus mit Blasen (du rechts, andere/Agent links mit Bot-Symbol und Agentenname), relativer Zeit, Auto-Scroll nur am Ende, Enter / Strg+Enter senden, Shift+Enter Zeilenumbruch, Bueroklammer; `CardConversation` mit `thread`; Chat in Aufgaben-, Fragen- (offen und beantwortet) und Review-Karten (offen und entschieden). Live-Refresh: neue Option `allowInDialog`, damit der Chat im Kartenfenster aktualisiert; Entwurf bleibt unangetastet.
+- Plugin: SessionStart-Hinweis, Stop-Hook-Text bei offener Frage und Skill nennen `list_comments` (authorKind person, since) und `add_comment`.
+- Tests: swift test gesamt gruen (neu `ChatThreadTests` 2; `CollaborationTests` angepasst: Idempotenz-Snapshot nach Loeschen ohne `createdAt`); vitest 273 gruen; Plugin `test-hooks.sh` gruen; Playwright Chromium (frische SQLite) `card-detail` 14 (neu Chat-Test), `ui-lists` 4. Nicht geprueft: MariaDB, Firefox/WebKit, Apple-App (Chat dort offen), Push fuer neue Nachrichten (Kategorie `comments` existiert, nicht verdrahtet), Anhaenge als eigene Nachricht (nur Bueroklammer wie bisher an der Aufgabe).
+- Nächster Schritt: Review und Merge; Apple-Chat; Push bei neuer Nachricht.
+
 ## Checkpoint 2.11.2026 (spaeter): Karten-Detailansicht nach Referenzbild (Agent card-detail2)
 
 - Board-Aufgabe `DE4BED8F-C216-46C7-9429-6DB6D2BFBFBD` (nicht erledigt gesetzt). Umbau des Fensters, Datenfluss unveraendert.

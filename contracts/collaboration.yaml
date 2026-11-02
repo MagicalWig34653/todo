@@ -24,6 +24,11 @@ paths:
         format: uuid
     get:
       operationId: listComments
+      description: 'Chat der Aufgabe. Ohne Filter alle Nachrichten; questionID/reviewID liefern den Chat einer Frage/eines Reviews, thread=task nur den eigenen Chat der Aufgabe.'
+      parameters:
+      - {name: questionID, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: reviewID, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: thread, in: query, required: false, schema: {type: string, enum: [task]}}
       responses:
         '200':
           description: Erfolgreich
@@ -498,6 +503,11 @@ components:
         version:
           type: integer
           minimum: 1
+        questionID: {type: string, format: uuid, nullable: true, description: 'Chat dieser Frage; null = Chat der Aufgabe oder eines Reviews.'}
+        reviewID: {type: string, format: uuid, nullable: true}
+        authorKind: {type: string, enum: [person, agent], description: 'agent = per MCP oder Runner geschrieben.'}
+        authorLabel: {type: string, nullable: true, description: 'Agentenname (agentName) bei authorKind agent.'}
+        createdAt: {type: string, format: date-time, nullable: true, description: 'Fehlt bei Nachrichten vor der Migration.'}
     CommentCreate:
       type: object
       required:
@@ -507,6 +517,14 @@ components:
           type: string
           minLength: 1
           maxLength: 10000
+        questionID:
+          type: string
+          format: uuid
+          description: 'Nachricht gehört zum Chat dieser Frage (muss zur Aufgabe gehören).'
+        reviewID:
+          type: string
+          format: uuid
+          description: 'Nachricht gehört zum Chat dieses Reviews (muss zur Aufgabe gehören).'
     CommentUpdate:
       type: object
       required:
