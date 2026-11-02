@@ -1,5 +1,11 @@
 # Status
 
+## Checkpoint 2.11.2026: Rechte-Snapshot skalierbar (Agent snapshot)
+- `SharingAccess.snapshot()` lädt nur relevante Projekte (Seeds eigen/Team/Freigabe, plus Nachfahren und Vorfahren) samt Sharing-Zeilen und Freigaben. Ergebnis identisch zur Einzelprüfung.
+- `SyncRecorder.visibility(on:)`: ein Snapshot je Konto; `readers(of:)` über die Vererbungskette. Betrifft auch `/v1/teams` (Schreibpfad `write`).
+- Tests: `SharingSnapshotEquivalenceTests` erweitert (alle Projekte, Leser) plus Test mit 3000 fremden Projekten (6 ms statt 96 ms). Gesamtlauf `swift test`: 282 Tests, 20 übersprungen, 0 Fehlschläge.
+- Offen: Vorher/Nachher-Vergleich im SyncRecorder noch nicht auf den betroffenen Teilbaum beschränkt (Reparenting und Teamänderungen bräuchten alte und neue Teilbäume); Details in docs/BERECHTIGUNGEN.md, Abschnitt Performance.
+
 ## Checkpoint 2.11.2026: PWA-Pfade auf Englisch (Agent routes-en)
 
 - Board-Aufgabe `7A033CA7-979F-47D7-8747-A6E89103800D`. Annahme zu „Routen soll auf Englisch sein“: gemeint sind die URL-Pfade der PWA (REST `/v1/...` war schon englisch); Anzeigetexte bleiben deutsch. Nur PWA, keine Backend-/Vertragsänderung (SPA-Fallback ist generisch, Mail-Links nutzen nur `/confirm-email`/`/recover`).

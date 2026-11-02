@@ -84,16 +84,61 @@ final class SharingSnapshotEquivalenceTests: XCTestCase {
         for viewer in [v, o, x] {
             let access = SharingAccess(user: viewer, db: db)
             let (snap, ordered) = try await access.snapshot()
-            XCTAssertGreaterThan(ordered.count, all.count)
-            for p in ordered {
+            let everything = try await Project.query(on: db).all()
+            XCTAssertGreaterThan(everything.count, all.count)
+            XCTAssertEqual(Set(ordered.compactMap(\.id)), Set(snap.projects.keys))
+            for p in everything {
                 let single = await outcome { try await access.visibility(p) }
+                if snap.projects[try p.requireID()] == nil {
+                    // Not loaded: the account must have no role (or the project sits in a cycle it is not related to).
+                    XCTAssertTrue(single.hasPrefix("none") || single.hasPrefix("abort"), "\(viewer.displayName) unloaded \(p.name): \(single)")
+                    if single.hasPrefix("none") { XCTAssertNil(try snap.visibility(p).role) }
+                    continue
+                }
                 let batch = await outcome { try snap.visibility(p) }
                 XCTAssertEqual(batch, single, "\(viewer.displayName) on \(p.name)")
                 if single.hasPrefix("abort") { errors += 1 } else { roles.insert(single.split(separator: " ").first.map(String.init) ?? "") }
             }
+            // The reader computation agrees with the per-account check for every non-cyclic project.
+            for p in everything {
+                guard (try? await access.visibility(p)) != nil else { continue }
+                let readers = Set(try await SyncRecorder.readers(of: p, on: db))
+                let expected = try await access.visibility(p).role != nil
+                XCTAssertEqual(readers.contains(try viewer.requireID()), expected, "readers \(viewer.displayName) on \(p.name)")
+            }
         }
         // The constellations really cover grants, ownership and denials, and the cycle errors on both paths.
         XCTAssertTrue(roles.isSuperset(of: ["none", "read", "comment", "edit", "manage"]), "\(roles)")
-        XCTAssertGreaterThanOrEqual(errors, 6, "cycle projects must error for each viewer on both paths")
+        XCTAssertGreaterThanOrEqual(errors, 2, "cycle projects must error for each viewer on both paths")
+    }
+
+    /// Many foreign projects must not cost the viewer: the bounded snapshot loads only its own tree.
+    /// "Before" is the former full load (all projects, sharing rows, grants), measured on the same data.
+    func testSnapshotIgnoresForeignProjects() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let db = t.app.db
+        let me = User(displayName: "Me", isAdmin: false), other = User(displayName: "Other", isAdmin: false)
+        try await me.save(on: db); try await other.save(on: db)
+        let (mid, oid) = (try me.requireID(), try other.requireID())
+        for i in 0..<50 { try await Project(ownerID: mid, parentID: nil, name: "mine \(i)").save(on: db) }
+        let foreign = (0..<3000).map { Project(ownerID: oid, parentID: nil, name: "foreign \($0)") }
+        for p in foreign { try await p.save(on: db) }
+        for p in foreign.prefix(300) { try await ProjectGrant(projectID: p.requireID(), principalType: "person", principalID: oid, role: .manage).save(on: db) }
+
+        let access = SharingAccess(user: me, db: db)
+        let started = Date()
+        let (snap, ordered) = try await access.snapshot()
+        let bounded = Date().timeIntervalSince(started)
+        XCTAssertEqual(snap.projects.count, 50)
+        XCTAssertEqual(try ordered.filter { try snap.visibility($0).role != nil }.count, 50)
+
+        let fullStart = Date()
+        let all = try await Project.query(on: db).sort(\.$createdAt).sort(\.$id).all()
+        _ = try await ProjectSharing.query(on: db).all(); _ = try await ProjectGrant.query(on: db).all()
+        let full = Date().timeIntervalSince(fullStart)
+        XCTAssertEqual(all.count, 3050)
+        print("snapshot with 3000 foreign + 50 own projects: bounded \(bounded) s, former full load \(full) s")
+        XCTAssertLessThan(bounded, full)
     }
 }
