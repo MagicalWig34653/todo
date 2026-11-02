@@ -23,6 +23,8 @@ has "start bound mentions project id" "11111111-2222-3333-4444-555555555555" "$o
 has "start bound is SessionStart JSON" '"hookEventName":"SessionStart"' "$out"
 has "start bound asks for short bullet-point board texts" "bullet points" "$out"
 has "start bound keeps update info out of reviews" "no review" "$out"
+has "start bound tells agents to read new chat messages" "list_comments" "$out"
+has "start bound names the card chat targets" "questionID or reviewID" "$out"
 out=$("$here/scripts/session-start.sh" <<EOF2
 {"cwd":"$plain"}
 EOF2
@@ -124,6 +126,7 @@ out=$(stop qB "$bound" "$qdone"); check "ask: answered question is silent" "" "$
 out=$(stop qC "$bound" "$qnb"); check "ask: non-blocking question is silent" "" "$out"
 out=$(stop qD "$bound" "$qopen"); has "ask: open question blocks" '"decision":"block"' "$out"
 has "ask: reason names wait_for_events" 'wait_for_events' "$out"
+has "ask: reason mentions chat messages of the question" 'list_comments' "$out"
 case "$out" in *SECRETPROMPT*|*"rm -rf"*) echo "FAIL ask: question text leaked"; fail=1 ;; *) echo "ok   ask: injection text absent from output" ;; esac
 out=$(stop qE "$bound" "$qopen" true); check "ask: stop_hook_active without own chain is silent" "" "$out"
 stop qF "$bound" "$qopen" >/dev/null

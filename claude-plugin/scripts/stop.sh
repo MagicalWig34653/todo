@@ -29,7 +29,7 @@ if grep -Eq '"name": ?"mcp__[A-Za-z0-9_-]*ask_question"' "$transcript" 2>/dev/nu
   if [ "$open" = "open" ] && [ "${used:-0}" -lt "$ASK_WAIT_MAX" ] && { [ "$active" != "true" ] || [ "${used:-0}" -gt 0 ]; }; then
     [ -L "$askflag" ] && exit 0
     echo x >> "$askflag" 2>/dev/null || exit 0
-    printf '%s\n' '{"decision":"block","reason":"In dieser Sitzung wurde eine blockierende Frage mit ask_question gestellt, die noch keine abgeholte Antwort hat. Beende die Sitzung noch nicht: rufe wait_for_events auf, um auf die Antwort des Nutzers zu warten, und hole danach die Antwort mit get_question (Frage-ID aus deinem ask_question-Ergebnis). Liegt noch keine Antwort vor, wiederhole wait_for_events hoechstens wenige Male und nenne dem Nutzer dann kurz, dass du auf die Antwort wartest."}'
+    printf '%s\n' '{"decision":"block","reason":"In dieser Sitzung wurde eine blockierende Frage mit ask_question gestellt, die noch keine abgeholte Antwort hat. Beende die Sitzung noch nicht: rufe wait_for_events auf, um auf die Antwort des Nutzers zu warten, und hole danach die Antwort mit get_question (Frage-ID aus deinem ask_question-Ergebnis). Lies dabei auch neue Chat-Nachrichten des Nutzers zu dieser Frage (list_comments mit questionID und authorKind person) und antworte mit add_comment. Liegt noch keine Antwort vor, wiederhole wait_for_events hoechstens wenige Male und nenne dem Nutzer dann kurz, dass du auf die Antwort wartest."}'
     exit 0
   fi
 fi
