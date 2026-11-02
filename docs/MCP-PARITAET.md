@@ -52,3 +52,24 @@ Neue Scopes (Vorschlag): `preferences:*`, `labels:*`, `filters:*`, `sharing:*`, 
 - Handbuch: Rollen-/Scope-/Grant-Matrix, A/B/C, ausgeschlossene Operationen; Ablauf „Antrag, Bestätigung in der PWA, Ergebnis lesen“; Chatantwort, `ask_question` oder ein Parameter `confirmed:true` ersetzen die Bestätigung nicht; Konflikte (neu lesen, Wirkung prüfen, dann wiederholen).
 - Hooks: erfolgreiche neue Tools und offene Bestätigungen berücksichtigen, ohne selbst zu autorisieren; reine Lese-Aufträge von der Board-Schreibpflicht ausnehmen.
 - Eingebettetes Handbuch und Verträge synchron halten.
+
+## Umgesetzt: Stapel 1 (CRUD-Parität)
+
+Stand 2.11.2026, Code in `Sources/TodoKit/MCP/MCPProjectTools.swift`, Tests `MCPProjectToolsTests`. Alle Tools prüfen Scope, Grant-Projektliste und die aktuelle Rolle; nicht erreichbar = `not_found`. Handbuch noch nicht nachgezogen (macht die Hauptsession): der Test `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die vier neuen Tools fehl.
+
+| Tool | Scope | Klasse | Parameter | Fehlercodes |
+| --- | --- | --- | --- | --- |
+| `create_task` (erweitert) | tasks:write | A | `projectID`, `title`, optional `description`, `columnID` (Done-Spalte legt erledigt an), `dueDate` (ISO 8601 oder `YYYY-MM-DD`, UTC), `priority` 0..3 | `invalid_title`, `invalid_priority`, `invalid_due_date`, `not_found` |
+| `update_task` (umgestellt) | tasks:write | A | wie bisher | `version_conflict`, `invalid_status`, `invalid_title`, `not_found` |
+| `move_project` | projects:write | B | `projectID`, `version`, `parentID` (UUID oder null = oberste Ebene) | `version_conflict`, `project_cycle`, `invalid_version`, `invalid_parentID`, `not_found`, `forbidden` |
+| `set_project_position` | projects:write | A | `projectID`, `afterProjectID` (Geschwister oder null = zuerst); persönliche Reihenfolge | `invalid_after_project`, `invalid_afterProjectID`, `not_found` |
+| `update_criterion` | tasks:write | A | `criterionID`, `text`, optional `version` | `invalid_text`, `version_conflict`, `invalid_version`, `not_found` |
+| `delete_criterion` | tasks:write | C | `criterionID`, optional `version` | `confirmation_required`, `version_conflict`, `not_found` |
+| `delete_column` (abgesichert) | tasks:write | C | `id`, optional `version`, `moveTo` (Spalten-ID oder `none`) | `confirmation_required`, `invalid_move_to`, `version_conflict`, `not_found` |
+
+- `create_task`/`update_task` laufen über `PlanningOperations.createTask` bzw. `PlanningService.update` (dieselben Dienste wie `POST/PATCH /v1/tasks`): Aktivität (`task.created`, `task.updated`, `task.status_changed`, `task.moved`), Sync-Einträge, Spalten-Abgleich, Wiederholungsfolge beim Erledigen, Bereinigen von Abhängigkeiten, Meilensteinen und Unteraufgaben-Verknüpfungen beim Projektwechsel. Antwortformat unverändert (`TaskDTO`). `dueDate`/`priority` werden nach dem Anlegen über `PlanningService.put` gesetzt (eine Transaktion). Das Zielprojekt eines Wechsels muss im Grant liegen. Aktivität nennt wie REST die Person als Akteurin.
+- `move_project` nutzt `PlanningOperations.updateProject` (Zyklenschutz, `manage` an Quelle und Ziel). Antwort `{id, name, version, parentID}`.
+- `set_project_position` nutzt `ProjectStateService.position` (wie `PUT /v1/projects/{id}/position`, ohne Elternwechsel; dafür `move_project`). Antwort `{id, version, position}`.
+- `delete_column` und `delete_criterion` legen nur eine Bestätigungsanfrage an (ADR 0026, Aktionen `delete_column`/`delete_criterion` in `ConfirmableActions`; Auswirkung `targetType` column bzw. criterion). Beim Bestätigen laufen `ColumnService.delete` (Aufgaben ziehen um) bzw. das Löschen mit Aktivität `criterion.deleted`. Beispiel: `delete_column {id, moveTo: "none"}` gibt `confirmation_required` mit `actionRequestID` zurück; Ergebnis über `get_action_request`.
+- Namensabweichung zum Plan: `request_project_deletion`/`request_task_deletion` bleiben bei den bestehenden `delete_project`/`delete_task`.
+

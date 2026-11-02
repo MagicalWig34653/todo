@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 2.11.2026: MCP Stapel 1, CRUD-Parität (Agent mcp-s1)
+
+- Board-Aufgabe `824E364A-C782-4FB8-A43B-ED14A5E0EB22` (nicht auf erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration. Beschreibung der Tools: `docs/MCP-PARITAET.md`, Abschnitt „Umgesetzt: Stapel 1“.
+- Backend: `create_task`/`update_task` im MCP laufen über `PlanningOperations`/`PlanningService` (Aktivität, Sync, Wiederholungsfolge, Bereinigung beim Projektwechsel); `create_task` nimmt zusätzlich `columnID`, `dueDate`, `priority`. Neu: `move_project`, `set_project_position`, `update_criterion`, `delete_criterion` (Klasse C); `delete_column` jetzt Klasse C (Bestätigungsanfrage, Aktionen in `ConfirmableActions`). Neue Datei `MCP/MCPProjectTools.swift`; im Controller nur Dispatch-Zeilen.
+- Tests: `MCPProjectToolsTests` 6 (Erfolg, Scope, Grant, Rolle, kaputte Eingabe, Versionskonflikt, Anfrage statt Ausführung, Bestätigen führt aus); `ProjectStateTests` angepasst (delete_column als Anfrage). `swift test` komplett: 332 Tests, 20 übersprungen, 4 Fehlschläge, alle im `AgentManualTests` (Handbuch erwähnt `move_project`, `set_project_position`, `update_criterion`, `delete_criterion` noch nicht). Das Handbuch versioniert bewusst die Hauptsession am Ende; danach ist der Test grün. Tests entstanden mit der Implementierung (nicht einzeln rot belegt).
+- Grenzen: nur SQLite; MariaDB nicht ausgeführt. Aktivität von `update_task` nennt die Person als Akteurin (wie REST), nicht die Integration. Keine neuen Scopes.
+- Nächster Schritt: Handbuch (agent-manual.md, Version erhöhen, embed-Skript) um die vier Tools und die geänderten `create_task`/`delete_column` ergänzen; Branch mergen.
+
 ## Checkpoint 2.11.2026: Admin überträgt Projekte gesperrter Konten (Agent owner-transfer)
 
 - Board-Aufgabe `3F23FF45-7A01-4D28-BEF1-8694F9DE23DA` (nicht auf erledigt gesetzt). Worktree-Branch, kein Push, keine Migration.

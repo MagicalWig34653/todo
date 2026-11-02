@@ -661,8 +661,13 @@ final class ProjectStateTests: XCTestCase {
             let fid = try XCTUnwrap(foreign.body?["id"] as? String)
             eq((try await call("rename_column", ["id": fid, "version": 1, "name": "Nope"], full.access)).1, "not_found")
             eq((try await call("delete_column", ["id": fid], full.access)).1, "not_found")
+            // Class C (ADR 0026): the tool only files a confirmation request; the user confirms it in the app.
             let deleted = try await call("delete_column", ["id": cid, "moveTo": "none"], full.access)
-            XCTAssertFalse(deleted.0, deleted.1)
+            XCTAssertTrue(deleted.0)
+            let pending = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(deleted.1.utf8)) as? [String: Any])
+            XCTAssertEqual(pending["error"] as? String, "confirmation_required")
+            let confirmed = try await f.test.json(.POST, "/v1/action-requests/\(try XCTUnwrap(pending["actionRequestID"] as? String))/confirm", token: f.session)
+            XCTAssertEqual(confirmed.body?["state"] as? String, "executed")
             let board = try await f.test.json(.GET, "/v1/projects/\(pid)/columns", token: f.session)
             XCTAssertEqual(board.list?.compactMap { $0["name"] as? String }, ["First"])
             // Scope gating and description in list_projects.
