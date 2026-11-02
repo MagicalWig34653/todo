@@ -266,16 +266,20 @@ final class SyncRetentionTests: XCTestCase {
 
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
-        let plain = try await t.json(.GET, "/health/ready")
+        let admin = try await MailTests.account(t, "Root", admin: true)
+        let plain = try await t.json(.GET, "/v1/admin/health", token: admin.token)
         XCTAssertNil(plain.body?["maintenance"], "no scheduler installed: no maintenance block")
         let s = scheduler(t)
         t.app.storage[CleanupScheduler.SchedulerKey.self] = s
-        let never = try await t.json(.GET, "/health/ready")
+        let never = try await t.json(.GET, "/v1/admin/health", token: admin.token)
         XCTAssertEqual((never.body?["maintenance"] as? [String: Any])?["lastStatus"] as? String, "never")
         _ = await s.runIfDue()
-        let ok = try await t.json(.GET, "/health/ready")
+        let ok = try await t.json(.GET, "/v1/admin/health", token: admin.token)
         let m = try XCTUnwrap(ok.body?["maintenance"] as? [String: Any])
         XCTAssertEqual(m["lastStatus"] as? String, "ok")
+        // The anonymous probe never shows maintenance state.
+        let anon = try await t.json(.GET, "/health/ready")
+        XCTAssertNil(anon.body?["maintenance"])
         XCTAssertNotNil(m["lastRunAt"])
     }
 

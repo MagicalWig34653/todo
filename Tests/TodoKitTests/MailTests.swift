@@ -411,7 +411,10 @@ final class MailTests: XCTestCase {
 
     func testReadyEndpointReportsMailStatus() async throws {
         let f = try await fixture(); defer { Task { await f.t.shutdown() } }
-        let r = try await f.t.json(.GET, "/health/ready")
+        let anon = try await f.t.json(.GET, "/health/ready")
+        XCTAssertEqual(anon.status, .ok); XCTAssertNil(anon.body?["mail"]); XCTAssertEqual(anon.body?["status"] as? String, "ok")
+        let admin = try await MailTests.account(f.t, "Root", admin: true)
+        let r = try await f.t.json(.GET, "/v1/admin/health", token: admin.token)
         XCTAssertEqual((r.body?["mail"] as? [String: Any])?["enabled"] as? Bool, true)
     }
 

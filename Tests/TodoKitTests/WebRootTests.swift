@@ -50,6 +50,34 @@ final class WebRootTests: XCTestCase {
         try await app.asyncShutdown()
     }
 
+    func testIndexSymlinkOutsideTheRootIsNotServed() async throws {
+        let outside = dir + "-secret.txt"
+        try FileManager.default.removeItem(atPath: dir + "/index.html")
+        try FileManager.default.createSymbolicLink(atPath: dir + "/index.html", withDestinationPath: outside)
+        // Startup: the root has no usable index, so only the API is served.
+        let app = try await makeApp(webRoot: dir)
+        for path in ["/", "/inbox", "/index.html"] {
+            try await app.test(.GET, path, headers: html) { res async in
+                XCTAssertEqual(res.status, .notFound, path)
+                XCTAssertFalse(String(buffer: res.body).contains("secret"), path)
+            }
+        }
+        try await app.asyncShutdown()
+        // A symlink swapped in while running is caught per request as well.
+        try FileManager.default.removeItem(atPath: dir + "/index.html")
+        try "<title>PWA</title>".write(toFile: dir + "/index.html", atomically: true, encoding: .utf8)
+        let live = try await makeApp(webRoot: dir)
+        try FileManager.default.removeItem(atPath: dir + "/index.html")
+        try FileManager.default.createSymbolicLink(atPath: dir + "/index.html", withDestinationPath: outside)
+        for path in ["/", "/inbox"] {
+            try await live.test(.GET, path, headers: html) { res async in
+                XCTAssertFalse(String(buffer: res.body).contains("secret"), path)
+                XCTAssertNotEqual(res.status, .ok, path)
+            }
+        }
+        try await live.asyncShutdown()
+    }
+
     func testIndexAtRootWithNoCache() async throws {
         let app = try await makeApp(webRoot: dir)
         try await app.test(.GET, "/") { res async in

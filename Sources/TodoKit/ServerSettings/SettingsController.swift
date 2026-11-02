@@ -114,6 +114,7 @@ struct SettingsController: RouteCollection {
         s.post("test", ":kind", use: test)
         s.put(":key", use: put)
         s.delete(":key", use: reset)
+        admin.get("health", use: health)
         admin.get("users", use: users)
         admin.put("users", ":id", "admin", use: setAdmin)
     }
@@ -211,6 +212,19 @@ struct SettingsController: RouteCollection {
         }
     }
 
+    /// Stored credentials stay bound to the destination they were saved for: changing the destination requires
+    /// removing the credentials first, so they cannot be sent to a host the admin picks afterwards.
+    private func requireCredentialsNotRebound(_ d: SettingDefinition, current: SettingsRuntime.Loaded, to canonical: String?) throws {
+        let bound: [String: [String]] = [
+            "mail.smtpHost": ["mail.smtpUser", "mail.smtpPassword"], "mail.smtpPort": ["mail.smtpUser", "mail.smtpPassword"],
+            "attachments.s3Endpoint": ["attachments.s3AccessKey", "attachments.s3SecretKey"],
+        ]
+        guard let credentials = bound[d.key], let old = current.values[d.key], old != canonical,
+              credentials.contains(where: { current.values[$0] != nil || current.unreadable.contains($0) }) else { return }
+        throw SettingsProblem(code: "setting_dependency", key: d.key,
+                              message: "\(d.label) kann nicht geändert werden, solange gespeicherte Zugangsdaten dazu gehören. Zugangsdaten zuerst zurücksetzen, dann ändern und neu eingeben.")
+    }
+
     @Sendable func put(_ req: Request) async throws -> SettingDTO {
         let admin = try await req.requireAdmin()
         let d = try definition(req)
@@ -220,6 +234,7 @@ struct SettingsController: RouteCollection {
         let canonical = try d.normalize(body.value)
         let sealed: (blob: String, keyID: String, fingerprint: String)? = d.secret ? try rt.keyRing.seal(canonical, settingKey: d.key) : nil
         let current = try await rt.load(on: req.db)
+        try requireCredentialsNotRebound(d, current: current, to: canonical)
         try validate(rt, current: current, changing: d.key, to: canonical, app: req.application)
         let expected = body.version ?? 0
         let adminID = try admin.requireID()
@@ -255,6 +270,7 @@ struct SettingsController: RouteCollection {
         try requireUnlocked(d, rt)
         let expected = req.query[Int.self, at: "version"]
         let current = try await rt.load(on: req.db)
+        try requireCredentialsNotRebound(d, current: current, to: nil)
         try validate(rt, current: current, changing: d.key, to: nil, app: req.application)
         try await req.db.transaction { db in
             guard let row = try await ServerSetting.query(on: db).filter(\.$settingKey == d.key).first(), let id = row.id else {
@@ -341,6 +357,7 @@ struct SettingsController: RouteCollection {
 
     static func mailFailure(_ e: MailSendError) -> String {
         switch e.stage {
+        case .blocked: return "Das Ziel ist durch den Zielschutz gesperrt (Einstellung „Zielschutz für Mail und S3“ in der Kategorie Sicherheit)."
         case .connect: return "Verbindung zum Mailserver fehlgeschlagen: Host und Port prüfen."
         case .tls: return "Die verschlüsselte Verbindung zum Mailserver ist fehlgeschlagen: Verschlüsselung und Port prüfen."
         case .auth: return "Der Mailserver hat die Anmeldung abgelehnt: Benutzer und Passwort prüfen."
@@ -401,11 +418,24 @@ struct SettingsController: RouteCollection {
             let back = try await store.get(key: key, db: req.db)
             try await store.delete(key: key, db: req.db)
             guard back == probe else { return SettingsTestResult(ok: false, message: "Der S3-Speicher liefert andere Daten zurück, als geschrieben wurden.", details: details) }
+        } catch let e as Abort where e.reason == "outbound_target_blocked" {
+            return SettingsTestResult(ok: false, message: "Das Ziel ist durch den Zielschutz gesperrt (Einstellung „Zielschutz für Mail und S3“ in der Kategorie Sicherheit).", details: details)
         } catch {
             return SettingsTestResult(ok: false, message: "Der S3-Speicher antwortet nicht wie erwartet: Endpunkt, Bucket, Region und Schlüssel prüfen.", details: details)
         }
         details["S3"] = "schreiben, lesen und löschen erfolgreich"
         return SettingsTestResult(ok: true, message: "Der S3-Speicher funktioniert.", durationMs: Int((ContinuousClock.now - started) / .milliseconds(1)), details: details)
+    }
+
+    // MARK: Health details
+
+    /// Operational details that `/health/ready` no longer shows anonymously.
+    @Sendable func health(_ req: Request) async throws -> HealthResponse {
+        _ = try await req.requireAdmin()
+        let settings = req.application.settings
+        return HealthResponse(status: "ok", maintenance: await CleanupScheduler.status(of: req.application),
+                              push: PushStatus(enabled: settings.apns.enabled, environment: settings.apns.environment.rawValue),
+                              mail: MailStatus(enabled: settings.mail.enabled))
     }
 
     // MARK: Admins

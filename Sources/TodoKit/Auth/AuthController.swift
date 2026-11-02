@@ -254,6 +254,8 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable func logout(_ req: Request) async throws -> Response {
+        // Same CSRF rule as every other cookie-authenticated unsafe request (JSON content type, matching Origin).
+        if req.sessionPresentedByCookieOnly { try req.checkSameOrigin() }
         if let token = req.sessionTokenPresented {
             try await UserSession.query(on: req.db).filter(\.$tokenHash == AuthSupport.hash(token)).delete()
         }

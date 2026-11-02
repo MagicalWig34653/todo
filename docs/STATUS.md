@@ -1,5 +1,16 @@
 # Status
 
+## Checkpoint 2.11.2026: Security-Review Teil 2 (Agent sec-2)
+
+- Board-Aufgabe `658C54E2-68BD-4298-947F-616711074F30`. Branch: Worktree-Branch `worktree-agent-a42bda4e30e1e2e31` (kein Push). Befunde 1-5 behoben, je mit Test (`Tests/TodoKitTests/OutboundSecurityTests.swift`, `WebRootTests`, `PushTests`, `MailTests`, `SyncRetentionTests`).
+- 1 (mittel) Zugangsdaten am Ziel: ENV-Passwort/-S3-Schlüssel plus DB-Host/-Port/-Endpunkt wird vom Resolver abgelehnt; gespeicherte Zugangsdaten sperren Zieländerung in der PWA-API (erst zurücksetzen). APNs nicht betroffen (festes Ziel).
+- 2 (mittel) Zielschutz: neue Einstellung `security.outboundProtection` (`OUTBOUND_TARGET_PROTECTION`, off|standard|strict, Vorgabe standard = Link-Local/Metadaten gesperrt); SMTP verbindet auf die geprüfte IP, S3 prüft vor jeder Anfrage (kleines Zeitfenster bleibt, siehe ADR 0025-Nachtrag). Linux-Build des getaddrinfo-Codes nicht geprüft (nur macOS).
+- 3 (niedrig) `index.html`-Symlink aus dem Web-Root wird nicht mehr ausgeliefert (Startseite, SPA-Fallback, Start prüft Zugehörigkeit).
+- 4 (niedrig) `POST /v1/auth/logout` mit Cookie verlangt JSON und passende Origin (`checkSameOrigin`); Bearer unverändert.
+- 5 (niedrig) `/health/ready` nur noch `status`; Details in `GET /v1/admin/health` (Admin); neu `GET /v1/push/status` (angemeldet) statt `push.enabled` aus `/health/ready` (PWA `pushServerEnabled`, AdminInfo). Skripte, Healthchecks und Deploy prüfen nur den Statuscode 200 und sind unverändert. Verträge (`openapi`, `push`, `mail`, `admin-settings`) und Doku (BETRIEB, MAIL-/PUSH-EINRICHTUNG, KONFIGURATION, ADR 0025-Nachtrag) nachgezogen. Apple-App: liest `/health/ready` nicht (nicht geprüft im anderen Repo).
+- Tests: swift 293 (20 übersprungen, 0 Fehler), vitest 238, build ok, `npm run check` nur bekannter `./$types`-Fehler (Worktree), Playwright Chromium settings-hub 11, passkey-flow 21, for-you 2 grün. MariaDB nicht getestet. Backend am Ende beendet.
+- Nächster Schritt: Merge, danach Deployment-Hinweis: Betreiber mit eigenem Monitoring auf `/health/ready`-Felder müssen auf `/v1/admin/health` umstellen.
+
 ## Checkpoint 2.11.2026: PWA-Pfade auf Englisch (Agent routes-en)
 
 - Board-Aufgabe `7A033CA7-979F-47D7-8747-A6E89103800D`. Annahme zu „Routen soll auf Englisch sein“: gemeint sind die URL-Pfade der PWA (REST `/v1/...` war schon englisch); Anzeigetexte bleiben deutsch. Nur PWA, keine Backend-/Vertragsänderung (SPA-Fallback ist generisch, Mail-Links nutzen nur `/confirm-email`/`/recover`).

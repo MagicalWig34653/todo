@@ -56,6 +56,8 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const instance = {
 	health: () => json<HealthReady>('/health/ready'),
+	/** Administrators only: maintenance, mail and push details (the public probe shows readiness only). */
+	adminHealth: () => json<HealthReady>('/v1/admin/health'),
 	manual: (section?: string) => json<ManualDoc>(`/v1/manual${section ? `?section=${encodeURIComponent(section)}` : ''}`),
 	/** Admin only; the token is shown once. */
 	createInvitation: () => json<Invitation>('/v1/invitations', { method: 'POST' }),

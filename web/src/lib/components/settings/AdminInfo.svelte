@@ -7,7 +7,7 @@
 	import Panel from '../app/Panel.svelte';
 	import GapNotice from './GapNotice.svelte';
 
-	/** Read-only server page that shows what /health/ready and /v1/capabilities report. */
+	/** Read-only server page that shows what /v1/admin/health and /v1/capabilities report. */
 	let { kind }: { kind: 'system' } = $props();
 	let health = $state<HealthReady | null>(null);
 	let failed = $state(false);
@@ -15,7 +15,7 @@
 	async function load() {
 		failed = false;
 		try {
-			health = await instance.health();
+			health = await instance.adminHealth();
 		} catch {
 			health = null;
 			failed = true;

@@ -53,6 +53,7 @@ enum SettingsRegistry {
         .init(id: "live", label: "Live-Aktualisierung", help: "Long-Polling, mit dem Clients Änderungen sofort sehen."),
         .init(id: "limits", label: "Limits", help: "Ratenbegrenzung der Anmeldung und Gültigkeit von Recovery-Codes."),
         .init(id: "apple", label: "Apple-Apps", help: "Eintrag für Passkeys in den nativen Apps."),
+        .init(id: "security", label: "Sicherheit", help: "Schutz vor Verbindungen des Servers zu internen Zielen."),
     ]
 
     static let definitions: [SettingDefinition] = [
@@ -145,6 +146,11 @@ enum SettingsRegistry {
               label: "Gültigkeit eines Recovery-Codes (Sekunden)", help: "Danach verfällt der Code.", min: 1, max: 2_592_000, lenientEnv: true),
         .init(key: "limits.recoverySessionSeconds", env: "IDENTITY_RECOVERY_SESSION_SECONDS", category: "limits", type: .int, defaultValue: "300",
               label: "Gültigkeit der Recovery-Sitzung (Sekunden)", help: "Zeit, um nach dem Einlösen einen neuen Passkey anzulegen.", min: 1, max: 86_400, lenientEnv: true),
+        // Security
+        .init(key: "security.outboundProtection", env: "OUTBOUND_TARGET_PROTECTION", category: "security", type: .enumeration, defaultValue: "standard",
+              label: "Zielschutz für Mail und S3",
+              help: "standard sperrt Link-Local- und Metadaten-Adressen (z. B. 169.254.169.254), lokale Mailserver und MinIO bleiben erlaubt. strict sperrt zusätzlich Loopback und private Netze. off schaltet den Schutz ab.",
+              options: ["off", "standard", "strict"]),
         // Apple
         .init(key: "apple.appIds", env: "AASA_APP_IDS", category: "apple", type: .stringList,
               label: "App-IDs für Passkeys", help: "TeamID.BundleID, komma-getrennt, ausgeliefert unter /.well-known/apple-app-site-association.",

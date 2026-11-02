@@ -2,6 +2,7 @@ import Fluent
 import SQLKit
 import Vapor
 
+/// `/health/live` and `/health/ready` return only `status`; the optional blocks are filled for `GET /v1/admin/health`.
 struct HealthResponse: Content {
     let status: String
     /// Informational only (periodic cleanup); never influences readiness.
@@ -58,9 +59,8 @@ public func routes(_ app: Application) throws {
             if let sql = req.db as? any SQLDatabase {
                 _ = try await sql.raw("SELECT 1").all()
             }
-            return HealthResponse(status: "ok", maintenance: await CleanupScheduler.status(of: req.application),
-                                  push: PushStatus(enabled: req.application.settings.apns.enabled, environment: req.application.settings.apns.environment.rawValue),
-                                  mail: MailStatus(enabled: req.application.settings.mail.enabled))
+            // Anonymous callers (load balancers, probes) learn nothing but readiness; details: GET /v1/admin/health.
+            return HealthResponse(status: "ok")
         } catch {
             throw Abort(.serviceUnavailable, reason: "database unavailable")
         }

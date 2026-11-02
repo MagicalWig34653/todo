@@ -6,7 +6,7 @@ info:
     eine bestätigte Adresse (Double-Opt-In: Link per Mail, einmalig, 24 Stunden gültig); nur bestätigte Adressen erhalten Mail.
     Anfragen verraten nicht, ob eine Adresse schon einem anderen Konto gehört (gleiche Antwort, keine Mail an die fremde Adresse).
     Mail-Inhalte enthalten nie Aufgabentitel. Versand asynchron über eine Outbox (Worker mit Lease, Wiederholung mit Wartezeit,
-    Deduplizierung). Zusätzlich /health/ready: mail {enabled}. Recovery-Zustellung: POST /v1/identity/accounts/{id}/recovery
+    Deduplizierung). Zusätzlich GET /v1/admin/health (nur Administratoren): mail {enabled}. Recovery-Zustellung: POST /v1/identity/accounts/{id}/recovery
     (contracts/identity.yaml) akzeptiert sendEmail und antwortet dann zusätzlich mit mail (queued, no_verified_email, mail_disabled).'
 security:
 - bearerAuth: []

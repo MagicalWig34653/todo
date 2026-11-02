@@ -1053,11 +1053,10 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		getPushPrefs: () => request<PushPrefs>('GET', '/me/push-prefs'),
 		setPushPrefs: (body: Partial<PushPrefs>) => request<PushPrefs>('POST', '/me/push-prefs', body),
 		sendPushTest: () => request<PushTestResult>('POST', '/push/test', {}),
-		/** Public readiness probe; `push.enabled` tells whether the server can send APNs notifications at all. */
+		/** Whether the server can send APNs notifications at all (signed-in users; /health/ready no longer says). */
 		pushServerEnabled: async () => {
 			try {
-				const r = await fetchFn('/health/ready', { headers: { Accept: 'application/json' } });
-				return r.ok ? Boolean(((await r.json()) as { push?: { enabled?: boolean } }).push?.enabled) : false;
+				return Boolean((await request<{ enabled?: boolean }>('GET', '/push/status')).enabled);
 			} catch {
 				return false;
 			}

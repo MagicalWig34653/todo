@@ -72,7 +72,7 @@ Die `.p8`-Datei danach **nicht** im Repository, im Downloads-Ordner, in Backup-O
 ### Prüfen
 
 - Der Start schlägt mit einer klaren Meldung fehl, wenn `APNS_ENABLED=true` ist, aber Schlüsseldatei, Key-ID oder Team-ID fehlen oder die Datei kein gültiger `.p8`-Schlüssel ist (`docker service logs todo_backend`, auch im Migrationstask).
-- `GET /health/ready` enthält informativ `"push": {"enabled": true, "environment": "production"}`. Das beeinflusst den Status nie.
+- `GET /v1/admin/health` (nur Administratoren, nicht mehr anonym über `/health/ready`) enthält informativ `"push": {"enabled": true, "environment": "production"}`. Das beeinflusst den Status nie.
 - Im Log steht beim Start `push enabled (APNs production default, topics …)`. Im Betrieb loggt der Worker nur Kategorie und Fehlergrund, **nie** Geräte-Tokens.
 
 ## 5. Test

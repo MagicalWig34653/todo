@@ -18,6 +18,7 @@ struct S3Config: Sendable, Equatable {
     var region: String
     var accessKey: String?
     var secretKey: String?
+    var protection: OutboundProtection = .standard
 }
 
 /// Effective value of every registry entry: environment (non-empty) > database > default (ADR 0025).
@@ -89,6 +90,7 @@ extension SettingValues {
         var c = MailConfig()
         guard flag("mail.enabled") else { return c }
         c.enabled = true
+        c.protection = outboundProtection()
         guard let host = try valid("mail.smtpHost"), !host.isEmpty else {
             throw missing("mail.smtpHost", "Der E-Mail-Versand ist eingeschaltet, aber der Mailserver ist nicht angegeben.")
         }
@@ -104,6 +106,14 @@ extension SettingValues {
         guard (user == nil) == (password == nil) else {
             throw SettingsProblem(code: "setting_dependency", key: user == nil ? "mail.smtpUser" : "mail.smtpPassword",
                                   message: "SMTP-Benutzer und SMTP-Passwort gehören zusammen: entweder beide angeben oder keines von beiden.")
+        }
+        // A credential fixed by the environment must not be combined with a destination an admin can change:
+        // otherwise SMTP AUTH would deliver it to a host of the admin's choosing.
+        if user != nil || password != nil, items["mail.smtpUser"]?.origin == .env || items["mail.smtpPassword"]?.origin == .env {
+            for key in ["mail.smtpHost", "mail.smtpPort", "mail.smtpSecurity"] where items[key]?.origin == .db {
+                throw SettingsProblem(code: "setting_dependency", key: key,
+                                      message: "Die SMTP-Zugangsdaten sind per Umgebungsvariable festgelegt. Dann müssen auch Server, Port und Verschlüsselung per Umgebungsvariable festgelegt sein (\(Self.ref(key))).")
+            }
         }
         if let user, let password {
             guard user.utf8.count <= 256, password.utf8.count <= 256, !user.utf8.contains(0), !password.utf8.contains(0),
@@ -167,10 +177,20 @@ extension SettingValues {
             throw SettingsProblem(code: "invalid_setting", key: "attachments.s3Bucket", message: "\(Self.ref("attachments.s3Bucket")) enthält unzulässige Zeichen.")
         }
         let access = string("attachments.s3AccessKey"), secret = string("attachments.s3SecretKey")
+        if access != nil || secret != nil, items["attachments.s3AccessKey"]?.origin == .env || items["attachments.s3SecretKey"]?.origin == .env,
+           items["attachments.s3Endpoint"]?.origin == .db {
+            throw SettingsProblem(code: "setting_dependency", key: "attachments.s3Endpoint",
+                                  message: "Die S3-Schlüssel sind per Umgebungsvariable festgelegt. Dann muss auch der Endpunkt per Umgebungsvariable festgelegt sein (\(Self.ref("attachments.s3Endpoint"))).")
+        }
         guard (access == nil) == (secret == nil) else {
             throw SettingsProblem(code: "setting_dependency", key: "attachments.s3SecretKey", message: "S3-Access-Key und S3-Secret-Key gehören zusammen.")
         }
-        return S3Config(endpoint: url, bucket: bucket, region: string("attachments.s3Region") ?? "us-east-1", accessKey: access, secretKey: secret)
+        return S3Config(endpoint: url, bucket: bucket, region: string("attachments.s3Region") ?? "us-east-1", accessKey: access, secretKey: secret,
+                        protection: outboundProtection())
+    }
+
+    func outboundProtection() -> OutboundProtection {
+        string("security.outboundProtection").flatMap(OutboundProtection.init(rawValue:)) ?? .standard
     }
 
     func liveSettings() -> LiveSettings {

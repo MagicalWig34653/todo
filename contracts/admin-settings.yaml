@@ -82,6 +82,16 @@ paths:
         '404': {description: Unbekannte Testart}
         '409': {description: mail_disabled | push_disabled, content: {application/json: {schema: {$ref: '#/components/schemas/Problem'}}}}
         '429': {description: rate_limited}
+  /v1/admin/health:
+    get:
+      operationId: getAdminHealth
+      summary: Betriebsdetails (Wartung, Mail, Push)
+      description: 'Was /health/ready früher anonym zeigte: maintenance {enabled, lastRunAt, lastStatus}, push {enabled, environment}, mail {enabled}.
+        Rein informativ. /health/ready liefert öffentlich nur status.'
+      responses:
+        '200': {description: Erfolgreich}
+        '401': {description: Nicht angemeldet}
+        '403': {description: Kein Administrator}
   /v1/admin/users:
     get:
       operationId: listAdminUsers

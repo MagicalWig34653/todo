@@ -25,6 +25,7 @@ Für jede Einstellung gilt: **Umgebungsvariable (falls gesetzt und nicht leer) >
 | Aufräumen/Sync | `maintenance.cleanupIntervalMinutes`, `syncRetentionDays` | `CLEANUP_INTERVAL_MINUTES`, `SYNC_RETENTION_DAYS` | **nach Neustart** |
 | Live | `live.enabled`, `pollMs`, `waitMaxSeconds`, `maxWaitersPerAccount`, `maxWaitersPerReplica`, `clientPollSeconds` | `LIVE_REFRESH_ENABLED`, `LIVE_POLL_MS`, `LIVE_WAIT_MAX_SECONDS`, `LIVE_MAX_WAITERS_PER_ACCOUNT`, `LIVE_MAX_WAITERS_PER_REPLICA`, `LIVE_CLIENT_POLL_SECONDS` | sofort |
 | Limits | `limits.rateWindowSeconds`, `loginLimit`, `passwordLimit`, `registerLimit`, `recoveryLimit`, `recoverySeconds`, `recoverySessionSeconds` | `IDENTITY_RATE_WINDOW_SECONDS`, `IDENTITY_LOGIN_LIMIT`, `IDENTITY_PASSWORD_LIMIT`, `IDENTITY_REGISTER_LIMIT`, `IDENTITY_RECOVERY_LIMIT`, `IDENTITY_RECOVERY_SECONDS`, `IDENTITY_RECOVERY_SESSION_SECONDS` | sofort |
+| Sicherheit | Zielschutz für Mail und S3 `security.outboundProtection` (`off`, `standard`, `strict`) | `OUTBOUND_TARGET_PROTECTION` | sofort |
 | Apple-Apps | `apple.appIds` | `AASA_APP_IDS` | sofort |
 
 „Sofort“ heißt: auf dem ändernden Replikat gleich, auf den übrigen (Swarm: 3 Replikate) nach höchstens etwa 10 Sekunden. „Nach Neustart“: gespeichert, aber erst beim nächsten Start des Dienstes gelesen (Rolling Update genügt). Die PWA kennzeichnet solche Einstellungen.
@@ -38,7 +39,10 @@ Für jede Einstellung gilt: **Umgebungsvariable (falls gesetzt und nicht leer) >
 - **Jede Änderung wird protokolliert** (wer, wann, welcher Schlüssel, Aktion; nie der Wert) und ist in der PWA als Änderungsprotokoll sichtbar. Tests (Mail, Push, Speicher) werden ebenfalls protokolliert.
 - Eingaben werden serverseitig geprüft (Typ, Bereich, Länge, Abhängigkeiten, z. B. „E-Mail an“ braucht Server und Absender). Fehler erklärt der Server auf Deutsch und nennt die betroffene Einstellung.
 - **Gleichzeitige Änderung:** wer eine Einstellung speichert, die inzwischen ein anderer Admin geändert hat, bekommt einen Konflikt („neu laden“) statt sie still zu überschreiben.
-- Restrisiko: Ein kompromittiertes Admin-Konto kann zum Beispiel den Mailserver umlenken. Schutz: Passkey-Anmeldung, wenige Admins, Änderungsprotokoll prüfen.
+- **Zugangsdaten gehören zum Ziel.** Ist SMTP-Benutzer oder -Passwort per Umgebung festgelegt, müssen auch Server, Port und Verschlüsselung per Umgebung festgelegt sein (sonst meldet der Server einen Konfigurationsfehler und behält die letzte gültige Konfiguration). Dasselbe gilt für S3-Schlüssel und S3-Endpunkt. In der PWA gespeicherte Zugangsdaten sperren eine Änderung von Server/Port bzw. Endpunkt: erst Zugangsdaten zurücksetzen, Ziel ändern, Zugangsdaten neu eingeben. So kann kein Admin ein Passwort an einen fremden Server schicken lassen.
+- **Zielschutz** (Kategorie Sicherheit): Mail-Versand und S3 verbinden nur mit erlaubten Zielen. `standard` (Vorgabe) sperrt Link-Local- und Metadaten-Adressen (169.254.0.0/16 inkl. 169.254.169.254, fe80::/10, fd00:ec2::254, 0.0.0.0/8); lokale Mailserver, MinIO und private Netze bleiben erlaubt. `strict` sperrt zusätzlich Loopback und private Netze (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7); dann muss der Mailserver/S3 öffentlich erreichbar sein. `off` schaltet den Schutz ab. Geprüft wird die tatsächliche IP nach der DNS-Auflösung (Namen, die auf gesperrte Adressen zeigen, werden abgelehnt); die Fehlermeldung nennt nur, dass das Ziel gesperrt ist, nie eine Antwort des Ziels.
+- Restrisiko: Ein kompromittiertes Admin-Konto kann zum Beispiel den Mailserver umlenken (ohne die festgelegten Zugangsdaten mitzunehmen). Schutz: Passkey-Anmeldung, wenige Admins, Änderungsprotokoll prüfen.
+- `/health/ready` zeigt anonym nur `status`. Wartung, Mail- und Push-Status stehen in `GET /v1/admin/health` (nur Administratoren).
 
 ## Konfigurationsschlüssel (für Geheimnisse in der PWA)
 
