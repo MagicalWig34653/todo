@@ -1153,6 +1153,7 @@ export const de = {
 	'card.side.project': 'Projekt',
 	'card.side.labels': 'Etiketten',
 	'card.side.dependencies': 'Abhängigkeiten',
+	'setup.codeFromLink': 'Dein Einladungscode wurde aus dem Link übernommen.',
 } as const;
 
 export type MessageKey = keyof typeof de;

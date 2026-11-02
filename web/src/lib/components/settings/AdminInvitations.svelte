@@ -7,6 +7,7 @@
 	import { formatWhen } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import Panel from '../app/Panel.svelte';
+	import { buildInviteLink } from '#lib/inviteLink.js';
 	import CopyBox from './CopyBox.svelte';
 
 	// Held in memory only; the server stores a hash and shows the token once.
@@ -39,7 +40,7 @@
 		});
 		busy = false;
 	}
-	const link = $derived(issued ? `${location.origin}/setup?token=${encodeURIComponent(issued.token)}` : '');
+	const link = $derived(issued ? buildInviteLink(location.origin, issued.token) : '');
 </script>
 
 <Panel title={t('settings.verwaltung-einladungen')} description={t('settings.admin.invite.hint')}>
