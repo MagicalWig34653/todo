@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionRequest, appendPosts, postTitleKey, type ForYouAction, type ForYouPost } from '../src/lib/forYou';
+import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ForYouAction, type ForYouPost } from '../src/lib/forYou';
 import { buildPath, parseRoute } from '../src/lib/routing';
 
 const post = (id: string): ForYouPost => ({
@@ -27,6 +27,17 @@ describe('for you feed helpers', () => {
 	});
 	it('appends pages without duplicates', () => {
 		expect(appendPosts([post('a'), post('b')], [post('b'), post('c')]).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+	});
+	it('merges a fresh first page without dropping loaded older pages', () => {
+		const at = (id: string, d: number): ForYouPost => ({ ...post(id), createdAt: `2026-11-0${d}T10:00:00Z` });
+		const loaded = [at('c', 5), at('b', 4), at('a', 3), at('old1', 2), at('old2', 1)];
+		const m = mergeFirstPage(loaded, [at('new', 6), at('c', 5), at('b', 4), at('a', 3)]);
+		expect(m.posts.map((p) => p.id)).toEqual(['new', 'c', 'b', 'a', 'old1', 'old2']);
+		expect(m.keepCursor).toBe(true);
+		const only = mergeFirstPage([at('a', 3)], [at('b', 4), at('a', 3)]);
+		expect(only.keepCursor).toBe(false);
+		// a post inside the page's range that vanished from the server is dropped
+		expect(mergeFirstPage([at('gone', 4), at('a', 3)], [at('a', 3)]).posts.map((p) => p.id)).toEqual(['a']);
 	});
 	it('maps post kinds to headlines', () => {
 		expect(postTitleKey({ kind: 'review', state: 'accepted' })).toBe('forYou.post.reviewAccepted');
