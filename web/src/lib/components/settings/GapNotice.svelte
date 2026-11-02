@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
 
-	/** Honest placeholder for functions the backend does not offer yet. */
+	/** Friendly placeholder for functions that are not available yet. */
 	let { children, testid = 'backend-gap' }: { children?: Snippet; testid?: string } = $props();
 </script>
 

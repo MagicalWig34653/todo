@@ -1050,7 +1050,7 @@ test('command center: kanban, list, questions, reviews, updates, project scope, 
 	// ---- phone: no horizontal page overflow, lanes scroll inside the board ---------------------------------------------
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.getByRole('button', { name: 'Seitenleiste öffnen' }).click();
-	await page.getByRole('navigation', { name: 'Seitenleiste' }).getByRole('button', { name: /^Überblick/ }).click();
+	await page.locator('#main-nav').getByRole('button', { name: /^Überblick/ }).click();
 	await expect(page.getByTestId('cc-board')).toBeVisible();
 	await noOverflow('overview kanban');
 	if (SHOTS) await page.screenshot({ path: `${SHOTS}/ueberblick-mobil.png` });
@@ -1199,7 +1199,7 @@ test('mobile 390px: navigation drawer, board and no horizontal page scroll', asy
 		expect(w.doc, `${label}: documentElement overflows`).toBeLessThanOrEqual(w.inner);
 		expect(w.body, `${label}: body overflows`).toBeLessThanOrEqual(w.inner);
 	};
-	const nav = page.getByRole('navigation', { name: 'Seitenleiste' });
+	const nav = page.locator('#main-nav');
 
 	// Drawer is closed by default and opens via the menu button.
 	await expect(nav).toBeHidden();

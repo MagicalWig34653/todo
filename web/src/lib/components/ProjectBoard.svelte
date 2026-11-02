@@ -300,7 +300,7 @@
 		<div class="flex items-start gap-2">
 			<button
 				type="button"
-				class={['mt-0.5 inline-flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors', priorityRing(pl?.priority ?? 0), task.status === 'done' && 'bg-ui-accent border-ui-accent text-ui-accent-foreground']}
+				class={['hit-area relative mt-0.5 inline-flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors', priorityRing(pl?.priority ?? 0), task.status === 'done' && 'bg-ui-accent border-ui-accent text-ui-accent-foreground']}
 				aria-label={task.status === 'done' ? t('tasks.reopen') : t('tasks.done')}
 				aria-pressed={task.status === 'done'}
 				data-testid="board-card-check"
@@ -331,7 +331,7 @@
 		<Popover
 			label={t('board.cardMenu', { title: task.title })}
 			align="end"
-			class="text-muted-foreground hover:bg-muted absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded-md opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100"
+			class="hit-area text-muted-foreground hover:bg-muted absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded-md opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100"
 		>
 			{#snippet trigger()}<Ellipsis class="size-4" aria-hidden="true" />{/snippet}
 			{#snippet children(close)}
@@ -428,7 +428,7 @@
 					<Popover
 						label={t('board.columnMenu', { name: lane.name })}
 						align="end"
-						class="text-muted-foreground hover:bg-muted inline-flex size-7 shrink-0 items-center justify-center rounded-md"
+						class="hit-area relative text-muted-foreground hover:bg-muted inline-flex size-7 shrink-0 items-center justify-center rounded-md"
 					>
 						{#snippet trigger()}<Ellipsis class="size-4" aria-hidden="true" />{/snippet}
 						{#snippet children(close)}

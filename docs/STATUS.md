@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 2.11.2026 (UI-Review Teil B: Navigation, Zustände, Zugänglichkeit; Agent ui-b)
+
+- Board-Aufgabe `A8D9649E-DC9D-41D4-8969-BF5DBEFCFFDA`. Nur PWA, keine Backend-/Vertragsänderung.
+- Behoben: (1) mobiles Seitenmenü ist ein modaler Dialog (role=dialog/aria-modal, Fokus hinein, Fokusfalle, Escape, Rückgabe an Auslöser, Hintergrund `inert`, schließt beim Wechsel auf Desktopbreite); (2) `Dialog.svelte` zeigt die globale Notice als `role=alert` im Dialog (Seitenbanner pausiert, solange ein Dialog offen ist, `notice.dialogs`), SharingPanel unverändert; (3) Projektseite unterscheidet Laden (Skeleton), Ladefehler (Erneut versuchen) und nicht gefunden (`workspace.projectsLoaded/projectsFailed`); (4) „Mehr“ öffnet beim Seitenwechsel, danach gilt der Nutzerzustand; (5) Überblick: eine abgeleitete sichtbare Liste für Fragen/Reviews/Zähler/Leerzustand, Tabs mit Pfeiltasten/Home/End, Roving-Tabindex, aria-controls und tabpanel; (6) Klasse `.hit-area` (32 px Desktop, 44 px Touch, Icon bleibt klein) für Abhaken, Kartenmenü, Spaltenmenü, Sidebar-Chevrons/Plus; (7) Teams: Gründungsmitglied ohne Admin-entziehen/Entfernen (Hinweistext), Austritt zeigt „Du hast das Team verlassen.“; (8) GapNotice „Noch nicht verfügbar“ ohne Entwickler-/Pfadtexte, Daten-Seite mit „Bald“ in der Einstellungsnavigation (`soon`); (9) Wortwahl in `docs/PRODUKT.md` festgehalten, „Verbundene Anwendungen/Verbindungen“ zu „Verbundene Apps“.
+- Nicht behoben: weitere Icon-Aktionen außerhalb Board/Sidebar (z. B. SearchView, nicht mein Bereich).
+- Specs: neu `web/e2e/ui-nav.spec.ts` (6 Tests); `menus-and-modes`/`passkey-flow` nutzen `#main-nav`, weil die Seitenleiste mobil jetzt role=dialog hat. Läufe (natives Backend, frische SQLite): ui-nav 6/6, menus-and-modes 11/11, permissions 3x 8/8, settings-hub 11/11, passkey-flow 20/20, question-overflow 7/7; vitest 226; check nur bekannter `./$types`-Fehler; build grün.
+- Grenzen: nur Chromium; Safari/VoiceOver-Fokus nicht geprüft.
+
 ## Checkpoint 1.11.2026 (Sicherheitsfixes Codex-Review, Teil B; Agent sec-b)
 
 - Board-Aufgabe `22A03719-111B-4A6E-B88F-722DA4786B1E`. Branch `worktree-agent-a0febff622a14a99f`.

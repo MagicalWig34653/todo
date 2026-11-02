@@ -76,7 +76,7 @@
 								<li>
 									<a class={item} href={settingsPath(e.id)} aria-current={id === e.id ? 'page' : undefined} data-testid="settings-link-{e.id}" onclick={(ev) => open(ev, e.id)}>
 										<span class="flex min-w-0 flex-1 flex-col">
-											<span class="truncate">{t(e.label)}</span>
+											<span class="truncate">{t(e.label)}{#if e.soon} <span class="text-muted-foreground text-xs font-normal">({t('settings.soon')})</span>{/if}</span>
 											<span class="text-muted-foreground text-xs font-normal md:hidden">{t(e.description)}</span>
 										</span>
 										<ChevronRight class="text-muted-foreground size-4 shrink-0 md:hidden" aria-hidden="true" />
@@ -108,7 +108,7 @@
 								{#each g.entries as e (e.id)}
 									<li>
 										<a class="bg-card hover:bg-muted flex h-full flex-col gap-0.5 rounded-xl border p-3 shadow-card transition-colors" href={settingsPath(e.id)} data-testid="settings-card-{e.id}" onclick={(ev) => open(ev, e.id)}>
-											<span class="text-sm font-medium">{t(e.label)}</span>
+											<span class="text-sm font-medium">{t(e.label)}{#if e.soon} <span class="text-muted-foreground text-xs font-normal">({t('settings.soon')})</span>{/if}</span>
 											<span class="text-muted-foreground text-[13px]">{t(e.description)}</span>
 										</a>
 									</li>

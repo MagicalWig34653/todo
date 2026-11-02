@@ -162,11 +162,12 @@ export type View =
 {/snippet}
 
 {#snippet sectionToggle(open: boolean, toggle: () => void, label: string)}
-	<button type="button" class="text-muted-foreground hover:bg-muted inline-flex size-6 items-center justify-center rounded" aria-label={t('common.toggleSection', { name: label })} aria-expanded={open} onclick={toggle}>
+	<button type="button" class="hit-area relative text-muted-foreground hover:bg-muted inline-flex size-6 items-center justify-center rounded" aria-label={t('common.toggleSection', { name: label })} aria-expanded={open} onclick={toggle}>
 		<ChevronDown class={['size-4 transition-transform', !open && '-rotate-90']} aria-hidden="true" />
 	</button>
 {/snippet}
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <nav
 	id="main-nav"
 	class={[
@@ -270,7 +271,7 @@ export type View =
 			<div class={sectionHead}>
 				<h2>{t('projects.mine')}</h2>
 				<span class="flex items-center gap-0.5">
-					<button type="button" class="hover:bg-muted inline-flex size-6 items-center justify-center rounded" aria-label={t('projects.addProject')} data-testid="add-project" onclick={() => openAdd()}>
+					<button type="button" class="hit-area relative hover:bg-muted inline-flex size-6 items-center justify-center rounded" aria-label={t('projects.addProject')} data-testid="add-project" onclick={() => openAdd()}>
 						<Plus class="size-4" aria-hidden="true" />
 					</button>
 					{@render sectionToggle(projectsOpen, () => (projectsOpen = !projectsOpen), t('projects.mine'))}

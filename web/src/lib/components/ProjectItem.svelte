@@ -139,7 +139,7 @@
 	>
 		{#if !flat && node.children.length > 0}
 			<button
-				class="text-muted-foreground inline-flex size-6 shrink-0 items-center justify-center rounded"
+				class="hit-area relative text-muted-foreground inline-flex size-6 shrink-0 items-center justify-center rounded"
 				aria-label={collapsed ? t('projects.expand') : t('projects.collapse')}
 				aria-expanded={!collapsed}
 				onclick={() => workspace.toggleCollapsed(project.id)}

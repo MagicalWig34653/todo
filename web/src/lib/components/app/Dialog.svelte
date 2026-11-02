@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { cn } from '#lib/utils.js';
 	import { t } from '#lib/i18n/index.js';
 	import { notice } from '#lib/notice.svelte.js';
@@ -28,14 +28,14 @@
 		if (!open || !box) return;
 		returnTo = document.activeElement as HTMLElement | null;
 		(box.querySelector<HTMLElement>('[data-autofocus]') ?? focusables()[0] ?? box).focus();
-		notice.dialogs++;
+		untrack(() => notice.dialogs++);
 		const esc = (e: KeyboardEvent) => {
 			if (e.key === 'Escape' && !e.defaultPrevented) open = false;
 		};
 		document.addEventListener('keydown', esc);
 		return () => {
 			document.removeEventListener('keydown', esc);
-			notice.dialogs--;
+			untrack(() => notice.dialogs--);
 			returnTo?.focus?.();
 		};
 	});
