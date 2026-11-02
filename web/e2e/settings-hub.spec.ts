@@ -210,7 +210,7 @@ test('administration: invitation, system status, honest gaps', async () => {
 	await expect(admin.getByTestId('server-settings-attachments')).toBeVisible();
 	await shot(admin, 'verwaltung');
 	await admin.getByTestId('settings-link-verwaltung-konten').click();
-	await expect(admin.getByTestId('admin-gaps')).toBeVisible();
+	await expect(admin.getByTestId('admin-accounts')).toBeVisible();
 	// The only account is the administrator; revoking the last administrator is refused.
 	await expect(admin.getByTestId('admin-accounts').locator('li')).toHaveCount(1);
 	await admin.locator('[data-testid^="admin-toggle-"]').click();

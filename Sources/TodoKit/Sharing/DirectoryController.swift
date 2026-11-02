@@ -35,7 +35,7 @@ struct DirectoryController: RouteCollection {
         guard !connected.isEmpty else { return [] }
         let needle = query.lowercased()
         let candidates = try await User.query(on: req.db).filter(\.$id ~~ Array(connected)).all()
-        return try candidates.filter { $0.displayName.lowercased().contains(needle) }
+        return try candidates.filter { !$0.isLocked && $0.displayName.lowercased().contains(needle) }
             .sorted { ($0.displayName.lowercased(), $0.id?.uuidString ?? "") < ($1.displayName.lowercased(), $1.id?.uuidString ?? "") }
             .prefix(limit).map { DirectoryUser(id: try $0.requireID(), displayName: $0.displayName) }
     }

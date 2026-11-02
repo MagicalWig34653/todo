@@ -170,7 +170,8 @@ struct IdentityController: RouteCollection {
         let expires = Date().addingTimeInterval(req.application.identitySettings.recoveryLifetime)
         try await req.db.transaction { db in
             try await lockRow(table: User.schema, id: userID, on: db)
-            guard try await User.find(userID, on: db) != nil else { throw Abort(.notFound) }
+            guard let target = try await User.find(userID, on: db) else { throw Abort(.notFound) }
+            if target.isLocked { throw Abort(.conflict, reason: "account_disabled") }
             // Reissue invalidates every previous code and restricted session for this account.
             try await RecoveryGrant.query(on: db).filter(\.$userID == userID).delete()
             try await RecoveryGrant(userID: userID, code: code, expiresAt: expires).save(on: db)
@@ -193,6 +194,7 @@ struct IdentityController: RouteCollection {
             try await lockRow(table: User.schema, id: found.userID, on: db)
             guard let grant = try await RecoveryGrant.find(found.id, on: db), grant.sessionHash == nil,
                   grant.expiresAt > Date() else { throw Abort(.unauthorized, reason: "recovery_failed") }
+            if try await User.find(grant.userID, on: db)?.isLocked != false { throw Abort(.forbidden, reason: "account_disabled") }
             grant.sessionHash = AuthSupport.hash(token)
             grant.sessionExpiresAt = expires
             try await grant.save(on: db)
@@ -209,6 +211,7 @@ struct IdentityController: RouteCollection {
     @Sendable func recoveryBegin(_ req: Request) async throws -> RegisterBeginResponse {
         let grant = try await recoveryGrant(req, db: req.db)
         guard let user = try await User.find(grant.userID, on: req.db) else { throw Abort(.unauthorized) }
+        if user.isLocked { throw Abort(.forbidden, reason: "account_disabled") }
         return try await beginRegistration(req, user: user, binding: "recovery:" + grant.sessionHash!)
     }
     @Sendable func recoveryFinish(_ req: Request) async throws -> HTTPStatus {
@@ -217,6 +220,7 @@ struct IdentityController: RouteCollection {
         try await req.db.transaction { db in
             try await lockRow(table: User.schema, id: found.userID, on: db)
             let grant = try await recoveryGrant(req, db: db)
+            if try await User.find(grant.userID, on: db)?.isLocked != false { throw Abort(.forbidden, reason: "account_disabled") }
             try await saveRegistration(req, body: body, userID: grant.userID, binding: "recovery:" + grant.sessionHash!, db: db)
             try await grant.delete(on: db)
             // A recovered account must log in with the new key; existing sessions are revoked.

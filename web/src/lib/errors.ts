@@ -9,6 +9,7 @@ export function describeError(e: unknown): string {
 	if (e instanceof ApiError) {
 		if (e.status === 0) return t('error.network');
 		if (e.reason === 'last_admin_required') return t('settings.admin.accounts.lastAdmin');
+		if (e.reason === 'cannot_lock_self' || e.reason === 'account_anonymized' || e.reason === 'account_disabled') return errorMessage(e.reason);
 		if (e.isConflict) return t('conflict.body');
 		if (e.status === 404) return t('error.not_found');
 		if (e.status === 403) return t('error.forbidden');

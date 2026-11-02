@@ -24,7 +24,7 @@ struct MCPController: RouteCollection {
               secret.kind == "access", secret.expiresAt > Date(), let gid = secret.grantID,
               let grant = try await OAuthGrant.find(gid, on: req.db), !grant.revoked,
               grant.resource == req.application.settings.oauthResource,
-              let user = try await User.find(grant.userID, on: req.db) else {
+              let user = try await User.find(grant.userID, on: req.db), !user.isLocked else {
             return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(req.application.settings.oauthIssuer)/.well-known/oauth-protected-resource/mcp\", scope=\"\(OAuthController.scopes.joined(separator: " "))\""])
         }
         if let version = req.headers.first(name: "MCP-Protocol-Version"), !Self.versions.contains(version) { throw Abort(.badRequest, reason: "unsupported_protocol_version") }

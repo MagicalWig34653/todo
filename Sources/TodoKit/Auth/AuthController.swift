@@ -248,6 +248,7 @@ struct AuthController: RouteCollection {
         } catch {
             throw Abort(.unauthorized, reason: "login_failed")
         }
+        if user.isLocked { throw Abort(.forbidden, reason: "account_disabled") }
         stored.signCount = Int(verified.newSignCount)
         try await stored.save(on: req.db)
         return try await req.startSession(for: user, on: req.db)
@@ -282,6 +283,7 @@ struct AuthController: RouteCollection {
         guard let user = try await User.query(on: req.db).filter(\.$username == body.username.lowercased()).first(),
             let hash = user.passwordHash, (try? Bcrypt.verify(body.password, created: hash)) == true
         else { throw Abort(.unauthorized, reason: "login_failed") }
+        if user.isLocked { throw Abort(.forbidden, reason: "account_disabled") }
         return try await req.startSession(for: user, on: req.db)
     }
 

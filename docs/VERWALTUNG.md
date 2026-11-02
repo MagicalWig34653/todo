@@ -13,7 +13,7 @@ Stand 31.10.2026. Struktur der Einstellungen, des Hilfebereichs und der Verwaltu
 | `/settings/notifications` `email` | Push-Einstellungen, E-Mail-Adresse | `NotificationSettings.svelte`, `EmailSettings.svelte` |
 | `/settings/permissions` | Wer greift worauf zu | `AccessOverview.svelte` |
 | `/settings/connections` `runner` `mcp` | OAuth-Verbindungen, Runner-Geräte (Verweis auf Agenten), Claude Code verbinden | `OAuthGrants.svelte`, `settings/RunnerPage.svelte`, `help/ClaudeConnect.svelte` |
-| `/settings/data` | Export/Löschen: ehrlicher Platzhalter | `settings/DataPage.svelte` |
+| `/settings/data` | Datenexport (JSON) und „Konto sperren und anonymisieren“ mit zweistufiger Bestätigung | `settings/DataPage.svelte`, `accountData.ts` |
 | `/settings/admin-*` | nur Administratoren: `accounts`, `invitations`, `system` sowie die **Server-Einstellungen** (ADR 0025, [KONFIGURATION.md](KONFIGURATION.md)): `server` (Überblick, Schlüssel, Änderungsprotokoll), `mail`, `push`, `storage`, `sign-in`, `limits`, `live`, `cleanup`, `instance`, `apple` | `settings/Admin*.svelte`, `settings/Server*.svelte` |
 | `/help`, `/help/<page>` | `getting-started`, `shortcuts`, `claude-code`, `agent-manual`, `about` | `helpNav.ts`, `HelpView.svelte`, `help/*` |
 
@@ -38,7 +38,7 @@ Menüs oben rechts: Hilfemenü (Fragezeichen) und Benutzermenü (Avatar mit Eins
 
 | Funktion | Ist (Backend und PWA) | Soll | Priorität |
 |---|---|---|---|
-| Konten verwalten | **Liste und Admin-Rolle gebaut (1.11.2026):** `verwaltung-konten` zeigt alle Konten (`GET /v1/admin/users`), Administratorrolle erteilen/entziehen (`PUT /v1/admin/users/{id}/admin`, letzter Admin bleibt: 409) | Sperren, Löschen | 1 (Rest) |
+| Konten verwalten | **gebaut (2.11.2026):** Liste mit Status (Aktiv/Gesperrt/Anonymisiert), Administratorrolle, Sperren/Entsperren/Anonymisieren (`POST /v1/admin/users/{id}/disable|enable|anonymize`, Details unten) | Eigentümerwechsel aus der Verwaltung (Folgeaufgabe) | erledigt |
 | Einladungen | **Liste und Zurückziehen gebaut (1.11.2026):** `GET /v1/invitations` (open/used/expired, ohne Code), `DELETE /v1/invitations/{id}` (benutzt: 409), Erzeugen liefert zusätzlich `id` | Gültigkeit wählen, Versand per Mail | 2 (Rest) |
 | Recovery | Admin stellt Code aus (`POST /v1/identity/accounts/{id}/recovery`), optional per Mail | Konto aus Liste wählen statt ID einfügen | 3 (hängt an Kontenliste) |
 | Mail | **gebaut (31.10.2026):** Zugangsdaten, Absender, Test-Mail in der PWA (`verwaltung-mail`), Umgebung hat Vorrang | - | erledigt |
@@ -48,9 +48,20 @@ Menüs oben rechts: Hilfemenü (Fragezeichen) und Benutzermenü (Avatar mit Eins
 | Sitzungen | eigene Sitzungen anzeigen/beenden (PWA); fremde Sitzungen nicht | Admin: Sitzungen eines Kontos beenden | 6 |
 | API-Tokens | OAuth-Verbindungen für KI-Clients (anzeigen, widerrufen); keine persönlichen Tokens | persönliche API-Tokens mit Scopes | 6 |
 | Passkeys | eigene verwalten (PWA); fremde nicht | Admin: Passkeys zurücksetzen (Recovery deckt den Notfall) | 7 |
-| Exporte / Datenschutz | nicht vorhanden | Export aller eigenen Daten (JSON/ZIP), Konto löschen mit Frist, Auskunft | 2 |
+| Exporte / Datenschutz | **gebaut (2.11.2026):** `GET /v1/me/export` (JSON: Konto, eigene Projekte, Aufgaben, Kommentare, Labels; ohne Geheimnisse; höchstens 20 MiB, sonst 413 `export_too_large`) und `POST /v1/me/anonymize` (`{confirm:"ANONYMIZE"}`) | ZIP mit Anhängen, geteilte Inhalte, Auskunft | 2 (Rest) |
 | Server-Version | `/health/ready` liefert keine Versionsnummer | `version` und `build` im Health- oder Capabilities-Dokument | 4 |
 | Änderungsprotokoll | keines; Verweis auf den Commit-Verlauf | `CHANGELOG.md` und Anzeige unter „Über Todolino“ | 6 |
 | Profil bearbeiten | Anzeigename und Rolle nur lesbar | Anzeigename ändern | 3 |
 
 Alle „Ist“-Angaben stammen aus `contracts/*.yaml` und `Sources/TodoKit` (Stand 31.10.2026). Die PWA zeigt für jede Lücke auf der betreffenden Seite „Backend noch nicht vorhanden“. Es wurden keine neuen Backend-Funktionen gebaut.
+
+## Konten sperren und anonymisieren (Nutzerentscheidung 1.11.2026, gebaut 2.11.2026)
+
+Es wird nichts gelöscht. Konten werden gesperrt und anonymisiert; Aufgaben, Kommentare und Projekte bleiben.
+
+- **Sperren** (`disabled_at`, `disabled_by` am Konto, umkehrbar): löscht alle Sitzungen, Anmeldeherausforderungen, Recovery-Codes und offene Einladungen des Kontos, widerruft OAuth-Grants (MCP-/Refresh-Token ungültig), sperrt Runner- und Push-Geräte, bricht offene Agenten-Jobs des Kontos oder auf dessen Geräten ab und sperrt die Läufe. Anmeldung (Passkey, Passwort, Recovery) liefert 403 `account_disabled`; eine bestehende Sitzung liefert 401 `account_disabled`. Neue Freigaben und Teameinladungen an gesperrte Konten: 409 `account_disabled`; die Verzeichnissuche blendet sie aus.
+- **Entsperren** nur ohne Anonymisierung (sonst 409 `account_anonymized`); beendete Sitzungen und widerrufene Grants kommen nicht zurück.
+- **Anonymisieren** (`anonymized_at`, unumkehrbar, idempotent): sperrt zusätzlich und setzt den Namen auf „Ehemaliges Mitglied“; entfernt Benutzername, Passwort-Hash, Passkeys, E-Mail-Adresse und -Verifizierungen, Mail-Warteschlange, Push-Geräte, -Einstellungen und -Warteschlange, Runner-Pairings und -Token; ersetzt den Namen in Audit-Einträgen; entzieht die Administratorrolle. Weil der Name im Konto selbst ersetzt wird, zeigen Listen, Kommentare, Teams und Feed nie Rohdaten.
+- **Schutz:** der letzte aktive Administrator ist nicht sperrbar (409 `last_admin_required`); über die Admin-Route nie das eigene Konto (409 `cannot_lock_self`, dafür gibt es die Selbstbedienung). `setAdmin` zählt nur aktive Administratoren. Audit-Schlüssel `admin.account` (Aktion `account`, Detail `disabled|enabled|anonymized:<Konto-ID>`).
+- **Selbstbedienung:** `POST /v1/me/anonymize` mit `{confirm:"ANONYMIZE"}` (ohne Bestätigung 400 `confirmation_required`); die PWA verlangt zwei Schritte und das Eintippen von „ANONYMISIEREN“. `GET /v1/me/export` liefert den Datenexport.
+- **Offen (Folgeaufgabe):** Eigentümerwechsel aus der Verwaltung für Projekte gesperrter Konten (heute bleibt das Konto als gesperrter Eigentümer sichtbar; Teams ohne aktiven Admin bleiben bestehen); Export enthält keine Anhänge und keine fremden, mit dem Konto geteilten Inhalte; Wiederaufnahme eines Kontos nach Anonymisierung ist bewusst nicht vorgesehen. Der CLI-Befehl `delete-account` (ADR 0019) bleibt als Betreiberwerkzeug bestehen.

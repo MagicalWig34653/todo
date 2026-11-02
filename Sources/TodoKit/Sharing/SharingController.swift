@@ -120,7 +120,8 @@ struct SharingController: RouteCollection {
         let tid = try id(req, "teamID")
         return try await write(req) { access in
             let team = try await access.requireTeam(tid, admin: true)
-            guard try await User.find(input.userID, on: access.db) != nil else { throw Abort(.notFound) }
+            guard let invitee = try await User.find(input.userID, on: access.db) else { throw Abort(.notFound) }
+            if invitee.isLocked { throw Abort(.conflict, reason: "account_disabled") }
             if input.userID == team.founderID && !input.isAdmin { throw Abort(.conflict, reason: "team_founder_required") }
             let member = try await TeamMembership.query(on: access.db).filter(\.$teamID == tid)
                 .filter(\.$userID == input.userID).first()

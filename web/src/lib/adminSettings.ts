@@ -120,8 +120,12 @@ export const adminSettings = {
 	audit: (limit = 50) => call<AuditEntry[]>('GET', `/settings/audit?limit=${limit}`),
 	test: (kind: TestKind, body?: { to?: string }) => call<TestResult>('POST', `/settings/test/${kind}`, body ?? {}),
 	users: () => call<AdminUser[]>('GET', '/users'),
-	setAdmin: (id: string, isAdmin: boolean) => call<AdminUser>('PUT', `/users/${encodeURIComponent(id)}/admin`, { isAdmin })
+	setAdmin: (id: string, isAdmin: boolean) => call<AdminUser>('PUT', `/users/${encodeURIComponent(id)}/admin`, { isAdmin }),
+	lock: (id: string, action: LockAction) => call<AdminUser>('POST', `/users/${encodeURIComponent(id)}/${action}`)
 };
+
+export type LockAction = 'disable' | 'enable' | 'anonymize';
+export type AccountStatus = 'active' | 'disabled' | 'anonymized';
 
 /** contracts/admin-settings.yaml AdminUser */
 export interface AdminUser {
@@ -129,11 +133,25 @@ export interface AdminUser {
 	displayName: string;
 	isAdmin: boolean;
 	username?: string;
+	/** Absent on servers from before account locking: treated as active. */
+	status?: AccountStatus;
+	disabledAt?: string;
+	anonymizedAt?: string;
 }
 
-/** Administrators first, then by name; the list the accounts page renders. */
+export const statusOf = (u: AdminUser): AccountStatus => u.status ?? 'active';
+
+/** Active accounts first (administrators on top), then disabled, then anonymized; by name inside each group. */
 export function sortUsers(users: AdminUser[]): AdminUser[] {
-	return [...users].sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || a.displayName.localeCompare(b.displayName, 'de'));
+	const rank = (u: AdminUser) => ({ active: 0, disabled: 1, anonymized: 2 })[statusOf(u)];
+	return [...users].sort((a, b) => rank(a) - rank(b) || Number(b.isAdmin) - Number(a.isAdmin) || a.displayName.localeCompare(b.displayName, 'de'));
+}
+
+/** Lock actions the accounts page offers for a row. The own account is never offered here (the server answers 409). */
+export function lockActions(u: AdminUser, selfID: string | undefined): LockAction[] {
+	const status = statusOf(u);
+	if (status === 'anonymized' || u.id === selfID) return [];
+	return status === 'disabled' ? ['enable', 'anonymize'] : ['disable', 'anonymize'];
 }
 
 /** After an admin flag changed: refreshes the signed-in user's own profile when the change concerned themselves. */

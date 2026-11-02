@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 2.11.2026: Konten sperren und anonymisieren (Agent account-lock)
+
+- Board-Aufgabe `BDEA2A99-B205-4043-B4EE-4B8CBFA371E6` (nicht auf erledigt gesetzt, Review ausstehend). Nutzerentscheidung 1.11.: sperren und anonymisieren, nichts löschen. Details und Verhalten: `docs/VERWALTUNG.md` (Abschnitt „Konten sperren und anonymisieren“), Vertrag `contracts/admin-settings.yaml` (disable, enable, anonymize, `/v1/me/anonymize`, `/v1/me/export`, `AdminUser.status`).
+- Backend: additive Migration `AddAccountLock` (`users.disabled_at/disabled_by/anonymized_at`; vor dem Start `App migrate --yes`), `Maintenance/AccountLock.swift` (Dienst und Routen), Prüfungen in `requireUser`, Passkey-/Passwort-Login, Recovery (ausstellen, einlösen, Begin/Finish), MCP, Freigaben/Teameinladung, Verzeichnissuche; `setAdmin` zählt aktive Administratoren.
+- PWA: `AdminAccounts.svelte` (Status-Chip, gesperrte Konten abgesetzt, Bestätigungsdialog), `DataPage.svelte` (Export, zweistufige Selbst-Anonymisierung), `adminSettings.ts` (`lockActions`, `statusOf`), `accountData.ts`; Texte am Ende von `de-settings.ts`. Alte Gap-Hinweise entfernt (`admin-gaps` in permissions/settings-hub-Specs ersetzt).
+- Tests: `swift test` 288 (20 übersprungen, 0 Fehlschläge; neu `AccountLockTests` 7: Sperren beendet Sitzung/Grant/MCP/Push/Runner/Job/Einladung, Login-Verweigerung und Entsperren, Anonymisieren mit Listen-Platzhalter, Schutzregeln, Rechte, Bestätigung, Export nur eigene Daten); vitest 245 (neu `accountLock.test.ts` 7); `npm run build` grün; `npm run check` nur bekannter `./$types`-Fehler; Playwright Chromium je frische SQLite: `account-lock` 5, `settings-hub` 11, `permissions` 8, `passkey-flow` 21, alle grün. Die Backend-Tests wurden nach der Implementierung geschrieben (nicht strikt rot-zuerst); Verhalten durch Tests und E2E belegt.
+- Grenzen: nur SQLite/Chromium; MariaDB-Pfad (`FOR UPDATE` auf Administratoren, Zeilensperre am Konto) nicht ausgeführt. Offen: Eigentümerwechsel aus der Verwaltung, Export ohne Anhänge, Apple-App kennt `account_disabled` noch nicht (401 führt zur Anmeldung).
+- Nächster Schritt: Review und Merge des Branches `worktree-agent-a35d495316359b41a`; `App migrate --yes` bei der Auslieferung.
+
 ## Checkpoint 2.11.2026: PWA-Pfade auf Englisch (Agent routes-en)
 
 - Board-Aufgabe `7A033CA7-979F-47D7-8747-A6E89103800D`. Annahme zu „Routen soll auf Englisch sein“: gemeint sind die URL-Pfade der PWA (REST `/v1/...` war schon englisch); Anzeigetexte bleiben deutsch. Nur PWA, keine Backend-/Vertragsänderung (SPA-Fallback ist generisch, Mail-Links nutzen nur `/confirm-email`/`/recover`).

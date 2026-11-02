@@ -161,7 +161,7 @@ test('overview and teams show the sharing from both sides', async () => {
 	// Admin area: recovery code and account ID live here.
 	await a.getByTestId('settings-link-verwaltung-konten').click();
 	await expect(a.getByTestId('recovery-issue')).toBeVisible();
-	await expect(a.getByTestId('admin-gaps')).toBeVisible();
+	await expect(a.getByTestId('admin-accounts')).toBeVisible();
 	await b.goto('/settings/admin-accounts');
 	await expect(b.getByTestId('admin-denied')).toBeVisible();
 	await expect(b.getByTestId('recovery-issue')).toHaveCount(0);

@@ -35,6 +35,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: PushController())
     try app.register(collection: MailController())
     try app.register(collection: SettingsController())
+    try app.register(collection: AccountLockController())
     try app.register(collection: LiveController())
     try app.register(collection: FeedController())
     // Apple app-site-association for passkeys in native apps: public, no redirect, JSON.
