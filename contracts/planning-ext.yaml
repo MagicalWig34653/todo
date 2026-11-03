@@ -204,6 +204,55 @@ paths:
           description: Versionskonflikt oder geändertes Board
         '422':
           description: Zyklus oder ungültige Projektzuordnung
+  /v1/planning/dependencies:
+    get:
+      summary: Alle Abhängigkeiten zwischen sichtbaren Aufgaben eines Projekts (optional mit Unterprojekten), schreibgeschützt
+      parameters:
+      - name: projectID
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: includeSubprojects
+        in: query
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Kanten Aufgabe -> Voraussetzung und Aufgabenfakten; verdeckte Aufgaben erscheinen nie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        taskID: {type: string, format: uuid}
+                        prerequisiteID: {type: string, format: uuid}
+                      required: [taskID, prerequisiteID]
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        taskID: {type: string, format: uuid}
+                        kind: {type: string, enum: [task, feature]}
+                        parentTaskID: {type: string, format: uuid, nullable: true}
+                        createdAt: {type: string, format: date-time, nullable: true}
+                        updatedAt: {type: string, format: date-time, nullable: true}
+                      required: [taskID, kind]
+                required: [edges, tasks]
+        '400':
+          description: Ungültige Eingabe
+        '401':
+          description: Sitzung erforderlich
+        '404':
+          description: Fehlendes oder fremdes Projekt
   /v1/planning/milestones:
     post:
       summary: Meilenstein anlegen

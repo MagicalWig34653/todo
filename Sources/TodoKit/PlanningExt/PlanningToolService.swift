@@ -75,6 +75,41 @@ extension PlanningService {
         return result
     }
 
+    /// Edges whose both ends are visible tasks inside the project (or its subtree); hidden ends never leak.
+    func projectDependencies(_ projectID: UUID, includeSubprojects: Bool) async throws -> PlanningGraphDTO {
+        _ = try await access.project(projectID)
+        var ids: Set<UUID> = [projectID]
+        if includeSubprojects {
+            let all = try await Project.query(on: db).all()
+            var children: [UUID: [UUID]] = [:]
+            for p in all { if let parent = p.parentID, let id = p.id { children[parent, default: []].append(id) } }
+            var stack = [projectID]
+            while let current = stack.popLast() { for c in children[current] ?? [] where ids.insert(c).inserted { stack.append(c) } }
+        }
+        let rows = try await TodoTask.query(on: db).filter(\.$projectID ~~ Array(ids)).all()
+        let taskIDs = Set(rows.compactMap(\.id))
+        let edges = try await PlanningDependency.query(on: db).filter(\.$taskID ~~ Array(taskIDs)).sort(\.$id).all()
+            .filter { taskIDs.contains($0.prerequisiteID) }
+        var visible: [UUID: Bool] = [:]
+        func canSee(_ id: UUID) async throws -> Bool {
+            if let known = visible[id] { return known }
+            do { _ = try await task(id); visible[id] = true } catch let error as AbortError where error.status == .notFound { visible[id] = false }
+            return visible[id] ?? false
+        }
+        var result: [PlanningDependencyEdgeDTO] = []
+        for e in edges {
+            guard try await canSee(e.taskID), try await canSee(e.prerequisiteID) else { continue }
+            result.append(PlanningDependencyEdgeDTO(taskID: e.taskID, prerequisiteID: e.prerequisiteID))
+        }
+        var nodes: [PlanningGraphNodeDTO] = []
+        let flows = Dictionary(uniqueKeysWithValues: try await TaskWorkflow.query(on: db).filter(\.$id ~~ Array(taskIDs)).all().compactMap { w in w.id.map { ($0, w) } })
+        for t in rows { if let id = t.id, try await canSee(id) {
+            let w = flows[id]
+            nodes.append(PlanningGraphNodeDTO(taskID: id, kind: w?.kind ?? "task", parentTaskID: w?.parentTaskID, createdAt: t.createdAt, updatedAt: t.updatedAt))
+        } }
+        return PlanningGraphDTO(edges: result, tasks: nodes)
+    }
+
     /// Replace as one transaction, preserving the REST add path's cycle and role checks.
     func setDependencies(_ id: UUID, blockedBy ids: [UUID]) async throws {
         try await lock(); _ = try await task(id, role: .edit)
