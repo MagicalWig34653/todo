@@ -68,6 +68,8 @@ struct TaskDTO: Content {
     let boardPosition: Int
     /// Only set by the task list (`GET /v1/tasks`); omitted from all other responses.
     var planning: TaskPlanningSummary?
+    /// Only set by the task list with `includeLabels=true`: names of the caller's own labels on the task.
+    var labels: [String]?
 
     init(_ t: TodoTask) throws {
         id = try t.requireID()
@@ -390,11 +392,34 @@ struct PlanningController: RouteCollection {
         guard !tasks.isEmpty else { return [] }
         let planning = Dictionary(uniqueKeysWithValues: try await TaskPlanning.query(on: req.db)
             .filter(\.$id ~~ tasks.map { try $0.requireID() }).all().map { (try $0.requireID(), $0) })
+        // Optional (`includeLabels=true`): the caller's own label names per task in one pass, instead of one search per label.
+        var labelNames: [UUID: [String]]? = nil
+        if req.query[Bool.self, at: "includeLabels"] == true {
+            labelNames = try await Self.labelNames(of: tasks.map { try $0.requireID() }, owner: user.requireID(), on: req.db)
+        }
         return try tasks.map { task in
             var dto = try TaskDTO(task)
             dto.planning = TaskPlanningSummary(planning[dto.id])
+            if let labelNames { dto.labels = labelNames[dto.id] ?? [] }
             return dto
         }
+    }
+
+    /// Label names (sorted) of `owner`'s labels per task; assignments are private to their owner.
+    static func labelNames(of taskIDs: [UUID], owner: UUID, on db: any Database) async throws -> [UUID: [String]] {
+        var labels: [UUID: String] = [:]
+        for label in try await DiscoveryLabel.query(on: db).filter(\.$ownerID == owner).all() { if let id = label.id { labels[id] = label.name } }
+        guard !labels.isEmpty else { return [:] }
+        var result: [UUID: [String]] = [:]
+        var index = 0
+        while index < taskIDs.count {
+            let chunk = Array(taskIDs[index..<min(index + 400, taskIDs.count)])
+            index += 400
+            for link in try await DiscoveryTaskLabel.query(on: db).filter(\.$taskID ~~ chunk).filter(\.$labelID ~~ Array(labels.keys)).all() {
+                if let name = labels[link.labelID] { result[link.taskID, default: []].append(name) }
+            }
+        }
+        return result.mapValues { $0.sorted() }
     }
 
     @Sendable func createTask(_ req: Request) async throws -> Response {

@@ -537,6 +537,12 @@ paths:
             type: string
             format: uuid
           description: Optional project filter.
+        - name: includeLabels
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: With true each task carries `labels` (names of the caller's own labels, sorted). Additive; one query pass instead of one search per label.
     post:
       operationId: createTask
       summary: Create a task
@@ -980,6 +986,11 @@ components:
           type: integer
         planning:
           $ref: '#/components/schemas/TaskPlanningSummary'
+        labels:
+          type: array
+          items:
+            type: string
+          description: Only in GET /v1/tasks?includeLabels=true; names of the caller's own labels.
       description: New tasks start at version 1, status open and description empty unless supplied.
         The planning summary is present only in GET /v1/tasks.
     TaskPlanningSummary:

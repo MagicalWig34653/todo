@@ -9,7 +9,6 @@
 	import ShareButton from './ShareButton.svelte';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
-	import { collectAll } from '#lib/planning.js';
 	import type { ProjectSub } from '#lib/routing.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
@@ -78,28 +77,18 @@
 	let loaded = $state(false);
 	let seq = 0;
 
-	async function loadLabels(id: string): Promise<Record<string, string[]>> {
-		const out: Record<string, string[]> = {};
-		await Promise.allSettled(
-			workspace.labels.slice(0, 40).map(async (l) => {
-				const hits = await collectAll((c) => api.search({ projectID: id, labelID: l.id }, c), 5);
-				for (const h of hits) if (h.kind === 'task' && h.task) (out[h.task.id] ??= []).push(l.name);
-			})
-		);
-		return out;
-	}
+	const labelsOf = (ts: Task[]) => Object.fromEntries(ts.filter((t) => t.labels?.length).map((t) => [t.id, t.labels!]));
+	const wantLabels = () => display.view === 'board' && workspace.labels.length > 0;
 	async function reload() {
 		const my = ++seq;
 		const id = project.id;
-		const [ts, b] = await Promise.all([api.listTasks(id), api.projectBoard(id)]);
+		const withLabels = wantLabels();
+		const [ts, b] = await Promise.all([api.listTasks(id, withLabels), api.projectBoard(id)]);
 		if (my !== seq) return;
 		tasks = ts;
 		board = b;
+		labelsByTask = withLabels ? labelsOf(ts) : {};
 		loaded = true;
-		if (display.view === 'board' && workspace.labels.length > 0) {
-			const l = await loadLabels(id);
-			if (my === seq) labelsByTask = l;
-		}
 	}
 
 	/** Live refresh: refetch silently and replace only what changed (no label reload, no flicker, scroll position stays). */
@@ -108,9 +97,13 @@
 		const my = seq;
 		const id = project.id;
 		const was = tasks;
-		const [ts, b] = await Promise.all([api.listTasks(id), api.projectBoard(id)]);
+		const withLabels = wantLabels();
+		const [ts, b] = await Promise.all([api.listTasks(id, withLabels), api.projectBoard(id)]);
 		if (my !== seq || id !== project.id || tasks !== was) return;
-		if (!sameList(tasks, ts)) tasks = ts;
+		if (!sameList(tasks, ts)) {
+			tasks = ts;
+			labelsByTask = withLabels ? labelsOf(ts) : {};
+		}
 		if (JSON.stringify(board) !== JSON.stringify(b)) board = b;
 	}
 	onMount(() => startLiveRefresh(refreshQuiet, { guardEditing: true }));

@@ -48,6 +48,30 @@ class Workspace {
 	}
 	async reloadTasks() {
 		this.tasks = await api.listTasks();
+		this.#tasksAt = Date.now();
+	}
+	#tasksAt = 0;
+	/** Opening a list view: the live refresh keeps `tasks` current, so only a missing or old copy is fetched again. */
+	async ensureTasks(maxAgeMs = 30_000) {
+		if (this.#tasksAt > 0 && Date.now() - this.#tasksAt < maxAgeMs) return;
+		await this.reloadTasks();
+	}
+	/** Starts the first reads of the workspace while the session check is still running (same requests as `reloadAll`). */
+	prime() {
+		api.prime([
+			() => api.listProjects(),
+			() => api.listTeams(),
+			() => api.teamInvitations(),
+			() => api.listProjectPrefs(true),
+			() => api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 }),
+			() => api.listLabels(),
+			() => api.listFilters(),
+			() => api.getPreferences()
+		]);
+	}
+	/** The big list starts only once the session is confirmed, so it does not slow down that answer on a thin connection. */
+	primeTasks() {
+		api.prime([() => api.listTasks()]);
 	}
 	async reloadTeams() {
 		[this.teams, this.invitations] = await Promise.all([api.listTeams(), api.teamInvitations()]);
@@ -73,16 +97,19 @@ class Workspace {
 			api.listProjects(),
 			api.listTasks(),
 			Promise.all([api.listTeams(), api.teamInvitations()]),
-			api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 })
+			api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 }),
+			this.refreshPrefsIfChanged()
 		]);
 		if (projects.status === 'fulfilled' && this.projects === was.p && !sameList(this.projects, projects.value)) this.projects = projects.value;
-		if (tasks.status === 'fulfilled' && this.tasks === was.t && !sameList(this.tasks, tasks.value)) this.tasks = tasks.value;
+		if (tasks.status === 'fulfilled' && this.tasks === was.t) {
+			if (!sameList(this.tasks, tasks.value)) this.tasks = tasks.value;
+			this.#tasksAt = Date.now();
+		}
 		if (teams.status === 'fulfilled' && this.teams === was.m && this.invitations === was.i) {
 			if (!sameList(this.teams, teams.value[0])) this.teams = teams.value[0];
 			if (!sameList(this.invitations, teams.value[1])) this.invitations = teams.value[1];
 		}
 		if (summary.status === 'fulfilled' && JSON.stringify(this.attention) !== JSON.stringify(summary.value.summary)) this.attention = summary.value.summary;
-		await this.refreshPrefsIfChanged();
 	}
 	private async refreshPrefsIfChanged() {
 		if (this.#inflight > 0) return;
@@ -96,8 +123,9 @@ class Workspace {
 		}
 	}
 	/** Re-reads prefs (derived modes change when agents/bindings appear) unless a local write is still in flight. */
-	async refreshPrefs() {
+	async refreshPrefs(maxAgeMs = 0) {
 		if (this.#inflight > 0) return;
+		if (maxAgeMs > 0 && Date.now() - this.#prefsAt < maxAgeMs) return;
 		try {
 			await this.reloadPrefs();
 		} catch {
@@ -108,6 +136,7 @@ class Workspace {
 		const { items } = await api.listProjectPrefs(true);
 		this.prefs = Object.fromEntries(items.map((p) => [p.projectID, p]));
 		this.prefsLoaded = true;
+		this.#prefsAt = Date.now();
 	}
 	/** Everything the sidebar shows; failures of the optional parts must not break the app. */
 	async reloadAll() {
@@ -175,6 +204,7 @@ class Workspace {
 		for (const pid of [id, ...ids]) await this.setMode(pid, mode);
 	}
 	#inflight = 0;
+	#prefsAt = 0;
 	async setPrefs(id: string, change: ProjectPrefsChange) {
 		this.prefs = { ...this.prefs, [id]: applyPrefsChange(this.prefs[id] ?? defaultPrefs(id), change) };
 		const run = async () => {

@@ -19,7 +19,7 @@
 	const projectName = (id: string) => workspace.projects.find((p) => p.id === id)?.name ?? '';
 
 	$effect(() => {
-		attempt(() => workspace.reloadTasks());
+		attempt(() => workspace.ensureTasks());
 	});
 	const toggle = (task: Task) => attempt(async () => { await api.updateTask(task, { status: 'done' }); await workspace.reloadTasks(); }, () => workspace.reloadTasks());
 </script>

@@ -66,7 +66,8 @@ test('error from a sharing action is visible inside the open dialog', async () =
 
 test('reloading a project page shows a skeleton, never "nicht gefunden"', async () => {
 	const project = await (await page.request.post('/v1/projects', { ...json, data: { name: 'Ladeprojekt' } })).json();
-	await page.route('**/v1/projects?*', async (route) => {
+	// The project list itself is delayed (the old glob `projects?*` matched nothing, the test only saw the skeleton by timing luck).
+	await page.route(/\/v1\/projects(\?.*)?$/, async (route) => {
 		await new Promise((r) => setTimeout(r, 1200));
 		await route.continue();
 	});
@@ -75,7 +76,7 @@ test('reloading a project page shows a skeleton, never "nicht gefunden"', async 
 	await expect(page.getByTestId('not-found')).toHaveCount(0);
 	await expect(page.getByTestId('project-loading')).toHaveCount(0);
 	await expect(page.getByTestId('not-found')).toHaveCount(0);
-	await page.unroute('**/v1/projects?*');
+	await page.unroute(/\/v1\/projects(\?.*)?$/);
 });
 
 test('"Mehr" can be closed on its own pages', async () => {
