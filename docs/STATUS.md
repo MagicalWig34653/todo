@@ -8,6 +8,12 @@
 - Codex-Jobs: Wrapper-Sitzung meldet per `post_progress`/`add_comment` mit `agentName` `codex@<thema>` (Skill, Handbuch, CLAUDE-CODE-EINRICHTUNG). Stop-Hook zaehlt zusaetzlich Board-Aufrufe in `<session>/subagents/*.jsonl` neben dem Transcript (Annahme zum Pfad; echte Sitzung nicht erprobt).
 - Tests: `sh claude-plugin/tests/test-hooks.sh` 94 ok, 0 FAIL (neu: 11 Commit-, 2 Push-, 14 Nicht-Commit-Faelle, Select-Zeile, Subagent-Transcript). plugin.json 1.5.0.
 - Offen: Handbuch-Version/embed von der Hauptsession (Handbuchzeilen ergaenzt, Version nicht erhoeht); Subagent-Pfad in echter Sitzung pruefen.
+## Checkpoint 3.11.2026: Kompakte MCP-Antworten (Agent claude-code@mcp-compact)
+
+- Board-Aufgabe `2BFD6CA3-4DF7-4AAB-AA80-12EF76295E14` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration, keine neuen Scopes.
+- `MCPCompact.swift` (neu) und `MCPWorkflowTools.swift`: `get_command_center` und `list_open_questions` mit `compact` (Standard true), `fields`; Fragen zusaetzlich `status`. Standard ohne Build-Gruppen, Unteraufgaben-/Build-Detail, mit gekuerzten Texten, 10 Karten je Lane, 5 Updates. Beschreibung in `docs/MCP-PARITAET.md`, Handbuch nur zwei Zeilen (Version/embed Hauptsession).
+- Gemessen (Fixture): command center 11011 gegenueber 21106 Bytes. `MCPCompactTests` 3/3, `CommandCenterTests`, `MCPNumericArgumentTests` gruen. Plugin-Skripte parsen die Antworten nicht.
+- Offen: Handbuch-Version und embed; echte Messung gegen Live-Daten.
 
 ## Checkpoint 3.11.2026: Berechtigungsfenster neu gestaltet (Agent claude-code@consent-ui)
 
