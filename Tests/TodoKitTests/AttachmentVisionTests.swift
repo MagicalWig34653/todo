@@ -5,8 +5,8 @@ import XCTVapor
 @testable import TodoKit
 
 /// Agents must be able to see what people attach: chat entry, signed short-lived download link.
-final class AttachmentVisionTests: XCTestCase {
-    let helper = AttachmentTests()
+final class AttachmentVisionTests: AttachmentTestBase {
+    var helper: AttachmentTestBase { self }
 
     private func completed(_ t: TestApp, _ alice: User, _ task: UUID, token: String, body: [String: Any] = [:]) async throws -> UUID {
         let service = AttachmentService()

@@ -4,7 +4,8 @@ import Fluent
 import XCTVapor
 @testable import TodoKit
 
-final class AttachmentTests: XCTestCase {
+/// Shared fixtures; a base class because XCTestCase cannot be instantiated by hand on Linux.
+class AttachmentTestBase: XCTestCase {
     // A real one-pixel PNG; magic-byte checks intentionally do not promise a full image decoder.
     let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXZkAAAAASUVORK5CYII=")!
 
@@ -50,6 +51,9 @@ final class AttachmentTests: XCTestCase {
         catch { XCTFail("Unexpected error: \(error)") }
     }
 
+}
+
+final class AttachmentTests: AttachmentTestBase {
     func testMagicBytesAndChecksum() throws {
         XCTAssertEqual(AttachmentService.mediaType(png), "image/png")
         XCTAssertEqual(AttachmentService.mediaType(Data([255,216,255,224])), "image/jpeg")
