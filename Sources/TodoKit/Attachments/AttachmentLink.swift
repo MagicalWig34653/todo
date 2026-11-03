@@ -10,16 +10,20 @@ enum AttachmentLink {
     static let lifetime: TimeInterval = 300
 
     /// Process-wide, derived from the environment key or random. Never stored, never logged.
-    private static let key: SymmetricKey = {
+    /// Raw bytes: `SymmetricKey` is not `Sendable` on Linux (static properties must be).
+    private static let keyBytes: [UInt8] = {
+        let key: SymmetricKey
         if let ring = try? SettingsKeyRing.fromEnvironment(get: { Environment.get($0) }), let current = ring.current {
-            return HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: current.material),
-                                          info: Data("todolino.attachment-link.v1".utf8), outputByteCount: 32)
+            key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: current.material),
+                                         info: Data("todolino.attachment-link.v1".utf8), outputByteCount: 32)
+        } else {
+            key = SymmetricKey(size: .bits256)
         }
-        return SymmetricKey(size: .bits256)
+        return key.withUnsafeBytes { Array($0) }
     }()
 
     private static func mac(_ id: UUID, _ exp: Int) -> [UInt8] {
-        Array(HMAC<SHA256>.authenticationCode(for: Data("dl1|\(id.uuidString.lowercased())|\(exp)".utf8), using: key))
+        Array(HMAC<SHA256>.authenticationCode(for: Data("dl1|\(id.uuidString.lowercased())|\(exp)".utf8), using: SymmetricKey(data: keyBytes)))
     }
 
     private static func hex(_ bytes: [UInt8]) -> String { bytes.map { String(format: "%02x", $0) }.joined() }
