@@ -7,6 +7,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import Markdown from '../card/Markdown.svelte';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
 
 	/** A pending review: summary, optional note and the two decisions. */
@@ -17,9 +18,11 @@
 		context?: string;
 		/** Render the summary's bullet points and emphasis (card detail) instead of plain text. */
 		markdown?: boolean;
+		/** Opens the card detail; renders a button inside the card. */
+		onopen?: () => void;
 		ondecided: () => void | Promise<void>;
 	}
-	let { taskID, summary, requestedBy, context, markdown = false, ondecided }: Props = $props();
+	let { taskID, summary, requestedBy, context, markdown = false, onopen, ondecided }: Props = $props();
 
 	let note = $state('');
 	let busy = $state(false);
@@ -76,4 +79,9 @@
 		<Button size="sm" variant="outline" disabled={busy} data-testid="review-changes" onclick={() => decide('request_changes')}>{t('cc.review.changes')}</Button>
 		<Button size="sm" disabled={busy} data-testid="review-accept" onclick={() => decide('accept')}>{t('cc.review.accept')}</Button>
 	</div>
+	{#if onopen}
+		<div class="-mx-2.5 -mb-2.5 flex border-t px-1.5 py-1">
+			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}>{t('cc.card.open')}<ChevronRight class="size-4" aria-hidden="true" /></Button>
+		</div>
+	{/if}
 </div>

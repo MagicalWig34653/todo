@@ -380,9 +380,9 @@
 						blocking={q.blocking}
 						askedBy={q.askedByLabel ?? q.askedByName}
 						context={t('cc.question.in', { task: q.taskTitle ?? '', project: q.projectName ?? '' })}
+						onopen={() => openTask(q.taskID, q.taskTitle ?? '')}
 						onanswered={refresh}
 					/>
-					<button type="button" class="text-ui-accent-ink self-start text-xs underline underline-offset-2" onclick={() => openTask(q.taskID, q.taskTitle ?? '')}>{t('cc.card.open')}</button>
 				</li>
 			{/each}
 		</ul>
@@ -398,9 +398,9 @@
 						summary={r.summary}
 						requestedBy={r.requestedByLabel}
 						context={t('cc.question.in', { task: r.taskTitle ?? '', project: r.projectName ?? '' })}
+						onopen={() => openTask(r.taskID, r.taskTitle ?? '')}
 						ondecided={refresh}
 					/>
-					<button type="button" class="text-ui-accent-ink self-start text-xs underline underline-offset-2" onclick={() => openTask(r.taskID, r.taskTitle ?? '')}>{t('cc.card.open')}</button>
 				</li>
 			{/each}
 		</ul>

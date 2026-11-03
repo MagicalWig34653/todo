@@ -13,9 +13,9 @@
 	import { AttachProblem, attachFile } from '#lib/attachFile.js';
 	import type { MessageKey } from '#lib/i18n/index.js';
 	import Avatar from './app/Avatar.svelte';
+	import ChatField from './card/ChatField.svelte';
 	import Bot from '@lucide/svelte/icons/bot';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
-	import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
 
 	/**
 	 * `chat` (card detail): message bubbles by author (you right, others and agents left), relative time, the rounded
@@ -48,13 +48,6 @@
 		} finally {
 			attaching = false;
 			if (fileInput) fileInput.value = '';
-		}
-	}
-	function composerKey(e: KeyboardEvent) {
-		// Enter and Ctrl/Cmd+Enter send, Shift+Enter inserts a line break.
-		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-			e.preventDefault();
-			(e.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
 		}
 	}
 	const initials = $derived(auth.user?.displayName ?? '?');
@@ -152,26 +145,14 @@
 {#snippet composer()}
 	<form class="flex items-start gap-3" onsubmit={add} data-testid="comment-composer">
 		<Avatar name={initials} class="mt-0.5 size-9 text-xs ring-0" />
-		<div class="bg-background border-input focus-within:border-ring focus-within:ring-ring/40 flex min-w-0 flex-1 items-end gap-1 rounded-3xl border py-1 pr-1.5 pl-4 transition-colors focus-within:ring-2">
-			<textarea
-				bind:value={body}
-				rows="1"
-				class="placeholder:text-muted-foreground field-sizing-content max-h-40 min-h-9 min-w-0 flex-1 resize-none bg-transparent py-2 text-sm outline-none"
-				placeholder={t('card.comment.placeholder')}
-				aria-label={t('comments.new')}
-				disabled={sending}
-				onkeydown={composerKey}
-			></textarea>
-			<input bind:this={fileInput} type="file" class="sr-only" tabindex="-1" aria-hidden="true" accept="image/png,image/jpeg,image/webp,application/pdf" data-testid="comment-file" onchange={attach} />
-			<button type="button" class="text-muted-foreground hover:bg-muted hover:text-foreground hit-area relative inline-flex size-9 shrink-0 items-center justify-center rounded-full disabled:opacity-50" aria-label={t('card.comment.attach')} title={t('card.comment.attach')} disabled={attaching} onclick={() => fileInput?.click()}>
-				<Paperclip class="size-4.5" aria-hidden="true" />
-			</button>
-			{#if body.trim()}
-				<button type="submit" class="bg-ui-accent text-ui-accent-foreground hit-area relative inline-flex size-9 shrink-0 items-center justify-center rounded-full disabled:opacity-50" aria-label={t('comments.add')} disabled={sending} data-testid="comment-send">
-					<SendHorizontal class="size-4" aria-hidden="true" />
+		<ChatField bind:value={body} placeholder={t('card.comment.placeholder')} label={t('comments.new')} sendLabel={t('comments.add')} busy={sending} onsend={() => add(new Event('submit'))} sendTestid="comment-send">
+			{#snippet actions()}
+				<input bind:this={fileInput} type="file" class="sr-only" tabindex="-1" aria-hidden="true" accept="image/png,image/jpeg,image/webp,application/pdf" data-testid="comment-file" onchange={attach} />
+				<button type="button" class="text-muted-foreground hover:bg-muted hover:text-foreground hit-area relative inline-flex size-9 shrink-0 items-center justify-center rounded-full disabled:opacity-50" aria-label={t('card.comment.attach')} title={t('card.comment.attach')} disabled={attaching} onclick={() => fileInput?.click()}>
+					<Paperclip class="size-4.5" aria-hidden="true" />
 				</button>
-			{/if}
-		</div>
+			{/snippet}
+		</ChatField>
 	</form>
 	{#if attachProblem}<p role="alert" class="text-destructive text-xs">{attachProblem}</p>{/if}
 {/snippet}

@@ -481,3 +481,42 @@ test('chat: bubbles by author, agent reply arrives live, draft survives, questio
 		access = saved;
 	}
 });
+
+test('composer: send button is always in the field, disabled when empty, Ctrl+Enter sends; "Details öffnen" sits inside the overview card', async () => {
+	await page.setViewportSize({ width: 390, height: 800 });
+	await page.goto(`/for-you?card=task:${ids.focusTask}`);
+	const chat = dialog().locator('[data-testid="card-conversation"][data-thread="task"]');
+	const send = chat.getByTestId('comment-send');
+	await expect(send).toBeVisible();
+	await expect(send).toBeDisabled();
+	const [fb, sb] = [await chat.getByTestId('chat-field').boundingBox(), await send.boundingBox()];
+	expect(sb!.x).toBeGreaterThanOrEqual(fb!.x);
+	expect(sb!.x + sb!.width).toBeLessThanOrEqual(fb!.x + fb!.width);
+	expect(sb!.width).toBeGreaterThanOrEqual(32);
+	await chat.getByLabel('Kommentar schreiben').fill('Per Tastatur gesendet');
+	await expect(send).toBeEnabled();
+	await chat.getByLabel('Kommentar schreiben').press('Control+Enter');
+	await expect(chat.getByTestId('comment').filter({ hasText: 'Per Tastatur gesendet' })).toHaveCount(1);
+	await expect(send).toBeDisabled();
+
+	// The overview card: the link to the detail is a button inside the card, not floating below it.
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto(`/project/${ids.project}`);
+	if (!(await page.getByTestId('project-tabs').isVisible())) {
+		await page.getByTestId('display-menu').click();
+		await page.getByTestId('mode-management').click();
+		await page.keyboard.press('Escape');
+	}
+	await expect(page.getByTestId('project-tabs')).toBeVisible();
+	await page.setViewportSize({ width: 390, height: 800 });
+	await page.goto('/overview');
+	await page.locator('#cc-tab-questions').click();
+	const q = page.getByTestId('question').first();
+	const open = q.getByTestId('card-open');
+	await expect(open).toBeVisible();
+	const [qb, ob] = [await q.boundingBox(), await open.boundingBox()];
+	expect(ob!.y + ob!.height).toBeLessThanOrEqual(qb!.y + qb!.height + 1);
+	expect(ob!.height).toBeGreaterThanOrEqual(32);
+	await open.click();
+	await expect(dialog()).toBeVisible();
+});

@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 3.11.2026: Chat-Politur, "Details öffnen" und Eingabefeld (Agent claude-code@chat-polish)
+
+- Board-Aufgabe `706A9FD1-E90D-42A0-8F17-DD5C3A5EC3BF` (nicht erledigt gesetzt, kein Review). Nur PWA, kein Backend, kein Push.
+- Nutzerkommentar: der Knopf wirkte verloren. Korrektur der Hauptsession: gemeint war der unterstrichene Link "Details öffnen" unter Fragen- und Review-Karten der Übersicht. Er ist jetzt Teil der Karte (`QuestionAnswer`/`ReviewDecision`, neue Prop `onopen`): Fußzeile mit Trennlinie, Ghost-Knopf mit Chevron, rechts, mobil volle Breite, 32 px hoch, Fokusring (`data-testid="card-open"`); `CommandCenter.svelte` übergibt `onopen`.
+- Neu `card/ChatField.svelte`: ein runder Behälter mit wachsendem Textfeld, Büroklammer und rundem Senden-Knopf innen rechts (immer sichtbar, ausgegraut bei leerem Feld, 36 px, `.hit-area`), Strg/Cmd+Enter sendet (Enter sendet in Kommentaren weiter). Genutzt von `TaskComments` (Aufgaben-, Fragen-, Review-Chat) und der Freitext-Antwort in `QuestionAnswer` (dort sendet nur Strg/Cmd+Enter; Testids `question-answer`/`question-send` unverändert). Der globale Glow-Fokus auf dem Textfeld (grauer Streifen) ist mit `shadow-none!` entfernt, der Fokusring sitzt am Behälter.
+- Geprüft: `card-detail.spec` 15/15 (neu: Senden-Knopf im Feld, leer deaktiviert, Strg+Enter, "Details öffnen" innerhalb der Karte), `passkey-flow` 21/21, vitest 295, `npm run build` grün; Screenshots hell/dunkel bei 1280, 390, 320 px angesehen. `npm run check` meldet nur den bekannten Fehler `./$types` in `+layout.svelte` (Worktree), sonst keine.
+- Offen: Review-Notizfeld (`ReviewDecision`) und Entscheidungsknöpfe bleiben im alten Stil; 200 % Schrift im Composer nicht gesondert fotografiert; Firefox/WebKit nicht geprüft.
+
 ## Checkpoint 3.11.2026: Plugin 1.5.0 Hook-Fixes (Agent claude-code@plugin-fixes)
 
 - Board-Aufgaben `0B792EB2` (Commit-Hook), `E8D47A63` (Tools vorladen), `34AE21D4` (Codex-Weg), `ED599FCD` (Stop-Hook Subagenten); nicht erledigt gesetzt, kein Review. Nur claude-plugin und Docs, kein Backend.

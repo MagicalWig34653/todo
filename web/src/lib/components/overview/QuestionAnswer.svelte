@@ -3,9 +3,10 @@
 	import { validateAnswer } from '#lib/commandCenter.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import ChatField from '../card/ChatField.svelte';
 	import OptionButtons from './OptionButtons.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import CircleHelp from '@lucide/svelte/icons/circle-help';
 
 	/** One open question with its answer controls: options become buttons, otherwise free text. */
@@ -19,9 +20,11 @@
 		context?: string;
 		/** Button size of the options (the large card detail uses `default`). */
 		size?: 'sm' | 'default';
+		/** Opens the card detail; renders a footer button inside the card. */
+		onopen?: () => void;
 		onanswered: () => void | Promise<void>;
 	}
-	let { id, prompt, options, blocking = false, askedBy, context, size = 'sm', onanswered }: Props = $props();
+	let { id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, onanswered }: Props = $props();
 
 	let text = $state('');
 	let busy = $state(false);
@@ -52,16 +55,18 @@
 		<OptionButtons {size} items={options.map((o) => ({ key: o, label: o }))} onpick={send} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
 	{:else}
 		<form
-			class="flex flex-col gap-1.5"
+			class="flex"
 			onsubmit={(e) => {
 				e.preventDefault();
 				send(text);
 			}}
 		>
-			<Textarea bind:value={text} rows={2} class="min-h-14" maxlength={10000} placeholder={t('cc.question.answerPlaceholder')} aria-label={t('cc.question.answerLabel')} data-testid="question-answer" />
-			<div class="flex justify-end">
-				<Button size="sm" type="submit" disabled={busy || !valid} data-testid="question-send">{t('cc.question.send')}</Button>
-			</div>
+			<ChatField bind:value={text} enterSends={false} maxlength={10000} busy={busy} canSend={!!valid} onsend={() => send(text)} placeholder={t('cc.question.answerPlaceholder')} label={t('cc.question.answerLabel')} sendLabel={t('cc.question.send')} fieldTestid="question-answer" sendTestid="question-send" />
 		</form>
+	{/if}
+	{#if onopen}
+		<div class="-mx-2.5 -mb-2.5 flex border-t px-1.5 py-1">
+			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}>{t('cc.card.open')}<ChevronRight class="size-4" aria-hidden="true" /></Button>
+		</div>
 	{/if}
 </div>
