@@ -16,6 +16,13 @@
 - `get_attachment_download` (Klasse A) mit signierter 5-Minuten-URL (HMAC, HKDF aus SETTINGS_ENCRYPTION_KEY, sonst Prozessschluessel); Plugin 1.6.0 mit `scripts/fetch-attachment.sh`, Skill-Hinweis.
 - Sicherheit getestet: Signatur manipuliert, `exp` verschoben/abgelaufen/zu weit, fremde Anhangs-ID, geloescht (Replay), andere Methode, fremdes Projekt (`not_found`), Dateiname/Pfad im Skript, keine URL im Fehlerlog (signierte Route gibt Fehler als Antwort zurueck). Siehe `docs/MCP-PARITAET.md`, Abschnitt "Anhaenge fuer Agenten sehen".
 - Offen: Handbuch-Version/embed (Hauptsession; `docs/agent-manual.md` hat neue Zeilen, `AgentManualContent.swift` nicht neu erzeugt); PWA-Aufgabe `8C9D4BB6` (Upload) nicht reproduziert, der REST-Ablauf ist getestet, Browser nicht geprueft; echter Test mit Live-Server und Claude Code ausstehend; Server-Verkleinerung grosser Bilder waere ein eigener Schritt.
+## Checkpoint 3.11.2026: Chat-Politur, "Details öffnen" und Eingabefeld (Agent claude-code@chat-polish)
+
+- Board-Aufgabe `706A9FD1-E90D-42A0-8F17-DD5C3A5EC3BF` (nicht erledigt gesetzt, kein Review). Nur PWA, kein Backend, kein Push.
+- Nutzerkommentar: der Knopf wirkte verloren. Korrektur der Hauptsession: gemeint war der unterstrichene Link "Details öffnen" unter Fragen- und Review-Karten der Übersicht. Er ist jetzt Teil der Karte (`QuestionAnswer`/`ReviewDecision`, neue Prop `onopen`): Fußzeile mit Trennlinie, Ghost-Knopf mit Chevron, rechts, mobil volle Breite, 32 px hoch, Fokusring (`data-testid="card-open"`); `CommandCenter.svelte` übergibt `onopen`.
+- Neu `card/ChatField.svelte`: ein runder Behälter mit wachsendem Textfeld, Büroklammer und rundem Senden-Knopf innen rechts (immer sichtbar, ausgegraut bei leerem Feld, 36 px, `.hit-area`), Strg/Cmd+Enter sendet (Enter sendet in Kommentaren weiter). Genutzt von `TaskComments` (Aufgaben-, Fragen-, Review-Chat) und der Freitext-Antwort in `QuestionAnswer` (dort sendet nur Strg/Cmd+Enter; Testids `question-answer`/`question-send` unverändert). Der globale Glow-Fokus auf dem Textfeld (grauer Streifen) ist mit `shadow-none!` entfernt, der Fokusring sitzt am Behälter.
+- Geprüft: `card-detail.spec` 15/15 (neu: Senden-Knopf im Feld, leer deaktiviert, Strg+Enter, "Details öffnen" innerhalb der Karte), `passkey-flow` 21/21, vitest 295, `npm run build` grün; Screenshots hell/dunkel bei 1280, 390, 320 px angesehen. `npm run check` meldet nur den bekannten Fehler `./$types` in `+layout.svelte` (Worktree), sonst keine.
+- Offen: Review-Notizfeld (`ReviewDecision`) und Entscheidungsknöpfe bleiben im alten Stil; 200 % Schrift im Composer nicht gesondert fotografiert; Firefox/WebKit nicht geprüft.
 
 ## Checkpoint 3.11.2026: Plugin 1.5.0 Hook-Fixes (Agent claude-code@plugin-fixes)
 
