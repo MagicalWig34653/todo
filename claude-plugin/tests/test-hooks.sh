@@ -24,6 +24,7 @@ has "start bound is SessionStart JSON" '"hookEventName":"SessionStart"' "$out"
 has "start bound asks for short bullet-point board texts" "bullet points" "$out"
 has "start bound keeps update info out of reviews" "no review" "$out"
 has "start bound tells agents to read new chat messages" "list_comments" "$out"
+has "start bound gives the ready ToolSearch select line" "select:mcp__plugin_todolino_todolino__post_progress,mcp__plugin_todolino_todolino__claim_task,mcp__plugin_todolino_todolino__create_task,mcp__plugin_todolino_todolino__ask_question,mcp__plugin_todolino_todolino__request_review,mcp__plugin_todolino_todolino__list_tasks,mcp__plugin_todolino_todolino__get_command_center,mcp__plugin_todolino_todolino__record_sync,mcp__plugin_todolino_todolino__get_sync_status" "$out"
 has "start bound names the card chat targets" "questionID or reviewID" "$out"
 out=$("$here/scripts/session-start.sh" <<EOF2
 {"cwd":"$plain"}
@@ -137,6 +138,12 @@ check "ask: exactly 6 own continuations, then silent" "6" "$blocks"
 out=$(TODOLINO_HOOKS_OFF=1 stop qH "$bound" "$qopen"); check "ask: honours TODOLINO_HOOKS_OFF" "" "$out"
 qcommit="$tmp/qcommit.jsonl"; cp "$commit" "$qcommit"; cat "$qopen" >> "$qcommit"
 out=$(stop qI "$bound" "$qcommit"); has "ask+board: open question block wins" 'wait_for_events' "$out"
+
+# subagent transcripts count as board activity
+subt="$tmp/subs/main.jsonl"; mkdir -p "$tmp/subs/main/subagents"; cp "$edit" "$subt"
+out=$(stop sS1 "$bound" "$subt"); has "subagents: no board call anywhere still reminds" "Board-Aktivitaet" "$out"
+cp "$full" "$tmp/subs/main/subagents/agent-1.jsonl"
+out=$(stop sS2 "$bound" "$subt"); check "subagents: post_progress+record_sync in a subagent transcript is silent" "" "$out"
 
 # PostToolUse after commit
 out=$("$here/scripts/post-commit.sh" <<EOF2

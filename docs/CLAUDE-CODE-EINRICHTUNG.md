@@ -15,7 +15,9 @@ Das Plugin liegt in diesem Repository (`claude-plugin/`, Marketplace `.claude-pl
 Wirkung danach:
 - SessionStart-Hook: in Repositories mit `.todolino.json` bekommt der Agent den Kontext „an Todolino gebunden, Pflichtregeln „Board laufend nutzen“: Lage prüfen (offene Fragen, Reviews, eigene Aufgaben), Aufgabe suchen oder anlegen und claimen, post_progress je Teilschritt, Entscheidungen als ask_question, request_review, record_sync; feste Texte, kein Netzwerk; in Git-Repositories ohne Marker nur den Hinweis „noch nicht eingerichtet“.
 - Stop-Hook: siehe „Durchsetzung und ihre Grenzen“.
-- PostToolUse-Hook nach `git commit`: dringende Erinnerung, sofort `post_progress` auf der passenden Aufgabe zu schreiben (sonst `create_task` und `claim_task`), bei Fertigstellung `request_review` (nur gebundene Repositories).
+- SessionStart nennt die fertige ToolSearch-Zeile (`select:mcp__plugin_todolino_todolino__post_progress,...`), weil Tool-Schemas deferred sind und direkte Aufrufe sonst mit `invalid_arguments` scheitern; ein Plugin kann Schemas nicht vorladen.
+- Codex-Jobs (Companion/Sandbox) erreichen Todolino-Tools nicht: die startende Claude-Sitzung ist der Wrapper und meldet per `post_progress`/`add_comment` mit `agentName` `codex@<thema>`. Der Stop-Hook zaehlt Board-Aufrufe der Hauptsitzung und der Subagenten (`<session>/subagents/*.jsonl` neben dem Transcript), also auch diese Meldung.
+- PostToolUse-Hook (Bash) nach echtem `git commit` (auch `git -C x commit`, verkettet, mit Quotes) oder `git push`: Befehl wird aus `tool_input.command` geparst; `git status`, `git log --grep commit`, `echo "git commit"` loesen nichts aus. Commit: dringende Erinnerung, sofort `post_progress` auf der passenden Aufgabe zu schreiben (sonst `create_task` und `claim_task`), bei Fertigstellung `request_review` (nur gebundene Repositories).
 
 ## Weg B: ohne Plugin
 
@@ -63,7 +65,7 @@ Was nicht erzwungen werden kann:
 
 ## Plugin aktualisieren (Version 1.3.0)
 
-Version 1.3.0 (2.11.2026): Reviews nur für Dinge, die der Nutzer ansehen oder entscheiden muss; Update-Infos (Commit, Tests, interne Änderung) gehören in `post_progress`. Version 1.2.0 (2.11.2026): Board-Texte kurz und in Stichpunkten (Sitzungsstart, Erinnerung nach Commit, Skill, CLAUDE.md-Vorlage). Version 1.1.0 (1.11.2026): Pflichtregeln beim Sitzungsstart, schärfere Erinnerung nach Commits, Stop-Hook mit Board-Aktivitätsprüfung, überarbeitete Skills und CLAUDE.md-Vorlage, Agentenhandbuch 1.2.0 (Abschnitt „Using the board while you work“). Hooks wirken erst in neuen Sitzungen.
+Version 1.5.0 (3.11.2026): Commit-Hook nur bei echtem git commit/push, ToolSearch-Zeile beim Sitzungsstart, Codex-Wrapper-Weg dokumentiert, Stop-Hook zaehlt Subagenten-Transcripts. Version 1.3.0 (2.11.2026): Reviews nur für Dinge, die der Nutzer ansehen oder entscheiden muss; Update-Infos (Commit, Tests, interne Änderung) gehören in `post_progress`. Version 1.2.0 (2.11.2026): Board-Texte kurz und in Stichpunkten (Sitzungsstart, Erinnerung nach Commit, Skill, CLAUDE.md-Vorlage). Version 1.1.0 (1.11.2026): Pflichtregeln beim Sitzungsstart, schärfere Erinnerung nach Commits, Stop-Hook mit Board-Aktivitätsprüfung, überarbeitete Skills und CLAUDE.md-Vorlage, Agentenhandbuch 1.2.0 (Abschnitt „Using the board while you work“). Hooks wirken erst in neuen Sitzungen.
 
 Aktualisieren beim Nutzer (**Befehle nicht geprüft**; `claude plugin --help` war in dieser Umgebung nicht ausführbar, Angabe nach Claude-Code-Doku): Marketplace auffrischen mit `/plugin marketplace update todolino`, Plugin mit `/plugin update todolino@todolino` (Shell: `claude plugin update todolino@todolino`), danach Claude Code neu starten. Die installierte Version zeigt `/plugin`. Den Projektabschnitt „## Todolino“ erneuert `/todolino:setup` (zwischen den Markern) oder man übernimmt `claude-plugin/templates/claude-md-section.md` von Hand.
 

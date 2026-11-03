@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 3.11.2026: Plugin 1.5.0 Hook-Fixes (Agent claude-code@plugin-fixes)
+
+- Board-Aufgaben `0B792EB2` (Commit-Hook), `E8D47A63` (Tools vorladen), `34AE21D4` (Codex-Weg), `ED599FCD` (Stop-Hook Subagenten); nicht erledigt gesetzt, kein Review. Nur claude-plugin und Docs, kein Backend.
+- `post-commit.sh` parst `tool_input.command` (awk): nur echtes `git commit` (auch `-C`/`-c`, Env-Praefix, Ketten, Quotes, Heredoc) oder `git push`; Quotes werden ausgeblendet, `git status`/`log --grep commit`/`echo "git commit"` loesen nichts aus. `if`-Filter in hooks.json entfernt (Skript entscheidet). Push hat eigenen kurzen Text.
+- SessionStart nennt die fertige ToolSearch-Zeile (Plugin kann Schemas nicht vorladen); Skill und Handbuchabschnitt erwaehnen sie.
+- Codex-Jobs: Wrapper-Sitzung meldet per `post_progress`/`add_comment` mit `agentName` `codex@<thema>` (Skill, Handbuch, CLAUDE-CODE-EINRICHTUNG). Stop-Hook zaehlt zusaetzlich Board-Aufrufe in `<session>/subagents/*.jsonl` neben dem Transcript (Annahme zum Pfad; echte Sitzung nicht erprobt).
+- Tests: `sh claude-plugin/tests/test-hooks.sh` 94 ok, 0 FAIL (neu: 11 Commit-, 2 Push-, 14 Nicht-Commit-Faelle, Select-Zeile, Subagent-Transcript). plugin.json 1.5.0.
+- Offen: Handbuch-Version/embed von der Hauptsession (Handbuchzeilen ergaenzt, Version nicht erhoeht); Subagent-Pfad in echter Sitzung pruefen.
+
 ## Checkpoint 3.11.2026: Berechtigungsfenster neu gestaltet (Agent claude-code@consent-ui)
 
 - Board-Aufgabe `C35D897E-BEE1-4E77-A979-2EE14C4787AD` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration, Scopes und OAuth-Ablauf unveraendert.
