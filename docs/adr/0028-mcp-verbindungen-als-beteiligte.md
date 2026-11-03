@@ -1,0 +1,20 @@
+# ADR 0028: MCP-Verbindungen als Beteiligte, Namen und Zugriffshinweise
+
+Status: umgesetzt (3.11.2026), Folgeaufgaben unten.
+
+## Kontext
+
+Eine MCP-Verbindung (OAuth-Grant) darf nur auf Projekte ihrer Projektliste (`grant.projects`) und nie mehr als ihr Besitzer (ADR 0007, 0026). Im Teilen-Fenster gab es dafür einen eigenen Abschnitt „Verbundene Apps“ mit Schaltern, Verbindungen hatten keinen frei wählbaren Namen, und ein Zugriff außerhalb des Grants endete für die Person unsichtbar in `not_found`.
+
+## Entscheidungen
+
+1. **Verbindung als Beteiligter.** Im Teilen-Fenster erscheinen Verbindungen in „Personen und Teams mit Zugriff“ mit Symbol und Abzeichen „MCP“, Text „Verbindung <Name> (von <Besitzer>)“ und der Rolle des Besitzers. Es gibt keine eigene Rolle und keine Rollenerhöhung: der Zugriff ist die Schnittmenge aus Besitzerrechten (aktuell berechnet) und Grant (Projektliste, Scopes). Hinzufügen (eigene Verbindung wählen) und Entziehen laufen über `GET/PUT /v1/projects/{id}/connections` und `DELETE …/{grantID}`; Hinzufügen nutzt dieselben Regeln wie `PUT /oauth/grants/{id}/projects`. Entziehen darf der Besitzer oder ein Manager des Projekts; hinzufügen nur der Besitzer der Verbindung (und nur mit Rolle manage im Fenster). `GET /v1/projects/{id}/visibility` und die MCP-Tools `list_project_grants`/`get_project_visibility` bleiben unverändert (Array-/Objektform; eine additive Verbindungsliste wäre eine Formänderung) – Folgeaufgabe, falls Agenten Verbindungen sehen sollen.
+2. **Name.** `oauth_grants.name` (additiv, Migration füllt aus dem Clientnamen; neue Grants: Eingabe auf der Zustimmungsseite, leer = Clientname, 1 bis 80 Zeichen, keine Steuerzeichen, sonst 400 `invalid_name`). Umbenennen per `PATCH /oauth/grants/{id}`. Angezeigt im Teilen-Fenster, in den Einstellungen („Verbundene Apps“), im Feed (Akteur, wenn der Agent keinen eigenen Namen meldete), in `get_connection` und im Zugriffshinweis. `oauth_grants.last_used_at` wird höchstens alle 5 Minuten geschrieben. Begriff: Die Einstellungsgruppe heißt weiter „Verbundene Apps“, der einzelne Eintrag „Verbindung“.
+3. **Zugriffshinweis.** Scheitert ein MCP-Tool-Aufruf mit not_found/forbidden (außer `insufficient_scope`) und nennt `projectID` oder eine Aufgaben-ID (`taskID`, `id`) eines Projekts außerhalb des Grants, legt `ConnectionService.noteDenied` je (Verbindung, Projekt) eine Zeile in `connection_access_requests` an – nur wenn der Besitzer das Projekt lesen darf (sonst nichts, damit auch für die Person nichts über Fremdes entsteht). Die Antwort an den Agenten bleibt byteweise gleich (kein Hinweis, keine Existenzinformation). Zähler und Zeitpunkt steigen höchstens einmal je Minute (Schleifenschutz); `ignored` bleibt still, `granted` öffnet sich wieder, wenn der Zugriff später entzogen und erneut angefragt wird. Aufräumen: entschiedene Zeilen nach 7, offene ohne Wiederholung nach 30 Tagen (`cleanup-expired`, Bericht `accessNotices`).
+4. **Erlauben ohne Bestätigungsanfrage.** Der Klick „Zugriff erlauben“ in „Für dich“ ist eine Aktion der Person selbst (Sitzung) und fügt das Projekt dem Grant hinzu (`POST /v1/connection-access-requests/{id}/allow`); Bestätigungsanfragen (ADR 0026) gelten für Agentenaktionen. Eine Rollenwahl gibt es bewusst nicht (siehe 1): angezeigt wird die Rolle der Person als Obergrenze. Der Hinweis zählt im Seitenleisten-Abzeichen (`summary.pendingAccessRequests`) und kommt im Feld `accessRequests[]` des Feeds.
+
+## Folgen
+
+- Migrationen `AddOAuthGrantNameAndUsage`, `CreateConnectionAccessRequests` (additiv; vor `serve` `App migrate --yes`).
+- Verträge: `contracts/connections.yaml` (neu), `oauth-mcp.yaml` (Name, last_used_at, PATCH, `connection_name`, `default_name`).
+- Offen: Rollenobergrenze je Verbindung und Projekt (z. B. „nur lesen“) bräuchte ein neues Datenmodell (Rolle je Projekt im Grant) und Prüfungen in allen Diensten mit `allowedProjects`; nicht Teil dieses Schritts. Aktivitätsliste (`ActivityFeedService`) zeigt weiter die vom Agenten gemeldeten Namen.

@@ -69,7 +69,7 @@ paths:
       responses:
         '200':
           description: >-
-            consent_token (5 Minuten, einmalig), client_name, client_id, redirect_uri,
+            consent_token (5 Minuten, einmalig), client_name, default_name (Vorschlag für den Namen der Verbindung), client_id, redirect_uri,
             scopes und projects als ProjectDTO-Liste. Consent-Client muss Aktionen und
             Redirect-Ziel anzeigen und explizite Projektauswahl verlangen.
         '400': {description: Ungültige Anfrage; keine Weiterleitung bei ungültigem Redirect.}
@@ -87,6 +87,7 @@ paths:
               properties:
                 consent_token: {type: string}
                 approve: {type: boolean}
+                connection_name: {type: string, maxLength: 80, description: 'Name der Verbindung; leer = Clientname; ungültig = 400 invalid_name.'}
                 project_ids:
                   type: array
                   items: {type: string, format: uuid}
@@ -119,8 +120,20 @@ paths:
       security: [{userSession: []}]
       responses:
         '200':
-          description: Eigene Grants mit id, client_id, client_name (bei der Registrierung angegeben, leer wenn unbekannt), scopes, project_ids und revoked.
+          description: Eigene Grants mit id, client_id, client_name (bei der Registrierung angegeben, leer wenn unbekannt), name (Name der Verbindung, Standard Clientname), last_used_at (letzte MCP-Nutzung, höchstens alle 5 Minuten geschrieben, sonst null), scopes, project_ids und revoked.
   /oauth/grants/{id}:
+    patch:
+      security: [{userSession: []}]
+      summary: Verbindung umbenennen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [name], properties: {name: {type: string, minLength: 1, maxLength: 80}}}
+      responses:
+        '200': {description: Der Grant im Format von GET /oauth/grants.}
+        '400': {description: invalid_name (leer, über 80 Zeichen oder Steuerzeichen).}
+        '404': {description: Fremder oder unbekannter Grant.}
     delete:
       security: [{userSession: []}]
       parameters:

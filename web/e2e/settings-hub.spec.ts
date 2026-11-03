@@ -191,7 +191,7 @@ test('administration: invitation, system status, honest gaps', async () => {
 	await admin.getByTestId('invite-create').click();
 	const code = (await admin.getByTestId('invite-code').innerText()).trim();
 	expect(code.length).toBeGreaterThan(20);
-	await expect(admin.getByTestId('invite-link')).toHaveText(`${origin}/setup?token=${encodeURIComponent(code)}`);
+	await expect(admin.getByTestId('invite-link')).toHaveText(`${origin}/setup#code=${encodeURIComponent(code)}`);
 	await expect(admin.getByTestId('invite-row')).toHaveCount(1);
 	// A second invitation is withdrawn again; the first (used below) stays valid.
 	await admin.getByTestId('invite-create').click();

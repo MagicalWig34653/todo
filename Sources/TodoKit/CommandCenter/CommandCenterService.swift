@@ -149,6 +149,8 @@ struct SummaryDTO: Content {
     let staleProjects: Int
     /// Pending confirmation requests of agents (ADR 0026); account scope of the signed-in user only, otherwise 0.
     var pendingConfirmations: Int = 0
+    /// Open notices of connections that asked for a project outside their grant (ADR 0028); same scope rule as above.
+    var pendingAccessRequests: Int = 0
 }
 
 struct UpdateItem: Content {
@@ -466,7 +468,8 @@ struct CommandCenterService: Sendable {
             blocked: count("blocked"), done: count("done"), backlog: backlog,
             openQuestions: questions.count, pendingReviews: reviews.count, features: topCards.filter { $0.isFeature && $0.lane != "done" }.count,
             activeAgents: activeAgents.count, staleProjects: syncEntries.filter { $0.sync.bound && $0.sync.state != "fresh" }.count,
-            pendingConfirmations: q.projectID == nil && allowedProjects == nil ? try await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total : 0)
+            pendingConfirmations: q.projectID == nil && allowedProjects == nil ? try await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total : 0,
+            pendingAccessRequests: q.projectID == nil && allowedProjects == nil ? try await ConnectionService.openRequests(user: user, scopeProjects: scope.projects, db: db).count : 0)
 
         let updates = q.updatesLimit == 0 ? [] : try await self.updates(scope: scope, limit: q.updatesLimit)
         let buildGroups = Self.groups(builds, limit: 10)

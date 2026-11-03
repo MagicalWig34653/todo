@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: Todolino MCP-Verbindungen im Teilen-Fenster
+  version: 1.0.0
+  description: 'ADR 0028. Eine MCP-Verbindung (OAuth-Grant) ist ein eigener Beteiligter eines Projekts neben Personen und Teams. Ihr Zugriff ist durch
+    die Rechte der Person (wirksame Rolle) UND die Projektliste/Scopes des Grants begrenzt, nie größer als der Besitzer; es gibt keine eigene Rolle.
+    Das Feld role der Antwort ist die aktuelle Rolle des Besitzers im Projekt. Name der Verbindung: Feld name von GET /oauth/grants
+    (Standard = Clientname, änderbar per PATCH /oauth/grants/{id}). Zugriffshinweise: fragt eine Verbindung ein Projekt außerhalb ihres Grants an
+    (MCP-Antwort unverändert not_found) und kann ihr Besitzer das Projekt lesen, entsteht je Verbindung und Projekt ein Hinweis (Anzahl, letzter
+    Zeitpunkt, höchstens ein Zähler-Schritt je Minute); er erscheint in GET /v1/feed als accessRequests[] und in
+    GET /v1/command-center summary.pendingAccessRequests. Erlauben fügt das Projekt dem Grant hinzu (Klick des Kontoinhabers ist die Bestätigung),
+    Ignorieren schaltet den Hinweis still. Entschiedene Hinweise räumt cleanup-expired nach 7 Tagen auf, offene nach 30 Tagen ohne Wiederholung.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/projects/{id}/connections:
+    get:
+      operationId: listProjectConnections
+      summary: Verbindungen, die das Projekt erreichen (Rolle manage nötig)
+      description: 'Antwort ConnectionDTO[]: grantID, name, clientName, ownerID, ownerName, isOwn, role (Rolle des Besitzers, begrenzt die Verbindung),
+        scopes, lastUsedAt. Nur Verbindungen, deren Besitzer das Projekt noch lesen darf.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: 'ConnectionDTO[]'}
+        '403': {description: Rolle manage fehlt}
+        '404': {description: Projekt unbekannt oder nicht sichtbar}
+    put:
+      operationId: addProjectConnection
+      summary: Eigene Verbindung für das Projekt freigeben (Rolle manage nötig)
+      description: 'Body {grantID}. Nur eigene, nicht widerrufene Verbindungen; wie PUT /oauth/grants/{id}/projects (das Konto braucht aktuell Zugriff).
+        Antwort wie GET.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [grantID], properties: {grantID: {type: string, format: uuid}}}
+      responses:
+        '200': {description: 'ConnectionDTO[]'}
+        '404': {description: fremde oder unbekannte Verbindung, Projekt nicht zugänglich}
+        '409': {description: grant_revoked}
+  /v1/projects/{id}/connections/{grantID}:
+    delete:
+      operationId: removeProjectConnection
+      summary: Zugriff einer Verbindung auf das Projekt entziehen
+      description: 'Besitzer der Verbindung oder Manager des Projekts. Die Verbindung selbst bleibt bestehen. Die letzte Projektfreigabe einer Verbindung
+        ohne projects:write bleibt (400 projects_required); dann Verbindung widerrufen.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: grantID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: entzogen}
+        '400': {description: projects_required}
+        '404': {description: Verbindung erreicht das Projekt nicht}
+  /v1/connection-access-requests/{id}/allow:
+    post:
+      operationId: allowConnectionAccessRequest
+      summary: Hinweis "Verbindung wollte Projekt" - Zugriff erlauben
+      description: 'Fügt das Projekt dem Grant hinzu (gleiche Regeln wie addProjectConnection) und markiert den Hinweis als erledigt.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: erlaubt}
+        '404': {description: unbekannter oder fremder Hinweis, Projekt nicht mehr zugänglich}
+        '409': {description: grant_revoked}
+  /v1/connection-access-requests/{id}/ignore:
+    post:
+      operationId: ignoreConnectionAccessRequest
+      summary: Hinweis ignorieren
+      description: 'Der Hinweis erscheint nicht mehr; weitere Anfragen derselben Verbindung für dasselbe Projekt werden nur gezählt.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: ignoriert}
+        '404': {description: unbekannter oder fremder Hinweis}

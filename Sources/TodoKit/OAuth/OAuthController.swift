@@ -18,6 +18,7 @@ struct OAuthController: RouteCollection {
         routes.get("oauth", "grants", use: grants)
         routes.delete("oauth", "grants", ":id", use: revoke)
         routes.put("oauth", "grants", ":id", "projects", use: setGrantProjects)
+        routes.patch("oauth", "grants", ":id", use: renameGrant)
         try routes.register(collection: MCPController())
     }
 
@@ -122,14 +123,20 @@ struct OAuthController: RouteCollection {
         let raw = AuthSupport.randomToken()
         try await OAuthSecret(raw: raw, kind: "consent", payload: Self.pack(Pending(userID: try user.requireID(), request: b)), lifetime: 300).save(on: req.db)
         let projects = try await Project.query(on: req.db).filter(\.$ownerID == user.requireID()).all()
-        return .object(["consent_token": .string(raw), "client_name": .string(c.name), "client_id": .string(b.client_id.uuidString),
+        return .object(["consent_token": .string(raw), "client_name": .string(c.name), "client_id": .string(b.client_id.uuidString), "default_name": .string(ConnectionNames.defaultName(c.name)),
             "redirect_uri": .string(b.redirect_uri), "scopes": .strings(scope.split(separator: " ").map(String.init)),
             "projects": try .encoded(projects.map(ProjectDTO.init))])
     }
-    struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool }
+    struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool; var connection_name: String? }
     @Sendable func consent(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
         let b = try req.content.decode(Consent.self)
+        // Optional name of the connection; empty means "use the client name". Anything invalid is rejected, not silently changed.
+        let chosenName: String? = try {
+            guard let raw = b.connection_name, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard let clean = ConnectionNames.clean(raw) else { throw Abort(.badRequest, reason: "invalid_name") }
+            return clean
+        }()
         // Look the row up before the transaction: MariaDB's snapshot isolation fails a locking read that follows
         // a plain read in the same transaction when the row changed in between ("Record has changed since last read").
         guard let found = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(b.consent_token)).first() else { throw Abort(.badRequest) }
@@ -148,8 +155,10 @@ struct OAuthController: RouteCollection {
                 let mayCreateProjects = (a.scope ?? "").split(separator: " ").contains("projects:write")
                 guard !b.project_ids.isEmpty || mayCreateProjects else { throw Abort(.badRequest, reason: "projects_required") }
                 for id in b.project_ids { _ = try await ProjectAccess(user: user, db: db).project(id) }
+                let clientName = try await OAuthClient.find(a.client_id, on: db)?.name
                 let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: req.application.settings.oauthResource,
-                                   scopes: (a.scope ?? "").split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)))
+                                   scopes: (a.scope ?? "").split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)),
+                                   name: chosenName ?? ConnectionNames.defaultName(clientName))
                 try await g.save(on: db)
                 let code = AuthSupport.randomToken()
                 try await OAuthSecret(raw: code, kind: "code", grantID: g.requireID(), payload: Self.pack(a), lifetime: 120).save(on: db)
@@ -212,7 +221,16 @@ struct OAuthController: RouteCollection {
     }
     private static func grantJSON(_ g: OAuthGrant, clientName: String? = nil) throws -> JSONValue {
         .object(["id": .string(try g.requireID().uuidString), "client_id": .string(g.clientID.uuidString), "client_name": .string(clientName ?? ""),
-                 "scopes": .strings(g.scopes), "project_ids": .strings(g.projects.map(\.uuidString)), "revoked": .bool(g.revoked)])
+                 "scopes": .strings(g.scopes), "project_ids": .strings(g.projects.map(\.uuidString)), "revoked": .bool(g.revoked),
+                 "name": .string(ConnectionNames.display(g, clientName: clientName)),
+                 "last_used_at": g.lastUsedAt.map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null])
+    }
+    struct GrantName: Content { var name: String }
+    @Sendable func renameGrant(_ req: Request) async throws -> JSONValue {
+        let user = try await req.requireUser()
+        guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.notFound) }
+        let g = try await ConnectionService.rename(grantID: id, name: try req.content.decode(GrantName.self).name, user: user, db: req.db)
+        return try Self.grantJSON(g, clientName: try await OAuthClient.find(g.clientID, on: req.db)?.name)
     }
     @Sendable func grants(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()

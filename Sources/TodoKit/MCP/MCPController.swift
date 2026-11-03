@@ -27,6 +27,7 @@ struct MCPController: RouteCollection {
               let user = try await User.find(grant.userID, on: req.db), !user.isLocked else {
             return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(req.application.settings.oauthIssuer)/.well-known/oauth-protected-resource/mcp\", scope=\"\(OAuthController.scopes.joined(separator: " "))\""])
         }
+        await ConnectionService.touch(grant, db: req.db)
         if let version = req.headers.first(name: "MCP-Protocol-Version"), !Self.versions.contains(version) { throw Abort(.badRequest, reason: "unsupported_protocol_version") }
         let body: JSONValue
         do { body = try req.content.decode(JSONValue.self) }
@@ -83,6 +84,10 @@ struct MCPController: RouteCollection {
                     "message": .string("Wartet auf Bestätigung des Nutzers in Todolino. Mit wait_for_events oder get_action_request auf das Ergebnis warten, nicht erneut auslösen.")])), as: UTF8.self)
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(true)])
             } catch {
+                // ADR 0028: a denied project/task is noted for the person (only if they can read it); the agent's answer is unchanged.
+                if let abort = error as? any AbortError, abort.status == .notFound || (abort.status == .forbidden && abort.reason != "insufficient_scope") {
+                    await ConnectionService.noteDenied(arguments: body["params"]["arguments"], grant: grant, user: user, db: req.db)
+                }
                 let message = (error as? any AbortError).map { $0.status == .notFound ? "not_found" : $0.reason } ?? "invalid_arguments"
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(message)])]), "isError": .bool(true)])
             }

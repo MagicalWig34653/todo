@@ -57,4 +57,14 @@ final class ConsentPageTests: XCTestCase {
         XCTAssertTrue(ConsentPage.script.contains("/login?next="))
         XCTAssertFalse(ConsentPage.script.contains("Bitte zuerst in der Todo-App anmelden"))
     }
+
+    func testPageOffersConnectionNameWithoutBreakingSecurity() {
+        // Name field prefilled from the server's default, limited to 80 characters, written via value/textContent only.
+        XCTAssertTrue(ConsentPage.script.contains("conname"))
+        XCTAssertTrue(ConsentPage.script.contains("d.default_name"))
+        XCTAssertTrue(ConsentPage.script.contains("maxLength = 80"))
+        XCTAssertTrue(ConsentPage.script.contains("connection_name"))
+        XCTAssertFalse(ConsentPage.script.contains("innerHTML"))
+        XCTAssertTrue(ConsentPage.csp.contains("script-src 'sha256-"))
+    }
 }

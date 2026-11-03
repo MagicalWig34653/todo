@@ -28,8 +28,10 @@ struct ExpiredCleanup: Sendable {
         var syncTombstones = 0, syncSuperseded = 0, syncMutations = 0
         /// Confirmation requests deleted (ADR 0026).
         var actionRequests = 0
+        /// Connection access notices deleted (ADR 0028).
+        var accessNotices = 0
         var syncTotal: Int { syncTombstones + syncSuperseded + syncMutations }
-        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + actionRequests + syncTotal }
+        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + actionRequests + accessNotices + syncTotal }
     }
 
     private func purge<M: Model>(_ type: M.Type, on db: any Database, _ condition: (QueryBuilder<M>) -> QueryBuilder<M>) async throws -> Int
@@ -60,6 +62,9 @@ struct ExpiredCleanup: Sendable {
         // Open requests past their expiry become `expired`; decided and expired rows (the audit trail) go after 30 days.
         try await ActionRequest.query(on: db).filter(\.$state == "pending").filter(\.$expiresAt < now).set(\.$state, to: "expired").update()
         r.actionRequests = try await purge(ActionRequest.self, on: db) { $0.filter(\.$state != "pending").filter(\.$expiresAt < now.addingTimeInterval(-30 * 86_400)) }
+        // Notices: decided ones after 7 days, open ones that were not repeated for 30 days.
+        r.accessNotices = try await purge(ConnectionAccessRequest.self, on: db) { $0.filter(\.$state != "open").filter(\.$lastAt < now.addingTimeInterval(-7 * 86_400)) }
+        r.accessNotices += try await purge(ConnectionAccessRequest.self, on: db) { $0.filter(\.$lastAt < now.addingTimeInterval(-30 * 86_400)) }
         if let age = unusedClientRetention { r.oauthClients = try await purgeUnusedClients(on: db, olderThan: now.addingTimeInterval(-age)) }
         if let retention = syncRetention {
             let sync = try await SyncRetention(batchSize: batchSize).run(on: db, olderThan: now.addingTimeInterval(-retention))

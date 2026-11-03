@@ -125,6 +125,8 @@ export interface ForYouPage {
 	needsYouTotal: number;
 	/** Open confirmation requests of agents; absent on older servers. */
 	confirmations?: ForYouConfirmation[];
+	/** Connections that asked for a project outside their grant (ADR 0028); absent on older servers. */
+	accessRequests?: ForYouAccessRequest[];
 	posts: ForYouPost[];
 	nextCursor?: string | null;
 }
@@ -172,4 +174,19 @@ export function postTitleKey(p: Pick<ForYouPost, 'kind' | 'state'>): string {
 			return ({ started: 'forYou.post.runStarted', failed: 'forYou.post.runFailed', stopped: 'forYou.post.runStopped' } as Record<string, string>)[p.state ?? ''] ?? 'forYou.post.runFinished';
 		default: return 'forYou.post.other';
 	}
+}
+
+/** Notice "<connection> wanted to reach <project>" (ADR 0028). The connection's access never exceeds `role`, the person's own role. */
+export interface ForYouAccessRequest {
+	id: string;
+	grantID: string;
+	connectionName: string;
+	projectID: string;
+	projectName: string;
+	role: 'read' | 'comment' | 'edit' | 'manage';
+	count: number;
+	firstAt: string;
+	lastAt: string;
+	allowPath: string;
+	ignorePath: string;
 }

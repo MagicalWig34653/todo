@@ -1122,7 +1122,7 @@ test('oauth consent page and grant management', async () => {
 
 	// Grant list and revoke.
 	await page.goto('/settings/connections');
-	const grant = page.getByTestId('oauth-grant').filter({ hasText: clientID });
+	const grant = page.getByTestId('oauth-grant').filter({ hasText: 'Test-Assistent' });
 	await expect(grant).toContainText('Projekte lesen, Aufgaben lesen');
 	await expect(grant).toContainText('Haushalt');
 	// Change the projects afterwards: deauthorise Haushalt (needs at least one other project), then authorise it again.
@@ -1139,15 +1139,18 @@ test('oauth consent page and grant management', async () => {
 	await grant.getByTestId('oauth-edit-save').click();
 	await expect(grant.getByText(/^Projekte:/)).toContainText('Haushalt');
 
-	// The same switch lives in the share dialog of the project: see which connection reaches it and change that there.
+	// The share dialog lists the connection next to people and teams: see it, remove its access, add it again.
 	await openProject('Haushalt');
 	await page.getByTestId('share-open').click();
 	const connection = page.getByTestId('mcp-connection').filter({ hasText: 'Test-Assistent' });
-	await expect(connection).toContainText('hat Zugriff');
-	await connection.getByTestId('mcp-toggle').click();
-	await expect(connection).toContainText('kein Zugriff');
-	await connection.getByTestId('mcp-toggle').click();
-	await expect(connection).toContainText('hat Zugriff');
+	await expect(connection).toContainText('MCP');
+	await connection.getByTestId('mcp-remove').click();
+	await connection.getByTestId('mcp-remove-confirm').getByRole('button', { name: 'Zugriff entziehen' }).click();
+	await expect(connection).toHaveCount(0);
+	await page.getByLabel('Empfänger').selectOption('connection');
+	await page.getByTestId('connection-pick').selectOption({ label: 'Test-Assistent' });
+	await page.getByTestId('sharing-panel').getByRole('button', { name: 'Hinzufügen' }).click();
+	await expect(page.getByTestId('mcp-connection').filter({ hasText: 'Test-Assistent' })).toBeVisible();
 	await page.keyboard.press('Escape');
 	await page.goto('/settings/connections');
 	await grant.getByRole('button', { name: 'Zugriff widerrufen' }).click();

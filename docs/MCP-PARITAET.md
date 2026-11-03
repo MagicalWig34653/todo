@@ -240,3 +240,9 @@ Nur MCP; REST und PWA unverändert. Neue Parameter, gleiche Schlüssel (rückwä
 - `list_open_questions`: `status` = `open` (Standard) | `answered` | `all` (überschreibt `includeAnswered`; sonst `invalid_status`). Nur Fragen freigegebener Projekte; mit `projectID` nur dieses Projekt (und Unterprojekte).
 - `get_command_center`: `lane`, `limit`, `laneLimit`, `updatesLimit`, `projectID` wie bisher.
 - Messung (Testfixture, 6 Features mit je 2 Unteraufgaben, langen Notizen, 3 Fragen): `get_command_center` Standard 11011 Bytes gegenüber 21106 Bytes mit `compact:false` (rund 48 Prozent weniger); `MCPCompactTests` sichert Standard kleiner als voll. Die Plugin-Skripte (session-start.sh, stop.sh) parsen die Antworten nicht und bleiben unverändert; `includeAnswered:true` funktioniert weiter.
+
+## Verbindungen als Beteiligte, Namen, Zugriffshinweise (ADR 0028)
+
+- Keine neuen Tools oder Scopes. `get_connection` liefert zusätzlich `name` (Name der Verbindung, Standard Clientname).
+- `list_project_grants` und `get_project_visibility` bleiben unverändert; Verbindungen eines Projekts stehen nur in REST (`GET /v1/projects/{id}/connections`, `contracts/connections.yaml`) und im Teilen-Fenster der PWA. Ein additives Feld wäre eine Formänderung der Antwort (Array).
+- Zugriff außerhalb des Grants: jedes Tool antwortet unverändert `not_found`. Nebenbei legt der Server einen Hinweis für die Person an (nur wenn sie das Projekt lesen darf; gebündelt je Verbindung und Projekt, Zähler höchstens einmal je Minute). Der Agent erfährt davon nichts; das Handbuch rät, die Person zu bitten, den Zugriff in der App zu erlauben.

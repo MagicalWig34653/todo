@@ -25,7 +25,7 @@ extension MCPController {
                           "showContent": Schema.boolean("Show task text in push notifications."),
                           "badge": Schema.boolean("Show the badge count.")]),
         Tool(name: "get_connection", scope: "",
-             description: "Describe this MCP connection: {client, scopes, projects:[{id,name}], refreshExpiresAt}. The project list is exactly this connection's grant. No tokens."),
+             description: "Describe this MCP connection: {client, name, scopes, projects:[{id,name}], refreshExpiresAt}. The project list is exactly this connection's grant. No tokens."),
         Tool(name: "list_users", scope: "admin:read",
              description: "Administrators only: list accounts (up to 500) with displayName, username, isAdmin and status active|disabled|anonymized. Read-only; no secrets.",
              properties: ["limit": Schema.integer("Maximum number of accounts (default 200).", min: 1, max: 500)]),
@@ -79,7 +79,7 @@ extension MCPController {
             }
             let refresh = try await OAuthSecret.query(on: db).filter(\.$grantID == grant.requireID()).filter(\.$kind == "refresh")
                 .filter(\.$consumed == false).sort(\.$expiresAt, .descending).first()
-            return .object(["client": client.map { .string($0) } ?? .null, "scopes": .strings(grant.scopes), "projects": .array(projects),
+            return .object(["client": client.map { .string($0) } ?? .null, "name": .string(ConnectionNames.display(grant, clientName: client)), "scopes": .strings(grant.scopes), "projects": .array(projects),
                             "refreshExpiresAt": refresh.map { .string(ISO8601DateFormatter().string(from: $0.expiresAt)) } ?? .null])
         case "list_users":
             try requireAdmin()

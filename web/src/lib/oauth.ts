@@ -1,4 +1,4 @@
-import type { OAuthGrant, Project } from './api.js';
+import type { OAuthGrant, Project, ProjectConnection, Role } from './api.js';
 import { de } from './i18n/de.js';
 
 /** Localized label of an OAuth scope; unknown scopes are shown verbatim. */
@@ -64,9 +64,9 @@ export interface ConnectionAccess {
 	allowed: boolean;
 }
 
-/** Name shown for a connection: the registered client name, else a short id. */
+/** Name shown for a connection: the name the person gave, else the registered client name, else a short id. */
 export function connectionName(grant: OAuthGrant): string {
-	return grant.client_name?.trim() || grant.client_id.slice(0, 8);
+	return grant.name?.trim() || grant.client_name?.trim() || grant.client_id.slice(0, 8);
 }
 
 /** The caller's active connections with whether each reaches `projectID`; allowed ones first, then by name. */
@@ -86,4 +86,11 @@ export function projectsWith(grant: OAuthGrant, projectID: string, allowed: bool
 /** Switching `projectID` off would leave a connection without projects, which only projects:write connections may have. */
 export function wouldLeaveEmpty(grant: OAuthGrant, projectID: string): boolean {
 	return !mayBeEmpty(grant) && grant.project_ids.every((id) => id === projectID);
+}
+
+/** The viewer's own connections that reach `projectID`, shaped like the participants list (used when the viewer cannot list others'). */
+export function connectionRows(grants: OAuthGrant[], projectID: string, role?: Role | null): ProjectConnection[] {
+	return connectionsForProject(grants, projectID)
+		.filter((c) => c.allowed)
+		.map((c) => ({ grantID: c.grant.id, name: connectionName(c.grant), clientName: c.grant.client_name ?? null, ownerID: '', ownerName: null, isOwn: true, role: role ?? null, scopes: c.grant.scopes, lastUsedAt: c.grant.last_used_at ?? null }));
 }

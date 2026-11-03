@@ -2,15 +2,19 @@
 	import { api, type OAuthGrant, type Project } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
-	import { mayBeEmpty, nextGrantProjects, resolveGrantProjects, scopeLabel, sortGrants } from '#lib/oauth.js';
+	import { connectionName, mayBeEmpty, nextGrantProjects, resolveGrantProjects, scopeLabel, sortGrants } from '#lib/oauth.js';
 	import { createKeyedGate, createLatest } from '#lib/serial.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { formatWhen } from '#lib/planning.js';
 
 	let grants = $state<OAuthGrant[]>([]);
 	let projects = $state<Project[]>([]);
 	let confirmID = $state<string | null>(null);
 	let info = $state<string | null>(null);
 	let editID = $state<string | null>(null);
+	let renameID = $state<string | null>(null);
+	let nameDraft = $state('');
 	let selected = $state<Set<string>>(new Set());
 	// One write per grant at a time: a second PUT could overtake the first and bring back a withdrawn project.
 	let busyIDs = $state<string[]>([]);
@@ -35,6 +39,24 @@
 		if (done?.value) {
 			editID = null;
 			info = t('account.oauth.editProjects.done');
+		}
+	}
+
+	function startRename(g: OAuthGrant) {
+		renameID = g.id;
+		nameDraft = connectionName(g);
+		info = null;
+	}
+	async function saveName(g: OAuthGrant) {
+		const name = nameDraft.trim().replace(/\s+/g, ' ');
+		if (!name || name.length > 80) {
+			info = t('account.oauth.nameInvalid');
+			return;
+		}
+		const done = await gate.run(g.id, () => attempt(async () => { await api.renameOAuthGrant(g.id, name); await load(); }, load));
+		if (done?.value) {
+			renameID = null;
+			info = t('account.oauth.renamed');
 		}
 	}
 
@@ -71,14 +93,23 @@
 			{@const resolved = resolveGrantProjects(g, projects)}
 			<li class="rounded-lg border p-2.5 text-sm" data-testid="oauth-grant">
 				<div class="flex flex-wrap items-center gap-2">
-					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']}>{g.client_name ? t('account.oauth.clientNamed', { name: g.client_name, id: g.client_id }) : t('account.oauth.client', { id: g.client_id })}</span>
+					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']} data-testid="oauth-name"><strong>{connectionName(g)}</strong>{#if g.client_name && g.client_name !== connectionName(g)} <span class="text-muted-foreground text-xs">({g.client_name})</span>{/if}</span>
 					{#if g.revoked}
 						<span class="text-muted-foreground text-xs">{t('account.oauth.revoked')}</span>
 					{:else}
+						<Button size="xs" variant="outline" disabled={busyIDs.includes(g.id)} onclick={() => startRename(g)} data-testid="oauth-rename">{t('account.oauth.rename')}</Button>
 						<Button size="xs" variant="outline" disabled={busyIDs.includes(g.id)} onclick={() => edit(g)} data-testid="oauth-edit">{t('account.oauth.editProjects')}</Button>
 						<Button size="xs" variant="destructive" disabled={busyIDs.includes(g.id)} onclick={() => (confirmID = g.id)}>{t('account.oauth.revoke')}</Button>
 					{/if}
 				</div>
+				{#if renameID === g.id}
+					<form class="mt-1 flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); void saveName(g); }}>
+						<Input class="min-w-40 flex-1" maxlength={80} aria-label={t('account.oauth.name')} bind:value={nameDraft} data-testid="oauth-name-input" />
+						<Button size="sm" type="submit" disabled={busyIDs.includes(g.id)} data-testid="oauth-name-save">{t('account.oauth.renameSave')}</Button>
+						<Button size="sm" variant="ghost" type="button" onclick={() => (renameID = null)}>{t('common.cancel')}</Button>
+					</form>
+				{/if}
+				<p class="text-muted-foreground text-xs" data-testid="oauth-last-used">{g.last_used_at ? t('account.oauth.lastUsed', { when: formatWhen(g.last_used_at) }) : t('account.oauth.neverUsed')}</p>
 				<p class="text-muted-foreground text-xs">{t('account.oauth.scopes', { scopes: g.scopes.map(scopeLabel).join(', ') })}</p>
 				<p class="text-muted-foreground text-xs">
 					{t('account.oauth.projects', { names: resolved.names.join(', ') || '–' })}{#if resolved.unknown > 0} ({t('account.oauth.unknownProjects', { count: resolved.unknown })}){/if}
