@@ -186,7 +186,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
 | `list_pending_reviews` | tasks:read | Pending reviews. |
 | `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). |
-| `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. |
+| `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. Uploads by people appear as entries with `kind: "attachment"` and `attachments: [{id, filename, mediaType, size}]`; files without a chat entry add one trailing `attachments_note`. |
 | `add_comment` | comments:write | Write a message into the chat of a task, question (`questionID`) or review (`reviewID`); optional `agentName`. |
 | `list_columns` | projects:read | Board with tasks per column. |
 | `move_task_to_column` | tasks:write | Move a card. |
@@ -257,7 +257,8 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `update_project_comment` | comments:write | Edit one of your own project comments. |
 | `delete_project_comment` | comments:write | Class C: asks the person to confirm deleting a project comment. |
 | `list_activity` | tasks:read | Activity feed, only from the projects of this connection. |
-| `read_attachment` | attachments:read | Attachment metadata, build info and an image preview up to 1 MiB. |
+| `read_attachment` | attachments:read | Attachment metadata, build info and an inline preview only for tiny images (up to 45000 bytes); bigger ones return `previewOmitted: preview_unavailable` and a hint. |
+| `get_attachment_download` | attachments:read | Signed URL (5 minutes, one attachment, GET) to download a file. Run `scripts/fetch-attachment.sh <url> [dir]` of the plugin and `Read` the printed path to look at a screenshot. Never post the URL on the board. |
 | `register_build` | attachments:write | Turn a finished attachment into a build screenshot (idempotent). |
 | `begin_task_upload` | attachments:write | Start an upload with a chosen role (reference, progress, result). |
 | `complete_task_upload` | attachments:write | Finish your own upload. |

@@ -14,6 +14,8 @@ final class TaskComment: Model, @unchecked Sendable {
     /// `person` (nil on old rows) or `agent` (written through MCP or by the runner).
     @OptionalField(key: "author_kind") var authorKind: String?
     @OptionalField(key: "author_label") var authorLabel: String?
+    /// Set on the chat entry that announces a completed upload (nil on normal messages).
+    @OptionalField(key: "attachment_id") var attachmentID: UUID?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     init() {}
     init(taskID: UUID, authorID: UUID, body: String) {
@@ -74,14 +76,25 @@ struct CommentDTO: Content {
     var authorKind: String = "person"
     var authorLabel: String?
     var createdAt: Date?
+    /// Additive. `attachment` = chat entry for an upload, `attachments_note` = synthetic hint (list_comments only).
+    var kind: String?
+    var attachmentID: UUID?
+    var attachments: [AttachmentRef]?
     init(_ c: TaskComment) throws {
         id = try c.requireID(); taskID = c.taskID; authorID = c.authorID; body = c.body; version = c.version
         questionID = c.questionID; reviewID = c.reviewID; authorKind = c.authorKind ?? "person"
         authorLabel = c.authorLabel; createdAt = c.createdAt
+        attachmentID = c.attachmentID; kind = c.attachmentID == nil ? nil : "attachment"
     }
     init(_ record: CommentIdempotency) {
         id = record.commentID; taskID = record.taskID; authorID = record.userID; body = record.requestBody; version = 1
     }
+}
+struct AttachmentRef: Content {
+    let id: UUID
+    let filename: String
+    let mediaType: String
+    let size: Int
 }
 struct CriterionDTO: Content {
     let id: UUID

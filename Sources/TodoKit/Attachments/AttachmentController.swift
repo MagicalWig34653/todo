@@ -62,9 +62,23 @@ struct AttachmentController: RouteCollection {
         await slots.release(owner)
         return .noContent
     }
+    /// Optional body of `complete`: the chat (question or review) the upload belongs to.
+    struct CompleteInput: Content { var questionID: UUID?; var reviewID: UUID? }
     @Sendable func complete(_ req: Request) async throws -> AttachmentDTO {
         let user = try await req.requireUser()
-        return try await service(req).complete(id(req), user: user, db: req.db)
+        let target = (try? req.content.decode(CompleteInput.self)) ?? CompleteInput()
+        let thread = CommentService.Target(questionID: target.questionID, reviewID: target.reviewID)
+        // A foreign or unknown thread is refused before the upload is completed.
+        if let a = try await Attachment.find(id(req), on: req.db) {
+            try await AttachmentService.authorize(a, user: user, db: req.db, role: .edit)
+            try await CommentService.validate(thread, taskID: a.taskID, on: req.db)
+        }
+        let dto = try await service(req).complete(id(req), user: user, db: req.db)
+        // A person's upload becomes a chat entry so agents reading the chat learn about the file.
+        if let a = try await Attachment.find(dto.id, on: req.db) {
+            try await AttachmentChat.record(a, user: user, target: thread, on: req.db)
+        }
+        return dto
     }
     @Sendable func abort(_ req: Request) async throws -> HTTPStatus {
         let user = try await req.requireUser()
@@ -83,18 +97,33 @@ struct AttachmentController: RouteCollection {
     @Sendable func download(_ req: Request) async throws -> Response { try await file(req, preview: false) }
     @Sendable func preview(_ req: Request) async throws -> Response { try await file(req, preview: true) }
     private func file(_ req: Request, preview: Bool) async throws -> Response {
-        let user = try await req.requireUser()
+        guard !preview, req.query[String.self, at: "sig"] != nil else { return try await fileCore(req, preview: preview) }
+        // Signed link: Vapor's error logger prints the full URL, and the signature is a credential until it expires.
+        // So failures become plain responses here and are never thrown (nothing to log).
+        do { return try await fileCore(req, preview: false) }
+        catch { return Response(status: (error as? any AbortError)?.status ?? .internalServerError) }
+    }
+    private func fileCore(_ req: Request, preview: Bool) async throws -> Response {
+        // Signed agent link (get_attachment_download): no session, valid for this attachment until `exp`, GET only.
+        var signed = false
+        if !preview, req.query[String.self, at: "sig"] != nil {
+            guard req.method == .GET, AttachmentLink.verify(id: try id(req), exp: req.query[String.self, at: "exp"], sig: req.query[String.self, at: "sig"])
+            else { throw Abort(.notFound) }
+            signed = true
+        }
+        let user: User? = signed ? nil : try await req.requireUser()
         guard let a = try await Attachment.find(id(req), on: req.db), a.status == "complete" else { throw Abort(.notFound) }
-        try await AttachmentService.authorize(a, user: user, db: req.db)
+        if let user { try await AttachmentService.authorize(a, user: user, db: req.db) }
         guard !preview || a.mediaType.hasPrefix("image/") else { throw Abort(.unsupportedMediaType) }
         let service = service(req)
         let data = try await service.store(for: a).get(key: a.objectKey, db: req.db)
         try service.validate(data, for: a)
         // Recheck after storage I/O so revoked access cannot reuse an earlier authorization.
-        try await AttachmentService.authorize(a, user: user, db: req.db)
+        if let user { try await AttachmentService.authorize(a, user: user, db: req.db) }
         var headers = HTTPHeaders()
         headers.replaceOrAdd(name: .contentType, value: a.mediaType)
-        headers.replaceOrAdd(name: .cacheControl, value: "private, no-store")
+        headers.replaceOrAdd(name: .cacheControl, value: signed ? "no-store" : "private, no-store")
+        if signed { headers.replaceOrAdd(name: "Referrer-Policy", value: "no-referrer") }
         headers.replaceOrAdd(name: "X-Content-Type-Options", value: "nosniff")
         headers.replaceOrAdd(name: "Content-Security-Policy", value: "default-src 'none'; sandbox")
         let filename = a.filename.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "attachment"

@@ -4,7 +4,10 @@ import Vapor
 /// Batch 4 (docs/MCP-PARITAET.md): comments, activity, attachments. Same domain code as REST
 /// (`CommentService`, `ProjectCommentService`, `ActivityFeedService`, `AttachmentService`, `WorkflowService`).
 extension MCPController {
-    static let inlinePreviewBytes = 1_048_576
+    /// Raw bytes of an inline preview. base64 grows it by 4/3, so the answer stays below about 60 KB: MCP clients
+    /// reject larger tool answers (a 168 KB answer was refused). There is no image scaler on the server (no ImageIO
+    /// on Linux, no image dependency); bigger images are fetched with get_attachment_download.
+    static let inlinePreviewBytes = 45_000
 
     static let activityTools: [Tool] = [
         Tool(name: "update_comment", scope: "comments:write",
@@ -44,10 +47,13 @@ extension MCPController {
                           "limit": Schema.integer("Items per page (default 50).", min: 1, max: 100),
                           "before": Schema.string("nextCursor of the previous page.", maxLength: 100)]),
         Tool(name: "read_attachment", scope: "attachments:read",
-             description: "Read one completed attachment: metadata, build info (buildID, label, platform) if it is a build screenshot and, with preview=true, the image itself as base64 (PNG, JPEG or WebP up to 1 MiB; PDFs have no preview).",
+             description: "Read one completed attachment: metadata, build info (buildID, label, platform) if it is a build screenshot and, with preview=true, the image itself as base64 only if it is tiny (up to 45000 bytes; PDFs have no preview). Larger images return previewOmitted 'preview_unavailable' with a hint: use get_attachment_download and the plugin script fetch-attachment.sh, then Read the local file.",
              properties: ["id": Schema.uuid("Attachment id."),
                           "preview": Schema.boolean("Also return the image as base64 when it is small enough (default false).")],
              required: ["id"]),
+        Tool(name: "get_attachment_download", scope: "attachments:read",
+             description: "Get a short-lived (5 minutes) signed download URL for ONE completed attachment (any size up to the instance limit). The URL needs no login and works only for this file, only with GET and only until expiresAt. Never post it on the board. Download it with the plugin script (claude-plugin/scripts/fetch-attachment.sh <url> [dir]) and Read the local file to look at a screenshot.",
+             properties: ["id": Schema.uuid("Attachment id.")], required: ["id"]),
         Tool(name: "register_build", scope: "attachments:write",
              description: "Register an already completed attachment (for example uploaded with begin_task_upload) as a build screenshot with buildID, label and platform. Idempotent per attachment.",
              properties: ["attachmentID": Schema.uuid("Completed attachment id."),
@@ -144,7 +150,10 @@ extension MCPController {
             }
             if try optionalBool(a, "preview") == true {
                 if !att.mediaType.hasPrefix("image/") { result["previewOmitted"] = .string("not_an_image") }
-                else if att.size > Self.inlinePreviewBytes { result["previewOmitted"] = .string("too_large") }
+                else if att.size > Self.inlinePreviewBytes {
+                    result["previewOmitted"] = .string("preview_unavailable")
+                    result["hint"] = .string("Too large for an inline answer. Call get_attachment_download, run claude-plugin/scripts/fetch-attachment.sh <url> <dir>, then Read the file.")
+                }
                 else {
                     let service = AttachmentService(settings: settings)
                     let data = try await service.store(for: att).get(key: att.objectKey, db: db)
@@ -155,6 +164,13 @@ extension MCPController {
                 }
             }
             return .object(result)
+        case "get_attachment_download":
+            guard let att = try await Attachment.find(uuid(a["id"]), on: db), att.status == "complete" else { throw Abort(.notFound) }
+            _ = try await task(att.taskID, user: user, grant: grant, db: db)
+            let link = AttachmentLink.path(for: try att.requireID())
+            return .object(["id": .string(try att.requireID().uuidString), "filename": .string(att.filename),
+                            "mediaType": .string(att.mediaType), "size": .number(Double(att.size)),
+                            "url": .string(settings.oauthIssuer + link.path), "expiresAt": try .encoded(link.expiresAt)])
         case "register_build":
             let body = RegisterBuildRequest(attachmentID: try uuid(a["attachmentID"]), buildID: try requiredString(a, "buildID"),
                 label: try optionalString(a, "label"), platform: try optionalString(a, "platform"))

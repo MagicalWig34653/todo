@@ -195,7 +195,12 @@ struct MCPController: RouteCollection {
             }
             let comments = try await query.sort(\.$createdAt).sort(\.$id).all()
             let names = try await displayNames(comments.map(\.authorID), on: db)
-            return try .encoded(comments.map { var c = try CommentDTO($0); c.authorName = names[$0.authorID]; return c })
+            var out = try await AttachmentChat.decorate(comments.map { var c = try CommentDTO($0); c.authorName = names[$0.authorID]; return c }, on: db)
+            // Files that no chat entry announces (agent uploads, older uploads): one trailing hint, task-wide reads only.
+            let inCard = try optionalUUID(a, "questionID") != nil || optionalUUID(a, "reviewID") != nil
+            if !inCard, try optionalString(a, "since") == nil, try optionalString(a, "authorKind") != "agent",
+               let note = try await AttachmentChat.unannounced(taskID: task.requireID(), on: db) { out.append(note) }
+            return try .encoded(out)
         case "add_comment":
             guard let body = a["body"].string else { throw Abort(.badRequest, reason: "invalid_arguments") }
             let taskID = try uuid(a["taskID"])

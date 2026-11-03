@@ -508,6 +508,20 @@ components:
         authorKind: {type: string, enum: [person, agent], description: 'agent = per MCP oder Runner geschrieben.'}
         authorLabel: {type: string, nullable: true, description: 'Agentenname (agentName) bei authorKind agent.'}
         createdAt: {type: string, format: date-time, nullable: true, description: 'Fehlt bei Nachrichten vor der Migration.'}
+        kind: {type: string, enum: [attachment], nullable: true, description: 'attachment = Eintrag zu einem Upload einer Person (body = Dateiname); sonst fehlt das Feld.'}
+        attachmentID: {type: string, format: uuid, nullable: true}
+        attachments:
+          type: array
+          nullable: true
+          description: 'Nur bei kind=attachment: der abgeschlossene Anhang (leer, wenn er gelöscht wurde).'
+          items:
+            type: object
+            required: [id, filename, mediaType, size]
+            properties:
+              id: {type: string, format: uuid}
+              filename: {type: string}
+              mediaType: {type: string}
+              size: {type: integer}
     CommentCreate:
       type: object
       required:
