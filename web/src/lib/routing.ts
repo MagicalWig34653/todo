@@ -108,3 +108,14 @@ export function loginRedirectTarget(search: string): string | null {
 	const target = safeRedirect(raw, '');
 	return target === '' || target === '/' ? null : target;
 }
+
+/**
+ * Return target from `?next=` after login: only the OAuth authorization endpoint of this origin
+ * (`/oauth/authorize` with its query, exactly as given); anything else yields null.
+ */
+export function oauthNextTarget(search: string): string | null {
+	const raw = new URLSearchParams(search).get('next');
+	if (!raw || raw.length > 4000 || raw.includes('\\') || /[^\x21-\x7e]/.test(raw)) return null;
+	if (raw !== '/oauth/authorize' && !raw.startsWith('/oauth/authorize?')) return null;
+	return raw;
+}
