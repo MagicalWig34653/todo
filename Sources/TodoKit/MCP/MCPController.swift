@@ -169,8 +169,8 @@ struct MCPController: RouteCollection {
         case "list_tasks":
             let id = try uuid(a["projectID"])
             _ = try await project(id, user: user, grant: grant, db: db)
-            let tasks = try await TodoTask.query(on: db).filter(\.$projectID == id).sort(\.$createdAt).sort(\.$id).all()
-            return try .encoded(tasks.map(TaskDTO.init))
+            return try .encoded(await PlanningController.taskList(user: user, db: db, projectID: id,
+                overdue: optionalBool(a, "overdue") ?? false))
         case "get_task":
             let task = try await ProjectAccess(user: user, db: db).task(uuid(a["id"]))
             _ = try await project(task.projectID, user: user, grant: grant, db: db)

@@ -1,4 +1,4 @@
-<!-- manual-version: 1.14.0 -->
+<!-- manual-version: 1.15.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -88,7 +88,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 
 ## Command center
 
-`get_command_center` returns lanes with cards, a summary and the latest updates. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. The answer is compact by default (subtasks and builds only as counts, short texts, 10 cards per lane, 5 updates); pass `compact: false` for the full detail and `fields` to keep only some card fields. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
+`get_command_center` returns lanes with cards, a summary and the latest updates. `summary.overdue` counts all visible unfinished tasks with `planning.dueAt < generatedAt`, including subtasks and backlog, before card filters or pagination. It respects project scope and the OAuth grant. Each card has `dueDate` (its own planning dueAt) and `nextDue` (earliest dueAt of its unfinished task or unfinished subtasks); completed tasks do not contribute to nextDue. These timestamps remain in compact responses. `list_tasks {projectID, overdue: true}` and `GET /v1/tasks?overdue=true` return only visible unfinished overdue tasks with planning data; false or omission leaves the list unfiltered. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. The answer is compact by default (subtasks and builds only as counts, short texts, 10 cards per lane, 5 updates); pass `compact: false` for the full detail and `fields` to keep only some card fields. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
 
 ## Project onboarding and keeping Todolino current
 
@@ -167,7 +167,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `list_projects` | projects:read | Projects you may use. |
 | `get_project_structure` | projects:read | Brief, columns, workflow template status, counts. |
 | `get_command_center` | tasks:read | Kanban/list overview, summary, updates, build groups. |
-| `list_tasks` | tasks:read | All tasks of a project. |
+| `list_tasks` | tasks:read | Tasks of a project with planning; optional `overdue: true` for unfinished overdue tasks. |
 | `get_task` | tasks:read | One task. |
 | `get_task_context` | tasks:read | Task plus subtasks, criteria, comments, questions, review, builds, progress. |
 | `create_task` | tasks:write | New task in a project; optional `columnID`, `dueDate`, `priority`. Runs the same rules as the app (activity, recurrence, clean-up on project change). |

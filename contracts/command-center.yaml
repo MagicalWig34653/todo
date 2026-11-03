@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0014. Alle Pfade außer /v1/manual verlangen Sitzung oder Bearer. Unsichtbare/fremde Objekte: 404, zu geringe Rolle: 403,
     Konflikte: 409. Zuordnung der Lanes (feste Reihenfolge): done > question > review > blocked > running > ready; Backlog-Spalten nur im Zähler.
     Fortschritt: done=100 (status), sonst Unteraufgaben, sonst Kriterien, sonst letzter Notiz-Prozentwert (agent), sonst 0 (none).
@@ -29,9 +29,9 @@ paths:
       summary: Kanban-/Listenübersicht (Steuerzentrale)
       description: 'Query: scope=account|project, projectID, includeSubprojects(true), view=kanban|list, lane=a,b, kind=task|feature, hasQuestion,
         includeSubtasks(list), sort=attention|updated|due|progress|title, doneWithinDays(7), laneLimit(50), updatesLimit(20), limit(50), offset.
-        Antwort: {generatedAt, scope, projectID, view, summary{running,question,review,ready,blocked,done,backlog,openQuestions,pendingReviews,features,activeAgents,staleProjects},
+        Antwort: {generatedAt, scope, projectID, view, summary{running,question,review,ready,blocked,done,backlog,overdue,openQuestions,pendingReviews,features,activeAgents,staleProjects},
         lanes[{key,title,count,truncated,cards[]}] (kanban) | items[], total (list), updates[], builds[], projects[{projectID,name,sync}] (project-sync.yaml)}. Karte: {task,project,kind,isFeature,parentTaskID,lane,
-        progress{percent,source,subtasks*,criteria*},agent,openQuestionCount,questions[3],pendingReview,blockedReason,blockedBy,latestUpdate,builds[3],buildCount,nextDue,priority,subtasks[]}.'
+        progress{percent,source,subtasks*,criteria*},agent,openQuestionCount,questions[3],pendingReview,blockedReason,blockedBy,latestUpdate,builds[3],buildCount,dueDate,nextDue,priority,subtasks[]}. summary.overdue zählt alle sichtbaren nicht erledigten Aufgaben mit planning.dueAt < generatedAt, einschließlich Backlog/Unteraufgaben, vor Kartenfiltern und Seitenteilung; Scope und OAuth-Grant gelten. dueDate ist die eigene planning.dueAt, nextDue die früheste Fälligkeit der nicht erledigten Aufgabe/Unteraufgaben (auch im kompakten MCP-Modus).'
       responses:
         '200': {description: Erfolgreich}
         '400': {description: invalid_scope, project_required, invalid_view, invalid_lane, invalid_sort, ...}

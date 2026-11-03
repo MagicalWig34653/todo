@@ -66,7 +66,7 @@ struct TaskDTO: Content {
     /// Board column of the project (`null` = no column); position inside it.
     let columnID: UUID?
     let boardPosition: Int
-    /// Only set by the task list (`GET /v1/tasks`); omitted from all other responses.
+    /// Set by REST and MCP task lists; omitted from other responses.
     var planning: TaskPlanningSummary?
     /// Only set by the task list with `includeLabels=true`: names of the caller's own labels on the task.
     var labels: [String]?
@@ -380,27 +380,44 @@ struct PlanningController: RouteCollection {
 
     @Sendable func listTasks(_ req: Request) async throws -> [TaskDTO] {
         let user = try await req.requireUser()
-        let access = ProjectAccess(user: user, db: req.db)
-        let visibleIDs = try await access.visibleProjects().map { try $0.requireID() }
-        var query = TodoTask.query(on: req.db).filter(\.$projectID ~~ visibleIDs)
-        if let projectID = req.query[UUID.self, at: "projectID"] {
-            _ = try await ProjectAccess(user: user, db: req.db).project(projectID)
-            query = query.filter(\.$projectID == projectID)
-        }
-        guard !visibleIDs.isEmpty else { return [] }
-        let tasks = try await query.sort(\.$createdAt).sort(\.$id).all()
-        guard !tasks.isEmpty else { return [] }
-        let planning = Dictionary(uniqueKeysWithValues: try await TaskPlanning.query(on: req.db)
-            .filter(\.$id ~~ tasks.map { try $0.requireID() }).all().map { (try $0.requireID(), $0) })
+        let tasks = try await Self.taskList(user: user, db: req.db,
+            projectID: req.query[UUID.self, at: "projectID"], overdue: req.query[Bool.self, at: "overdue"] == true)
         // Optional (`includeLabels=true`): the caller's own label names per task in one pass, instead of one search per label.
         var labelNames: [UUID: [String]]? = nil
         if req.query[Bool.self, at: "includeLabels"] == true {
-            labelNames = try await Self.labelNames(of: tasks.map { try $0.requireID() }, owner: user.requireID(), on: req.db)
+            labelNames = try await Self.labelNames(of: tasks.map(\.id), owner: user.requireID(), on: req.db)
         }
-        return try tasks.map { task in
-            var dto = try TaskDTO(task)
-            dto.planning = TaskPlanningSummary(planning[dto.id])
+        return tasks.map { task in
+            var dto = task
             if let labelNames { dto.labels = labelNames[dto.id] ?? [] }
+            return dto
+        }
+    }
+
+    /// Shared REST/MCP list: resolve visibility once, then load planning in bounded batches.
+    static func taskList(user: User, db: any Database, projectID: UUID?, overdue: Bool, now: Date = Date()) async throws -> [TaskDTO] {
+        let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
+        var visibleIDs = try ordered.filter { try snapshot.visibility($0).role != nil }.map { try $0.requireID() }
+        if let projectID {
+            guard visibleIDs.contains(projectID) else { throw Abort(.notFound) }
+            visibleIDs = [projectID]
+        }
+        guard !visibleIDs.isEmpty else { return [] }
+        var query = TodoTask.query(on: db).filter(\.$projectID ~~ visibleIDs)
+        if overdue {
+            query = query.join(TaskPlanning.self, on: \TodoTask.$id == \TaskPlanning.$id)
+                .filter(\.$status != "done").filter(TaskPlanning.self, \.$dueAt < now)
+        }
+        let tasks = try await query.sort(\.$createdAt).sort(\.$id).all()
+        let ids = try tasks.map { try $0.requireID() }
+        var planning: [UUID: TaskPlanning] = [:]
+        for start in stride(from: 0, to: ids.count, by: 400) {
+            let chunk = Array(ids[start..<min(start + 400, ids.count)])
+            for row in try await TaskPlanning.query(on: db).filter(\.$id ~~ chunk).all() { planning[try row.requireID()] = row }
+        }
+        return try tasks.map {
+            var dto = try TaskDTO($0)
+            dto.planning = TaskPlanningSummary(planning[dto.id])
             return dto
         }
     }

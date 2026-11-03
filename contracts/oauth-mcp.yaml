@@ -209,7 +209,7 @@ components:
 x-mcp-tools:
   list_projects: {scope: 'projects:read', arguments: {}, result: ProjectDTO-Liste explizit freigegebener Projekte}
   update_project: {scope: 'projects:write', required: [projectID, version], arguments: {projectID: UUID, version: integer, name: 'string 1-200', description: 'string bis 10000, leer/null löscht', color: '#RRGGBB'}, result: '{id, name, description, color, version, parentID}; Fehler version_conflict, invalid_name, not_found (außerhalb des Grants), Rolle Verwalten wie PATCH /v1/projects/{id}'}
-  list_tasks: {scope: 'tasks:read', required: [projectID], arguments: {projectID: UUID}, result: TaskDTO-Liste}
+  list_tasks: {scope: 'tasks:read', required: [projectID], arguments: {projectID: UUID, overdue: boolean}, result: TaskDTO-Liste mit planning, notes: 'overdue=true: sichtbare nicht erledigte Aufgaben mit planning.dueAt vor Serverzeit; false/fehlend ungefiltert.'}
   get_task: {scope: 'tasks:read', required: [id], arguments: {id: UUID}, result: TaskDTO}
   create_task: {scope: 'tasks:write', required: [projectID, title], arguments: {projectID: UUID, title: string, description: string, columnID: UUID, dueDate: 'ISO 8601 oder YYYY-MM-DD', priority: 'integer 0-3'}, result: TaskDTO, notes: 'Wie POST /v1/tasks (PlanningOperations): Aktivität, Spalte; dueDate/priority über PlanningService.'}
   update_task: {scope: 'tasks:write', required: [id, version], arguments: {id: UUID, version: integer, title: string, description: string, status: 'open|in_progress|in_review|done', projectID: UUID}, result: TaskDTO}
@@ -249,7 +249,6 @@ x-mcp-tools:
   begin_task_upload: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: taskID, filename, role, mediaType, size, checksum; Löschungen nur als Bestätigungsanfrage.'}
   complete_task_upload: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID; Löschungen nur als Bestätigungsanfrage.'}
   delete_attachment: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID; Löschungen nur als Bestätigungsanfrage.'}
-x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read']
   search_tasks: {scope: 'tasks:read', required: [query], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
   list_labels: {scope: 'labels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}
   create_label: {scope: 'labels:write', required: [name], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 3; Löschungen nur confirmation_required.'}

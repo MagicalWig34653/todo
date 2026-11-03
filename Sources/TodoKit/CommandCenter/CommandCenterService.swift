@@ -119,6 +119,7 @@ struct CommandCard: Content {
     let latestUpdate: CardUpdate?
     let builds: [BuildArtifactDTO]
     let buildCount: Int
+    let dueDate: Date?
     let nextDue: Date?
     let priority: Int
     let subtasks: [SubtaskBrief]
@@ -141,6 +142,7 @@ struct SummaryDTO: Content {
     let blocked: Int
     let done: Int
     let backlog: Int
+    let overdue: Int
     let openQuestions: Int
     let pendingReviews: Int
     let features: Int
@@ -342,7 +344,7 @@ struct CommandCenterService: Sendable {
             .filter(.sql(embed: "task_progress_notes.id = (SELECT n2.id FROM task_progress_notes n2 WHERE n2.task_id = task_progress_notes.task_id ORDER BY n2.created_at DESC, n2.id DESC LIMIT 1)"))
             .sort(\.$createdAt, .descending).sort(\.$id, .descending).all() })
         let criteria = try await batched(Array(byID.keys), { try await AcceptanceCriterion.query(on: db).filter(\.$taskID ~~ $0).all() })
-        let planning = Dictionary(uniqueKeysWithValues: try await batched(Array(byID.keys), { try await TaskPlanning.query(on: db).filter(\.$id ~~ $0).all() }).map { ($0.id!, $0) })
+        let planning = Dictionary(uniqueKeysWithValues: try await batched(allTaskIDs, { try await TaskPlanning.query(on: db).filter(\.$id ~~ $0).all() }).map { ($0.id!, $0) })
         let deps = try await batched(Array(byID.keys), { try await PlanningDependency.query(on: db).filter(\.$taskID ~~ $0).all() })
         let prerequisiteStatus = Dictionary(uniqueKeysWithValues: try await batched(Array(Set(deps.map(\.prerequisiteID))),
             { try await TodoTask.query(on: db).filter(\.$id ~~ $0).all() }).map { ($0.id!, $0.status) })
@@ -429,7 +431,7 @@ struct CommandCenterService: Sendable {
             }
             let column = task.columnID.flatMap { columnByID[$0] }
             let due = planning[id]?.dueAt
-            let kidDue = kids.compactMap { planning[$0.id!]?.dueAt }
+            let kidDue = kids.filter { $0.status != "done" }.compactMap { planning[$0.id!]?.dueAt }
             let kind = (s.wf?.kind == "feature" || !kids.isEmpty) ? "feature" : "task"
             return CommandCard(
                 task: CardTask(id: id, title: task.title, status: task.status, version: task.version, columnID: task.columnID,
@@ -443,7 +445,7 @@ struct CommandCenterService: Sendable {
                     requestedByLabel: $0.requestedByLabel, reviewerID: $0.reviewerID, agentJobID: $0.agentJobID, createdAt: $0.createdAt) },
                 blockedReason: s.wf?.blockedReason, blockedBy: s.blockedBy, latestUpdate: update,
                 builds: Array(sortedBuilds.prefix(3)), buildCount: sortedBuilds.count,
-                nextDue: ([due].compactMap { $0 } + kidDue).min(), priority: planning[id]?.priority ?? 0,
+                dueDate: due, nextDue: ((task.status == "done" ? [] : [due].compactMap { $0 }) + kidDue).min(), priority: planning[id]?.priority ?? 0,
                 subtasks: kids.map { SubtaskBrief(id: $0.id!, title: $0.title, status: $0.status, lane: states[$0.id!]?.lane ?? "ready", progressPercent: progress($0).percent) })
         }
 
@@ -468,6 +470,7 @@ struct CommandCenterService: Sendable {
         let syncEntries = try await ProjectSyncService.entries(scope: scope, on: db, now: now, includeSummary: false)
         let summary = SummaryDTO(running: count("running"), question: count("question"), review: count("review"), ready: count("ready"),
             blocked: count("blocked"), done: count("done"), backlog: backlog,
+            overdue: loaded.filter { $0.status != "done" && (planning[$0.id!]?.dueAt.map { $0 < now } ?? false) }.count,
             openQuestions: questions.count, pendingReviews: reviews.count, features: topCards.filter { $0.isFeature && $0.lane != "done" }.count,
             activeAgents: activeAgents.count, staleProjects: syncEntries.filter { $0.sync.bound && $0.sync.state != "fresh" }.count,
             pendingConfirmations: q.projectID == nil && allowedProjects == nil ? try await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total : 0,

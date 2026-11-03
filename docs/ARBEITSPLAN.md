@@ -1,5 +1,13 @@
 # Arbeitsplan
 
+## Checkpoint 3.11.2026: Überfällige Aufgaben im MCP (F75F1E09)
+
+- Ziel/Stand: Branch `worktree-agent-a75096a8dcc0a3252`, Backend/PWA-Repo; `summary.overdue` zählt sichtbare nicht erledigte Aufgaben mit Planning.dueAt vor Serverzeit (auch Backlog/Unteraufgaben, vor Kartenfiltern/Limit). Karten: eigene `dueDate`, `nextDue` ohne erledigte Aufgaben/Kinder; REST/MCP `overdue=true` mit gemeinsamem SharingSnapshot-Listenpfad und gebündelter Planung. Keine Migration, kein Push/Deploy/Review, Apple/Web unverändert.
+- Ursache: kein Überfällig-Zähler/Listenfilter, MCP-Liste ohne Planning; `nextDue` enthielt erledigte Kinder, Planung alter Kinder fehlte. Verträge/Schemas, Handbuch 1.15.0 samt Embed und Plugin-Hinweis angepasst; veraltete doppelte x-oauth-scopes-Zeile im bestehenden oauth-mcp-Vertrag entfernt (Syntaxfehler).
+- Geprüft: finaler nativer `swift test --scratch-path /private/tmp/claude-501/main-build --build-system native --disable-sandbox --skip-update` mit TMPDIR/Modulcache unter eigenem `/private/tmp/todolino-overdue`: 433 Tests, 407 bestanden, 20 übersprungen, 6 Testfälle fehlgeschlagen/7 Meldungen ausschließlich Socket-Sandbox (AttachmentUploadAuthOrder: bind EPERM + UnsupportedOperation; fünf SMTPClientTests: bind EPERM), 163 s. Neue OverdueTests 2/2 grün: REST/MCP-Parität, kompakt/voll, Done/Backlog/Unteraufgaben, verstecktes Unterprojekt/OAuth-Grant, strikte Zeitgrenze. QueryHistory konstant: Liste 9, Command Center 28 bei 3→18 Aufgaben/2→17 Projekten. Drei YAML-Verträge und diff --check grün. Standard-SwiftBuild scheiterte an gesperrten Compiler-/Modulcachepfaden; derselbe main-build blieb erhalten.
+- Grenzen/Übergabe: Linux/MariaDB und echter Live-MCP-Server nicht geprüft; vitest entfällt (Web unverändert). Kein Commit: git add scheitert an `.git/worktrees/agent-a75096a8dcc0a3252/index.lock` außerhalb der Schreibfreigabe (Operation not permitted); alle 17 betroffenen Dateien uncommittet, vollständiger Patch `/private/tmp/todolino-overdue.patch`. Todolino-Tools fehlen in dieser Codex-Sitzung; nächster Schritt für Wrapper: Änderungen committen, dann claim/post_progress mit Commit auf `F75F1E09-471B-4D23-B717-2812CFD76D62`, nie erledigen/kein Review; Sockettests außerhalb Sandbox nachholen. Eigene Logs/Scratch/SQLite-Daten entfernt, main-build erhalten, eigene Test-/Buildjobs beendet; Prozessinventar ps durch Sandbox gesperrt.
+
+
 ## Checkpoint 2.11.2026: MCP Stapel 3 Suche, Labels, Filter (codex@mcp-s3)
 
 - Ziel/Board: `74B85631-D81B-4D62-817E-C787FFE24CAB`, Branch `worktree-agent-a7773a377899c718c`, kein Push. Board-Connector/ToolSearch fehlt im verfügbaren Werkzeugkatalog; claim/post_progress deshalb nicht ausführbar. Prozessinventar (`ps`) durch Sandbox verweigert.

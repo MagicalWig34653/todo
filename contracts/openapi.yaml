@@ -509,11 +509,11 @@ paths:
   /v1/tasks:
     get:
       operationId: listTasks
-      summary: List own tasks
+      summary: List visible tasks
       tags:
         - Planning
       description: Unpaginated, ordered by createdAt then id. A valid projectID filters results after
-        ownership validation. An invalid UUID query value is ignored by the current backend.
+        visibility validation. An invalid UUID query value is ignored by the current backend.
       responses:
         '200':
           description: Success
@@ -537,6 +537,13 @@ paths:
             type: string
             format: uuid
           description: Optional project filter.
+        - name: overdue
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: With true only visible unfinished tasks with planning.dueAt before server time. False or omission does not filter.
         - name: includeLabels
           in: query
           required: false
@@ -992,7 +999,7 @@ components:
             type: string
           description: Only in GET /v1/tasks?includeLabels=true; names of the caller's own labels.
       description: New tasks start at version 1, status open and description empty unless supplied.
-        The planning summary is present only in GET /v1/tasks.
+        The planning summary is present in GET /v1/tasks and MCP list_tasks.
     TaskPlanningSummary:
       type: object
       description: Kompakte Planungsdaten für Listen; Aufgaben ohne Planung liefern Standardwerte
