@@ -24,6 +24,7 @@ has "start bound is SessionStart JSON" '"hookEventName":"SessionStart"' "$out"
 has "start bound asks for short bullet-point board texts" "bullet points" "$out"
 has "start bound keeps update info out of reviews" "no review" "$out"
 has "start bound tells agents to read new chat messages" "list_comments" "$out"
+has "start bound gives the ready ToolSearch select line" "select:mcp__plugin_todolino_todolino__post_progress,mcp__plugin_todolino_todolino__claim_task,mcp__plugin_todolino_todolino__create_task,mcp__plugin_todolino_todolino__ask_question,mcp__plugin_todolino_todolino__request_review,mcp__plugin_todolino_todolino__list_tasks,mcp__plugin_todolino_todolino__get_command_center,mcp__plugin_todolino_todolino__record_sync,mcp__plugin_todolino_todolino__get_sync_status" "$out"
 has "start bound names the card chat targets" "questionID or reviewID" "$out"
 out=$("$here/scripts/session-start.sh" <<EOF2
 {"cwd":"$plain"}
@@ -138,6 +139,12 @@ out=$(TODOLINO_HOOKS_OFF=1 stop qH "$bound" "$qopen"); check "ask: honours TODOL
 qcommit="$tmp/qcommit.jsonl"; cp "$commit" "$qcommit"; cat "$qopen" >> "$qcommit"
 out=$(stop qI "$bound" "$qcommit"); has "ask+board: open question block wins" 'wait_for_events' "$out"
 
+# subagent transcripts count as board activity
+subt="$tmp/subs/main.jsonl"; mkdir -p "$tmp/subs/main/subagents"; cp "$edit" "$subt"
+out=$(stop sS1 "$bound" "$subt"); has "subagents: no board call anywhere still reminds" "Board-Aktivitaet" "$out"
+cp "$full" "$tmp/subs/main/subagents/agent-1.jsonl"
+out=$(stop sS2 "$bound" "$subt"); check "subagents: post_progress+record_sync in a subagent transcript is silent" "" "$out"
+
 # PostToolUse after commit
 out=$("$here/scripts/post-commit.sh" <<EOF2
 {"cwd":"$bound","tool_name":"Bash","tool_input":{"command":"git commit -m x"}}
@@ -149,6 +156,26 @@ out=$("$here/scripts/post-commit.sh" <<EOF2
 EOF2
 )
 check "post-commit unbound is silent" "" "$out"
+pc() { # $1 = command as an already JSON-escaped string literal body
+  "$here/scripts/post-commit.sh" <<EOF2
+{"cwd":"$bound","tool_name":"Bash","tool_input":{"command":"$1","description":"d"}}
+EOF2
+}
+for c in 'git commit -m x' 'git -C /x/y commit -m x' 'git -C \"/x y\" commit -am \"msg\"' 'git add f && git commit -m \"a && b\"' 'cd x; git commit --amend' 'git status | cat\ngit commit -m x' 'GIT_AUTHOR_NAME=a git commit -m x' 'git -c user.name=a commit -m x' 'git --no-pager commit -m x' '(git commit -m x)' 'git commit -m \"$(cat <<'"'"'E'"'"'\nline\nE\n)\"'; do
+  out=$(pc "$c"); has "post-commit fires for [$c]" "you just committed" "$out"
+done
+for c in 'git push origin main' 'git add f && git push'; do
+  out=$(pc "$c"); has "post-commit fires for push [$c]" "post_progress" "$out"
+  case "$out" in *"you just committed"*) echo "FAIL push [$c] must not say committed"; fail=1 ;; esac
+done
+for c in 'git status' 'git log --grep commit' 'git log --grep=\"git commit\"' 'echo \"git commit\"' 'echo git commit' 'grep -n \"git commit\" f' 'git diff && echo committed' 'git commit-tree abc' 'ls' 'codex-companion status job-1' 'git stash list # git commit' 'cat commit.txt' 'git config alias.ci commit' 'git -C /commit status'; do
+  out=$(pc "$c"); check "post-commit silent for [$c]" "" "$out"
+done
+out=$("$here/scripts/post-commit.sh" <<EOF2
+{"cwd":"$bound","tool_name":"Bash","tool_input":{}}
+EOF2
+)
+check "post-commit silent without command" "" "$out"
 
 # JSON validity of every emitted document
 for f in "$here/hooks/hooks.json" "$here/.mcp.json" "$here/.claude-plugin/plugin.json" "$here/../.claude-plugin/marketplace.json"; do

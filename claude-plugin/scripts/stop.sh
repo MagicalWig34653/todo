@@ -42,7 +42,17 @@ flag="$dir/stop-$session"
 counter="$dir/board-$session"
 max="${TODOLINO_STOP_MAX:-1}"
 case "$max" in *[!0-9]*|"") max=1 ;; esac
-used() { grep -Eq '"name": ?"mcp__[A-Za-z0-9_-]*'"$1"'"' "$transcript" 2>/dev/null; }
+# Subagent transcripts live next to the session transcript (<session>/subagents/*.jsonl); their board calls count too.
+subdir="${transcript%.jsonl}/subagents"
+used() {
+  grep -Eq '"name": ?"mcp__[A-Za-z0-9_-]*'"$1"'"' "$transcript" 2>/dev/null && return 0
+  [ -d "$subdir" ] && [ ! -L "$subdir" ] || return 1
+  for f in "$subdir"/*.jsonl; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    grep -Eq '"name": ?"mcp__[A-Za-z0-9_-]*'"$1"'"' "$f" 2>/dev/null && return 0
+  done
+  return 1
+}
 edited=0
 grep -Eq '"name": ?"(Edit|Write|MultiEdit|NotebookEdit)"' "$transcript" 2>/dev/null && edited=1
 committed=0
