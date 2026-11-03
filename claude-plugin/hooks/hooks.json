@@ -12,7 +12,7 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/post-commit.sh", "if": "Bash(git commit*)", "timeout": 10 }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/post-commit.sh", "timeout": 10 }
         ]
       }
     ],

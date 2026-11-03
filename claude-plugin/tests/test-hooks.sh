@@ -149,6 +149,26 @@ out=$("$here/scripts/post-commit.sh" <<EOF2
 EOF2
 )
 check "post-commit unbound is silent" "" "$out"
+pc() { # $1 = command as an already JSON-escaped string literal body
+  "$here/scripts/post-commit.sh" <<EOF2
+{"cwd":"$bound","tool_name":"Bash","tool_input":{"command":"$1","description":"d"}}
+EOF2
+}
+for c in 'git commit -m x' 'git -C /x/y commit -m x' 'git -C \"/x y\" commit -am \"msg\"' 'git add f && git commit -m \"a && b\"' 'cd x; git commit --amend' 'git status | cat\ngit commit -m x' 'GIT_AUTHOR_NAME=a git commit -m x' 'git -c user.name=a commit -m x' 'git --no-pager commit -m x' '(git commit -m x)' 'git commit -m \"$(cat <<'"'"'E'"'"'\nline\nE\n)\"'; do
+  out=$(pc "$c"); has "post-commit fires for [$c]" "you just committed" "$out"
+done
+for c in 'git push origin main' 'git add f && git push'; do
+  out=$(pc "$c"); has "post-commit fires for push [$c]" "post_progress" "$out"
+  case "$out" in *"you just committed"*) echo "FAIL push [$c] must not say committed"; fail=1 ;; esac
+done
+for c in 'git status' 'git log --grep commit' 'git log --grep=\"git commit\"' 'echo \"git commit\"' 'echo git commit' 'grep -n \"git commit\" f' 'git diff && echo committed' 'git commit-tree abc' 'ls' 'codex-companion status job-1' 'git stash list # git commit' 'cat commit.txt' 'git config alias.ci commit' 'git -C /commit status'; do
+  out=$(pc "$c"); check "post-commit silent for [$c]" "" "$out"
+done
+out=$("$here/scripts/post-commit.sh" <<EOF2
+{"cwd":"$bound","tool_name":"Bash","tool_input":{}}
+EOF2
+)
+check "post-commit silent without command" "" "$out"
 
 # JSON validity of every emitted document
 for f in "$here/hooks/hooks.json" "$here/.mcp.json" "$here/.claude-plugin/plugin.json" "$here/../.claude-plugin/marketplace.json"; do
