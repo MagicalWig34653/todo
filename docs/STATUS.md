@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 3.11.2026: Berechtigungsfenster neu gestaltet (Agent claude-code@consent-ui)
+
+- Board-Aufgabe `C35D897E-BEE1-4E77-A979-2EE14C4787AD` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration, Scopes und OAuth-Ablauf unveraendert.
+- `ConsentPage.swift`: Katalog `groups`/`catalog` (alle 21 Scopes mit Gruppe, Lesen/Schreiben, kritisch: sharing:write, teams:write, runs:write, admin:read), PWA-Farbtokens hell/dunkel, Karten, "<Client> moechte auf dein Todolino zugreifen", Hinweis auf Bestaetigung grosser Aktionen in der App, Projektliste mit Suche, Alle/Keine, Zaehler, Einrueckung ueber `parentID`, klebende Knopfleiste. Weiter nur textContent, gehashtes Inline-Skript, CSP unveraendert (frame-ancestors none, keine externen Ressourcen).
+- Tests: neu `ConsentPageTests` (jeder Scope hat Label und Gruppe, kritische Flags, Sicherheitseigenschaften), `OAuthSharingTests` gruen. Screenshots (nicht im Repo) in /private/tmp/claude-501/consent-ui/: hell/dunkel, 390/320 px, 200 % Schrift ohne horizontalen Ueberlauf (Playwright mit Mock-Antworten, nicht gegen laufendes Backend).
+- Offen: echter OAuth-Durchlauf im Browser und Screenreader-Test von Hand.
+
 ## Checkpoint 3.11.2026: MCP Stapel 7 Workflow und Runner (Agent claude-code@mcp-s7)
 
 - Ziel: Board-Aufgabe `AB30A7F6-0CC6-45FE-9740-1C3209AD16C0`; Review-Verlauf, Fortschrittsnotizen, Runner-Jobs und -Geräte per MCP.
