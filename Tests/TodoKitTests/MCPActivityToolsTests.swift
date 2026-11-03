@@ -34,7 +34,7 @@ final class MCPActivityToolsTests: XCTestCase {
 
     func testRegistrationAndScopes() async throws {
         let names = ["update_comment", "delete_comment", "list_project_comments", "add_project_comment", "update_project_comment", "delete_project_comment",
-                     "list_activity", "read_attachment", "register_build", "begin_task_upload", "complete_task_upload", "delete_attachment"]
+                     "list_activity", "read_attachment", "get_attachment_download", "register_build", "begin_task_upload", "complete_task_upload", "delete_attachment"]
         for n in names { XCTAssertTrue(MCPController.tools.contains { $0.name == n }, n) }
         let f = try await OAuthFixture.make()
         do {
@@ -201,6 +201,47 @@ final class MCPActivityToolsTests: XCTestCase {
         }
     }
 
+    func testLargePreviewIsOmittedAndDownloadLinkAndChatNote() async throws {
+        try await fixture { f, access in
+            let t = try await makeTask(f); let tid = try t.requireID()
+            let big = Attachment(); big.id = UUID(); big.taskID = tid; big.ownerID = try f.user.requireID()
+            big.filename = "shot.png"; big.role = "result"; big.mediaType = "image/png"; big.size = 200_000
+            big.checksum = String(repeating: "a", count: 64); big.status = "complete"; big.objectKey = "k"
+            try await big.save(on: f.test.app.db)
+            let bid = try big.requireID().uuidString
+            let read = try await call(f, "read_attachment", ["id": bid, "preview": true], access)
+            XCTAssertNil(read.object?["preview"])
+            XCTAssertEqual(read.object?["previewOmitted"] as? String, "preview_unavailable")
+            XCTAssertTrue((read.object?["hint"] as? String)?.contains("get_attachment_download") == true)
+            XCTAssertLessThan(read.text.utf8.count, 2_000)
+            // Signed link: five minutes, this file only, no secrets in the answer besides the signature itself.
+            let link = try await call(f, "get_attachment_download", ["id": bid], access)
+            XCTAssertFalse(link.isError, link.text)
+            let url = try XCTUnwrap(link.object?["url"] as? String)
+            XCTAssertTrue(url.contains("/v1/attachments/\(bid)/download?exp="))
+            XCTAssertEqual(link.object?["filename"] as? String, "shot.png")
+            let expires = try XCTUnwrap(ISO8601DateFormatter().date(from: try XCTUnwrap(link.object?["expiresAt"] as? String)))
+            XCTAssertLessThanOrEqual(expires.timeIntervalSinceNow, 300)
+            XCTAssertGreaterThan(expires.timeIntervalSinceNow, 250)
+            // Not an attachment id, malformed id, pending attachment.
+            let bad = try await call(f, "get_attachment_download", ["id": UUID().uuidString], access); XCTAssertEqual(bad.text, "not_found")
+            big.status = "pending"; try await big.save(on: f.test.app.db)
+            let pending = try await call(f, "get_attachment_download", ["id": bid], access); XCTAssertEqual(pending.text, "not_found")
+            big.status = "complete"; try await big.save(on: f.test.app.db)
+            // list_comments: no chat entry, so one trailing note with the file; then an entry replaces the note.
+            let list = try await call(f, "list_comments", ["taskID": tid.uuidString], access)
+            let items = try XCTUnwrap(list.json as? [[String: Any]])
+            XCTAssertEqual(items.last?["kind"] as? String, "attachments_note")
+            XCTAssertEqual((items.last?["attachments"] as? [[String: Any]])?.first?["id"] as? String, bid)
+            try await AttachmentChat.record(big, user: f.user, target: .init(), on: f.test.app.db)
+            let after = try await call(f, "list_comments", ["taskID": tid.uuidString], access)
+            let afterItems = try XCTUnwrap(after.json as? [[String: Any]])
+            XCTAssertEqual(afterItems.count, 1)
+            XCTAssertEqual(afterItems[0]["kind"] as? String, "attachment")
+            XCTAssertEqual((afterItems[0]["attachments"] as? [[String: Any]])?.first?["filename"] as? String, "shot.png")
+        }
+    }
+
     func testAttachmentToolsRespectGrantRoleAndMalformedInput() async throws {
         try await fixture { f, access in
             let out = try await makeTask(f, project: f.other)
@@ -212,7 +253,7 @@ final class MCPActivityToolsTests: XCTestCase {
             foreign.status = "complete"; foreign.objectKey = "k"
             try await foreign.save(on: f.test.app.db)
             let fid = try foreign.requireID().uuidString
-            for (name, args) in [("read_attachment", ["id": fid]), ("delete_attachment", ["attachmentID": fid]), ("complete_task_upload", ["attachmentID": fid]),
+            for (name, args) in [("read_attachment", ["id": fid]), ("get_attachment_download", ["id": fid]), ("delete_attachment", ["attachmentID": fid]), ("complete_task_upload", ["attachmentID": fid]),
                                  ("register_build", ["attachmentID": fid, "buildID": "b"])] as [(String, [String: Any])] {
                 let r = try await call(f, name, args, access); XCTAssertEqual(r.text, "not_found", name)
             }

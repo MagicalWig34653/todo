@@ -8,6 +8,14 @@
 - Optik: Markenzeile, Legende ohne Rahmenbruch, Badge ueber Text auf schmalen Breiten, Knopfleiste umbricht bei 200 % Schrift, kleinere Einrueckung der Projektliste, Suchfeld volle Breite mobil.
 - Tests: `ConsentPageTests` (Ziel-Validierung mit //evil.com, https://evil, Backslash, CRLF, NUL, Umlaut, Laenge), `OAuthSharingTests`, `OAuthTests`, `OAuthIssuerTests` 17/17; vitest routing 9; Playwright `e2e/oauth-consent.spec.ts` 5/5 gegen echtes SQLite-Backend (Registrierung, Login-Umleitung, Passkey, Screenshots hell/dunkel 1280/390/320 und 200 %, Zustimmung, Token-Scopes exakt).
 - Offen: setup/recover-Wege nutzen `next` ebenfalls ueber den Layout-Effekt, aber nicht einzeln getestet; Screenreader von Hand; MariaDB/Firefox/WebKit nicht geprueft.
+## Checkpoint 3.11.2026: Agenten sehen Anhaenge (Agent claude-code@attach-vision)
+
+- Board-Aufgabe `CD172441-9588-40D6-920F-F5CE1CD17462` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push. Migration `AddCommentAttachment` (additiv: `comments.attachment_id`).
+- Chat: `complete` legt fuer Uploads von Personen einen Chat-Eintrag an (optional `{questionID, reviewID}` im Body); `CommentDTO` mit `kind`, `attachmentID`, `attachments[{id,filename,mediaType,size}]`; `list_comments` haengt `attachments_note` fuer Anhaenge ohne Eintrag an. PWA: Vorschaubild/Datei-Chip in der Unterhaltung, Thread wird beim Upload mitgegeben.
+- `read_attachment preview`: nur bis 45000 Byte inline, sonst `preview_unavailable` + `hint` (kein Bildverkleinerer auf dem Server, keine neue Abhaengigkeit).
+- `get_attachment_download` (Klasse A) mit signierter 5-Minuten-URL (HMAC, HKDF aus SETTINGS_ENCRYPTION_KEY, sonst Prozessschluessel); Plugin 1.6.0 mit `scripts/fetch-attachment.sh`, Skill-Hinweis.
+- Sicherheit getestet: Signatur manipuliert, `exp` verschoben/abgelaufen/zu weit, fremde Anhangs-ID, geloescht (Replay), andere Methode, fremdes Projekt (`not_found`), Dateiname/Pfad im Skript, keine URL im Fehlerlog (signierte Route gibt Fehler als Antwort zurueck). Siehe `docs/MCP-PARITAET.md`, Abschnitt "Anhaenge fuer Agenten sehen".
+- Offen: Handbuch-Version/embed (Hauptsession; `docs/agent-manual.md` hat neue Zeilen, `AgentManualContent.swift` nicht neu erzeugt); PWA-Aufgabe `8C9D4BB6` (Upload) nicht reproduziert, der REST-Ablauf ist getestet, Browser nicht geprueft; echter Test mit Live-Server und Claude Code ausstehend; Server-Verkleinerung grosser Bilder waere ein eigener Schritt.
 
 ## Checkpoint 3.11.2026: Plugin 1.5.0 Hook-Fixes (Agent claude-code@plugin-fixes)
 

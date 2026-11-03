@@ -153,7 +153,7 @@ Zwölf Tools in `MCPActivityTools.swift`, keine neuen Scopes, keine Migration. F
 | `update_project_comment` | comments:write | A | `projectID, commentID, version, body`; nur eigene Kommentare |
 | `delete_project_comment` | comments:write | C | `projectID, commentID, version?`; Bestätigungsanfrage |
 | `list_activity` | tasks:read | A | `projectID?, limit?` (1..100, Standard 50), `before?` (nextCursor); Aufgaben- und Projektereignisse, nur Grant-Projekte, die das Konto lesen darf |
-| `read_attachment` | attachments:read | A | `id, preview?`; `{attachment, build?, preview?: {mediaType, dataBase64}, previewOmitted?}`; Vorschau nur Bilder bis 1 MiB (`not_an_image`, `too_large`) |
+| `read_attachment` | attachments:read | A | `id, preview?`; `{attachment, build?, preview?: {mediaType, dataBase64}, previewOmitted?}`; Vorschau nur winzige Bilder bis 45000 Byte (`not_an_image`, `preview_unavailable` mit `hint`; siehe Abschnitt Anhänge für Agenten) |
 | `register_build` | attachments:write | A | `attachmentID, buildID, label?, platform?`; macht einen fertigen Anhang zum Build-Screenshot, idempotent, `build.added` einmal |
 | `begin_task_upload` | attachments:write | A | `taskID, filename, role (reference\|progress\|result), mediaType, size, checksum`; wie `begin_attachment`, aber mit wählbarer Rolle, ohne Build-Eintrag |
 | `complete_task_upload` | attachments:write | A | `attachmentID`; nur eigene Uploads auf erlaubter Aufgabe |
@@ -220,6 +220,16 @@ Sechs Tools in `MCPRunTools.swift`, Tests `MCPRunToolsTests` (12). Fachpfad wie 
 Beispiele: `list_reviews {"status":"accepted","limit":10}`, `start_agent_job {"taskID":"…","deviceID":"…","version":3}`, `stop_agent_job {"jobID":"…"}`.
 
 Fehler: `insufficient_scope`, `not_found` (Projekt/Aufgabe/Job außerhalb Grant oder nicht Eigentümer), `invalid_status`, `invalid_limit`, `invalid_mode`, `invalid_version`, `invalid_arguments`, `no_binding` (keine nutzbare Bindung), `device_required` (mehrere Geräte, deviceID fehlt), `version_conflict` (veraltete Aufgabenversion), `task_revision_changed`, Konflikt beim Stopp eines beendeten Jobs. Handbuch und Version macht die Hauptsession; `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die sechs Tools fehl.
+
+## Anhänge für Agenten sehen (3.11.2026)
+
+Anlass: ein Screenshot an einer Aufgabe war für den Agenten unsichtbar (Anhang hängt an der Aufgabe, `list_comments` kannte ihn nicht, `read_attachment` mit `preview` lieferte bis 1 MiB Base64 und sprengte das Ausgabelimit des Clients).
+
+- Chat: `POST /v1/attachments/{id}/complete` nimmt optional `{questionID, reviewID}` (Thread; unbekannt = 404 vor dem Abschluss) und legt für Uploads von Personen einen Chat-Eintrag an (`comments.attachment_id`, Migration `AddCommentAttachment`, additiv). `CommentDTO` bekommt `kind` (`attachment`), `attachmentID`, `attachments:[{id, filename, mediaType, size}]` (nur abgeschlossene Anhänge). `list_comments` hängt am Ende einen synthetischen Eintrag `kind: attachments_note` an, wenn Anhänge keinen Chat-Eintrag haben (nur Aufgaben-weite Abfragen ohne `since`/`authorKind=agent`). Keine neuen Scopes.
+- `read_attachment preview`: Server hat keinen Bildverkleinerer (kein ImageIO unter Linux, keine Bildbibliothek, keine neue Abhängigkeit). Inline nur bis 45000 Byte (Antwort unter ca. 60 KB), sonst `previewOmitted: preview_unavailable` plus `hint`.
+- `get_attachment_download` (attachments:read, Klasse A, nur lesend): `{id, filename, mediaType, size, url, expiresAt}`. URL `/v1/attachments/{id}/download?exp=<unix>&sig=<hex>`, 5 Minuten, HMAC-SHA256 über `dl1|<id>|<exp>`; Schlüssel per HKDF aus `SETTINGS_ENCRYPTION_KEY`, sonst zufälliger Prozessschlüssel (Links sterben beim Neustart und gelten nicht über Replikas). Ohne Sitzung, nur GET, nur dieser Anhang, `Cache-Control: no-store`, `Content-Disposition: attachment`, `nosniff`, `Referrer-Policy: no-referrer`. Rechte werden bei der Ausgabe des Links geprüft (Lesen im Projekt und Grant), beim Abruf gilt die Signatur; ein in den fünf Minuten entzogenes Recht wirkt erst mit Ablauf. Gelöschte Anhänge: 404 (kein Replay).
+- Sicherheit: manipulierte Signatur, anderes `exp`, fremde Anhangs-ID, abgelaufen, zu weit in der Zukunft, gelöscht und andere Methoden werden getestet (`AttachmentVisionTests`); fremde Projekte liefern `not_found` (`MCPActivityToolsTests`). Fehlschläge auf der signierten Route werden als schlichte Antwort zurückgegeben, nicht geworfen, damit Vapors Fehlerlog die URL samt Signatur nicht schreibt. Es gibt kein Anfrage-Logging. Der Router-404 für andere Methoden schreibt die URL weiterhin ins Log (nur bei Fehlbedienung, Link ist dann ohnehin kurzlebig).
+- Plugin 1.6.0: `claude-plugin/scripts/fetch-attachment.sh <url> [dir]` (https oder http://localhost, genau Pfad `/v1/attachments/<uuid>/download?...`, keine Weiterleitungen, 25 MB, bereinigter Dateiname mit ID-Präfix im Zielordner, gibt den Pfad aus, nennt die URL nie in Fehlern).
 
 ## Kompakte Antworten: get_command_center und list_open_questions
 

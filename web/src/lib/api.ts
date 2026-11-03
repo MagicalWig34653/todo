@@ -301,6 +301,9 @@ export interface Comment {
 	authorKind?: 'person' | 'agent';
 	authorLabel?: string | null;
 	createdAt?: string | null;
+	/** `attachment` = announces an upload (see `attachments`). */
+	kind?: string | null;
+	attachments?: { id: string; filename: string; mediaType: string; size: number }[] | null;
 }
 /** Which chat of a task: its own (`task`), or the chat of one question or review. */
 export type CommentThread = { questionID: string } | { reviewID: string } | 'task';
@@ -992,7 +995,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			}
 			if (!response.ok) throw new ApiError(response.status, `upload_${response.status}`);
 		},
-		completeAttachment: (id: string) => request<Attachment>('POST', `/attachments/${id}/complete`, {}),
+		completeAttachment: (id: string, thread?: { questionID?: string; reviewID?: string }) =>
+			request<Attachment>('POST', `/attachments/${id}/complete`, thread ?? {}),
 		abortAttachment: (id: string) => request<void>('DELETE', `/attachments/${id}`),
 		attachmentPreviewURL: (id: string) => `${base}/attachments/${id}/preview`,
 		attachmentDownloadURL: (id: string) => `${base}/attachments/${id}/download`,

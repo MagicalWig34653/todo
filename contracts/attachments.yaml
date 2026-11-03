@@ -62,7 +62,19 @@ paths:
       - $ref: '#/components/parameters/AttachmentID'
     post:
       operationId: completeAttachment
-      description: Revalidates stored bytes and publishes metadata; idempotent after success.
+      description: |
+        Revalidates stored bytes and publishes metadata; idempotent after success. For a person's upload a chat entry
+        (collaboration.yaml Comment, kind attachment) is created once. The optional body names the chat the upload belongs to;
+        without it the task's own chat is used. An unknown or foreign questionID/reviewID answers 404 before completion.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                questionID: { type: string, format: uuid }
+                reviewID: { type: string, format: uuid }
       responses:
         '200':
           description: Complete attachment
@@ -110,6 +122,15 @@ paths:
       - $ref: '#/components/parameters/AttachmentID'
     get:
       operationId: downloadAttachment
+      description: |
+        Normally needs the session. With the query parameters exp (unix seconds) and sig (64 hex characters) the route works
+        without a session: signed agent link from the MCP tool get_attachment_download. It is valid for exactly this attachment
+        until exp (at most 5 minutes after issue), GET only. HMAC-SHA256 over dl1|id|exp. Every failure (bad or tampered signature,
+        expired, other attachment, deleted) answers a plain 404 without a logged error. Response headers: Cache-Control no-store,
+        Content-Disposition attachment, X-Content-Type-Options nosniff, Referrer-Policy no-referrer.
+      parameters:
+        - { in: query, name: exp, required: false, schema: { type: integer } }
+        - { in: query, name: sig, required: false, schema: { type: string, minLength: 64, maxLength: 64 } }
       responses:
         '200':
           description: Verified original with attachment disposition and private no-store caching. Responses carry Accept-Ranges bytes.

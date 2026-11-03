@@ -35,7 +35,7 @@
 		try {
 			await attempt(async () => {
 				try {
-					await attachFile(taskID, file);
+					await attachFile(taskID, file, 'reference', thread);
 				} catch (e) {
 					if (e instanceof AttachProblem) {
 						attachProblem = t(`attachments.problem.${e.problem}` as MessageKey);
@@ -196,7 +196,22 @@
 						</div>
 					</div>
 				{:else}
-					<p class="rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap {mine ? 'bg-ui-accent text-ui-accent-foreground rounded-br-md' : agent ? 'bg-ui-accent-soft rounded-bl-md' : 'bg-muted rounded-bl-md'}">{c.body}</p>
+					{#if c.kind === 'attachment' && c.attachments?.length}
+						<div class="flex flex-col gap-1" data-testid="comment-attachment">
+							{#each c.attachments as a (a.id)}
+								<a href={api.attachmentPreviewURL(a.id)} target="_blank" rel="noopener" class="rounded-2xl text-sm [overflow-wrap:anywhere] {mine ? 'bg-ui-accent text-ui-accent-foreground rounded-br-md' : 'bg-muted rounded-bl-md'} flex items-center gap-2 overflow-hidden p-1.5 pe-3">
+									{#if a.mediaType.startsWith('image/')}
+										<img src={api.attachmentPreviewURL(a.id)} alt={a.filename} loading="lazy" class="size-16 shrink-0 rounded-lg object-cover" />
+									{:else}
+										<Paperclip class="size-4 shrink-0" aria-hidden="true" />
+									{/if}
+									<span>{a.filename}</span>
+								</a>
+							{/each}
+						</div>
+					{:else}
+						<p class="rounded-2xl px-3.5 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap {mine ? 'bg-ui-accent text-ui-accent-foreground rounded-br-md' : agent ? 'bg-ui-accent-soft rounded-bl-md' : 'bg-muted rounded-bl-md'}">{c.body}</p>
+					{/if}
 					{#if mine}
 						<span class="flex gap-1">
 							<Button size="xs" variant="ghost" onclick={() => ((editingID = c.id), (draft = c.body))}>{t('comments.edit')}</Button>
@@ -247,6 +262,9 @@
 					</div>
 				{:else}
 					<p class="whitespace-pre-wrap">{c.body}</p>
+					{#each c.attachments ?? [] as a (a.id)}
+						<a href={api.attachmentPreviewURL(a.id)} target="_blank" rel="noopener" class="text-ui-accent text-sm underline">{a.filename}</a>
+					{/each}
 				{/if}
 			</li>
 		{/each}

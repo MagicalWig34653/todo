@@ -177,6 +177,60 @@ EOF2
 )
 check "post-commit silent without command" "" "$out"
 
+# fetch-attachment.sh: refusals first (no network), then a real download from a local test server
+fa="$here/scripts/fetch-attachment.sh"
+good="http://localhost:1/v1/attachments/11111111-2222-3333-4444-555555555555/download?exp=1&sig=ab"
+for bad in "http://example.com/v1/attachments/11111111-2222-3333-4444-555555555555/download?exp=1&sig=ab" \
+           "ftp://localhost/v1/attachments/11111111-2222-3333-4444-555555555555/download?exp=1&sig=ab" \
+           "file:///etc/passwd" \
+           "https://example.com/v1/attachments/../../x/download?exp=1&sig=ab" \
+           "https://example.com/v1/attachments/11111111-2222-3333-4444-555555555555/preview?exp=1&sig=ab" \
+           "https://example.com/v1/attachments/11111111-2222-3333-4444-555555555555/download" \
+           "https://user@example.com/v1/attachments/11111111-2222-3333-4444-555555555555/download?exp=1&sig=ab" \
+           "https://example.com/v1/attachments/not-a-uuid/download?exp=1&sig=ab" \
+           "https://example.com/v1/attachments/11111111-2222-3333-4444-555555555555/download?exp=1&sig=a b" \
+           "--output=/tmp/x" ""; do
+  out=$("$fa" "$bad" "$tmp/fa-refused" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && echo "ok   fetch refuses [$bad]" || { echo "FAIL fetch accepted [$bad]"; fail=1; }
+done
+[ ! -e "$tmp/fa-refused" ] && echo "ok   fetch creates no directory when refusing" || { echo "FAIL fetch created dir for refused URL"; fail=1; }
+
+if command -v python3 >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  srv="$tmp/srv"; mkdir -p "$srv/v1/attachments/11111111-2222-3333-4444-555555555555"
+  printf '\211PNG\r\n\032\nfake' > "$srv/v1/attachments/11111111-2222-3333-4444-555555555555/download"
+  cat > "$tmp/server.py" <<'PYEOF'
+import http.server, sys
+class H(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def end_headers(self):
+        self.send_header("Content-Disposition", "attachment; filename*=UTF-8''..%2F..%2Fevil%20shot.png")
+        self.send_header("Content-Type", "image/png")
+        super().end_headers()
+import os; os.chdir(sys.argv[1])
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[2], "w").write(str(s.server_address[1]))
+s.serve_forever()
+PYEOF
+  python3 -I "$tmp/server.py" "$srv" "$tmp/port" & spid=$!
+  n=0; while [ ! -s "$tmp/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n+1)); done
+  port=$(cat "$tmp/port" 2>/dev/null)
+  mkdir -p "$tmp/fa-out"; dest=$(cd "$tmp/fa-out" && pwd -P)
+  out=$("$fa" "http://127.0.0.1:$port/v1/attachments/11111111-2222-3333-4444-555555555555/download?exp=1&sig=ab" "$dest" 2>&1); rc=$?
+  check "fetch downloads from localhost" "0" "$rc"
+  case "$out" in "$dest"/*) echo "ok   fetch prints a path inside the target dir" ;; *) echo "FAIL fetch path [$out]"; fail=1 ;; esac
+  [ "$(dirname "$out")" = "$dest" ] && echo "ok   fetch name has no separators (file sits directly in dir)" || { echo "FAIL fetch name [$out]"; fail=1; }
+  case "$(basename "$out")" in .*|*/*|*..*) echo "FAIL fetch name not sanitized [$out]"; fail=1 ;; *) echo "ok   fetch sanitizes the file name (no dots-prefix, no traversal)" ;; esac
+  [ -f "$out" ] && [ "$(wc -c < "$out" | tr -d ' ')" -gt 0 ] && echo "ok   fetch wrote the file" || { echo "FAIL fetch file missing"; fail=1; }
+  [ -z "$(ls -A "$dest" | grep '^\.fetch')" ] && echo "ok   fetch leaves no temp files" || { echo "FAIL fetch temp files left"; fail=1; }
+  [ ! -e "$tmp/evil_shot.png" ] && [ ! -e "$tmp/../evil_shot.png" ] && echo "ok   fetch wrote nothing outside the dir" || { echo "FAIL fetch escaped dir"; fail=1; }
+  out=$("$fa" "http://127.0.0.1:$port/v1/attachments/22222222-2222-3333-4444-555555555555/download?exp=1&sig=ab" "$dest" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && echo "ok   fetch fails on HTTP 404" || { echo "FAIL fetch accepted 404"; fail=1; }
+  case "$out" in *"sig=ab"*) echo "FAIL fetch echoed the URL: $out"; fail=1 ;; *) echo "ok   fetch error does not echo the signature" ;; esac
+  kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
+else
+  echo "skip fetch download tests (python3 or curl missing)"
+fi
+
 # JSON validity of every emitted document
 for f in "$here/hooks/hooks.json" "$here/.mcp.json" "$here/.claude-plugin/plugin.json" "$here/../.claude-plugin/marketplace.json"; do
   python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$f" 2>/dev/null && echo "ok   valid JSON $(basename "$f")" || { echo "FAIL invalid JSON $f"; fail=1; }

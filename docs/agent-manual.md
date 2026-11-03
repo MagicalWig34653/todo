@@ -1,4 +1,4 @@
-<!-- manual-version: 1.12.0 -->
+<!-- manual-version: 1.13.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -186,7 +186,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
 | `list_pending_reviews` | tasks:read | Pending reviews. |
 | `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). |
-| `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. |
+| `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. Uploads by people appear as entries with `kind: "attachment"` and `attachments: [{id, filename, mediaType, size}]`; files without a chat entry add one trailing `attachments_note`. |
 | `add_comment` | comments:write | Write a message into the chat of a task, question (`questionID`) or review (`reviewID`); optional `agentName`. |
 | `list_columns` | projects:read | Board with tasks per column. |
 | `move_task_to_column` | tasks:write | Move a card. |
@@ -257,7 +257,8 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `update_project_comment` | comments:write | Edit one of your own project comments. |
 | `delete_project_comment` | comments:write | Class C: asks the person to confirm deleting a project comment. |
 | `list_activity` | tasks:read | Activity feed, only from the projects of this connection. |
-| `read_attachment` | attachments:read | Attachment metadata, build info and an image preview up to 1 MiB. |
+| `read_attachment` | attachments:read | Attachment metadata, build info and an inline preview only for tiny images (up to 45000 bytes); bigger ones return `previewOmitted: preview_unavailable` and a hint. |
+| `get_attachment_download` | attachments:read | Signed URL (5 minutes, one attachment, GET) to download a file. Run `scripts/fetch-attachment.sh <url> [dir]` of the plugin and `Read` the printed path to look at a screenshot. Never post the URL on the board. |
 | `register_build` | attachments:write | Turn a finished attachment into a build screenshot (idempotent). |
 | `begin_task_upload` | attachments:write | Start an upload with a chosen role (reference, progress, result). |
 | `complete_task_upload` | attachments:write | Finish your own upload. |
@@ -290,6 +291,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.13.0:** attachments for agents. `get_attachment_download` returns a 5-minute signed link, `claude-plugin/scripts/fetch-attachment.sh` saves it locally so you can Read the file. `read_attachment` previews only small images (`preview_unavailable` otherwise). `list_comments` returns `attachments` and chat entries of kind `attachment`.
 
 **Changed in 1.12.0:** compact answers. `get_command_center` and `list_open_questions` answer compactly by default (`compact:false` returns the full shape; `status` and `fields` filter questions). Plugin notes: core tool select line, Codex wrapper reporting.
 

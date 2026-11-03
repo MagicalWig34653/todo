@@ -45,3 +45,13 @@ struct AddCommentThreads: AsyncMigration {
         for (name, _) in Self.columns { try await db.schema(TaskComment.schema).deleteField(name).update() }
     }
 }
+
+/// Additive: a chat entry may reference the completed upload it announces.
+struct AddCommentAttachment: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(TaskComment.schema).field("attachment_id", .uuid).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(TaskComment.schema).deleteField("attachment_id").update()
+    }
+}

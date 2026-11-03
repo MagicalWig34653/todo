@@ -64,7 +64,7 @@ struct CollaborationController: RouteCollection {
     /// Resolves author display names. Authors are visible to everyone who can read the task's comments.
     private func named(_ comments: [CommentDTO], on db: any Database) async throws -> [CommentDTO] {
         let names = try await displayNames(comments.map(\.authorID), on: db)
-        return comments.map { var c = $0; c.authorName = names[c.authorID]; return c }
+        return try await AttachmentChat.decorate(comments.map { var c = $0; c.authorName = names[c.authorID]; return c }, on: db)
     }
     @Sendable func comments(_ req: Request) async throws -> [CommentDTO] {
         let taskID = try await authorized(req)
