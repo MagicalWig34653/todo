@@ -5,6 +5,8 @@ extension MCPController {
     static let taskIDField = Schema.uuid("Task id.")
     static let agentNameField = Schema.string("Optional name of this agent shown on the board (for example 'claude-code@build-mac', up to 100 characters).", maxLength: 100)
     static let optionalProject = Schema.uuid("Optional project id. Omit for all granted projects.")
+    static let currentProjectID = Schema.uuid("The CURRENT project (projectID from .todolino.json). Strongly recommended: the answer then names it as currentProject and is limited to it (and its sub-projects). Without it the answer covers all projects of the account and carries a hint.")
+    static let accountScope = Schema.string("With projectID: project (default) filters to the current project; account keeps all projects but marks entries of other projects with foreignProject=true (never work on those).", values: ["project", "account"])
 
     /// Command-center and workflow tools (ADR 0014).
     static let workflowTools: [Tool] = [
@@ -15,9 +17,9 @@ extension MCPController {
              description: "Per-project agent briefing: description, the user-written agent brief (goals, constraints, definition of done, agent rules), board columns with their workflow roles, whether the standard agent workflow columns exist, task counts and the always-valid rules. Call it before starting work in a project; the brief overrides your defaults.",
              properties: ["projectID": Schema.uuid("Project id.")], required: ["projectID"]),
         Tool(name: "get_command_center", scope: "tasks:read",
-             description: "The overview ('Steuerzentrale') as kanban lanes (running, question, review, ready, blocked, done) with cards (task, project, progress percent, agent, open questions, pending review, latest note, build screenshots, due date), summary counters (overdue counts all visible unfinished tasks with planning.dueAt before server time, including subtasks/backlog), card dueDate (own planning.dueAt) and nextDue (earliest unfinished own/subtask dueAt), the latest updates and build groups. Use it to see what is open, what waits for a person and what you can start. view=list returns the same cards flat with filters and sorting.",
+             description: "The overview ('Steuerzentrale') as kanban lanes (running, question, review, ready, blocked, done) with cards (task, project, progress percent, agent, open questions, pending review, latest note, build screenshots, due date), summary counters (overdue counts all visible unfinished tasks with planning.dueAt before server time, including subtasks/backlog), card dueDate (own planning.dueAt) and nextDue (earliest unfinished own/subtask dueAt), the latest updates and build groups. Pass projectID (current project): the answer names currentProject and is limited to it; without it all account projects are shown with a hint, with scope=account foreign entries carry foreignProject=true. Use it to see what is open, what waits for a person and what you can start. view=list returns the same cards flat with filters and sorting.",
              properties: [
-                "projectID": optionalProject,
+                "projectID": currentProjectID, "scope": accountScope,
                 "includeSubprojects": Schema.boolean("With projectID: include nested sub-projects (default true)."),
                 "view": Schema.string("kanban (default, lanes) or list (flat cards).", values: ["kanban", "list"]),
                 "lane": Schema.string("Comma-separated lane keys to keep: running,question,review,ready,blocked,done."),
@@ -76,8 +78,8 @@ extension MCPController {
                           "idempotencyKey": Schema.string("Optional retry key; the same key with the same prompt returns the existing question.", maxLength: 200)],
              required: ["taskID", "prompt"]),
         Tool(name: "list_open_questions", scope: "tasks:read",
-             description: "List open questions across all granted projects (or one project or one task), newest first, each with options, who asked and the task/project it belongs to. includeAnswered=true also returns answered ones with their answer. Includes questions asked by local runner jobs.",
-             properties: ["projectID": optionalProject,
+             description: "List open questions (pass projectID = current project; the answer is {currentProject, hint?, items}, items of other projects carry foreignProject=true with scope=account), newest first, each with options, who asked and the task/project it belongs to. includeAnswered=true also returns answered ones with their answer. Includes questions asked by local runner jobs.",
+             properties: ["projectID": currentProjectID, "scope": accountScope,
                           "taskID": Schema.uuid("Optional: only questions of this task."),
                           "includeAnswered": Schema.boolean("Also return answered questions (default false)."),
                           "status": Schema.string("open (default), answered or all; overrides includeAnswered.", values: ["open", "answered", "all"]),
@@ -99,8 +101,8 @@ extension MCPController {
                           "agentName": agentNameField],
              required: ["taskID", "summary"]),
         Tool(name: "list_pending_reviews", scope: "tasks:read",
-             description: "List pending review requests across granted projects (or one project): task, project, summary, who requested, optional named reviewer. Includes reviews of local runner jobs.",
-             properties: ["projectID": optionalProject]),
+             description: "List pending review requests (pass projectID = current project; the answer is {currentProject, hint?, items}, other projects only with scope=account and foreignProject=true): task, project, summary, who requested, optional named reviewer. Includes reviews of local runner jobs.",
+             properties: ["projectID": currentProjectID, "scope": accountScope]),
         Tool(name: "decide_review", scope: "tasks:write",
              description: "Accept or request changes on a pending review on behalf of the user steering you. accept marks the task done; request_changes returns it to in_progress with your note. Refused for reviews requested by this same connection (cannot_decide_own_review).",
              properties: ["taskID": taskIDField,
@@ -202,10 +204,13 @@ extension MCPController {
                 if raw["updatesLimit"] == nil { raw["updatesLimit"] = String(MCPCompact.compactUpdatesLimit) }
                 if raw["limit"] == nil { raw["limit"] = String(MCPCompact.compactListLimit) }
             }
-            let projectID = try optionalUUID(a, "projectID")
-            let query = try CommandCenterQuery(scope: projectID == nil ? "account" : "project", projectID: projectID?.uuidString, raw: raw)
+            let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
+                user: user, db: db, allowed: Set(grant.projects))
+            let filter = context.filterProjectID
+            let query = try CommandCenterQuery(scope: filter == nil ? "account" : "project", projectID: filter?.uuidString, raw: raw)
             let response = try await CommandCenterService(user: user, db: db, allowedProjects: Set(grant.projects)).build(query)
-            return MCPCompact.commandCenter(try .encoded(response), compact: compact, fields: fields)
+            let marked = context.markCards(try .encoded(response))
+            return context.decorate(MCPCompact.commandCenter(marked, compact: compact, fields: fields))
         case "get_task_context":
             return try .encoded(try await service.context(uuid(a["taskID"])))
         case "claim_task":
@@ -243,9 +248,11 @@ extension MCPController {
             let fields = try MCPCompact.fields(optionalString(a, "fields"), allowed: MCPCompact.questionFields)
             let state = try optionalString(a, "status") ?? (all ? "all" : "open")
             guard ["open", "answered", "all"].contains(state) else { throw Abort(.badRequest, reason: "invalid_status") }
-            let rows = try await service.questions(projectID: optionalUUID(a, "projectID"), taskID: optionalUUID(a, "taskID"),
+            let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
+                user: user, db: db, allowed: Set(grant.projects))
+            let rows = try await service.questions(projectID: context.filterProjectID, taskID: optionalUUID(a, "taskID"),
                 state: state, limit: intArgument(a["limit"], reason: "invalid_limit") ?? (compact ? 50 : 100))
-            return MCPCompact.questions(try .encoded(rows), compact: compact, fields: fields)
+            return context.wrap(items: MCPCompact.questions(context.markRows(try .encoded(rows)), compact: compact, fields: fields))
         case "get_question":
             return try .encoded(try await service.question(uuid(a["questionID"])))
         case "answer_question":
@@ -255,7 +262,9 @@ extension MCPController {
                 agentName: try optionalString(a, "agentName"))
             return try .encoded(try await service.requestReview(uuid(a["taskID"]), body, actor: actor))
         case "list_pending_reviews":
-            return try .encoded(try await service.reviews(projectID: optionalUUID(a, "projectID"), state: "pending"))
+            let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
+                user: user, db: db, allowed: Set(grant.projects))
+            return context.wrap(items: context.markRows(try .encoded(try await service.reviews(projectID: context.filterProjectID, state: "pending"))))
         case "decide_review":
             return try .encoded(try await service.decideReview(uuid(a["taskID"]), decision: requiredString(a, "decision"),
                 note: optionalString(a, "note"), actor: actor))

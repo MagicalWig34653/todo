@@ -58,31 +58,31 @@ final class MCPCompactTests: XCTestCase {
             try await populate(f, project: other)
 
             let def = try await call(f, "list_open_questions", [:], access)
-            let rows = try XCTUnwrap(def.json as? [[String: Any]], def.text)
+            let rows = try XCTUnwrap(((def.json as? [String: Any])?["items"]) as? [[String: Any]], def.text)
             XCTAssertEqual(rows.count, 24)
             XCTAssertTrue(rows.allSatisfy { $0["state"] as? String == "open" })
             XCTAssertNil(rows[0]["version"]); XCTAssertNil(rows[0]["askedByID"]); XCTAssertNil(rows[0]["answeredVia"])
             XCTAssertNotNil(rows[0]["id"]); XCTAssertNotNil(rows[0]["taskID"]); XCTAssertNotNil(rows[0]["prompt"]); XCTAssertNotNil(rows[0]["projectName"])
 
             let scoped = try await call(f, "list_open_questions", ["projectID": try f.project.requireID().uuidString], access)
-            let scopedRows = try XCTUnwrap(scoped.json as? [[String: Any]])
+            let scopedRows = try XCTUnwrap(((scoped.json as? [String: Any])?["items"]) as? [[String: Any]])
             XCTAssertEqual(scopedRows.count, 12)
             XCTAssertTrue(scopedRows.allSatisfy { $0["projectID"] as? String == f.project.id?.uuidString })
 
             let all = try await call(f, "list_open_questions", ["includeAnswered": true], access)
-            XCTAssertEqual((all.json as? [[String: Any]])?.count, 36)
+            XCTAssertEqual((((all.json as? [String: Any])?["items"]) as? [[String: Any]])?.count, 36)
             let answered = try await call(f, "list_open_questions", ["status": "answered"], access)
-            let answeredRows = try XCTUnwrap(answered.json as? [[String: Any]])
+            let answeredRows = try XCTUnwrap(((answered.json as? [String: Any])?["items"]) as? [[String: Any]])
             XCTAssertEqual(answeredRows.count, 12)
             XCTAssertTrue(answeredRows.allSatisfy { $0["answer"] as? String == "yes" })
 
             let limited = try await call(f, "list_open_questions", ["limit": 3, "fields": "id,prompt"], access)
-            let limitedRows = try XCTUnwrap(limited.json as? [[String: Any]])
+            let limitedRows = try XCTUnwrap(((limited.json as? [String: Any])?["items"]) as? [[String: Any]])
             XCTAssertEqual(limitedRows.count, 3)
             XCTAssertEqual(Set(limitedRows[0].keys), ["id", "prompt"])
 
             let full = try await call(f, "list_open_questions", ["compact": false], access)
-            XCTAssertNotNil((full.json as? [[String: Any]])?.first?["version"])
+            XCTAssertNotNil((((full.json as? [String: Any])?["items"]) as? [[String: Any]])?.first?["version"])
             XCTAssertLessThan(def.text.utf8.count, full.text.utf8.count)
 
             let bad = try await call(f, "list_open_questions", ["status": "weird"], access)

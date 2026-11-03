@@ -1,5 +1,15 @@
 # Status
 
+## Checkpoint 3.11.2026: Aktuelles Projekt im MCP (Agent claude-code@current-project, Board-Aufgabe `5288F3C0-ACF4-4AE4-A99A-A7FDFE60C674`)
+
+- Worktree-Branch, lokal committed, kein Push, keine Migration, Web unverändert. Handbuch 1.16.0 (Embed neu erzeugt).
+- Ursache: Ein Login gilt für alle Projekte, der Server kennt das Arbeitsprojekt nicht (weder OAuth noch `initialize` tragen es). Kleinster Weg: `get_command_center`, `list_open_questions`, `list_pending_reviews` nehmen `projectID` (aus `.todolino.json`) und `scope` (`project` Standard, `account`). Antworten tragen `currentProject {id,name}`; mit `projectID` auf Projekt samt Unterprojekten gefiltert, mit `scope=account` alles mit `foreignProject: true` an fremden Einträgen und `hint`; ohne `projectID` wie bisher plus `hint` und `currentProject: null`.
+- Formänderung (MCP): die beiden Listen antworten `{currentProject, hint?, items}` statt blankem Array. REST unverändert. Code: `Sources/TodoKit/MCP/MCPProjectContext.swift`, `MCPWorkflowTools.swift`, `MCPCompact.swift` (`foreignProject` bleibt bei `fields`).
+- Plugin: Session-Start-Hook nennt die `projectID` und verlangt sie bei allen drei Aufrufen; Skill `todolino`, `sync`, CLAUDE.md-Vorlage: fremde Projekte nie bearbeiten, erwähnen, anbieten. Prompts `session_start`/`sync_project` übergaben die `projectID` schon.
+- Doku: `docs/agent-manual.md`, `docs/MCP-PARITAET.md`, `contracts/command-center.yaml` (Beschreibung, additiv).
+- Geprüft: neu `MCPCurrentProjectTests` (Filter, currentProject, foreignProject, Unterprojekt, hint, Fehlerfälle, Abfragezahl der Auflösung konstant bei 1 bis 11 Projekten); `MCPCompactTests`, `CommandCenterTests`, `OverdueTests`, `ProjectSyncTests` grün; `claude-plugin/tests/test-hooks.sh` grün; Gesamtlauf siehe Bericht.
+- Offen: "Standard auf das gebundene Projekt einschränken" kann der Server nur mit `projectID`; ohne Parameter bleibt alles sichtbar (mit Hinweis), damit bestehende Clients nicht brechen. Echter Live-MCP und Linux/MariaDB nicht geprüft; Apple-App/Codex-Wrapper ungeprüft (Formänderung der Listen).
+
 ## Checkpoint 3.11.2026: Freitext bei Fragen, Review-Eingabe im Chat-Stil, Anhang-Upload (Agent claude-code@pwa-freetext)
 
 - Board-Aufgaben `BBBE29C1` (Freitext), `8C9D4BB6` (Upload); nicht erledigt gesetzt, kein Review. Worktree-Branch, kein Push, keine Migration.

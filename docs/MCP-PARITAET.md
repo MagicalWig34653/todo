@@ -231,6 +231,11 @@ Anlass: ein Screenshot an einer Aufgabe war für den Agenten unsichtbar (Anhang 
 - Sicherheit: manipulierte Signatur, anderes `exp`, fremde Anhangs-ID, abgelaufen, zu weit in der Zukunft, gelöscht und andere Methoden werden getestet (`AttachmentVisionTests`); fremde Projekte liefern `not_found` (`MCPActivityToolsTests`). Fehlschläge auf der signierten Route werden als schlichte Antwort zurückgegeben, nicht geworfen, damit Vapors Fehlerlog die URL samt Signatur nicht schreibt. Es gibt kein Anfrage-Logging. Der Router-404 für andere Methoden schreibt die URL weiterhin ins Log (nur bei Fehlbedienung, Link ist dann ohnehin kurzlebig).
 - Plugin 1.6.0: `claude-plugin/scripts/fetch-attachment.sh <url> [dir]` (https oder http://localhost, genau Pfad `/v1/attachments/<uuid>/download?...`, keine Weiterleitungen, 25 MB, bereinigter Dateiname mit ID-Präfix im Zielordner, gibt den Pfad aus, nennt die URL nie in Fehlern).
 
+## Aktuelles Projekt (1.16.0)
+
+- Ein MCP-Login gilt für alle Projekte; der Server kennt das Arbeitsprojekt nicht (weder OAuth noch `initialize` tragen es). Kleinster Weg: `get_command_center`, `list_open_questions`, `list_pending_reviews` nehmen `projectID` (aus `.todolino.json`) und `scope` (`project` Standard, `account`). Mit `projectID`: Antwort trägt `currentProject {id, name}` und ist auf das Projekt samt Unterprojekten gefiltert; mit `scope=account` bleibt alles, Einträge anderer Projekte tragen `foreignProject: true` (Karten, Fragen, Reviews) und die Antwort ein `hint`. Ohne `projectID`: wie bisher, `currentProject: null` und `hint`. Unbekanntes/nicht sichtbares Projekt: `not_found`; `scope=project` ohne `projectID`: `project_required`.
+- Formänderung: `list_open_questions` und `list_pending_reviews` antworten `{currentProject, hint?, items}` statt eines blanken Arrays (REST unverändert). `get_command_center` bleibt, mit zusätzlichen Feldern `currentProject`, `hint`, `foreignProject`. Umsetzung: `MCPProjectContext` (eine Sichtbarkeitsabfrage, keine Abfrage je Eintrag). Plugin-Hook und Skill übergeben die `projectID`.
+
 ## Kompakte Antworten: get_command_center und list_open_questions
 
 Nur MCP; REST und PWA unverändert. Neue Parameter, gleiche Schlüssel (rückwärtskompatibel):

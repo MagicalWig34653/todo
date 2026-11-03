@@ -1,4 +1,4 @@
-<!-- manual-version: 1.15.0 -->
+<!-- manual-version: 1.16.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -7,6 +7,7 @@ This manual is written for coding agents (Claude Code and others) that work for 
 
 1. Call `get_manual` (you are reading its result).
 2. Find the project you work for: `find_project_by_repository {repository}` with the git remote of your working directory (or a `.todolino.json` in the repository root, or `list_projects`). If the repository has no project yet, see "Project onboarding and keeping Todolino current". Then call `get_project_structure {projectID}`. It returns the project's **agent brief**: the goals, constraints and definition of done that the user wrote for agents of this project. The brief overrides your defaults. It also returns the board columns and whether the standard workflow columns exist.
+**Current project.** One login covers all projects of the person, so account-wide reads would show tasks of other projects. Your current project is the one bound to the repository (`projectID` in `.todolino.json`). Pass it as `projectID` to `get_command_center`, `list_open_questions` and `list_pending_reviews`: the answer then names it as `currentProject {id, name}` and is limited to it and its sub-projects. Never claim, edit, mention or offer tasks of other projects. Without `projectID` the answer covers all projects and carries a `hint`; `scope: "account"` (with `projectID`) keeps all projects but marks entries of other projects with `foreignProject: true` - ignore those.
 3. Call `get_command_center {projectID}` to see what is running, what waits for an answer or a review, and what is ready to start.
 4. Work through the workflow below. All communication with the user goes through the board: progress notes, questions, review requests and screenshots. Do not ask the user in free chat when the board can carry the question.
 
@@ -62,7 +63,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 - `ask_question` creates a question with `prompt` (up to 4000 characters), optional `options` (up to 20 short strings; if given, the answer must be one of them), `blocking` (default true: you cannot continue without the answer) and an `idempotencyKey` for safe retries.
 - Write questions so that a person can decide in seconds: state the situation in one or two sentences, offer concrete options and name your recommendation first.
 - States: `open`, `answered`, `withdrawn` (the runner job ended). Only one answer is accepted; a second different answer fails with `question_already_answered`.
-- `list_open_questions {projectID?}` lists open questions of all granted projects (or one project, or one task); pass `includeAnswered: true` to also see answers. Answers are compact by default (`compact: false` for every field); narrow with `status` (`open|answered|all`), `limit` and `fields`.
+- `list_open_questions {projectID, scope?, taskID?}` answers `{currentProject, hint?, items}`: open questions of the current project and its sub-projects (`scope: "account"`: all granted projects, foreign entries have `foreignProject: true`; no `projectID`: all projects plus `hint`); pass `includeAnswered: true` to also see answers. Answers are compact by default (`compact: false` for every field); narrow with `status` (`open|answered|all`), `limit` and `fields`.
 - Humans answer in the app. `answer_question` exists for a person who steers you through the chat ("answer yes"); it refuses questions asked by your own connection (`cannot_answer_own_question`).
 - Questions asked by a local runner job use the same list; they are answered by the project owner.
 
@@ -75,7 +76,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 ## Reviews
 
 - `request_review {taskID, summary, reviewerID?}` is for something the person has to look at or decide: a visible result to try, a risk, a rollout or merge decision. Pure update information (commit hash, tests green, internal change, numbers) is NOT a review: put it into `post_progress` and keep the task where it is. Write the summary as one sentence of result plus at most four bullets: what is new, how it was checked (with numbers), what to look at, what is open. No commit hashes or file lists as the main content. Optionally name the person who must review (`reviewerID`, a user id from the brief or the task context).
-- `list_pending_reviews {projectID?}` lists all pending reviews of the granted projects.
+- `list_pending_reviews {projectID, scope?}` answers `{currentProject, hint?, items}` with the pending reviews of the current project (same `scope`/`foreignProject`/`hint` rules as `list_open_questions`).
 - A person accepts (task becomes `done`) or requests changes (task returns to `in_progress`). `decide_review` exists for a person steering you via chat; it refuses reviews requested by your own connection (`cannot_decide_own_review`).
 - One pending review per task: requesting again updates the summary.
 
@@ -88,7 +89,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 
 ## Command center
 
-`get_command_center` returns lanes with cards, a summary and the latest updates. `summary.overdue` counts all visible unfinished tasks with `planning.dueAt < generatedAt`, including subtasks and backlog, before card filters or pagination. It respects project scope and the OAuth grant. Each card has `dueDate` (its own planning dueAt) and `nextDue` (earliest dueAt of its unfinished task or unfinished subtasks); completed tasks do not contribute to nextDue. These timestamps remain in compact responses. `list_tasks {projectID, overdue: true}` and `GET /v1/tasks?overdue=true` return only visible unfinished overdue tasks with planning data; false or omission leaves the list unfiltered. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. The answer is compact by default (subtasks and builds only as counts, short texts, 10 cards per lane, 5 updates); pass `compact: false` for the full detail and `fields` to keep only some card fields. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
+`get_command_center {projectID, scope?}` returns lanes with cards (plus `currentProject`, `hint` and `foreignProject` on cards as described in "Start here"), a summary and the latest updates. `summary.overdue` counts all visible unfinished tasks with `planning.dueAt < generatedAt`, including subtasks and backlog, before card filters or pagination. It respects project scope and the OAuth grant. Each card has `dueDate` (its own planning dueAt) and `nextDue` (earliest dueAt of its unfinished task or unfinished subtasks); completed tasks do not contribute to nextDue. These timestamps remain in compact responses. `list_tasks {projectID, overdue: true}` and `GET /v1/tasks?overdue=true` return only visible unfinished overdue tasks with planning data; false or omission leaves the list unfiltered. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. The answer is compact by default (subtasks and builds only as counts, short texts, 10 cards per lane, 5 updates); pass `compact: false` for the full detail and `fields` to keep only some card fields. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
 
 ## Project onboarding and keeping Todolino current
 
@@ -179,12 +180,12 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `add_criterion` | tasks:write | Add an acceptance criterion. |
 | `set_criterion` | tasks:write | Tick or untick a criterion. |
 | `ask_question` | tasks:write | Ask a structured, optionally blocking question. |
-| `list_open_questions` | tasks:read | Questions across projects, one project or one task. |
+| `list_open_questions` | tasks:read | Questions of the current project (`projectID`), `scope=account` for all; answer `{currentProject, hint?, items}`. |
 | `get_question` | tasks:read | One question with its answer. |
 | `wait_for_events` | tasks:read | Wait up to 25 s for board changes; returns hints only (no content). Use a few rounds after a blocking question or a confirmation request, then `get_question` / `get_action_request`. |
 | `answer_question` | tasks:write | Answer a question on behalf of the user (not your own). |
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
-| `list_pending_reviews` | tasks:read | Pending reviews. |
+| `list_pending_reviews` | tasks:read | Pending reviews of the current project (`projectID`), `scope=account` for all; answer `{currentProject, hint?, items}`. |
 | `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). |
 | `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. Uploads by people appear as entries with `kind: "attachment"` and `attachments: [{id, filename, mediaType, size}]`; files without a chat entry add one trailing `attachments_note`. |
 | `add_comment` | comments:write | Write a message into the chat of a task, question (`questionID`) or review (`reviewID`); optional `agentName`. |
@@ -291,6 +292,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.16.0:** current project. `get_command_center`, `list_open_questions` and `list_pending_reviews` take `projectID` (the repository's project) and optional `scope` (`project` default, `account`). Answers carry `currentProject {id, name}`, a `hint` when no project was given or `scope=account`, and `foreignProject` on entries (only when `projectID` is set). `list_open_questions` and `list_pending_reviews` now answer an object `{currentProject, hint?, items}` instead of a bare array. Without `projectID` everything else is unchanged.
 
 **Changed in 1.14.0:** connections get names (`get_connection.name`) and appear in the project share dialog. A call outside the grant still answers `not_found`; the person sees a notice in the app and can grant access there (ask them to do so).
 

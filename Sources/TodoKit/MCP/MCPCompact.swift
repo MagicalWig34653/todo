@@ -4,9 +4,9 @@ import Vapor
 /// Keys stay the same; bulky parts are emptied or shortened and `compact: true` marks the reduced form.
 enum MCPCompact {
     static let cardFields: Set<String> = ["task", "project", "kind", "isFeature", "parentTaskID", "lane", "progress", "agent", "openQuestionCount",
-        "questions", "pendingReview", "blockedReason", "blockedBy", "latestUpdate", "builds", "buildCount", "dueDate", "nextDue", "priority", "subtasks", "subtaskCount"]
+        "questions", "pendingReview", "blockedReason", "blockedBy", "latestUpdate", "builds", "buildCount", "dueDate", "nextDue", "priority", "subtasks", "subtaskCount", "foreignProject"]
     static let questionFields: Set<String> = ["id", "taskID", "taskTitle", "projectID", "projectName", "askedByType", "askedByID", "askedByLabel",
-        "askedByName", "prompt", "options", "blocking", "state", "answer", "answeredBy", "answeredVia", "answeredAt", "createdAt", "agentQuestionID", "version"]
+        "askedByName", "prompt", "options", "blocking", "state", "answer", "answeredBy", "answeredVia", "answeredAt", "createdAt", "agentQuestionID", "version", "foreignProject"]
     private static let dropFromQuestion: Set<String> = ["askedByID", "answeredBy", "answeredVia", "agentQuestionID", "version"]
 
     static let compactLaneLimit = 10, compactUpdatesLimit = 5, compactListLimit = 20
@@ -32,7 +32,7 @@ enum MCPCompact {
 
     static func question(_ value: JSONValue, compact: Bool, fields: Set<String>?) -> JSONValue {
         guard case .object(var o) = value else { return value }
-        if let fields { return .object(keep(o, fields, always: ["id"])) }
+        if let fields { return .object(keep(o, fields, always: ["id", "foreignProject"])) }
         if compact { for key in dropFromQuestion { o[key] = nil } }
         return .object(o)
     }
@@ -57,7 +57,7 @@ enum MCPCompact {
             }
             if case .object(var project) = o["project"] ?? .null { project["color"] = nil; o["project"] = .object(project) }
         }
-        return .object(keep(o, fields, always: ["task"]))
+        return .object(keep(o, fields, always: ["task", "foreignProject"]))
     }
 
     static func commandCenter(_ value: JSONValue, compact: Bool, fields: Set<String>?) -> JSONValue {

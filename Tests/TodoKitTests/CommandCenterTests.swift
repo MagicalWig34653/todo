@@ -14,7 +14,7 @@ final class AgentManualTests: XCTestCase {
         let file = try String(contentsOf: root.appendingPathComponent("docs/agent-manual.md"), encoding: .utf8)
         XCTAssertEqual(file.trimmingCharacters(in: .whitespacesAndNewlines), AgentManual.markdown.trimmingCharacters(in: .whitespacesAndNewlines),
                        "docs/agent-manual.md changed: run scripts/embed-agent-manual.sh")
-        XCTAssertEqual(AgentManual.version, "1.15.0")
+        XCTAssertEqual(AgentManual.version, "1.16.0")
     }
 
     func testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed() {
@@ -43,7 +43,7 @@ final class AgentManualTests: XCTestCase {
             let call = try await f.rpc("tools/call", ["name": "get_manual", "arguments": ["section": "board-columns"]], access: t.access)
             let text = try XCTUnwrap(((call.body?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String)
             let manual = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
-            XCTAssertEqual(manual["version"] as? String, "1.15.0")
+            XCTAssertEqual(manual["version"] as? String, "1.16.0")
             XCTAssertTrue((manual["content"] as? String ?? "").contains("Frage offen"))
             XCTAssertNotNil((manual["conventions"] as? [String: Any])?["lanes"])
             // No arguments at all.
@@ -62,7 +62,7 @@ final class AgentManualTests: XCTestCase {
             // REST is public.
             let rest = try await f.test.json(.GET, "/v1/manual")
             XCTAssertEqual(rest.status, .ok)
-            XCTAssertEqual(rest.body?["version"] as? String, "1.15.0")
+            XCTAssertEqual(rest.body?["version"] as? String, "1.16.0")
             let unknown = try await f.test.json(.GET, "/v1/manual?section=nope")
             XCTAssertEqual(unknown.status, .notFound)
         } catch { await f.test.shutdown(); throw error }
@@ -146,7 +146,7 @@ final class CommandCenterTests: XCTestCase {
             XCTAssertEqual(featureCard["isFeature"] as? Bool, true)
             XCTAssertEqual((featureCard["subtasks"] as? [[String: Any]])?.count, 2)
             let open = try await call(f, "list_open_questions", [:], access: t.access)
-            XCTAssertEqual((open.json as? [[String: Any]])?.count, 1)
+            XCTAssertEqual((((open.json as? [String: Any])?["items"]) as? [[String: Any]])?.count, 1)
             let own = try await call(f, "answer_question", ["questionID": qid, "answer": "Yes"], access: t.access)
             XCTAssertEqual(own.text, "cannot_answer_own_question")
             let invalid = try await f.test.json(.POST, "/v1/questions/\(qid)/answer", ["answer": "Maybe"], token: f.session)
@@ -173,7 +173,7 @@ final class CommandCenterTests: XCTestCase {
             XCTAssertFalse(review.isError, review.text)
             try await assertEqual(try await TodoTask.find(UUID(uuidString: sub1), on: db)?.status, "in_review")
             let pending = try await call(f, "list_pending_reviews", [:], access: t.access)
-            XCTAssertEqual((pending.json as? [[String: Any]])?.count, 1)
+            XCTAssertEqual((((pending.json as? [String: Any])?["items"]) as? [[String: Any]])?.count, 1)
             let selfDecide = try await call(f, "decide_review", ["taskID": sub1, "decision": "accept"], access: t.access)
             XCTAssertEqual(selfDecide.text, "cannot_decide_own_review")
             center = try await f.test.json(.GET, "/v1/command-center?scope=project&projectID=\(pid)", token: f.session)
