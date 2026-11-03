@@ -74,8 +74,9 @@ struct FeedService: Sendable {
 
     private func roles(_ scope: CommandCenterScope) async throws -> [UUID: ProjectRole] {
         var result: [UUID: ProjectRole] = [:]
-        let access = SharingAccess(user: user, db: db)
-        for (id, project) in scope.projects { if let role = try await access.visibility(project).role { result[id] = role } }
+        // One sharing snapshot (a handful of queries) instead of several queries per project; same rules as `SharingAccess.visibility`.
+        let (snapshot, _) = try await SharingAccess(user: user, db: db).snapshot()
+        for (id, project) in scope.projects { if let role = try snapshot.visibility(project).role { result[id] = role } }
         return result
     }
 

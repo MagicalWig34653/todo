@@ -337,7 +337,9 @@ struct CommandCenterService: Sendable {
         let questions = try await batched(allTaskIDs, { try await TaskQuestion.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "open").sort(\.$createdAt).all() })
         let reviews = try await batched(allTaskIDs, { try await TaskReview.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "pending").sort(\.$createdAt).all() })
         let noteCutoff = now.addingTimeInterval(-30 * 86_400)
+        // Only the newest note per task is shown, so only that row is read (agents post many notes; `perf_notes_task` serves the subquery).
         let notes = try await batched(allTaskIDs, { try await TaskProgressNote.query(on: db).filter(\.$taskID ~~ $0).filter(\.$createdAt >= noteCutoff)
+            .filter(.sql(embed: "task_progress_notes.id = (SELECT n2.id FROM task_progress_notes n2 WHERE n2.task_id = task_progress_notes.task_id ORDER BY n2.created_at DESC, n2.id DESC LIMIT 1)"))
             .sort(\.$createdAt, .descending).sort(\.$id, .descending).all() })
         let criteria = try await batched(Array(byID.keys), { try await AcceptanceCriterion.query(on: db).filter(\.$taskID ~~ $0).all() })
         let planning = Dictionary(uniqueKeysWithValues: try await batched(Array(byID.keys), { try await TaskPlanning.query(on: db).filter(\.$id ~~ $0).all() }).map { ($0.id!, $0) })

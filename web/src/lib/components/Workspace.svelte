@@ -17,19 +17,11 @@
 	import QuickAdd from './QuickAdd.svelte';
 	import ProjectPage from './ProjectPage.svelte';
 	import InboxView from './InboxView.svelte';
-	import FiltersLabelsView from './FiltersLabelsView.svelte';
-	import AgentsView from './AgentsView.svelte';
 	import CommandCenter from './CommandCenter.svelte';
 	import ForYouView from './ForYouView.svelte';
 	import CardDetailDialog from './card/CardDetailDialog.svelte';
 	import ReviewUndoToast from './overview/ReviewUndoToast.svelte';
-	import ActivityView from './ActivityView.svelte';
 	import PlanningView from './PlanningView.svelte';
-	import SearchView from './SearchView.svelte';
-	import TeamsView from './TeamsView.svelte';
-	import SharingPanel from './SharingPanel.svelte';
-	import SettingsView from './SettingsView.svelte';
-	import HelpView from './HelpView.svelte';
 	import HelpMenu from './HelpMenu.svelte';
 	import UserMenu from './UserMenu.svelte';
 	import ShortcutList from './help/ShortcutList.svelte';
@@ -44,11 +36,13 @@
 
 	type Icon = Component<{ class?: string; 'aria-hidden'?: 'true' | boolean }>;
 
-	let view = $state<View | 'notfound'>('forYou');
-	let routeSub = $state<ProjectSub | undefined>();
-	let routeTask = $state<string | undefined>();
-	let routeArea = $state<string | undefined>();
-	let selectedID = $state<string | null>(null);
+	// Start on the view named by the URL: mounting "Für dich" first (and fetching its feed) just to replace it was wasted work.
+	const initialRoute = parseRoute(location.pathname, location.search);
+	let view = $state<View | 'notfound'>(initialRoute.view);
+	let routeSub = $state<ProjectSub | undefined>(initialRoute.sub);
+	let routeTask = $state<string | undefined>(initialRoute.taskID);
+	let routeArea = $state<string | undefined>(initialRoute.area);
+	let selectedID = $state<string | null>(initialRoute.view === 'project' ? (initialRoute.projectID ?? null) : null);
 	let drawerOpen = $state(false);
 	let searchInitial = $state<{ labelID?: string; filterID?: string }>({});
 	let searchKey = $state(0);
@@ -111,13 +105,18 @@
 	});
 
 	onMount(() => {
-		const initial = parseRoute(location.pathname, location.search);
+		const initial = initialRoute;
 		applyRoute(initial);
 		if (initial.view !== 'notfound') syncUrl(false);
 		const pop = () => applyRoute(parseRoute(location.pathname, location.search));
 		window.addEventListener('popstate', pop);
 		onDestroy(() => window.removeEventListener('popstate', pop));
-		attempt(() => workspace.reloadAll());
+		// Rarely used views are separate chunks; once the first data is in and the browser is idle, fetch them so the first visit is instant, too.
+		const idle = (fn: () => void) => ('requestIdleCallback' in window ? window.requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 1500));
+		void attempt(() => workspace.reloadAll()).then(() => idle(() => {
+			for (const load of [() => import('./SettingsView.svelte'), () => import('./HelpView.svelte'), () => import('./TeamsView.svelte'), () => import('./AgentsView.svelte'),
+				() => import('./ActivityView.svelte'), () => import('./SearchView.svelte'), () => import('./FiltersLabelsView.svelte'), () => import('./SharingPanel.svelte')]) void load().catch(() => undefined);
+		}));
 		// Central live refresh (long-poll with hints, 5 s polling as fallback): sidebar counters, lists and the badge.
 		const unsubscribe = liveRefresh.subscribe(() => workspace.refreshLive());
 		liveRefresh.onUnauthorized = () => {
@@ -370,20 +369,20 @@
 						<InboxView onopen={openProject} />
 					{:else if view === 'search'}
 						{#key searchKey}
-							<SearchView projects={workspace.projects} onopen={openProject} initial={searchInitial} />
+							{#await import('./SearchView.svelte')}{@render viewSkeleton()}{:then m}<m.default projects={workspace.projects} onopen={openProject} initial={searchInitial} />{/await}
 						{/key}
 					{:else if view === 'filters'}
-						<FiltersLabelsView onsearch={openSearch} />
+						{#await import('./FiltersLabelsView.svelte')}{@render viewSkeleton()}{:then m}<m.default onsearch={openSearch} />{/await}
 					{:else if view === 'teams'}
-						<TeamsView />
+						{#await import('./TeamsView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'agents'}
-						<AgentsView />
+						{#await import('./AgentsView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'activity'}
-						<ActivityView onopen={openProject} />
+						{#await import('./ActivityView.svelte')}{@render viewSkeleton()}{:then m}<m.default onopen={openProject} />{/await}
 					{:else if view === 'account'}
-						<SettingsView area={routeArea} onarea={accountArea} onnav={accountNav} />
+						{#await import('./SettingsView.svelte')}{@render viewSkeleton()}{:then m}<m.default area={routeArea} onarea={accountArea} onnav={accountNav} />{/await}
 					{:else if view === 'help'}
-						<HelpView area={routeArea} onarea={openHelp} onsettings={() => openAccountArea()} />
+						{#await import('./HelpView.svelte')}{@render viewSkeleton()}{:then m}<m.default area={routeArea} onarea={openHelp} onsettings={() => openAccountArea()} />{/await}
 					{/if}
 				</div>
 			{/if}
@@ -413,6 +412,14 @@
 	</div>
 </div>
 
+{#snippet viewSkeleton()}
+	<div class="flex flex-col gap-3" role="status" aria-busy="true" aria-label={t('common.loading')} data-testid="view-loading">
+		<div class="bg-muted h-9 w-1/2 motion-safe:animate-pulse rounded-lg"></div>
+		<div class="bg-muted h-24 motion-safe:animate-pulse rounded-xl"></div>
+		<div class="bg-muted h-24 motion-safe:animate-pulse rounded-xl"></div>
+	</div>
+{/snippet}
+
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
 
 <ReviewUndoToast />
@@ -425,6 +432,6 @@
 <Dialog bind:open={shareOpen} title={t('share.dialogTitle', { name: shareProject?.name ?? '' })} class="max-w-2xl" testid="share-dialog">
 	{#if shareProject}
 		{@const p = workspace.projects.find((x) => x.id === shareProject!.id) ?? shareProject}
-		<SharingPanel project={p} onchanged={() => workspace.reloadProjects()} onopen={openProject} onsettings={openAccountArea} onclose={() => (shareOpen = false)} />
+		{#await import('./SharingPanel.svelte')}{@render viewSkeleton()}{:then m}<m.default project={p} onchanged={() => workspace.reloadProjects()} onopen={openProject} onsettings={openAccountArea} onclose={() => (shareOpen = false)} />{/await}
 	{/if}
 </Dialog>

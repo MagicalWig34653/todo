@@ -60,6 +60,8 @@ export interface Task {
 	boardPosition?: number;
 	/** Only present in task lists. */
 	planning?: TaskPlanningSummary;
+	/** Only with `listTasks(projectID, true)`: names of the caller's own labels. */
+	labels?: string[];
 }
 /** contracts/project-columns.yaml */
 export interface ProjectColumn {
@@ -738,9 +740,50 @@ export function query(params: Record<string, string | number | null | undefined>
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** How long a prefetched answer waits for its first reader. */
+export const PRIME_TTL_MS = 4_000;
+
 export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base = '/v1') {
+	/**
+	 * Identical GETs that overlap share one request (several views ask for the same list at the same time). Any write clears
+	 * the table at its start and end, so a read issued after a write never joins an older, possibly stale one.
+	 * `prime` starts reads early; the first reader within `PRIME_TTL_MS` takes the answer.
+	 */
+	const shared = new Map<string, { promise: Promise<unknown>; primed: boolean; expires: number }>();
+	let priming = false;
+	const copy = <T>(v: T): T => (v !== null && typeof v === 'object' ? structuredClone(v) : v);
+
 	/** `bearer` replaces the cookie session (recovery token); cookies are then not sent at all. */
-	async function request<T>(
+	function request<T>(
+		method: string,
+		path: string,
+		body?: unknown,
+		bearer?: string,
+		extraHeaders?: Record<string, string>
+	): Promise<T> {
+		if (method !== 'GET') {
+			shared.clear();
+			return send<T>(method, path, body, bearer, extraHeaders).finally(() => shared.clear());
+		}
+		if (bearer || extraHeaders) return send<T>(method, path, body, bearer, extraHeaders);
+		const hit = shared.get(path);
+		if (hit && hit.expires > Date.now()) {
+			hit.primed = false;
+			if (hit.expires !== Infinity) shared.delete(path);
+			return hit.promise.then((v) => copy(v as T));
+		}
+		const entry = { promise: undefined as unknown as Promise<unknown>, primed: priming, expires: Infinity };
+		entry.promise = send<T>(method, path).finally(() => {
+			if (shared.get(path) !== entry) return;
+			if (entry.primed) entry.expires = Date.now() + PRIME_TTL_MS;
+			else shared.delete(path);
+		});
+		shared.set(path, entry);
+		if (priming) entry.promise.catch(() => shared.get(path) === entry && shared.delete(path));
+		return entry.promise as Promise<T>;
+	}
+
+	async function send<T>(
 		method: string,
 		path: string,
 		body?: unknown,
@@ -779,6 +822,15 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 	}
 
 	return {
+		/** Starts the given reads right away (before the page knows it needs them); the first reader takes the answer. */
+		prime: (reads: Array<() => Promise<unknown>>) => {
+			priming = true;
+			try {
+				for (const read of reads) read().catch(() => undefined);
+			} finally {
+				priming = false;
+			}
+		},
 		capabilities: () => request<Capabilities>('GET', '/capabilities'),
 		me: () => request<User>('GET', '/me'),
 		registerBegin: (token: string, displayName: string) =>
@@ -859,7 +911,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<FeedPage>('GET', `/activity${query({ projectID: params.projectID, before: params.before, limit: params.limit })}`),
 
-		listTasks: (projectID?: string) => request<Task[]>('GET', `/tasks${query({ projectID })}`),
+		listTasks: (projectID?: string, includeLabels = false) =>
+			request<Task[]>('GET', `/tasks${query({ projectID, includeLabels: includeLabels ? 'true' : undefined })}`),
 		createTask: (projectID: string, title: string, extra: { description?: string; columnID?: string | null } = {}) =>
 			request<Task>('POST', '/tasks', { projectID, title, ...extra }),
 		updateTask: (

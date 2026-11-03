@@ -1,3 +1,12 @@
+<script lang="ts" module>
+	import type { CommandCenter as CC, Question as Q, Review as R, UpdateItem } from '#lib/api.js';
+	/**
+	 * Last answers per scope and view, kept across visits of the page: leaving /overview and coming back (or switching
+	 * the tab) paints the previous data at once while the fresh data loads (stale-while-revalidate).
+	 */
+	const cache = new Map<string, { cc?: CC; questions?: Q[]; reviews?: R[]; moreUpdates?: UpdateItem[] }>();
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, ApiError, type CommandCard, type CommandCenter, type CommandCenterParams, type LaneKey, type Question, type Review } from '#lib/api.js';
@@ -46,10 +55,17 @@
 
 	let view = $state<OverviewView>(loadView());
 	let section = $state<OverviewSection>('board');
-	let cc = $state<CommandCenter | null>(null);
-	let questions = $state<Question[]>([]);
-	let reviews = $state<Review[]>([]);
-	let loaded = $state(false);
+	const cacheKey = (v: string, lane: string, kind: string, qf: boolean, srt: string, lim: number) => [projectID ?? 'account', v, lane, kind, qf, srt, lim].join('|');
+	const seed = cache.get(cacheKey(loadView(), '', '', false, 'attention', PAGE));
+	let cc = $state<CommandCenter | null>(seed?.cc ?? null);
+	let questions = $state<Question[]>(seed?.questions ?? []);
+	let reviews = $state<Review[]>(seed?.reviews ?? []);
+	let loaded = $state(!!seed?.cc);
+	/** The lists of the question and review tabs are only trusted once they were fetched (no "nothing here" flash while loading). */
+	let questionsLoaded = $state(!!seed?.questions);
+	let reviewsLoaded = $state(!!seed?.reviews);
+	/** The updates tab shows a longer feed than the board's 10 entries; it is fetched on its own (no lanes, small answer). */
+	let moreUpdates = $state<UpdateItem[] | null>(seed?.moreUpdates ?? null);
 	let refreshing = $state(false);
 	let showBrief = $state(false);
 	let showSync = $state(false);
@@ -72,7 +88,7 @@
 		})
 	);
 	const items = $derived((cc?.items ?? []).filter((c) => shown(c.project.id)));
-	const updates = $derived(sortUpdates((cc?.updates ?? []).filter((u) => shown(u.projectID))));
+	const updates = $derived(sortUpdates((moreUpdates ?? cc?.updates ?? []).filter((u) => shown(u.projectID))));
 	/** One visible list per section drives cards, counters and empty states (management projects only in account scope). */
 	const visibleQuestions = $derived(questions.filter((q) => shown(q.projectID)));
 	const visibleReviews = $derived(reviews.filter((r) => shown(r.projectID)));
@@ -87,7 +103,7 @@
 			scope: scope as 'account' | 'project',
 			projectID,
 			view,
-			updatesLimit: section === 'updates' ? 50 : 10
+			updatesLimit: 10
 		};
 		if (view === 'list') {
 			return {
@@ -102,27 +118,61 @@
 		return base;
 	}
 
-	async function fetchAll() {
+	const remember = (patch: { cc?: CC; questions?: Q[]; reviews?: R[]; moreUpdates?: UpdateItem[] }) => {
+		const key = cacheKey(view, laneFilter, kindFilter, questionFilter, sort, limit);
+		cache.set(key, { ...cache.get(key), ...patch });
+	};
+	let seqQuestions = 0;
+	let seqReviews = 0;
+
+	/** Board data and counters. The prefs refresh (derived modes) runs beside it, not before it. */
+	async function fetchCC() {
 		const my = ++seq;
-		const [center, qs, rs] = await Promise.all([
-			api.commandCenter(params()),
-			section === 'questions' ? api.listQuestions({ projectID, includeSubprojects: true, state: 'open' }) : Promise.resolve(null),
-			section === 'reviews' ? api.listReviews({ projectID, state: 'pending' }) : Promise.resolve(null)
-		]);
+		const [center] = await Promise.all([api.commandCenter(params()), scope === 'account' ? workspace.refreshPrefs(5000) : undefined]);
 		if (my !== seq) return;
 		if (!sameList([cc], [center])) cc = center;
-		if (qs && !sameList(questions, qs)) questions = qs;
-		if (rs && !sameList(reviews, rs)) reviews = rs;
 		loaded = true;
+		remember({ cc: center });
 		if (scope === 'account') workspace.attention = center.summary;
 	}
+	let seqUpdates = 0;
+	async function fetchUpdates() {
+		const my = ++seqUpdates;
+		const center = await api.commandCenter({ scope: scope as 'account' | 'project', projectID, view: 'list', limit: 1, updatesLimit: 50 });
+		if (my !== seqUpdates) return;
+		if (!sameList(moreUpdates ?? [], center.updates)) moreUpdates = center.updates;
+		remember({ moreUpdates: center.updates });
+		if (scope === 'account') workspace.attention = center.summary;
+	}
+	async function fetchQuestions() {
+		const my = ++seqQuestions;
+		const qs = await api.listQuestions({ projectID, includeSubprojects: true, state: 'open' });
+		if (my !== seqQuestions) return;
+		if (!sameList(questions, qs)) questions = qs;
+		questionsLoaded = true;
+		remember({ questions: qs });
+	}
+	async function fetchReviews() {
+		const my = ++seqReviews;
+		const rs = await api.listReviews({ projectID, state: 'pending' });
+		if (my !== seqReviews) return;
+		if (!sameList(reviews, rs)) reviews = rs;
+		reviewsLoaded = true;
+		remember({ reviews: rs });
+	}
+	/** Everything the open tab shows, in parallel. */
+	function fetchAll() {
+		return Promise.all([fetchCC(), section === 'questions' ? fetchQuestions() : undefined, section === 'reviews' ? fetchReviews() : undefined, section === 'updates' ? fetchUpdates() : undefined]);
+	}
+	/** Hover/focus on a tab: the list is fetched before the click (errors surface only when the tab is really opened). */
+	function prefetch(id: OverviewSection) {
+		if (id === 'questions' && !questionsLoaded) void fetchQuestions().catch(() => undefined);
+		if (id === 'reviews' && !reviewsLoaded) void fetchReviews().catch(() => undefined);
+	}
 
-	/** Visible reload (initial, filter change): errors become a notice. */
+	/** Visible reload (manual refresh): errors become a notice. */
 	function reload() {
-		return attempt(async () => {
-			if (scope === 'account') await workspace.refreshPrefs();
-			await fetchAll();
-		});
+		return attempt(() => fetchAll());
 	}
 	/** Background and post-action reload: never replaces a notice, only a lost session matters. */
 	async function refresh() {
@@ -137,21 +187,37 @@
 		}
 	}
 
+	// Board data: only filters, view, project and the updates length matter; switching tabs does not refetch it.
 	$effect(() => {
 		void projectID;
 		void view;
-		void section;
 		void laneFilter;
 		void kindFilter;
 		void questionFilter;
 		void sort;
 		void limit;
-		void reload();
+		void attempt(fetchCC);
+	});
+	$effect(() => {
+		void projectID;
+		if (section === 'questions') void attempt(fetchQuestions);
+	});
+	$effect(() => {
+		void projectID;
+		if (section === 'reviews') void attempt(fetchReviews);
+	});
+	$effect(() => {
+		void projectID;
+		if (section === 'updates') void attempt(fetchUpdates);
 	});
 
 	onMount(() => startLiveRefresh(refresh));
 
 	function setView(v: OverviewView) {
+		// The other layout has its own answer; show the one fetched last time right away.
+		const known = cache.get(cacheKey(v, laneFilter, kindFilter, questionFilter, sort, PAGE))?.cc ?? null;
+		cc = known;
+		loaded = !!known;
 		view = v;
 		saveView(v);
 		limit = PAGE;
@@ -172,11 +238,11 @@
 	];
 	const countOf = (id: OverviewSection) =>
 		id === 'questions'
-			? loaded && section === 'questions'
+			? questionsLoaded && section === 'questions'
 				? visibleQuestions.length
 				: summary?.openQuestions
 			: id === 'reviews'
-				? loaded && section === 'reviews'
+				? reviewsLoaded && section === 'reviews'
 					? visibleReviews.length
 					: summary?.pendingReviews
 				: undefined;
@@ -191,6 +257,15 @@
 	}
 	const who = (name: string | null | undefined) => name || t('cc.update.anonymous');
 </script>
+
+{#snippet skeleton(wide: boolean)}
+	<div class={['flex gap-3', wide ? 'items-start' : 'max-w-3xl flex-col']} role="status" aria-live="polite" data-testid="cc-loading">
+		<span class="sr-only">{t('cc.loading')}</span>
+		{#each [0, 1, 2] as i (i)}
+			<div class={['bg-muted/60 motion-safe:animate-pulse rounded-xl border', wide ? 'h-48 w-72 shrink-0' : 'h-24 w-full']} aria-hidden="true"></div>
+		{/each}
+	</div>
+{/snippet}
 
 {#snippet controls()}
 	<div class="flex flex-wrap items-center gap-2">
@@ -243,6 +318,8 @@
 					section === s.id ? 'border-ui-accent text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent'
 				]}
 				onclick={() => (section = s.id)}
+				onpointerenter={() => prefetch(s.id)}
+				onfocus={() => prefetch(s.id)}
 			>
 				{t(s.key)}
 				{#if count}<Badge variant={s.id === 'board' ? 'default' : 'accent'} data-testid="cc-count-{s.id}">{count}</Badge>{/if}
@@ -304,8 +381,8 @@
 	{/if}
 
 	<div id="cc-panel" role="tabpanel" aria-labelledby="cc-tab-{section}" class="flex flex-col gap-4">
-	{#if !loaded}
-		<p class="text-muted-foreground text-sm">{t('cc.loading')}</p>
+	{#if !loaded && section !== 'questions' && section !== 'reviews'}
+		{@render skeleton(true)}
 	{:else if section === 'board'}
 		{#if view === 'kanban'}
 			{#if boardEmpty}
@@ -366,6 +443,10 @@
 				{/if}
 			{/if}
 		{/if}
+	{:else if section === 'questions' && !questionsLoaded}
+		{@render skeleton(false)}
+	{:else if section === 'reviews' && !reviewsLoaded}
+		{@render skeleton(false)}
 	{:else if section === 'questions'}
 		{#if visibleQuestions.length === 0}
 			<EmptyState title={t('cc.question.empty')} icon={Gauge}><p>{t('cc.question.emptyHint')}</p></EmptyState>
