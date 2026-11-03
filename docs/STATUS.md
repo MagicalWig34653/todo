@@ -21,6 +21,12 @@
 - `ConsentPage.swift`: Katalog `groups`/`catalog` (alle 21 Scopes mit Gruppe, Lesen/Schreiben, kritisch: sharing:write, teams:write, runs:write, admin:read), PWA-Farbtokens hell/dunkel, Karten, "<Client> moechte auf dein Todolino zugreifen", Hinweis auf Bestaetigung grosser Aktionen in der App, Projektliste mit Suche, Alle/Keine, Zaehler, Einrueckung ueber `parentID`, klebende Knopfleiste. Weiter nur textContent, gehashtes Inline-Skript, CSP unveraendert (frame-ancestors none, keine externen Ressourcen).
 - Tests: neu `ConsentPageTests` (jeder Scope hat Label und Gruppe, kritische Flags, Sicherheitseigenschaften), `OAuthSharingTests` gruen. Screenshots (nicht im Repo) in /private/tmp/claude-501/consent-ui/: hell/dunkel, 390/320 px, 200 % Schrift ohne horizontalen Ueberlauf (Playwright mit Mock-Antworten, nicht gegen laufendes Backend).
 - Offen: echter OAuth-Durchlauf im Browser und Screenreader-Test von Hand.
+## Checkpoint 3.11.2026: Abhaengigkeitsgraph (Agent claude-code@task-graph)
+
+- Nur lesend, kein Push. Backend: `GET /v1/planning/dependencies?projectID=&includeSubprojects=` liefert `{edges, tasks[taskID, kind, parentTaskID, createdAt, updatedAt]}`, nur sichtbare Aufgaben (Vertrag `contracts/planning-ext.yaml`).
+- PWA: `taskGraph.ts` (Filter, topologische Zeilen, Lanes, Kantenrouting), `TaskGraph.svelte`, Knopf "Graph" im Anzeige-Menue, Route `/project/<id>/graph`. Meilenstein-Marker, "wartet auf ...", gestrichelte Blockierkante, ueberfaellig, Filter (Unterprojekte, nur Features, Erledigtes ausblenden), Klick oeffnet Karte, Pfeiltasten, rem-Zeilen.
+- Tests: `PlanningExtTests` 9 (2 uebersprungen) ohne Fehler inkl. `testProjectDependenciesEndpointIsScopedAndSubtreeAware`; vitest 295 gruen; Build gruen; Playwright `e2e/task-graph.spec.ts` 5/5 (frische SQLite, Chromium). Bei 320 px und 200 % Schrift ist der App-Header (nicht der Graph) breiter als der Viewport; getestet wird, dass der Graph-Rahmen passt.
+- Offen: MariaDB, Firefox/WebKit, Apple-App nicht geprueft; Board-Fortschritt je nach MCP-Anmeldung nachtragen.
 
 ## Checkpoint 3.11.2026: MCP Stapel 7 Workflow und Runner (Agent claude-code@mcp-s7)
 

@@ -6,7 +6,7 @@ import { buildCardParam, parseCardParam, type CardRef } from './cardRef.js';
 export type RouteView =
 	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account' | 'help';
 
-export type ProjectSub = 'list' | 'board' | 'overview' | 'comments';
+export type ProjectSub = 'list' | 'board' | 'overview' | 'comments' | 'graph';
 
 export interface Route {
 	view: RouteView | 'notfound';
@@ -36,7 +36,7 @@ const PATH_OF: Partial<Record<RouteView, string>> = {
 	forYou: '/for-you', today: '/today', inbox: '/inbox', upcoming: '/upcoming', upNext: '/up-next', search: '/search',
 	overview: '/overview', activity: '/activity', agents: '/agents', teams: '/teams', filters: '/filter', account: '/settings', help: '/help'
 };
-const SUBS: ProjectSub[] = ['list', 'board', 'overview', 'comments'];
+const SUBS: ProjectSub[] = ['list', 'board', 'overview', 'comments', 'graph'];
 const LEGACY_SUBS: Record<string, ProjectSub> = { liste: 'list', ueberblick: 'overview', kommentare: 'comments' };
 const ID = /^[A-Za-z0-9-]{8,64}$/;
 

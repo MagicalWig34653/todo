@@ -4,6 +4,10 @@ import Vapor
 struct PlanningReorder: Content { var projectID: UUID; var status: String; var taskIDs: [UUID] }
 struct PlanningDependencyInput: Content { var prerequisiteID: UUID }
 struct PlanningMilestoneInput: Content { var projectID: UUID; var title: String; var dueAt: Date? }
+struct PlanningDependencyEdgeDTO: Content { var taskID: UUID; var prerequisiteID: UUID }
+/// Per-task facts the graph view needs and the plain task list does not carry.
+struct PlanningGraphNodeDTO: Content { var taskID: UUID; var kind: String; var parentTaskID: UUID?; var createdAt: Date?; var updatedAt: Date? }
+struct PlanningGraphDTO: Content { var edges: [PlanningDependencyEdgeDTO]; var tasks: [PlanningGraphNodeDTO] }
 struct PlanningMilestoneDTO: Content { var milestone: PlanningMilestone; var tasks: [TaskDTO] }
 
 struct PlanningExtController: RouteCollection {
@@ -19,6 +23,7 @@ struct PlanningExtController: RouteCollection {
         r.get("board", use: board)
         r.put("board", "reorder", use: reorder)
         r.get("tasks", ":id", "dependencies", use: dependencies)
+        r.get("dependencies", use: projectDependencies)
         r.put("tasks", ":id", "dependencies", use: addDependency)
         r.delete("tasks", ":id", "dependencies", ":other", use: removeDependency)
         r.post("milestones", use: createMilestone)
@@ -68,6 +73,12 @@ struct PlanningExtController: RouteCollection {
     }
     @Sendable func dependencies(_ req: Request) async throws -> [TaskDTO] {
         try await service(req).dependencies(param(req)).map { try TaskDTO($0) }
+    }
+    /// All dependency edges between visible tasks of a project (optionally with its sub-projects) in one call.
+    @Sendable func projectDependencies(_ req: Request) async throws -> PlanningGraphDTO {
+        let project = try req.query.get(UUID.self, at: "projectID")
+        let includeSub = (try? req.query.get(Bool.self, at: "includeSubprojects")) ?? false
+        return try await service(req).projectDependencies(project, includeSubprojects: includeSub)
     }
     @Sendable func addDependency(_ req: Request) async throws -> HTTPStatus {
         let s = try await service(req), id = try param(req), body = try req.content.decode(PlanningDependencyInput.self)

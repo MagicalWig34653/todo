@@ -125,6 +125,28 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertEqual(delete.status, .noContent)
     }
 
+    func testProjectDependenciesEndpointIsScopedAndSubtreeAware() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let childTask = try await f.t.json(.POST, "/v1/tasks", ["projectID": f.child, "title": "Sub"], token: f.token)
+        let cid = try XCTUnwrap(childTask.body?["id"] as? String)
+        let e1 = try await f.t.json(.PUT, "/v1/planning/tasks/\(f.tasks[1])/dependencies", ["prerequisiteID": f.tasks[0]], token: f.token)
+        XCTAssertEqual(e1.status, .noContent)
+        let e2 = try await f.t.json(.PUT, "/v1/planning/tasks/\(cid)/dependencies", ["prerequisiteID": f.tasks[1]], token: f.token)
+        XCTAssertEqual(e2.status, .noContent)
+        let own = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)", token: f.token)
+        let ownEdges = own.body?["edges"] as? [[String: Any]]
+        XCTAssertEqual(ownEdges?.count, 1)
+        XCTAssertEqual(ownEdges?.first?["prerequisiteID"] as? String, f.tasks[0])
+        XCTAssertEqual((own.body?["tasks"] as? [[String: Any]])?.count, 3)
+        let tree = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)&includeSubprojects=true", token: f.token)
+        XCTAssertEqual((tree.body?["edges"] as? [[String: Any]])?.count, 2)
+        XCTAssertEqual((tree.body?["tasks"] as? [[String: Any]])?.count, 4)
+        let foreign = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)", token: f.foreignToken)
+        XCTAssertEqual(foreign.status, .notFound)
+        let anon = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)")
+        XCTAssertEqual(anon.status, .unauthorized)
+    }
+
     func testRecurrenceAtomicCompletionRetryAndNextGeneration() async throws {
         let f = try await fixture(); defer { Task { await f.t.shutdown() } }
         let id = f.tasks[0]

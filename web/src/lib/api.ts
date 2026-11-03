@@ -197,6 +197,12 @@ export interface MilestoneWithTasks {
 	tasks: Task[];
 }
 
+/** contracts/planning-ext.yaml: GET /planning/dependencies */
+export interface TaskGraphData {
+	edges: { taskID: string; prerequisiteID: string }[];
+	tasks: { taskID: string; kind: 'task' | 'feature'; parentTaskID?: string | null; createdAt?: string | null; updatedAt?: string | null }[];
+}
+
 export type Role = 'read' | 'comment' | 'edit' | 'manage';
 export type PrincipalType = 'person' | 'team';
 export interface Team {
@@ -883,6 +889,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('PUT', `/planning/tasks/${taskID}/dependencies`, { prerequisiteID }),
 		removeDependency: (taskID: string, prerequisiteID: string) =>
 			request<void>('DELETE', `/planning/tasks/${taskID}/dependencies/${prerequisiteID}`),
+		taskGraph: (projectID: string, includeSubprojects: boolean) =>
+			request<TaskGraphData>('GET', `/planning/dependencies${query({ projectID, includeSubprojects: includeSubprojects ? 'true' : undefined })}`),
 		milestones: (projectID: string) =>
 			request<MilestoneWithTasks[]>('GET', `/planning/milestones${query({ projectID })}`),
 		createMilestone: (projectID: string, title: string, dueAt: string | null) =>

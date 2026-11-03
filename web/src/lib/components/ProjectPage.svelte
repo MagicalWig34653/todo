@@ -24,6 +24,8 @@
 	import MilestonesPanel from './MilestonesPanel.svelte';
 	import ProjectComments from './ProjectComments.svelte';
 	import ProjectBoard from './ProjectBoard.svelte';
+	import TaskGraph from './TaskGraph.svelte';
+	import Workflow from '@lucide/svelte/icons/workflow';
 	import TaskDetail from './TaskDetail.svelte';
 	import TaskPanel from './TaskPanel.svelte';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
@@ -49,6 +51,8 @@
 
 	/** `tasks` = list/board of the project, `overview` = command center of the project (ADR 0014). */
 	let tab = $state<'tasks' | 'overview'>('tasks');
+	/** Task graph (git-log style) instead of list/board; route `/project/<id>/graph`. */
+	let graphOpen = $state(false);
 	/** Classic = plain todo list/board; management = overview, agents, sync, milestones (per project and account). */
 	const mode = $derived(workspace.modeOf(project.id));
 	const management = $derived(mode === 'management');
@@ -209,6 +213,7 @@
 		routeApplied = true;
 		if (sub === 'overview') tab = 'overview';
 		else if (sub === 'comments') commentsOpen = true;
+		else if (sub === 'graph') graphOpen = true;
 		else if ((sub === 'board' || sub === 'list') && (sub === 'board') !== (display.view === 'board')) setDisplay({ view: sub === 'board' ? 'board' : 'list' });
 	});
 	let taskApplied = $state(false);
@@ -220,7 +225,7 @@
 	});
 	$effect(() => {
 		if (!routeApplied) return;
-		const current: ProjectSub = commentsOpen ? 'comments' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
+		const current: ProjectSub = commentsOpen ? 'comments' : graphOpen && !(management && tab === 'overview') ? 'graph' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
 		const task = detailOpen ? detail?.id : undefined;
 		// Deep link to a task still loading: keep ?task= until it was applied or is known to be missing.
 		const keep = taskID && !taskApplied ? taskID : task;
@@ -257,7 +262,7 @@
 			panelClass="w-72"
 		>
 			{#snippet trigger()}
-				{#if display.view === 'board'}<Columns3 class="size-3.5" aria-hidden="true" />{:else}<List class="size-3.5" aria-hidden="true" />{/if}
+				{#if graphOpen}<Workflow class="size-3.5" aria-hidden="true" />{:else if display.view === 'board'}<Columns3 class="size-3.5" aria-hidden="true" />{:else}<List class="size-3.5" aria-hidden="true" />{/if}
 				<span class="hidden sm:inline">{t('display.title')}</span>
 			{/snippet}
 			{#snippet children()}
@@ -281,12 +286,15 @@
 					</div>
 					<div role="group" aria-label={t('display.view')}>
 						<p class="text-muted-foreground mb-1 text-xs font-semibold">{t('display.view')}</p>
-						<div class="grid grid-cols-2 gap-1">
-							<Button size="sm" variant={display.view === 'list' ? 'default' : 'outline'} aria-pressed={display.view === 'list'} onclick={() => setDisplay({ view: 'list' })}>
+						<div class="grid grid-cols-3 gap-1">
+							<Button size="sm" variant={!graphOpen && display.view === 'list' ? 'default' : 'outline'} aria-pressed={!graphOpen && display.view === 'list'} onclick={() => { graphOpen = false; tab = 'tasks'; setDisplay({ view: 'list' }); }}>
 								<List aria-hidden="true" />{t('view.list')}
 							</Button>
-							<Button size="sm" variant={display.view === 'board' ? 'default' : 'outline'} aria-pressed={display.view === 'board'} onclick={() => setDisplay({ view: 'board' })}>
+							<Button size="sm" variant={!graphOpen && display.view === 'board' ? 'default' : 'outline'} aria-pressed={!graphOpen && display.view === 'board'} onclick={() => { graphOpen = false; tab = 'tasks'; setDisplay({ view: 'board' }); }}>
 								<Columns3 aria-hidden="true" />{t('view.board')}
+							</Button>
+							<Button size="sm" variant={graphOpen ? 'default' : 'outline'} aria-pressed={graphOpen} data-testid="view-graph" onclick={() => { graphOpen = true; tab = 'tasks'; }}>
+								<Workflow aria-hidden="true" />{t('graph.view')}
 							</Button>
 						</div>
 					</div>
@@ -336,7 +344,7 @@
 	</div>
 {/snippet}
 
-<div class={display.view === 'board' || tab === 'overview' ? '' : 'mx-auto max-w-3xl'}>
+<div class={display.view === 'board' || graphOpen || tab === 'overview' ? '' : 'mx-auto max-w-3xl'}>
 	<header class="mb-4 max-w-3xl">
 		<h2 class="text-[28px] leading-tight font-bold tracking-tight sm:text-[32px]" data-testid="task-heading">
 			{#if editingTitle}
@@ -408,6 +416,8 @@
 
 	{#if management && tab === 'overview'}
 		<CommandCenter projectID={project.id} />
+	{:else if graphOpen}
+		<TaskGraph {project} />
 	{:else if display.view === 'board'}
 		{#if board}
 			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={(task, siblings) => cardDetail.open({ type: 'task', id: task.id }, (siblings ?? [task]).map((x) => ({ type: 'task' as const, id: x.id })))} />
