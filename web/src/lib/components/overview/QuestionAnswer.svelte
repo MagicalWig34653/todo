@@ -28,13 +28,14 @@
 
 	let text = $state('');
 	let busy = $state(false);
-	const valid = $derived(validateAnswer(options, text));
+	const valid = $derived(validateAnswer(options, text, true));
 
-	async function send(answer: string) {
-		const value = validateAnswer(options, answer);
+	/** `own`: the person's own text instead of one of the options. */
+	async function send(answer: string, own = false) {
+		const value = validateAnswer(options, answer, own || options.length === 0);
 		if (!value || busy) return;
 		busy = true;
-		const ok = await attempt(() => api.answerQuestion(id, value));
+		const ok = await attempt(() => api.answerQuestion(id, value, own && options.length > 0));
 		busy = false;
 		if (ok) text = '';
 		// Also after a conflict (answered elsewhere first): show the real state.
@@ -52,18 +53,17 @@
 		</div>
 	</div>
 	{#if options.length > 0}
-		<OptionButtons {size} items={options.map((o) => ({ key: o, label: o }))} onpick={send} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
-	{:else}
-		<form
-			class="flex"
-			onsubmit={(e) => {
-				e.preventDefault();
-				send(text);
-			}}
-		>
-			<ChatField bind:value={text} enterSends={false} maxlength={10000} busy={busy} canSend={!!valid} onsend={() => send(text)} placeholder={t('cc.question.answerPlaceholder')} label={t('cc.question.answerLabel')} sendLabel={t('cc.question.send')} fieldTestid="question-answer" sendTestid="question-send" />
-		</form>
+		<OptionButtons {size} items={options.map((o) => ({ key: o, label: o }))} onpick={(o) => send(o)} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
 	{/if}
+	<form
+		class="flex"
+		onsubmit={(e) => {
+			e.preventDefault();
+			send(text, true);
+		}}
+	>
+		<ChatField bind:value={text} enterSends={false} maxlength={10000} busy={busy} canSend={!!valid} onsend={() => send(text, true)} placeholder={options.length > 0 ? t('cc.question.ownAnswer') : t('cc.question.answerPlaceholder')} label={t('cc.question.answerLabel')} sendLabel={t('cc.question.send')} fieldTestid="question-answer" sendTestid="question-send" />
+	</form>
 	{#if onopen}
 		<div class="-mx-2.5 -mb-2.5 flex border-t px-1.5 py-1">
 			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}>{t('cc.card.open')}<ChevronRight class="size-4" aria-hidden="true" /></Button>

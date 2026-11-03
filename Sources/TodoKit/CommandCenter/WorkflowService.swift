@@ -303,12 +303,12 @@ struct WorkflowService: Sendable {
     }
 
     /// Answer a question. Runner-backed questions delegate to `AgentService.answer` (same rules as the runner flow).
-    func answer(_ questionID: UUID, value raw: String, actor: WorkflowActor) async throws -> QuestionDTO {
+    func answer(_ questionID: UUID, value raw: String, actor: WorkflowActor, freeText: Bool = false) async throws -> QuestionDTO {
         guard let initial = try await TaskQuestion.find(questionID, on: db) else { throw Abort(.notFound) }
         _ = try await readableTask(initial.taskID, role: .comment)
         let value = try Self.text(raw, reason: "invalid_answer")
         if let agentQuestionID = initial.agentQuestionID {
-            _ = try await AgentService.answer(questionID: agentQuestionID, value: value, user: user, on: db)
+            _ = try await AgentService.answer(questionID: agentQuestionID, value: value, user: user, freeText: freeText, on: db)
             guard let fresh = try await TaskQuestion.find(questionID, on: db) else { throw Abort(.notFound) }
             return try QuestionDTO(fresh)
         }
@@ -323,7 +323,7 @@ struct WorkflowService: Sendable {
             if actor.type == .integration, q.askedByType == .integration, q.askedByID == actor.id {
                 throw Abort(.forbidden, reason: "cannot_answer_own_question")
             }
-            if !q.options.isEmpty, !q.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
+            if !freeText, !q.options.isEmpty, !q.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
             q.state = "answered"; q.answer = value; q.answeredBy = userID; q.answeredVia = actor.via; q.answeredAt = Date(); q.version += 1
             try await q.save(on: tx)
             try await appendActivity(taskID: q.taskID, actorType: actor.type, actorID: actor.id, kind: "question.answered", subjectID: q.id, on: tx)

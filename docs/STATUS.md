@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 3.11.2026: Freitext bei Fragen, Review-Eingabe im Chat-Stil, Anhang-Upload (Agent claude-code@pwa-freetext)
+
+- Board-Aufgaben `BBBE29C1` (Freitext), `8C9D4BB6` (Upload); nicht erledigt gesetzt, kein Review. Worktree-Branch, kein Push, keine Migration.
+- Freitext: `POST /v1/questions/{id}/answer` nimmt additiv `freeText: true` (Antwort darf bei Optionen eigener Text sein; ohne Flag bleibt `invalid_answer_option`). Gilt auch für Runner-Fragen (`AgentService.answer(freeText:)`). MCP `answer_question` und Handbuch unverändert (Agenten antworten nur stellvertretend, bleiben bei den Optionen); Vertrag `contracts/command-center.yaml` angepasst. PWA `QuestionAnswer`: Optionen plus Chat-Feld "Oder eigene Antwort schreiben".
+- Review: `ReviewDecision` nutzt `ChatField` (Senden-Knopf im Feld = Änderungen anfordern, Notiz nötig, Strg/Cmd+Enter) und einen runden Knopf "Freigeben" (vorher "Annehmen"). Testids unverändert.
+- Upload-Ursache: `TaskAttachments` brach bei "Hochladen" ohne gewählte Datei still ab ("passiert nichts"). Jetzt öffnet der Knopf die Dateiauswahl, die Auswahl startet den Upload.
+- Geprüft: vitest 310, Build grün, `swift test --filter CommandCenterTests` 6/6 (Test nutzt freeText), Playwright (frische SQLite, Chromium) neu `freetext-review.spec.ts` 3/3, `review-undo` 2, `card-detail` 15, `passkey-flow` 21.
+- Nicht geprüft: Vollständiger `swift test`, Linux/MariaDB, Firefox/WebKit, Screenshots hell/dunkel/mobil der neuen Review-Eingabe nicht angesehen; "Für dich" (Feed-Aktionen, `ForYouView`) bietet bei Optionsfragen weiterhin nur Optionen; Apple-App unverändert.
+
 ## Checkpoint 3.11.2026: Überfällige Aufgaben im MCP (F75F1E09)
 
 - Ziel/Stand: Branch `worktree-agent-a75096a8dcc0a3252`, Backend/PWA-Repo; `summary.overdue` zählt sichtbare nicht erledigte Aufgaben mit Planning.dueAt vor Serverzeit (auch Backlog/Unteraufgaben, vor Kartenfiltern/Limit). Karten: eigene `dueDate`, `nextDue` ohne erledigte Aufgaben/Kinder; REST/MCP `overdue=true` mit gemeinsamem SharingSnapshot-Listenpfad und gebündelter Planung. Keine Migration, kein Push/Deploy/Review, Apple/Web unverändert.

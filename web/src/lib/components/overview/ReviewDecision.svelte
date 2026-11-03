@@ -5,7 +5,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { reviewUndo } from '#lib/reviewUndo.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import ChatField from '../card/ChatField.svelte';
 	import Markdown from '../card/Markdown.svelte';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import ClipboardCheck from '@lucide/svelte/icons/clipboard-check';
@@ -63,22 +63,32 @@
 			{/if}
 		</div>
 	</div>
-	<Textarea
-		bind:value={note}
-		rows={2}
-		class="min-h-14"
-		maxlength={4000}
-		placeholder={t('cc.review.note')}
-		aria-label={t('cc.review.note')}
-		aria-invalid={needNote}
-		data-testid="review-note"
-		oninput={() => (needNote = false)}
-	/>
-	{#if needNote}<p class="text-destructive text-xs" role="alert">{t('cc.review.noteRequired')}</p>{/if}
-	<div class="flex flex-wrap justify-end gap-1.5">
-		<Button size="sm" variant="outline" disabled={busy} data-testid="review-changes" onclick={() => decide('request_changes')}>{t('cc.review.changes')}</Button>
-		<Button size="sm" disabled={busy} data-testid="review-accept" onclick={() => decide('accept')}>{t('cc.review.accept')}</Button>
-	</div>
+	<form
+		class="flex min-w-0 flex-col gap-1.5"
+		onsubmit={(e) => {
+			e.preventDefault();
+			decide('request_changes');
+		}}
+	>
+		<ChatField
+			bind:value={note}
+			enterSends={false}
+			maxlength={4000}
+			busy={busy}
+			canSend={true}
+			onsend={() => decide('request_changes')}
+			placeholder={t('cc.review.note')}
+			label={t('cc.review.note')}
+			sendLabel={t('cc.review.changes')}
+			fieldTestid="review-note"
+			sendTestid="review-changes"
+		/>
+		{#if needNote}<p class="text-destructive px-4 text-xs" role="alert">{t('cc.review.noteRequired')}</p>{/if}
+		<div class="flex flex-wrap items-center justify-between gap-2 px-1">
+			<p class="text-muted-foreground text-xs">{t('cc.review.sendHint')}</p>
+			<Button type="button" class="rounded-full max-sm:w-full" disabled={busy} data-testid="review-accept" onclick={() => decide('accept')}>{t('cc.review.accept')}</Button>
+		</div>
+	</form>
 	{#if onopen}
 		<div class="-mx-2.5 -mb-2.5 flex border-t px-1.5 py-1">
 			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}>{t('cc.card.open')}<ChevronRight class="size-4" aria-hidden="true" /></Button>

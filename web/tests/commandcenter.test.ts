@@ -85,6 +85,8 @@ describe('answers and decisions', () => {
 	it('accepts only listed options when options exist', () => {
 		expect(validateAnswer(['Ja', 'Nein'], 'Ja')).toBe('Ja');
 		expect(validateAnswer(['Ja', 'Nein'], 'Vielleicht')).toBeNull();
+		expect(validateAnswer(['Ja', 'Nein'], ' Vielleicht ', true)).toBe('Vielleicht');
+		expect(validateAnswer(['Ja', 'Nein'], '  ', true)).toBeNull();
 		expect(validateAnswer([], '  frei  ')).toBe('frei');
 		expect(validateAnswer([], '   ')).toBeNull();
 		expect(validateAnswer([], 'x'.repeat(10001))).toBeNull();

@@ -348,7 +348,8 @@ struct AskQuestionRequest: Content {
     let agentName: String?
     let idempotencyKey: String?
 }
-struct AnswerQuestionRequest: Content { let answer: String }
+/// `freeText: true` answers a question that has options with the person's own text (additive; omitted = one of the options).
+struct AnswerQuestionRequest: Content { let answer: String; let freeText: Bool? }
 struct RequestReviewRequest: Content { let summary: String; let reviewerID: UUID?; let agentName: String? }
 struct ReviewDecisionRequest: Content { let decision: String; let note: String? }
 struct StructureRequest: Content {

@@ -82,7 +82,8 @@ struct CommandCenterController: RouteCollection {
     }
     @Sendable func getQuestion(_ req: Request) async throws -> QuestionDTO { try await service(req).question(id(req)) }
     @Sendable func answerQuestion(_ req: Request) async throws -> QuestionDTO {
-        try await service(req).answer(id(req), value: req.content.decode(AnswerQuestionRequest.self).answer, actor: actor(req))
+        let body = try req.content.decode(AnswerQuestionRequest.self)
+        return try await service(req).answer(id(req), value: body.answer, actor: actor(req), freeText: body.freeText ?? false)
     }
     @Sendable func listReviews(_ req: Request) async throws -> [ReviewDTO] {
         try await service(req).reviews(projectID: uuidQuery(req, "projectID"), state: req.query[String.self, at: "state"] ?? "pending",

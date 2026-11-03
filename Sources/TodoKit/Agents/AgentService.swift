@@ -323,7 +323,7 @@ extension AgentService {
         }
     }
 
-    static func answer(questionID: UUID, value: String, user: User, on database: any Database) async throws -> AgentDetail {
+    static func answer(questionID: UUID, value: String, user: User, freeText: Bool = false, on database: any Database) async throws -> AgentDetail {
         guard let question = try await AgentQuestion.find(questionID, on: database) else { throw Abort(.notFound) }
         let initial = try await humanJob(question.jobID, user: user, on: database)
         guard let binding = try await ProjectRunnerBinding.find(initial.bindingID, on: database) else { throw Abort(.notFound) }
@@ -334,7 +334,7 @@ extension AgentService {
                 guard existing.value == value, existing.authorID == user.id else { throw Abort(.conflict, reason: "answer_already_given") }
             } else {
                 guard job.state == "waiting_for_answer" else { throw Abort(.conflict) }
-                if !question.options.isEmpty, !question.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
+                if !freeText, !question.options.isEmpty, !question.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
                 try await AgentAnswer(questionID: questionID, authorID: user.requireID(), value: AgentService.text(value)).save(on: db)
                 try await WorkflowMirror.runnerAnswered(agentQuestionID: questionID, value: value, userID: user.requireID(), on: db)
                 try await AgentService.event(job, kind: "answered", detail: questionID.uuidString, on: db)

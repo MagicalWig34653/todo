@@ -64,10 +64,10 @@ export function questionsOf(cards: CommandCard[]): { card: CommandCard; question
 }
 
 /** A free-text answer is allowed only for questions without options; with options exactly one of them must be sent. */
-export function validateAnswer(options: string[], answer: string): string | null {
+export function validateAnswer(options: string[], answer: string, freeText = false): string | null {
 	const a = answer.trim();
 	if (!a) return null;
-	if (options.length > 0) return options.includes(a) ? a : null;
+	if (options.length > 0 && !freeText) return options.includes(a) ? a : null;
 	return a.length <= 10000 ? a : null;
 }
 

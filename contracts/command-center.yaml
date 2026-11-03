@@ -63,7 +63,7 @@ paths:
   /v1/questions/{id}/answer:
     post:
       operationId: answerQuestion
-      summary: 'Antwort {answer}; Runner-Fragen laufen über AgentService.answer'
+      summary: 'Antwort {answer, freeText?}; bei Optionen muss answer eine davon sein, außer freeText=true (eigener Text, additiv); Runner-Fragen laufen über AgentService.answer'
       responses: {'200': {description: QuestionDTO}, '400': {description: invalid_answer_option}, '409': {description: question_already_answered}}
   /v1/reviews:
     get:

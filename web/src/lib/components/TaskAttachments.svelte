@@ -47,7 +47,11 @@
 		e.preventDefault();
 		const file = input?.files?.[0];
 		problem = null;
-		if (!file) return;
+		if (!file) {
+			// Pressing "Hochladen" without a file used to do nothing; open the picker instead (the file is sent once chosen).
+			input?.click();
+			return;
+		}
 		const p = checkFile(file);
 		if (p) {
 			problem = t(`attachments.problem.${p}` as MessageKey);
@@ -114,11 +118,13 @@
 			accept="image/png,image/jpeg,image/webp,application/pdf"
 			aria-label={t('attachments.choose')}
 			class="max-w-full text-xs"
+			data-testid="attachment-file"
+			onchange={upload}
 		/>
 		<Select  aria-label={t('attachments.role')} bind:value={role}>
 			{#each ATTACHMENT_ROLES as r (r)}<option value={r}>{t(`attachments.role.${r}` as MessageKey)}</option>{/each}
 		</Select>
-		<Button type="submit" size="sm" disabled={busy}>{busy ? t('attachments.uploading') : t('attachments.upload')}</Button>
+		<Button type="submit" size="sm" disabled={busy} data-testid="attachment-upload">{busy ? t('attachments.uploading') : t('attachments.upload')}</Button>
 	</form>
 	<p class="text-muted-foreground text-xs">{t('attachments.hint')}</p>
 	{#if problem}<p role="alert" class="text-destructive text-xs">{problem}</p>{/if}

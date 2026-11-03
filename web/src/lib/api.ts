@@ -1122,7 +1122,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				`/questions${query({ projectID: p.projectID, state: p.state ?? 'open', includeSubprojects: p.includeSubprojects === undefined ? undefined : String(p.includeSubprojects), limit: p.limit })}`
 			),
 		question: (id: string) => request<Question>('GET', `/questions/${id}`),
-		answerQuestion: (id: string, answer: string) => request<Question>('POST', `/questions/${id}/answer`, { answer }),
+		answerQuestion: (id: string, answer: string, freeText?: boolean) => request<Question>('POST', `/questions/${id}/answer`, freeText ? { answer, freeText: true } : { answer }),
 		listReviews: (p: { projectID?: string; state?: Review['state'] | 'all'; limit?: number } = {}) =>
 			request<Review[]>('GET', `/reviews${query({ projectID: p.projectID, state: p.state ?? 'pending', limit: p.limit })}`),
 		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string) =>
