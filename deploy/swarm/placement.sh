@@ -5,7 +5,8 @@
 #   PLACEMENT_CONSTRAINTS  comma separated Swarm constraints for backend and migrate, e.g. "node.role==worker,node.labels.zone!=dev"
 #   PLACEMENT_PREFERENCES  comma separated spread keys for backend and migrate, e.g. "node.labels.zone"
 #   EXCLUDE_LABEL          node label name; nodes with <label>=true get no backend/migrate task (does NOT apply to backend-pinned)
-#   PINNED_NODE            hostname of a node that runs the extra service backend-pinned
+#   PINNED_NODE            hostname of a node that runs the extra service backend-pinned. Only when it is set does the stack
+#                          contain backend-pinned at all (overlay stack.pinned.yaml, added by swarm-deploy.sh).
 #   PINNED_REPLICAS        replicas of backend-pinned (default 1, only used when PINNED_NODE is set)
 #   BACKEND_PINNED_PORT    optional extra published port for backend-pinned (default: none)
 #
@@ -13,6 +14,9 @@
 # BACKEND_PINNED_CONSTRAINT (both are read by stack.yaml) and writes a compose overlay to OVERLAY_FILE.
 # Return codes: 0 = overlay written (pass it with -c), 1 = nothing to overlay (file left empty), 2 = invalid input (message on stderr).
 # Compose cannot split comma lists, therefore the overlay is generated.
+# The static overlay stack.pinned.yaml (service backend-pinned) is NOT written here: swarm-deploy.sh adds it when PINNED_NODE is set.
+# Further helpers: placement_overlay_copy (feature overlays without backend-pinned), placement_pinned_guard and
+# placement_pinned_cleanup (an empty backend-pinned left from an earlier deploy is removed; running replicas never).
 
 _placement_err() { printf 'placement: %s\n' "$*" >&2; }
 _placement_trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
@@ -65,7 +69,8 @@ placement_prepare() {
     unset IFS
   fi
 
-  # Pinned service: always exported, so stack.yaml can scale it to 0 again when PINNED_NODE is removed.
+  # Pinned service: only exists in the stack with PINNED_NODE (stack.pinned.yaml). The replica variable is still exported
+  # (0 without a node) because swarm-deploy.sh overrides it for the first deploy.
   if [[ -n "$PINNED_NODE" ]]; then
     [[ "$PINNED_NODE" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { _placement_err "invalid PINNED_NODE '$PINNED_NODE'"; return 2; }
     pinned_replicas="${PINNED_REPLICAS:-1}"
@@ -115,4 +120,42 @@ placement_prepare() {
     fi
   } > "$out"
   return 0
+}
+
+# placement_overlay_copy SRC DEST: copies a feature overlay for the deploy. Without PINNED_NODE the lines that mention the
+# service backend-pinned are dropped, otherwise the overlay alone would create a half-defined service.
+placement_overlay_copy() {
+  if [[ -n "${PINNED_NODE:-}" ]]; then cp "$1" "$2"; else grep -v '^  backend-pinned:' "$1" > "$2" || true; fi
+}
+
+# Desired replicas of the backend-pinned service ("" when the service does not exist).
+_placement_pinned_desired() {
+  docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "${1}_backend-pinned" 2>/dev/null || true
+}
+
+# placement_pinned_guard STACK: without PINNED_NODE an existing backend-pinned must not have replicas any more. Run it
+# before anything is changed. Returns 1 (message on stderr) when replicas are still wanted.
+placement_pinned_guard() {
+  local desired
+  [[ -z "${PINNED_NODE:-}" ]] || return 0
+  desired="$(_placement_pinned_desired "$1")"
+  if [[ -n "$desired" && "$desired" != 0 ]]; then
+    _placement_err "PINNED_NODE is not set, but ${1}_backend-pinned still has ${desired} replica(s). Not removing a running service silently."
+    _placement_err "Set PINNED_NODE again, or scale it down first: docker service scale ${1}_backend-pinned=0 (the next deploy then removes it)."
+    return 1
+  fi
+}
+
+# placement_pinned_cleanup STACK: without PINNED_NODE removes an existing backend-pinned service, but only with 0 replicas.
+# (docker stack deploy without --prune leaves services that are no longer in the stack files.)
+placement_pinned_cleanup() {
+  local desired
+  [[ -z "${PINNED_NODE:-}" ]] || return 0
+  desired="$(_placement_pinned_desired "$1")"
+  [[ -n "$desired" ]] || return 0
+  if [[ "$desired" != 0 ]]; then
+    _placement_err "${1}_backend-pinned has ${desired} replica(s) and PINNED_NODE is not set; left untouched."; return 1
+  fi
+  printf 'placement: removing empty service %s_backend-pinned (PINNED_NODE is not set)\n' "$1"
+  docker service rm "${1}_backend-pinned" >/dev/null
 }

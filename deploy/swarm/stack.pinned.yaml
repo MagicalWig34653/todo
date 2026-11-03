@@ -1,0 +1,73 @@
+version: '3.8'
+# Optional overlay: the extra API service backend-pinned on exactly one node (PINNED_NODE, see deploy/swarm/placement.sh).
+# scripts/swarm-deploy.sh adds this file only when PINNED_NODE is set. Without it the stack has no backend-pinned service,
+# and an empty one left from an earlier version is removed by the deploy script (placement_pinned_cleanup).
+# The x-backend and x-backend-deploy blocks repeat stack.yaml (anchors do not cross files); scripts/test-placement.sh
+# fails when they drift apart. The feature overlays (stack.s3/push/mail/settings*.yaml) list backend-pinned too; the deploy script
+# strips those lines when PINNED_NODE is not set (placement_overlay_copy).
+# It publishes no port of its own (BACKEND_PINNED_PORT adds one); the ingress port belongs to backend.
+# EXCLUDE_LABEL deliberately does not apply here: PINNED_NODE is an explicit placement wish.
+x-backend: &backend
+  image: ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-edge}
+  networks: [internal]
+  environment: &environment
+    DATABASE_DRIVER: mariadb
+    DB_HOST: ${DB_HOST:?DB_HOST required}
+    DB_PORT: ${DB_PORT:-3306}
+    DB_NAME: ${DB_NAME:-todo}
+    DB_USER: ${DB_USER:-todo}
+    DB_PASSWORD_FILE: /run/secrets/db_password
+    BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
+    ATTACHMENT_STORAGE: ${ATTACHMENT_STORAGE:-}
+    ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-}
+    RP_ID: ${RP_ID:-localhost}
+    RP_ORIGIN: ${RP_ORIGIN:-http://localhost:38080}
+    # Empty: the backend derives the OAuth/MCP issuer from RP_ORIGIN (older env files keep working).
+    OAUTH_ISSUER: ${OAUTH_ISSUER:-}
+    # ADR 0025: an empty value means "not set by the environment" - the setting can then be changed in the PWA
+    # (Einstellungen > Verwaltung > Server). A non-empty value locks it there. Defaults live in the application.
+    # Periodic in-process cleanup (0 disables) and sync log retention in days (0 keeps everything). ADR 0019.
+    CLEANUP_INTERVAL_MINUTES: ${CLEANUP_INTERVAL_MINUTES:-}
+    SYNC_RETENTION_DAYS: ${SYNC_RETENTION_DAYS:-}
+    AASA_APP_IDS: ${AASA_APP_IDS:-}
+    PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-}
+  secrets: [db_password, bootstrap_token]
+x-backend-deploy: &backend-deploy
+  resources:
+    limits:
+      cpus: '${BACKEND_CPU_LIMIT:-0}'
+      memory: ${BACKEND_MEMORY_LIMIT:-0}
+  update_config:
+    parallelism: 1
+    delay: 5s
+    order: start-first
+    monitor: 60s
+    failure_action: rollback
+  rollback_config:
+    parallelism: 1
+    order: stop-first
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+services:
+  backend-pinned:
+    <<: *backend
+    command: [serve, --env, production, --hostname, 0.0.0.0, --port, '8080']
+    configs:
+      - source: healthcheck
+        target: /healthcheck.sh
+    healthcheck:
+      test: [CMD, /bin/bash, /healthcheck.sh]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    deploy:
+      <<: *backend-deploy
+      replicas: ${BACKEND_PINNED_EFFECTIVE_REPLICAS:-1}
+      placement:
+        constraints:
+          - ${BACKEND_PINNED_CONSTRAINT:?BACKEND_PINNED_CONSTRAINT required (set PINNED_NODE)}
+configs:
+  healthcheck:
+    file: ./healthcheck.sh

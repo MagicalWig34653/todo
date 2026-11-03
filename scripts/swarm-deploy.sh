@@ -7,9 +7,10 @@ STACK=${STACK:-todo}
 lock="${STACK}_deployment-lock"
 printf 'deployment in progress\n' | docker config create "$lock" - >/dev/null
 migration_running=0
-placement_overlay=$(mktemp "${TMPDIR:-/tmp}/${STACK}-placement.XXXXXX")
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/${STACK}-deploy.XXXXXX")
+placement_overlay="$work_dir/placement.yaml"
 cleanup() {
-  rm -f "$placement_overlay"
+  rm -rf "$work_dir"
   if [[ $migration_running == 1 ]]; then
     echo "Migration state uncertain; deployment lock retained: $lock. Inspect task before manually removing lock." >&2
   else
@@ -23,22 +24,28 @@ image=${BACKEND_IMAGE:-ghcr.io/magicalwig34653/todo-backend:${TODO_IMAGE_TAG:-ed
 # BACKEND_IMAGE (full reference) only overrides the migration image and must match an override file
 # if the stack image is overridden too (the smoke test does this). Extra stack files (e.g. overrides) may be passed as space-separated STACK_EXTRA_FILES.
 compose_args=(-c stack.yaml)
-# Optional S3 attachment storage: only when S3_ENDPOINT is set (needs the S3 secrets, see stack.s3.yaml).
-if [[ -n "${S3_ENDPOINT:-}" ]]; then compose_args+=(-c stack.s3.yaml); fi
-# Optional APNs push: only when APNS_ENABLED=true (needs the apns_key secret, see stack.push.yaml).
-if [[ "${APNS_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.push.yaml); fi
-# Optional outgoing mail: only when MAIL_ENABLED=true (needs the smtp_password secret, see stack.mail.yaml).
-if [[ "${MAIL_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.mail.yaml); fi
-# Optional key for secrets stored in the PWA (ADR 0025): only when SETTINGS_KEY_ENABLED=true (secret settings_key, see stack.settings.yaml).
-if [[ "${SETTINGS_KEY_ENABLED:-false}" == true ]]; then compose_args+=(-c stack.settings.yaml); fi
-# During a key rotation the previous key stays readable (stack.settings-previous.yaml).
-if [[ -n "${SETTINGS_KEY_PREVIOUS_SECRET:-}" ]]; then compose_args+=(-c stack.settings-previous.yaml); fi
-# Optional placement (PLACEMENT_CONSTRAINTS, PLACEMENT_PREFERENCES, EXCLUDE_LABEL, PINNED_NODE ...): see placement.sh.
-# Also exports BACKEND_PINNED_EFFECTIVE_REPLICAS / BACKEND_PINNED_CONSTRAINT for the backend-pinned service in stack.yaml.
+# Placement helpers must be known before the feature overlays: they decide whether overlays may mention backend-pinned.
 # shellcheck source=../deploy/swarm/placement.sh
 . ./placement.sh
+# Feature overlays are used through a copy without backend-pinned lines unless PINNED_NODE is set (placement_overlay_copy).
+add_overlay() { placement_overlay_copy "$1" "$work_dir/$1"; compose_args+=(-c "$work_dir/$1"); }
+# Optional S3 attachment storage: only when S3_ENDPOINT is set (needs the S3 secrets, see stack.s3.yaml).
+if [[ -n "${S3_ENDPOINT:-}" ]]; then add_overlay stack.s3.yaml; fi
+# Optional APNs push: only when APNS_ENABLED=true (needs the apns_key secret, see stack.push.yaml).
+if [[ "${APNS_ENABLED:-false}" == true ]]; then add_overlay stack.push.yaml; fi
+# Optional outgoing mail: only when MAIL_ENABLED=true (needs the smtp_password secret, see stack.mail.yaml).
+if [[ "${MAIL_ENABLED:-false}" == true ]]; then add_overlay stack.mail.yaml; fi
+# Optional key for secrets stored in the PWA (ADR 0025): only when SETTINGS_KEY_ENABLED=true (secret settings_key, see stack.settings.yaml).
+if [[ "${SETTINGS_KEY_ENABLED:-false}" == true ]]; then add_overlay stack.settings.yaml; fi
+# During a key rotation the previous key stays readable (stack.settings-previous.yaml).
+if [[ -n "${SETTINGS_KEY_PREVIOUS_SECRET:-}" ]]; then add_overlay stack.settings-previous.yaml; fi
+# Optional placement (PLACEMENT_CONSTRAINTS, PLACEMENT_PREFERENCES, EXCLUDE_LABEL, PINNED_NODE ...): see placement.sh.
+# Also exports BACKEND_PINNED_EFFECTIVE_REPLICAS / BACKEND_PINNED_CONSTRAINT for the backend-pinned service (stack.pinned.yaml).
 rc=0; placement_prepare "$placement_overlay" || rc=$?
 case $rc in 0) compose_args+=(-c "$placement_overlay") ;; 1) ;; *) exit 2 ;; esac
+# backend-pinned exists in the stack only with PINNED_NODE. Without it an old empty service is removed after the deploy;
+# one that still has replicas stops the deploy now, before anything has been changed.
+if [[ -n "${PINNED_NODE:-}" ]]; then compose_args+=(-c stack.pinned.yaml); else placement_pinned_guard "$STACK" || exit 2; fi
 pinned_replicas=$BACKEND_PINNED_EFFECTIVE_REPLICAS
 for f in ${STACK_EXTRA_FILES:-}; do compose_args+=(-c "$f"); done
 # The DB is external: the one-shot migration below fails (without retry) if the DB is unreachable.
@@ -53,7 +60,7 @@ elif ! docker service inspect "${STACK}_migrate" >/dev/null 2>&1; then
   current=$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "${STACK}_backend")
   running_image=$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "${STACK}_backend")
   running_tag=${running_image%%@*}; running_tag=${running_tag##*:}
-  # backend-pinned (absent in older installs) keeps its replica count as well.
+  # backend-pinned (only with PINNED_NODE) keeps its replica count as well.
   current_pinned=$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "${STACK}_backend-pinned" 2>/dev/null || echo 0)
   # Keep the backend on the image it runs now; it is updated only after the migration succeeded.
   TODO_IMAGE_TAG=$running_tag BACKEND_REPLICAS=$current BACKEND_PINNED_EFFECTIVE_REPLICAS=$current_pinned docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
@@ -77,4 +84,6 @@ for ((i=0; i<120; i++)); do
 done
 [[ $i -lt 120 ]] || { echo 'Migration timeout' >&2; exit 1; }
 BACKEND_REPLICAS=$replicas BACKEND_PINNED_EFFECTIVE_REPLICAS=$pinned_replicas docker stack deploy --resolve-image never "${compose_args[@]}" "$STACK"
+# PINNED_NODE removed: drop the now empty backend-pinned service (stack deploy does not prune).
+placement_pinned_cleanup "$STACK" || exit 2
 echo "Migration complete; rollout started for $replicas replicas${PINNED_NODE:+ (+ $pinned_replicas pinned on $PINNED_NODE)}. Check health before accepting rollout."
