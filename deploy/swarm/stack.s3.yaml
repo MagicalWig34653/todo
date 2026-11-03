@@ -15,6 +15,7 @@ x-s3: &s3
 services:
   migrate: *s3
   backend: *s3
+  backend-pinned: *s3
 secrets:
   s3_access_key:
     external: true

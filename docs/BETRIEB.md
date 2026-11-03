@@ -237,3 +237,21 @@ Fast alle Betriebseinstellungen (Mail, Push, Anhänge/S3, Aufräumen, Live-Refre
 - **Migration:** neue Tabellen `server_settings` und `server_settings_audit` (additiv, `migrate --yes` wie immer). Rollback: Tabellen werden von alten Versionen ignoriert.
 - **Replikate:** Änderungen erreichen alle Replikate nach höchstens ~10 s ohne Neustart; `attachments.maxBytes`, `maintenance.*` wirken nach Neustart. Prüfen: Log `server settings applied`, `GET /v1/admin/settings` (Feld `lastError`).
 - **Ungeprüft:** MariaDB-Lauf der neuen Tests, echter SMTP-/APNs-/S3-Test über die Oberfläche.
+
+## Platzierung (3.11.2026)
+
+Optional, alles leer = bisheriges Verhalten (kein Overlay). `scripts/swarm-deploy.sh` lädt `deploy/swarm/placement.sh`, prüft die Variablen aus der Env-Datei und erzeugt bei Bedarf ein temporäres Overlay (`-c`, wie `stack.s3.yaml`); Compose kann Kommalisten nicht selbst teilen. Ungültige Werte brechen das Deploy vor jeder Änderung ab (Exit 2).
+
+| Variable | Wirkung |
+|---|---|
+| `PLACEMENT_CONSTRAINTS` | kommagetrennte Constraints für `backend` und `migrate`, z. B. `node.role==worker,node.labels.zone!=dev` (Schlüssel: `node.id`, `node.hostname`, `node.role`, `node.platform.os/arch`, `node.labels.*`, `engine.labels.*`; Operatoren `==`, `!=`) |
+| `PLACEMENT_PREFERENCES` | kommagetrennte `spread`-Schlüssel (`node.labels.<name>`), z. B. Replikate gleichmäßig über Zonen |
+| `EXCLUDE_LABEL` | Knoten mit `<label>=true` bekommen keinen `backend`/`migrate`-Task (`node.labels.<label> != true`) |
+| `PINNED_NODE` | Hostname; aktiviert den Zusatzdienst `backend-pinned` (Constraint `node.hostname == <Knoten>`) |
+| `PINNED_REPLICAS` | Replikate von `backend-pinned`, Standard 1 |
+| `BACKEND_PINNED_PORT` | optional eigener Ingress-Port für `backend-pinned` (muss sich von `BACKEND_PORT` unterscheiden); der Proxy-Upstream braucht dann beide Ports |
+
+`backend-pinned` steht in `stack.yaml` mit 0 Replikaten (gleiche Konfiguration, Secrets und Overlays wie `backend`). Das ist Absicht: ein Dienst nur im Overlay würde nach dem Entfernen von `PINNED_NODE` ohne `--prune` weiterlaufen, ein Basisdienst wird auf 0 herunterskaliert. Er hat keinen eigenen Port, der Ingress-Port gehört `backend`; er ist daher nur über das Overlay-Netz (`backend-pinned:8080`) oder `BACKEND_PINNED_PORT` erreichbar. **`EXCLUDE_LABEL` und `PLACEMENT_*` gelten nicht für `backend-pinned`:** `PINNED_NODE` ist ein ausdrücklicher Platzierungswunsch, sonst liefe auf einem ausgeschlossenen Knoten nie ein Container.
+
+Ablauf: Beim Erststart startet `backend-pinned` mit 0 Replikaten; bei einer fehlenden Migration wird der Bestand beibehalten; erst das letzte Deploy nach erfolgreicher Migration setzt `PINNED_REPLICAS`. `update.sh` und `setup.sh` warten zusätzlich auf `backend-pinned`, wenn es laufen soll. `setup.sh` übernimmt die Variablen aus der Env-Datei (auch bei `--reconfigure`), fragt sie aber nicht ab. Test: `scripts/test-placement.sh` (nur Shell und `docker compose config`, kein Swarm).
+

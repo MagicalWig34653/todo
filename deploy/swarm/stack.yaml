@@ -29,6 +29,24 @@ x-backend: &backend
     AASA_APP_IDS: ${AASA_APP_IDS:-}
     PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-}
   secrets: [db_password, bootstrap_token]
+# Shared by backend and backend-pinned.
+x-backend-deploy: &backend-deploy
+  resources:
+    limits:
+      cpus: '${BACKEND_CPU_LIMIT:-0}'
+      memory: ${BACKEND_MEMORY_LIMIT:-0}
+  update_config:
+    parallelism: 1
+    delay: 5s
+    order: start-first
+    monitor: 60s
+    failure_action: rollback
+  rollback_config:
+    parallelism: 1
+    order: stop-first
+  restart_policy:
+    condition: on-failure
+    delay: 5s
 services:
   migrate:
     <<: *backend
@@ -39,11 +57,11 @@ services:
         condition: none
   backend:
     <<: *backend
-    command: [serve, --env, production, --hostname, 0.0.0.0, --port, '8080']
-    configs:
+    command: &serve-command [serve, --env, production, --hostname, 0.0.0.0, --port, '8080']
+    configs: &serve-configs
       - source: healthcheck
         target: /healthcheck.sh
-    healthcheck:
+    healthcheck: &serve-healthcheck
       test: [CMD, /bin/bash, /healthcheck.sh]
       interval: 5s
       timeout: 5s
@@ -55,23 +73,23 @@ services:
         protocol: tcp
         mode: ingress
     deploy:
+      <<: *backend-deploy
       replicas: ${BACKEND_REPLICAS:-3}
-      resources:
-        limits:
-          cpus: '${BACKEND_CPU_LIMIT:-0}'
-          memory: ${BACKEND_MEMORY_LIMIT:-0}
-      update_config:
-        parallelism: 1
-        delay: 5s
-        order: start-first
-        monitor: 60s
-        failure_action: rollback
-      rollback_config:
-        parallelism: 1
-        order: stop-first
-      restart_policy:
-        condition: on-failure
-        delay: 5s
+  # Optional extra API service pinned to one node (PINNED_NODE, see deploy/swarm/placement.sh). It sits in the base file
+  # with 0 replicas so that removing PINNED_NODE scales it down again (an overlay-only service would keep running).
+  # It publishes no port of its own (BACKEND_PINNED_PORT adds one); the ingress port belongs to backend.
+  # EXCLUDE_LABEL deliberately does not apply here: PINNED_NODE is an explicit placement wish.
+  backend-pinned:
+    <<: *backend
+    command: *serve-command
+    configs: *serve-configs
+    healthcheck: *serve-healthcheck
+    deploy:
+      <<: *backend-deploy
+      replicas: ${BACKEND_PINNED_EFFECTIVE_REPLICAS:-0}
+      placement:
+        constraints:
+          - ${BACKEND_PINNED_CONSTRAINT:-node.hostname == __no-pinned-node__}
 networks:
   internal:
     driver: overlay

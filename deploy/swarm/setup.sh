@@ -624,6 +624,10 @@ write_env() {
       echo "SETTINGS_KEY_SECRET=$SETTINGS_KEY_SECRET"
     fi
     [ -z "$(get SETTINGS_KEY_PREVIOUS_SECRET '')" ] || echo "SETTINGS_KEY_PREVIOUS_SECRET=$(get SETTINGS_KEY_PREVIOUS_SECRET '')"
+    # Placement (deploy/swarm/placement.sh): optional, carried over unchanged so --reconfigure does not drop it.
+    for pv in PLACEMENT_CONSTRAINTS PLACEMENT_PREFERENCES EXCLUDE_LABEL PINNED_NODE PINNED_REPLICAS BACKEND_PINNED_PORT; do
+      [ -z "$(get "$pv" '')" ] || echo "$pv=$(get "$pv" '')"
+    done
     if [ "$MAIL_ENABLED" = true ]; then
       echo "MAIL_ENABLED=true"
       echo "SMTP_HOST=$SMTP_HOST"
@@ -709,6 +713,7 @@ step "Deploy (Migration, dann Rollout)"
 )
 step "Rollout abwarten"
 wait_for_rollout "${TODO_STACK}_backend" 600
+wait_for_pinned_rollout "${TODO_STACK}_backend-pinned" 600
 docker service ps "${TODO_STACK}_backend" --filter desired-state=running --format 'table {{.Name}}\t{{.Node}}\t{{.Image}}\t{{.CurrentState}}'
 
 # ---------------------------------------------------------------- Step 13: verify

@@ -906,3 +906,10 @@ Ziel: `https://todo.linolaske.de/` lieferte nur JSON-404, weil das Image die PWA
 
 - Branch worktree-agent-a852ebd64f92295ed: `MCPAccountTools.swift` (get/update_settings, get/update_notification_prefs, get_connection, list_users, list_invitations), Scopes account:read/account:write/admin:read, `PreferencesController.save` extrahiert. Tests `MCPAccountToolsTests` (6) grün.
 - Offen: Handbuch, Versionssprung, embed (Hauptsession); list_notifications und mark_notification_read mangels Posteingang nicht umgesetzt. Details: docs/MCP-PARITAET.md "Umgesetzt: Stapel 8".
+
+## Checkpoint 3.11.2026: Swarm-Platzierung (claude-code@swarm-placement)
+
+- Branch `swarm-placement` (Worktree `.claude/worktrees/swarm-placement`), lokal committed, kein Push. Neu: `deploy/swarm/placement.sh` (Validierung + generiertes Overlay), `backend-pinned` in `stack.yaml` (0 Replikate Standard, Overlay-Zeilen in allen fünf Overlays), `swarm-deploy.sh` (Erststart/Migration/Final-Deploy setzen pinned-Replikate), `lib.sh` (exakter Dienstname in `wait_for_rollout`, `wait_for_pinned_rollout`), `update.sh`/`setup.sh` (Warten, Variablen-Rückschreiben), Workflow-Dateiliste, `stack.env.example`, BETRIEB.md "Platzierung", `scripts/test-placement.sh`.
+- Entscheidung: `EXCLUDE_LABEL` und `PLACEMENT_*` gelten nicht für `backend-pinned` (wie form-backend).
+- Geprüft: `scripts/test-placement.sh` (Validierung, Overlay-Inhalt, `docker compose config` mit/ohne Variablen, mit s3-Overlay), `bash -n` aller Skripte. **Nur Syntax geprüft, nie gegen Swarm gelaufen:** `swarm-deploy.sh`-Abläufe, `lib.sh`-awk-Match, `update.sh`/`setup.sh`-Änderungen, Scale-down durch Entfernen von `PINNED_NODE`.
+- Offen: Lauf auf einem Test-Swarm (`scripts/swarm-smoke.sh`), Proxy-Upstream bei `BACKEND_PINNED_PORT`.
