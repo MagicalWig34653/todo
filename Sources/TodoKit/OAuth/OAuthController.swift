@@ -3,7 +3,7 @@ import Fluent
 import Vapor
 
 struct OAuthController: RouteCollection {
-    static let scopes = ["projects:read", "projects:write", "tasks:read", "tasks:write", "comments:write", "attachments:read", "attachments:write", "agents:read", "labels:read", "labels:write", "filters:read", "filters:write", "sharing:read", "sharing:write", "teams:read", "teams:write"]
+    static let scopes = ["projects:read", "projects:write", "tasks:read", "tasks:write", "comments:write", "attachments:read", "attachments:write", "agents:read", "labels:read", "labels:write", "filters:read", "filters:write", "sharing:read", "sharing:write", "teams:read", "teams:write", "account:read", "account:write", "admin:read"]
     // The issuer comes from AppSettings.oauthIssuer (OAUTH_ISSUER, else RP_ORIGIN); never from an untrusted Host or forwarded header.
 
     func boot(routes: any RoutesBuilder) throws {
