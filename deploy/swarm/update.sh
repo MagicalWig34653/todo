@@ -126,6 +126,7 @@ export TODO_IMAGE_TAG="$TAG" STACK
 step "Watch the rollout and check the result"
 BACKEND="${STACK}_backend"
 wait_for_rollout "$BACKEND" "$WAIT_SECONDS"
+wait_for_pinned_rollout "${BACKEND}-pinned" "$WAIT_SECONDS"
 docker service ps "$BACKEND" --filter desired-state=running --format 'table {{.Name}}\t{{.Node}}\t{{.Image}}\t{{.CurrentState}}'
 
 BASE_URL="${PUBLIC_BASE_URL:-${RP_ORIGIN:-}}"

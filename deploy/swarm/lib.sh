@@ -61,7 +61,7 @@ wait_for_rollout() {
   local BACKEND="$1" limit="${2:-600}" waited=0 last="" ustate replicas now
   while :; do
     ustate="$(docker service inspect "$BACKEND" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}' 2>/dev/null || true)"
-    replicas="$(docker service ls --filter "name=${BACKEND}" --format '{{.Replicas}}' | head -n 1)"
+    replicas="$(docker service ls --filter "name=${BACKEND}" --format '{{.Name}} {{.Replicas}}' | awk -v n="$BACKEND" '$1 == n {print $2; exit}')"
     now="update=${ustate:-none} replicas=${replicas}"
     if [ "$now" != "$last" ]; then say "$now"; last="$now"; fi
     case "$ustate" in
@@ -74,4 +74,11 @@ wait_for_rollout() {
     [ "$waited" -lt "$limit" ] || die "rollout did not finish within ${limit}s (see: docker service ps ${BACKEND})"
     sleep 3; waited=$((waited + 3))
   done
+}
+
+# Waits for the optional backend-pinned service, but only when it is meant to run (desired replicas above 0).
+wait_for_pinned_rollout() {
+  local pinned="$1" limit="${2:-600}" desired
+  desired="$(docker service inspect "$pinned" --format '{{.Spec.Mode.Replicated.Replicas}}' 2>/dev/null || echo 0)"
+  if [ "${desired:-0}" -gt 0 ]; then say "Pinned service ${pinned} (${desired} replicas)"; wait_for_rollout "$pinned" "$limit"; fi
 }

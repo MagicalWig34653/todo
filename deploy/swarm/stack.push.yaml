@@ -17,6 +17,7 @@ services:
   # migrate loads the same settings and validates the key, so it gets the secret too.
   migrate: *push
   backend: *push
+  backend-pinned: *push
 secrets:
   apns_key:
     external: true

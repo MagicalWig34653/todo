@@ -11,6 +11,7 @@ x-settings-previous: &previous
 services:
   migrate: *previous
   backend: *previous
+  backend-pinned: *previous
 secrets:
   settings_key_previous:
     external: true
