@@ -75,39 +75,75 @@ extension PlanningService {
         return result
     }
 
+    /// Which projects the caller may read, from one sharing snapshot (same rules as `SharingAccess.visibility`),
+    /// instead of several queries per task or per milestone member.
+    struct ReadScope {
+        let snapshot: SharingSnapshot
+        private var cache: [UUID: Bool] = [:]
+        init(_ snapshot: SharingSnapshot) { self.snapshot = snapshot }
+        mutating func canRead(_ projectID: UUID) throws -> Bool {
+            if let known = cache[projectID] { return known }
+            let result = try snapshot.projects[projectID].map { try snapshot.visibility($0).role != nil } ?? false
+            cache[projectID] = result
+            return result
+        }
+        func isSelfOrDescendant(_ candidate: UUID, of project: UUID) -> Bool {
+            var current: UUID? = candidate
+            var seen = Set<UUID>()
+            while let id = current, seen.insert(id).inserted {
+                if id == project { return true }
+                current = snapshot.projects[id]?.parentID
+            }
+            return false
+        }
+    }
+
+    func readScope() async throws -> ReadScope { ReadScope(try await SharingAccess(user: user, db: db).snapshot().snapshot) }
+
+    private func chunks<T>(_ values: [T], _ size: Int = 500) -> [[T]] {
+        stride(from: 0, to: values.count, by: size).map { Array(values[$0..<min($0 + size, values.count)]) }
+    }
+
     /// Edges whose both ends are visible tasks inside the project (or its subtree); hidden ends never leak.
-    func projectDependencies(_ projectID: UUID, includeSubprojects: Bool) async throws -> PlanningGraphDTO {
+    /// A constant number of queries: one sharing snapshot, then batched reads. `details` adds per-task title, status,
+    /// project and due date plus the milestones with their visible members, so the graph view needs only this call.
+    func projectDependencies(_ projectID: UUID, includeSubprojects: Bool, details: Bool = false) async throws -> PlanningGraphDTO {
         _ = try await access.project(projectID)
+        var scope = try await readScope()
         var ids: Set<UUID> = [projectID]
         if includeSubprojects {
-            let all = try await Project.query(on: db).all()
             var children: [UUID: [UUID]] = [:]
-            for p in all { if let parent = p.parentID, let id = p.id { children[parent, default: []].append(id) } }
+            for (id, p) in scope.snapshot.projects { if let parent = p.parentID { children[parent, default: []].append(id) } }
             var stack = [projectID]
             while let current = stack.popLast() { for c in children[current] ?? [] where ids.insert(c).inserted { stack.append(c) } }
         }
-        let rows = try await TodoTask.query(on: db).filter(\.$projectID ~~ Array(ids)).all()
+        let readable = try ids.filter { try scope.canRead($0) }
+        var rows: [TodoTask] = []
+        for chunk in chunks(Array(readable)) { rows += try await TodoTask.query(on: db).filter(\.$projectID ~~ chunk).all() }
         let taskIDs = Set(rows.compactMap(\.id))
-        let edges = try await PlanningDependency.query(on: db).filter(\.$taskID ~~ Array(taskIDs)).sort(\.$id).all()
-            .filter { taskIDs.contains($0.prerequisiteID) }
-        var visible: [UUID: Bool] = [:]
-        func canSee(_ id: UUID) async throws -> Bool {
-            if let known = visible[id] { return known }
-            do { _ = try await task(id); visible[id] = true } catch let error as AbortError where error.status == .notFound { visible[id] = false }
-            return visible[id] ?? false
-        }
-        var result: [PlanningDependencyEdgeDTO] = []
-        for e in edges {
-            guard try await canSee(e.taskID), try await canSee(e.prerequisiteID) else { continue }
-            result.append(PlanningDependencyEdgeDTO(taskID: e.taskID, prerequisiteID: e.prerequisiteID))
-        }
+        var edges: [PlanningDependency] = []
+        for chunk in chunks(Array(taskIDs)) { edges += try await PlanningDependency.query(on: db).filter(\.$taskID ~~ chunk).all() }
+        edges.sort { ($0.id?.uuidString ?? "") < ($1.id?.uuidString ?? "") }
+        let result = edges.filter { taskIDs.contains($0.prerequisiteID) }.map { PlanningDependencyEdgeDTO(taskID: $0.taskID, prerequisiteID: $0.prerequisiteID) }
+        var flows: [UUID: TaskWorkflow] = [:]
+        for chunk in chunks(Array(taskIDs)) { for w in try await TaskWorkflow.query(on: db).filter(\.$id ~~ chunk).all() { if let id = w.id { flows[id] = w } } }
+        var plans: [UUID: TaskPlanning] = [:]
+        if details { for chunk in chunks(Array(taskIDs)) { for p in try await TaskPlanning.query(on: db).filter(\.$id ~~ chunk).all() { if let id = p.id { plans[id] = p } } } }
         var nodes: [PlanningGraphNodeDTO] = []
-        let flows = Dictionary(uniqueKeysWithValues: try await TaskWorkflow.query(on: db).filter(\.$id ~~ Array(taskIDs)).all().compactMap { w in w.id.map { ($0, w) } })
-        for t in rows { if let id = t.id, try await canSee(id) {
+        for t in rows {
+            guard let id = t.id else { continue }
             let w = flows[id]
-            nodes.append(PlanningGraphNodeDTO(taskID: id, kind: w?.kind ?? "task", parentTaskID: w?.parentTaskID, createdAt: t.createdAt, updatedAt: t.updatedAt, claimedLabel: w?.claimedLabel))
-        } }
-        return PlanningGraphDTO(edges: result, tasks: nodes)
+            var node = PlanningGraphNodeDTO(taskID: id, kind: w?.kind ?? "task", parentTaskID: w?.parentTaskID, createdAt: t.createdAt, updatedAt: t.updatedAt, claimedLabel: w?.claimedLabel)
+            if details { node.title = t.title; node.status = t.status; node.projectID = t.projectID; node.dueAt = plans[id]?.dueAt }
+            nodes.append(node)
+        }
+        var milestones: [PlanningGraphMilestoneDTO]? = nil
+        if details {
+            milestones = try await milestoneRows(projectID, scope: &scope, allowedProjects: nil, limit: nil).map { m, tasks in
+                PlanningGraphMilestoneDTO(id: try m.requireID(), title: m.title, dueAt: m.dueAt, tasks: try tasks.map { PlanningGraphMemberDTO(taskID: try $0.requireID(), status: $0.status) })
+            }
+        }
+        return PlanningGraphDTO(edges: result, tasks: nodes, milestones: milestones)
     }
 
     /// Replace as one transaction, preserving the REST add path's cycle and role checks.
@@ -120,22 +156,35 @@ extension PlanningService {
         for other in ids { try await addDependency(id, prerequisite: other) }
     }
 
-    func milestones(_ projectID: UUID, allowedProjects: Set<UUID>? = nil, limit: Int? = nil) async throws -> [PlanningMilestoneDTO] {
-        _ = try await access.project(projectID)
+    /// Milestones of the project with their visible members inside its subtree, in a constant number of queries.
+    func milestoneRows(_ projectID: UUID, scope: inout ReadScope, allowedProjects: Set<UUID>?, limit: Int?) async throws -> [(PlanningMilestone, [TodoTask])] {
         var query = PlanningMilestone.query(on: db).filter(\.$projectID == projectID).sort(\.$id)
         if let limit { query = query.limit(limit) }
-        var result: [PlanningMilestoneDTO] = []
-        for m in try await query.all() {
-            var tasks: [TaskDTO] = []
-            for link in try await PlanningMilestoneTask.query(on: db).filter(\.$milestoneID == m.requireID()).sort(\.$id).all() {
-                do {
-                    let t = try await task(link.taskID)
-                    guard allowedProjects == nil || allowedProjects!.contains(t.projectID) else { continue }
-                    if try await access.isSelfOrDescendant(t.projectID, of: projectID), limit == nil || tasks.count < limit! { tasks.append(try TaskDTO(t)) }
-                } catch let error as AbortError where error.status == .notFound { continue }
+        let ms = try await query.all()
+        guard !ms.isEmpty else { return [] }
+        var links: [PlanningMilestoneTask] = []
+        for chunk in chunks(try ms.map { try $0.requireID() }) { links += try await PlanningMilestoneTask.query(on: db).filter(\.$milestoneID ~~ chunk).all() }
+        links.sort { ($0.id?.uuidString ?? "") < ($1.id?.uuidString ?? "") }
+        var tasks: [UUID: TodoTask] = [:]
+        for chunk in chunks(Array(Set(links.map(\.taskID)))) { for t in try await TodoTask.query(on: db).filter(\.$id ~~ chunk).all() { if let id = t.id { tasks[id] = t } } }
+        var byMilestone: [UUID: [PlanningMilestoneTask]] = [:]
+        for l in links { byMilestone[l.milestoneID, default: []].append(l) }
+        var result: [(PlanningMilestone, [TodoTask])] = []
+        for m in ms {
+            var members: [TodoTask] = []
+            for link in byMilestone[try m.requireID()] ?? [] {
+                guard let t = tasks[link.taskID], try scope.canRead(t.projectID) else { continue }
+                guard allowedProjects == nil || allowedProjects!.contains(t.projectID) else { continue }
+                if scope.isSelfOrDescendant(t.projectID, of: projectID), limit == nil || members.count < limit! { members.append(t) }
             }
-            result.append(PlanningMilestoneDTO(milestone: m, tasks: tasks))
+            result.append((m, members))
         }
         return result
+    }
+
+    func milestones(_ projectID: UUID, allowedProjects: Set<UUID>? = nil, limit: Int? = nil) async throws -> [PlanningMilestoneDTO] {
+        _ = try await access.project(projectID)
+        var scope = try await readScope()
+        return try await milestoneRows(projectID, scope: &scope, allowedProjects: allowedProjects, limit: limit).map { PlanningMilestoneDTO(milestone: $0.0, tasks: try $0.1.map { try TaskDTO($0) }) }
     }
 }

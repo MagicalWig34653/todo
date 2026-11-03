@@ -151,6 +151,54 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertEqual(anon.status, .unauthorized)
     }
 
+    /// `details=true` carries everything the graph view needs; hidden tasks and milestone members never leak, and the
+    /// batched milestone list returns exactly what the per-member checks did.
+    func testGraphDetailsAndBatchedMilestonesRespectVisibility() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let childTask = try await f.t.json(.POST, "/v1/tasks", ["projectID": f.child, "title": "Sub"], token: f.token)
+        let cid = try XCTUnwrap(childTask.body?["id"] as? String)
+        let due = "2026-12-01T10:00:00Z"
+        let planned = try await put(f, f.tasks[0], ["dueAt": due, "priority": 0, "reminders": []]); XCTAssertEqual(planned, .ok)
+        let done = try await f.t.json(.PATCH, "/v1/tasks/\(f.tasks[1])", ["version": 1, "status": "done"], token: f.token)
+        XCTAssertEqual(done.status, .ok)
+        let m = try await f.t.json(.POST, "/v1/planning/milestones", ["projectID": f.project, "title": "Release"], token: f.token)
+        let mid = try XCTUnwrap(m.body?["id"] as? String)
+        for id in [f.tasks[0], f.tasks[1], cid] {
+            let r = try await f.t.json(.PUT, "/v1/planning/milestones/\(mid)/tasks/\(id)", token: f.token)
+            XCTAssertEqual(r.status, .noContent)
+        }
+        let plain = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)", token: f.token)
+        XCTAssertNil((plain.body?["tasks"] as? [[String: Any]])?.first?["title"], "plain answer stays lean")
+        XCTAssertNil(plain.body?["milestones"])
+        let full = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)&details=true", token: f.token)
+        let nodes = try XCTUnwrap(full.body?["tasks"] as? [[String: Any]])
+        XCTAssertEqual(nodes.count, 3)
+        let a = try XCTUnwrap(nodes.first { ($0["taskID"] as? String) == f.tasks[0] })
+        XCTAssertEqual(a["title"] as? String, "A"); XCTAssertEqual(a["status"] as? String, "open")
+        XCTAssertEqual(a["projectID"] as? String, f.project); XCTAssertEqual(a["dueAt"] as? String, due)
+        XCTAssertEqual(nodes.first { ($0["taskID"] as? String) == f.tasks[1] }?["status"] as? String, "done")
+        // The milestone member in the sub-project is listed (it counts for progress) although the sub-project is not requested.
+        let members = try XCTUnwrap((full.body?["milestones"] as? [[String: Any]])?.first?["tasks"] as? [[String: Any]])
+        XCTAssertEqual(Set(members.compactMap { $0["taskID"] as? String }), [f.tasks[0], f.tasks[1], cid])
+        // Bob gets read on the root only; the sub-project stops inheriting, so its task is hidden from him everywhere.
+        let me = try await f.t.json(.GET, "/v1/me", token: f.foreignToken)
+        let bob = try XCTUnwrap(me.body?["id"] as? String)
+        let grant = try await f.t.json(.PUT, "/v1/projects/\(f.project)/grants", ["principalType": "person", "principalID": bob, "role": "read"], token: f.token)
+        XCTAssertEqual(grant.status, .ok)
+        let restrict = try await f.t.json(.PUT, "/v1/projects/\(f.child)/inheritance", ["version": 1, "inherits": false], token: f.token)
+        XCTAssertEqual(restrict.status, .ok)
+        let seen = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)&includeSubprojects=true&details=true", token: f.foreignToken)
+        XCTAssertEqual(seen.status, .ok)
+        XCTAssertEqual((seen.body?["tasks"] as? [[String: Any]])?.count, 3)
+        let seenMembers = try XCTUnwrap((seen.body?["milestones"] as? [[String: Any]])?.first?["tasks"] as? [[String: Any]])
+        XCTAssertEqual(Set(seenMembers.compactMap { $0["taskID"] as? String }), [f.tasks[0], f.tasks[1]])
+        XCTAssertFalse(String(describing: seen.body ?? [:]).contains(cid))
+        let list = try await f.t.json(.GET, "/v1/planning/milestones?projectID=\(f.project)", token: f.foreignToken)
+        XCTAssertEqual(Set(((list.list?.first?["tasks"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }), [f.tasks[0], f.tasks[1]])
+        let ownList = try await f.t.json(.GET, "/v1/planning/milestones?projectID=\(f.project)", token: f.token)
+        XCTAssertEqual((ownList.list?.first?["tasks"] as? [[String: Any]])?.count, 3)
+    }
+
     func testRecurrenceAtomicCompletionRetryAndNextGeneration() async throws {
         let f = try await fixture(); defer { Task { await f.t.shutdown() } }
         let id = f.tasks[0]

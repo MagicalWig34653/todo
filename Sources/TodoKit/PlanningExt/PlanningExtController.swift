@@ -6,8 +6,15 @@ struct PlanningDependencyInput: Content { var prerequisiteID: UUID }
 struct PlanningMilestoneInput: Content { var projectID: UUID; var title: String; var dueAt: Date? }
 struct PlanningDependencyEdgeDTO: Content { var taskID: UUID; var prerequisiteID: UUID }
 /// Per-task facts the graph view needs and the plain task list does not carry.
-struct PlanningGraphNodeDTO: Content { var taskID: UUID; var kind: String; var parentTaskID: UUID?; var createdAt: Date?; var updatedAt: Date?; var claimedLabel: String? }
-struct PlanningGraphDTO: Content { var edges: [PlanningDependencyEdgeDTO]; var tasks: [PlanningGraphNodeDTO] }
+/// `title`, `status`, `projectID` and `dueAt` are only set with `details=true` (then the view needs no separate task lists).
+struct PlanningGraphNodeDTO: Content {
+    var taskID: UUID; var kind: String; var parentTaskID: UUID?; var createdAt: Date?; var updatedAt: Date?; var claimedLabel: String?
+    var title: String? = nil; var status: String? = nil; var projectID: UUID? = nil; var dueAt: Date? = nil
+}
+struct PlanningGraphMemberDTO: Content { var taskID: UUID; var status: String }
+struct PlanningGraphMilestoneDTO: Content { var id: UUID; var title: String; var dueAt: Date?; var tasks: [PlanningGraphMemberDTO] }
+/// `milestones` is only set with `details=true`.
+struct PlanningGraphDTO: Content { var edges: [PlanningDependencyEdgeDTO]; var tasks: [PlanningGraphNodeDTO]; var milestones: [PlanningGraphMilestoneDTO]? = nil }
 struct PlanningMilestoneDTO: Content { var milestone: PlanningMilestone; var tasks: [TaskDTO] }
 
 struct PlanningExtController: RouteCollection {
@@ -78,7 +85,8 @@ struct PlanningExtController: RouteCollection {
     @Sendable func projectDependencies(_ req: Request) async throws -> PlanningGraphDTO {
         let project = try req.query.get(UUID.self, at: "projectID")
         let includeSub = (try? req.query.get(Bool.self, at: "includeSubprojects")) ?? false
-        return try await service(req).projectDependencies(project, includeSubprojects: includeSub)
+        let details = (try? req.query.get(Bool.self, at: "details")) ?? false
+        return try await service(req).projectDependencies(project, includeSubprojects: includeSub, details: details)
     }
     @Sendable func addDependency(_ req: Request) async throws -> HTTPStatus {
         let s = try await service(req), id = try param(req), body = try req.content.decode(PlanningDependencyInput.self)

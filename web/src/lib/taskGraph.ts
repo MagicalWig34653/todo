@@ -111,6 +111,48 @@ export interface GraphLayout {
 	truncated: boolean;
 }
 
+/** Binary min-heap by a numeric key; ties keep no particular order (keys are unique where it matters). */
+class MinHeap<T> {
+	private items: T[] = [];
+	constructor(private key: (v: T) => number) {}
+	get size(): number {
+		return this.items.length;
+	}
+	peek(): T | undefined {
+		return this.items[0];
+	}
+	push(v: T): void {
+		const a = this.items;
+		let i = a.push(v) - 1;
+		while (i > 0) {
+			const p = (i - 1) >> 1;
+			if (this.key(a[p]) <= this.key(v)) break;
+			a[i] = a[p];
+			i = p;
+		}
+		a[i] = v;
+	}
+	pop(): T | undefined {
+		const a = this.items;
+		if (a.length === 0) return undefined;
+		const top = a[0];
+		const last = a.pop()!;
+		if (a.length > 0) {
+			let i = 0;
+			for (;;) {
+				let c = 2 * i + 1;
+				if (c >= a.length) break;
+				if (c + 1 < a.length && this.key(a[c + 1]) < this.key(a[c])) c++;
+				if (this.key(a[c]) >= this.key(last)) break;
+				a[i] = a[c];
+				i = c;
+			}
+			a[i] = last;
+		}
+		return top;
+	}
+}
+
 const DAY = 86_400_000;
 /** Number of distinct lane colours (the renderer maps an index to a hue). */
 export const PALETTE_SIZE = 8;
@@ -234,7 +276,8 @@ export function layoutGraph(input: GraphInput, now: Date, full: GraphInput = inp
 
 	// Topological order, upper nodes first. Among ready nodes the best display position wins.
 	const waiting = new Map<string, number>(sorted.map((t) => [t.id, ups.get(t.id) ?? 0]));
-	const ready: GraphTask[] = sorted.filter((t) => waiting.get(t.id) === 0);
+	const ready = new MinHeap<GraphTask>((t) => index.get(t.id)!);
+	for (const t of sorted) if (waiting.get(t.id) === 0) ready.push(t);
 	const order: GraphTask[] = [];
 	const placed = new Set<string>();
 	const place = (t: GraphTask) => {
@@ -247,14 +290,12 @@ export function layoutGraph(input: GraphInput, now: Date, full: GraphInput = inp
 		}
 	};
 	while (order.length < sorted.length) {
-		if (ready.length === 0) {
+		if (ready.size === 0) {
 			// Defensive: a cycle (the server rejects them). Release the first unplaced task by display order.
 			place(sorted.find((t) => !placed.has(t.id))!);
 			continue;
 		}
-		let bi = 0;
-		for (let i = 1; i < ready.length; i++) if (index.get(ready[i].id)! < index.get(ready[bi].id)!) bi = i;
-		const [next] = ready.splice(bi, 1);
+		const next = ready.pop()!;
 		if (!placed.has(next.id)) place(next);
 	}
 
@@ -276,49 +317,67 @@ export function layoutGraph(input: GraphInput, now: Date, full: GraphInput = inp
 	}
 
 	// Lane assignment, top to bottom. A lane entry is the task the lane is travelling to, with its strand colour.
+	// At most one lane travels to a given task, so lookups go through `laneTo`; free lanes and used colours are tracked
+	// incrementally (the whole pass is O(n log n) instead of scanning every lane per link).
 	type Entry = { id: string; color: number };
 	const lanes: (Entry | null)[] = [];
+	const laneTo = new Map<string, number>();
+	const colorUse = new Array<number>(PALETTE_SIZE).fill(0);
+	const freeLanes = new MinHeap<number>((i) => i);
+	const setLane = (i: number, entry: Entry | null) => {
+		const old = lanes[i];
+		if (old) {
+			colorUse[old.color]--;
+			if (laneTo.get(old.id) === i) laneTo.delete(old.id);
+		}
+		lanes[i] = entry;
+		if (entry) {
+			colorUse[entry.color]++;
+			laneTo.set(entry.id, i);
+		} else freeLanes.push(i);
+	};
 	const laneOf = new Map<string, number>();
 	const colorOf = new Map<string, number>();
 	let maxLanes = 1;
 	const newColor = (id: string): number => {
-		const used = new Set(lanes.filter((l): l is Entry => !!l).map((l) => l.color));
 		const start = hash(id) % PALETTE_SIZE;
 		for (let i = 0; i < PALETTE_SIZE; i++) {
 			const c = (start + i) % PALETTE_SIZE;
-			if (!used.has(c)) return c;
+			if (colorUse[c] === 0) return c;
 		}
 		return start;
 	};
+	/** Lowest free lane (not taken out: the caller may leave it free). */
 	const freeLane = () => {
-		const i = lanes.indexOf(null);
-		if (i >= 0) return i;
+		while (freeLanes.size > 0 && lanes[freeLanes.peek()!] !== null) freeLanes.pop();
+		if (freeLanes.size > 0) return freeLanes.peek()!;
 		lanes.push(null);
+		freeLanes.push(lanes.length - 1);
 		return lanes.length - 1;
 	};
 	const via = new Map<string, { lane: number; color: number }>();
 	for (const t of order) {
-		let lane = lanes.findIndex((l) => l?.id === t.id);
+		let lane = laneTo.get(t.id) ?? -1;
 		let color: number;
 		if (lane < 0) {
 			color = newColor(t.id);
 			lane = freeLane();
 		} else color = lanes[lane]!.color;
-		for (let i = 0; i < lanes.length; i++) if (lanes[i]?.id === t.id) lanes[i] = null; // every lane arriving here ends
+		if (laneTo.has(t.id)) setLane(lane, null); // the lane arriving here ends
 		laneOf.set(t.id, lane);
 		colorOf.set(t.id, color);
 		let own = false;
 		for (const d of downs.get(t.id) ?? []) {
-			let l = lanes.findIndex((e) => e?.id === d.id);
+			let l = laneTo.get(d.id) ?? -1;
 			if (l < 0) {
 				if (!own) {
 					l = lane;
 					own = true;
-					lanes[l] = { id: d.id, color };
+					setLane(l, { id: d.id, color });
 				} else {
 					const c = newColor(d.id);
 					l = freeLane();
-					lanes[l] = { id: d.id, color: c };
+					setLane(l, { id: d.id, color: c });
 				}
 			}
 			via.set(`${d.kind}:${t.id}>${d.id}`, { lane: l, color: lanes[l]!.color });

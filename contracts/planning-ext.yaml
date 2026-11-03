@@ -219,6 +219,12 @@ paths:
         required: false
         schema:
           type: boolean
+      - name: details
+        in: query
+        required: false
+        description: Additiv. true liefert je Aufgabe zusätzlich title, status, projectID, dueAt und die Meilensteine mit sichtbaren Mitgliedern (die Graph-Ansicht braucht dann nur diesen Aufruf). Ohne den Parameter bleibt die Antwort unverändert.
+        schema:
+          type: boolean
       responses:
         '200':
           description: Kanten Aufgabe -> Voraussetzung und Aufgabenfakten; verdeckte Aufgaben erscheinen nie
@@ -246,7 +252,29 @@ paths:
                         createdAt: {type: string, format: date-time, nullable: true}
                         updatedAt: {type: string, format: date-time, nullable: true}
                         claimedLabel: {type: string, nullable: true, description: Agent oder Person, die die Aufgabe bearbeitet}
+                        title: {type: string, description: Nur mit details=true}
+                        status: {type: string, enum: [open, in_progress, in_review, done], description: Nur mit details=true}
+                        projectID: {type: string, format: uuid, description: Nur mit details=true}
+                        dueAt: {type: string, format: date-time, nullable: true, description: Nur mit details=true}
                       required: [taskID, kind]
+                  milestones:
+                    type: array
+                    description: Nur mit details=true. Meilensteine des Projekts; tasks sind die sichtbaren Mitglieder im Teilbaum (auch außerhalb der angefragten Projekte).
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        title: {type: string}
+                        dueAt: {type: string, format: date-time, nullable: true}
+                        tasks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              taskID: {type: string, format: uuid}
+                              status: {type: string, enum: [open, in_progress, in_review, done]}
+                            required: [taskID, status]
+                      required: [id, title, tasks]
                 required: [edges, tasks]
         '400':
           description: Ungültige Eingabe

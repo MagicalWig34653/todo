@@ -202,7 +202,21 @@ export interface MilestoneWithTasks {
 /** contracts/planning-ext.yaml: GET /planning/dependencies */
 export interface TaskGraphData {
 	edges: { taskID: string; prerequisiteID: string }[];
-	tasks: { taskID: string; kind: 'task' | 'feature'; parentTaskID?: string | null; createdAt?: string | null; updatedAt?: string | null; claimedLabel?: string | null }[];
+	tasks: {
+		taskID: string;
+		kind: 'task' | 'feature';
+		parentTaskID?: string | null;
+		createdAt?: string | null;
+		updatedAt?: string | null;
+		claimedLabel?: string | null;
+		/** Only with `details=true`. */
+		title?: string;
+		status?: TaskStatus;
+		projectID?: string;
+		dueAt?: string | null;
+	}[];
+	/** Only with `details=true`: milestones of the project with their visible members. */
+	milestones?: { id: string; title: string; dueAt?: string | null; tasks: { taskID: string; status: TaskStatus }[] }[];
 }
 
 export type Role = 'read' | 'comment' | 'edit' | 'manage';
@@ -967,6 +981,9 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('DELETE', `/planning/tasks/${taskID}/dependencies/${prerequisiteID}`),
 		taskGraph: (projectID: string, includeSubprojects: boolean) =>
 			request<TaskGraphData>('GET', `/planning/dependencies${query({ projectID, includeSubprojects: includeSubprojects ? 'true' : undefined })}`),
+		/** Everything the graph view needs in one call (tasks with title/status/due date, edges, milestones with members). */
+		taskGraphDetails: (projectID: string, includeSubprojects: boolean) =>
+			request<TaskGraphData>('GET', `/planning/dependencies${query({ projectID, includeSubprojects: includeSubprojects ? 'true' : undefined, details: 'true' })}`),
 		milestones: (projectID: string) =>
 			request<MilestoneWithTasks[]>('GET', `/planning/milestones${query({ projectID })}`),
 		createMilestone: (projectID: string, title: string, dueAt: string | null) =>

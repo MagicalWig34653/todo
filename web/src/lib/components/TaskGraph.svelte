@@ -1,15 +1,34 @@
+<script module lang="ts">
+	import type { GraphInput, GraphTask } from '#lib/taskGraph.js';
+
+	/** Last loaded graph per project and scope: reopening shows it at once and refreshes in the background. */
+	interface Snapshot {
+		sig: string;
+		rawTasks: GraphTask[];
+		extraTasks: GraphTask[];
+		edges: GraphInput['edges'];
+		milestones: GraphInput['milestones'];
+	}
+	const snapshots = new Map<string, Snapshot>();
+	const KEEP = 12;
+	const remember = (key: string, snap: Snapshot) => {
+		snapshots.delete(key);
+		snapshots.set(key, snap);
+		while (snapshots.size > KEEP) snapshots.delete(snapshots.keys().next().value!);
+	};
+</script>
+
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import Tag from '@lucide/svelte/icons/tag';
-	import { api, type Project, type Task } from '#lib/api.js';
+	import { api, type Project } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
-	import { descendantIDs } from '#lib/projectState.js';
-	import { edgePath, filterGraph, layoutGraph, limitLayout, neighbourNode, shortID, type GraphInput, type GraphTask, type LaidNode } from '#lib/taskGraph.js';
+		import { edgePath, filterGraph, layoutGraph, limitLayout, neighbourNode, shortID, type LaidNode } from '#lib/taskGraph.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -19,7 +38,6 @@
 
 	const LANE_W = 18;
 	const PAGE = 300;
-	const MAX_PROJECTS = 40;
 	/** One hue per palette index; chosen to stay apart from each other (orange, green, cyan, pink, yellow, violet, red, blue). */
 	const LANE_HUES = [45, 150, 205, 335, 95, 285, 20, 250];
 
@@ -39,58 +57,81 @@
 
 	const projectKey = $derived(project.id);
 
+	const keyOf = (id: string, sub: boolean) => `${id}|${sub}`;
+	function apply(snap: Snapshot) {
+		rawTasks = snap.rawTasks;
+		extraTasks = snap.extraTasks;
+		edges = snap.edges;
+		milestones = snap.milestones;
+		projectNames = Object.fromEntries([[project.id, project.name], ...workspace.projects.map((p) => [p.id, p.name] as const)]);
+		loaded = true;
+	}
+	/** One request carries tasks, dependencies, kinds and milestones; an unchanged answer does not touch the layout. */
 	async function load() {
 		const my = ++seq;
 		const id = project.id;
-		const ids = includeSub ? [id, ...descendantIDs(workspace.projects, id).slice(0, MAX_PROJECTS - 1)] : [id];
-		const [lists, graph, ms] = await Promise.all([
-			Promise.all(ids.map((pid) => api.listTasks(pid))),
-			api.taskGraph(id, includeSub),
-			api.milestones(id)
-		]);
+		const sub = includeSub;
+		const graph = await api.taskGraphDetails(id, sub);
 		if (my !== seq) return;
-		const facts = new Map(graph.tasks.map((x) => [x.taskID, x]));
+		const sig = JSON.stringify(graph);
+		const key = keyOf(id, sub);
+		if (loaded && snapshots.get(key)?.sig === sig) return;
 		const milestoneOf = new Map<string, string>();
-		for (const m of ms) for (const task of m.tasks) milestoneOf.set(task.id, m.milestone.id);
-		const toGraph = (task: Task): GraphTask => {
-			const f = facts.get(task.id);
-			return {
-				id: task.id,
-				title: task.title,
-				status: task.status,
-				projectID: task.projectID,
-				isFeature: f?.kind === 'feature',
-				dueAt: task.planning?.dueAt ?? null,
-				doneAt: task.status === 'done' ? (f?.updatedAt ?? null) : null,
-				updatedAt: f?.updatedAt ?? null,
-				createdAt: f?.createdAt ?? null,
-				parentID: f?.parentTaskID ?? null,
-				agent: f?.claimedLabel ?? null,
-				milestoneID: milestoneOf.get(task.id) ?? null
-			};
-		};
-		const mine = lists.flat().map(toGraph);
+		for (const m of graph.milestones ?? []) for (const member of m.tasks) milestoneOf.set(member.taskID, m.id);
+		const mine: GraphTask[] = graph.tasks.map((f) => ({
+			id: f.taskID,
+			title: f.title ?? '',
+			status: f.status ?? 'open',
+			projectID: f.projectID ?? id,
+			isFeature: f.kind === 'feature',
+			dueAt: f.dueAt ?? null,
+			doneAt: f.status === 'done' ? (f.updatedAt ?? null) : null,
+			updatedAt: f.updatedAt ?? null,
+			createdAt: f.createdAt ?? null,
+			parentID: f.parentTaskID ?? null,
+			agent: f.claimedLabel ?? null,
+			milestoneID: milestoneOf.get(f.taskID) ?? null
+		}));
 		const known = new Set(mine.map((x) => x.id));
-		// Milestone members outside the loaded projects only count for the milestone's progress.
-		extraTasks = ms.flatMap((m) => m.tasks).filter((x) => !known.has(x.id)).map(toGraph);
-		rawTasks = mine;
-		edges = graph.edges;
-		milestones = ms.map((m) => ({ id: m.milestone.id, title: m.milestone.title, dueAt: m.milestone.dueAt ?? null }));
-		projectNames = Object.fromEntries([[id, project.name], ...workspace.projects.map((p) => [p.id, p.name] as const)]);
-		loaded = true;
+		// Milestone members outside the shown projects only count for the milestone's progress.
+		const extra: GraphTask[] = (graph.milestones ?? []).flatMap((m) =>
+			m.tasks.filter((x) => !known.has(x.taskID)).map((x) => ({ id: x.taskID, title: '', status: x.status, projectID: '', isFeature: false, milestoneID: m.id }))
+		);
+		const snap: Snapshot = {
+			sig,
+			rawTasks: mine,
+			extraTasks: extra,
+			edges: graph.edges,
+			milestones: (graph.milestones ?? []).map((m) => ({ id: m.id, title: m.title, dueAt: m.dueAt ?? null }))
+		};
+		remember(key, snap);
+		apply(snap);
 	}
+	// Scope change: show the remembered graph of that scope at once (and refresh it), else the skeleton.
 	$effect(() => {
-		void projectKey;
-		void includeSub;
-		void ui.changeTick;
-		untrack(() => attempt(load));
+		const key = keyOf(projectKey, includeSub);
+		untrack(() => {
+			const snap = snapshots.get(key);
+			if (snap) apply(snap);
+			else {
+				loaded = false;
+				rawTasks = [];
+				extraTasks = [];
+				edges = [];
+			}
+			limit = PAGE;
+			attempt(load);
+		});
 	});
+	// Any change elsewhere: refresh in the background.
+	let lastTick = ui.changeTick;
 	$effect(() => {
-		void projectKey;
-		loaded = false;
-		rawTasks = [];
-		edges = [];
-		limit = PAGE;
+		const tick = ui.changeTick;
+		untrack(() => {
+			if (tick === lastTick) return;
+			lastTick = tick;
+			attempt(load);
+		});
 	});
 	onMount(() => startLiveRefresh(() => load().catch(() => {}), { guardEditing: true }));
 
@@ -163,7 +204,15 @@
 	</div>
 
 	{#if !loaded}
-		<p class="text-muted-foreground text-sm" role="status">{t('graph.loading')}</p>
+		<div class="flex flex-col overflow-hidden rounded-xl border" role="status" aria-live="polite" data-testid="graph-loading">
+			<span class="sr-only">{t('graph.loading')}</span>
+			{#each [0, 1, 2, 3, 4, 5, 6, 7] as i (i)}
+				<div class={['flex h-10 items-center gap-3 px-3', i % 2 === 1 && 'bg-muted/40']} aria-hidden="true">
+					<span class="bg-muted size-3 shrink-0 rounded-full motion-safe:animate-pulse"></span>
+					<span class="bg-muted h-3 rounded motion-safe:animate-pulse" style:width="{35 + ((i * 37) % 45)}%"></span>
+				</div>
+			{/each}
+		</div>
 	{:else if layout.nodes.length === 0}
 		<p class="text-muted-foreground text-sm" data-testid="graph-empty">{rawTasks.length > 0 ? t('graph.emptyFiltered') : t('graph.empty')}</p>
 	{:else}
@@ -197,7 +246,7 @@
 					{/each}
 				</svg>
 
-				{#each layout.rows as r, i (i)}
+				{#each layout.rows as r, i (r.kind === 'now' ? 'now' : r.id)}
 					{#if r.kind === 'now'}
 						<div role="listitem" class="relative flex items-center" style:height="var(--graph-row)" data-testid="graph-now">
 							<div class="bg-ui-accent/60 absolute right-0 left-0 h-px" style:left="{gutter}px" aria-hidden="true"></div>
@@ -206,7 +255,7 @@
 					{:else}
 						{@const n = nodeByID.get(r.id)}
 						{#if n}
-							<div role="listitem" class={rowBg(i)} style:height="var(--graph-row)">
+							<div role="listitem" class={['row', rowBg(i)]} style:height="var(--graph-row)">
 								<button
 									type="button"
 									class="hover:bg-ui-accent/10 focus-visible:ring-ring grid h-full w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center text-left text-sm focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset sm:grid-cols-[minmax(0,1fr)_11rem_12rem_5rem]"
@@ -263,6 +312,11 @@
 </section>
 
 <style>
+	/* Rows have a fixed height: the browser skips layout and paint for rows far outside the viewport. */
+	.row {
+		content-visibility: auto;
+		contain-intrinsic-size: auto var(--graph-row);
+	}
 	.badge {
 		--lc: var(--ui-accent);
 		display: inline-flex;
