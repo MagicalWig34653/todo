@@ -185,3 +185,20 @@ Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflic
 ## Review-Undo (ADR 0027)
 
 Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.
+
+## Umgesetzt: Stapel 7 (Workflow und Runner)
+
+Sechs Tools in `MCPRunTools.swift`, Tests `MCPRunToolsTests` (12). Fachpfad wie REST: `WorkflowService.reviews`, `AgentController.jobPage`/`devices` (aus den REST-Routen extrahiert, REST nutzt sie weiter), `AgentService.release`/`humanTransition`. Neue Scopes `runs:read` und `runs:write` (Registry, Zustimmungsseite, `scope.*` in de.ts, Vertrag; bestehende Verbindungen bekommen sie nicht automatisch). Runner-Ausführung ist Eigentümerrecht (`startAgent`); Pairing und neue Bindungen bleiben in der PWA.
+
+| Tool | Scope | Klasse | Parameter / Ergebnis |
+| --- | --- | --- | --- |
+| `list_reviews` | tasks:read | A | `projectID?, status? (pending, accepted, changes_requested, withdrawn, all; Standard all), limit? (1-200, 50)`; ReviewDTO inkl. entschiedener, nur Projekte im Grant |
+| `list_progress_notes` | tasks:read | A | `taskID, limit? (1-100, 50)`; neueste zuerst |
+| `list_agent_jobs` | runs:read | A | `projectID?, status?, limit? (1-100)`; `{items, nextCursor}`, nur eigene Projekte im Grant |
+| `list_runner_devices` | runs:read | A | keine; eigene Geräte (label, paired, revokedAt, activeRunCount), Bindungen nur zu Projekten im Grant, keine Tokens/Codes |
+| `start_agent_job` | runs:write | B | `taskID, deviceID?, mode? (clarify, implement), scope?, version?`; legt über eine bestehende Bindung einen queued-Job an |
+| `stop_agent_job` | runs:write | A | `jobID`; Zustand wird cancelled (Slot bleibt bis zur Bestätigung des Runners belegt) |
+
+Beispiele: `list_reviews {"status":"accepted","limit":10}`, `start_agent_job {"taskID":"…","deviceID":"…","version":3}`, `stop_agent_job {"jobID":"…"}`.
+
+Fehler: `insufficient_scope`, `not_found` (Projekt/Aufgabe/Job außerhalb Grant oder nicht Eigentümer), `invalid_status`, `invalid_limit`, `invalid_mode`, `invalid_version`, `invalid_arguments`, `no_binding` (keine nutzbare Bindung), `device_required` (mehrere Geräte, deviceID fehlt), `version_conflict` (veraltete Aufgabenversion), `task_revision_changed`, Konflikt beim Stopp eines beendeten Jobs. Handbuch und Version macht die Hauptsession; `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die sechs Tools fehl.

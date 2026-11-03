@@ -22,7 +22,7 @@ enum ConsentPage {
       el('p', 'Die Anwendung „' + d.client_name + '“ möchte im Namen deines Kontos auf Todolino zugreifen.');
       el('p', 'Rückkehr nach: ' + d.redirect_uri);
       el('h2', 'Berechtigungen');
-      const labels = {'labels:read': 'Eigene private Labels lesen', 'labels:write': 'Eigene private Labels verwalten und Aufgaben zuordnen', 'filters:read': 'Eigene gespeicherte Filter lesen und ausführen', 'filters:write': 'Eigene gespeicherte Filter verwalten', 'sharing:read': 'Freigaben und Sichtbarkeit der freigegebenen Projekte lesen', 'sharing:write': 'Freigaben für die freigegebenen Projekte setzen (Entzug nur nach Bestätigung)', 'teams:read': 'Eigene Teams und deren Mitglieder lesen', 'teams:write': 'Teams anlegen und Personen einladen'};
+      const labels = {'labels:read': 'Eigene private Labels lesen', 'labels:write': 'Eigene private Labels verwalten und Aufgaben zuordnen', 'filters:read': 'Eigene gespeicherte Filter lesen und ausführen', 'filters:write': 'Eigene gespeicherte Filter verwalten', 'sharing:read': 'Freigaben und Sichtbarkeit der freigegebenen Projekte lesen', 'sharing:write': 'Freigaben für die freigegebenen Projekte setzen (Entzug nur nach Bestätigung)', 'teams:read': 'Eigene Teams und deren Mitglieder lesen', 'teams:write': 'Teams anlegen und Personen einladen', 'runs:read': 'Lokale Agentenläufe und Mac-Geräte lesen', 'runs:write': 'Agentenläufe auf deinen Macs starten und stoppen'};
       const ul = el('ul'); d.scopes.forEach(s => el('li', labels[s] || s, ul));
       el('h2', 'Projekte (nur ausdrücklich gewählte werden freigegeben)');
       if (d.scopes.includes('projects:write')) el('p', 'Projekte, die über diese Verbindung neu angelegt werden, sind automatisch freigegeben.');

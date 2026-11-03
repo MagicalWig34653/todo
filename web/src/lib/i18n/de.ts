@@ -1107,6 +1107,8 @@ export const de = {
 	'scope.sharing:write': 'Freigaben für die freigegebenen Projekte setzen (Entzug nur nach Bestätigung)',
 	'scope.teams:read': 'Eigene Teams und deren Mitglieder lesen',
 	'scope.teams:write': 'Teams anlegen und Personen einladen',
+	'scope.runs:read': 'Lokale Agentenläufe und Mac-Geräte lesen',
+	'scope.runs:write': 'Agentenläufe auf deinen Macs starten und stoppen',
 	'card.breadcrumb': 'Pfad der Karte',
 	'card.prev': 'Vorherige Karte',
 	'card.next': 'Nächste Karte',

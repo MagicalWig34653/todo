@@ -118,13 +118,18 @@ struct AgentController: RouteCollection {
 
     /// Own runner devices with their project bindings. Never exposes tokens, token hashes or pairing codes.
     @Sendable func listDevices(_ req: Request) async throws -> [RunnerDeviceDTO] {
-        let user = try await req.requireUser()
-        let devices = try await RunnerDevice.query(on: req.db).filter(\.$ownerID == user.requireID()).sort(\.$label).sort(\.$id).all()
+        try await Self.devices(user: req.requireUser(), db: req.db, allowed: nil)
+    }
+
+    /// Shared by REST and MCP. `allowed` (MCP grant) limits the listed bindings to the granted projects.
+    static func devices(user: User, db: any Database, allowed: Set<UUID>?) async throws -> [RunnerDeviceDTO] {
+        let devices = try await RunnerDevice.query(on: db).filter(\.$ownerID == user.requireID()).sort(\.$label).sort(\.$id).all()
         var result: [RunnerDeviceDTO] = []
         for device in devices {
             let id = try device.requireID()
-            let bindings = try await ProjectRunnerBinding.query(on: req.db).filter(\.$deviceID == id).sort(\.$id).all()
-            let active = try await AgentRun.query(on: req.db).filter(\.$deviceID == id).filter(\.$endedAt == nil).count()
+            var bindings = try await ProjectRunnerBinding.query(on: db).filter(\.$deviceID == id).sort(\.$id).all()
+            if let allowed { bindings = bindings.filter { allowed.contains($0.projectID) } }
+            let active = try await AgentRun.query(on: db).filter(\.$deviceID == id).filter(\.$endedAt == nil).count()
             result.append(RunnerDeviceDTO(id: id, label: device.label, paired: device.tokenHash != nil,
                 revokedAt: device.revokedAt, bindings: try bindings.map(BindingDTO.init), activeRunCount: active))
         }
@@ -134,14 +139,10 @@ struct AgentController: RouteCollection {
     /// Agent jobs of the caller's own projects (agent execution stays an owner capability, like the detail route).
     @Sendable func listJobs(_ req: Request) async throws -> AgentJobPage {
         let user = try await req.requireUser()
-        let access = ProjectAccess(user: user, db: req.db)
-        var projects: [Project]
+        var projectID: UUID?
         if let raw = req.query[String.self, at: "projectID"] {
             guard let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_project") }
-            projects = [try await access.startAgent(in: id)]
-        } else {
-            let (snapshot, ordered) = try await SharingAccess(user: user, db: req.db).snapshot()
-            projects = try ordered.filter { try snapshot.visibility($0).canTransferOwnership }
+            projectID = id
         }
         var taskID: UUID?
         if let raw = req.query[String.self, at: "taskID"] {
@@ -166,18 +167,34 @@ struct AgentController: RouteCollection {
             }
             cursor = (time, id.uuidString)
         }
+        return try await Self.jobPage(user: user, db: req.db, projectID: projectID, allowed: nil, taskID: taskID, state: state, limit: limit, cursor: cursor)
+    }
+
+    /// Shared by REST and MCP; inputs are validated by the callers. `allowed` (MCP grant) limits the projects.
+    static func jobPage(user: User, db: any Database, projectID: UUID?, allowed: Set<UUID>?, taskID: UUID?, state: String?,
+                        limit: Int, cursor: (Double, String)?) async throws -> AgentJobPage {
+        let access = ProjectAccess(user: user, db: db)
+        var projects: [Project]
+        if let projectID {
+            if let allowed, !allowed.contains(projectID) { throw Abort(.notFound) }
+            projects = [try await access.startAgent(in: projectID)]
+        } else {
+            let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
+            projects = try ordered.filter { try snapshot.visibility($0).canTransferOwnership }
+            if let allowed { projects = projects.filter { allowed.contains($0.id ?? UUID()) } }
+        }
         guard !projects.isEmpty else { return AgentJobPage(items: [], nextCursor: nil) }
         let names = Dictionary(uniqueKeysWithValues: try projects.map { (try $0.requireID(), $0.name) })
-        var query = AgentJob.query(on: req.db).filter(\.$projectID ~~ Array(names.keys))
+        var query = AgentJob.query(on: db).filter(\.$projectID ~~ Array(names.keys))
         if let taskID { query = query.filter(\.$taskID == taskID) }
         if let state { query = query.filter(\.$state == state) }
         let jobs = try await query.all()
         // Jobs carry no timestamp of their own; the `released` event is the creation time.
-        let released = try await AgentEvent.query(on: req.db).filter(\.$kind == "released")
+        let released = try await AgentEvent.query(on: db).filter(\.$kind == "released")
             .filter(\.$jobID ~~ jobs.map { try $0.requireID() }).all()
         var createdAt: [UUID: Date] = [:]
         for event in released { createdAt[event.jobID] = min(createdAt[event.jobID] ?? event.createdAt, event.createdAt) }
-        let titles = Dictionary(uniqueKeysWithValues: try await TodoTask.query(on: req.db)
+        let titles = Dictionary(uniqueKeysWithValues: try await TodoTask.query(on: db)
             .filter(\.$id ~~ Array(Set(jobs.map(\.taskID)))).all().map { (try $0.requireID(), $0.title) })
         var rows = try jobs.map { job -> (key: (Double, String), item: AgentJobListItem) in
             let id = try job.requireID()

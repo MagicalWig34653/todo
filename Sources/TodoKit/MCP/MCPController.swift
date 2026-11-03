@@ -103,7 +103,7 @@ struct MCPController: RouteCollection {
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
     /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
-    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools + projectTools + planningTools + discoveryTools + sharingTools + activityTools + boardTools
+    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools + projectTools + planningTools + discoveryTools + sharingTools + activityTools + boardTools + runTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)
@@ -137,6 +137,9 @@ struct MCPController: RouteCollection {
         }
         if Self.boardTools.contains(where: { $0.name == name }) {
             return try await callBoardTools(name, a, user: user, grant: grant, db: db)
+        }
+        if Self.runTools.contains(where: { $0.name == name }) {
+            return try await callRunTools(name, a, user: user, grant: grant, db: db, settings: settings)
         }
         if Self.activityTools.contains(where: { $0.name == name }) {
             return try await callActivity(name, a, user: user, grant: grant, db: db, settings: settings)

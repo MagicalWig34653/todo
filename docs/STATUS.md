@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 3.11.2026: MCP Stapel 7 Workflow und Runner (Agent claude-code@mcp-s7)
+
+- Ziel: Board-Aufgabe `AB30A7F6-0CC6-45FE-9740-1C3209AD16C0`; Review-Verlauf, Fortschrittsnotizen, Runner-Jobs und -Geräte per MCP.
+- Implementiert: `MCPRunTools.swift` (`list_reviews`, `list_progress_notes`, `list_agent_jobs`, `list_runner_devices`, `start_agent_job`, `stop_agent_job`), Registrierung in `MCPController`; `AgentController.jobPage`/`devices` extrahiert (REST nutzt sie). Neue Scopes `runs:read`/`runs:write` (Registry, Zustimmungsseite, de.ts, Vertrag). Start nur über bestehende Bindung, Pairing bleibt in der PWA. Beschreibung in `docs/MCP-PARITAET.md` (Stapel 7).
+- Geprüft: `MCPRunToolsTests` 12/12; Gesamtlauf: einziger Fehlschlag `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` (erwartet, Handbuch fehlt).
+- Offen: Handbuch/Version 1.10.0/embed/Versionsassertions und Plugin von der Hauptsession; MariaDB nicht geprüft.
+
 ## Checkpoint 2.11.2026: Einladungslink mit Code (Agent claude-code@invite-link)
 
 - Board-Aufgabe `5F3E4803-FC1A-4674-A4CE-B1AD85838693` (nicht erledigt gesetzt, kein Review). Nur PWA, kein Backend, kein Push.
