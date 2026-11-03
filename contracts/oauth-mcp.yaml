@@ -255,4 +255,10 @@ x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write',
   list_team_members: {scope: 'teams:read', required: [teamID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
   create_team: {scope: 'teams:write', required: [name], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
   invite_team_member: {scope: 'teams:write', required: [teamID, userID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 5; Entzug und Fremdfreigaben nur confirmation_required.'}
-x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write', 'sharing:read', 'sharing:write', 'teams:read', 'teams:write']
+  list_reviews: {scope: 'tasks:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
+  list_progress_notes: {scope: 'tasks:read', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
+  list_agent_jobs: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Nur Projekte des Eigentümers.'}
+  start_agent_job: {scope: 'runs:write', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Nur über bestehende Bindung; Pairing nur in der PWA.'}
+  stop_agent_job: {scope: 'runs:write', required: [jobID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
+  list_runner_devices: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Ohne Tokens.'}
+x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write', 'sharing:read', 'sharing:write', 'teams:read', 'teams:write', 'runs:read', 'runs:write']

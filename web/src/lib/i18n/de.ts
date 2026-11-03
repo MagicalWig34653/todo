@@ -1110,6 +1110,8 @@ export const de = {
 	'scope.account:read': 'Eigene Darstellungs- und Benachrichtigungseinstellungen lesen',
 	'scope.account:write': 'Eigene Darstellungs- und Benachrichtigungseinstellungen ändern',
 	'scope.admin:read': 'Als Administrator Konten und Einladungen lesen (nur lesend)',
+	'scope.runs:read': 'Lokale Agentenläufe und Mac-Geräte lesen',
+	'scope.runs:write': 'Agentenläufe auf deinen Macs starten und stoppen',
 	'card.breadcrumb': 'Pfad der Karte',
 	'card.prev': 'Vorherige Karte',
 	'card.next': 'Nächste Karte',

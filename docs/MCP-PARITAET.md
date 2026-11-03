@@ -203,3 +203,20 @@ Stand 3.11.2026, Code `Sources/TodoKit/MCP/MCPAccountTools.swift`, Tests `MCPAcc
 
 - `update_settings` nutzt `PreferencesController.save` (dieselbe Validierung und Transaktion wie `PUT /v1/me/preferences`); die REST-Route hat keine Revisionsprüfung, das Tool prüft `revision` zusätzlich (409 `version_conflict`). Benachrichtigungen laufen über `PushService.update`.
 - Nicht umgesetzt: `list_notifications`, `mark_notification_read` (es gibt keinen gespeicherten Benachrichtigungs-Posteingang; der Feed "Für dich" ist abgeleitet, Push nur ein Zustellweg), `get_server_health`, `list_settings_audit` (Server-Einstellungen und Audit bleiben bewusst in der PWA). Geheimnisse, Passwörter, Passkeys, E-Mail-Adressen werden nie ausgegeben.
+
+## Umgesetzt: Stapel 7 (Workflow und Runner)
+
+Sechs Tools in `MCPRunTools.swift`, Tests `MCPRunToolsTests` (12). Fachpfad wie REST: `WorkflowService.reviews`, `AgentController.jobPage`/`devices` (aus den REST-Routen extrahiert, REST nutzt sie weiter), `AgentService.release`/`humanTransition`. Neue Scopes `runs:read` und `runs:write` (Registry, Zustimmungsseite, `scope.*` in de.ts, Vertrag; bestehende Verbindungen bekommen sie nicht automatisch). Runner-Ausführung ist Eigentümerrecht (`startAgent`); Pairing und neue Bindungen bleiben in der PWA.
+
+| Tool | Scope | Klasse | Parameter / Ergebnis |
+| --- | --- | --- | --- |
+| `list_reviews` | tasks:read | A | `projectID?, status? (pending, accepted, changes_requested, withdrawn, all; Standard all), limit? (1-200, 50)`; ReviewDTO inkl. entschiedener, nur Projekte im Grant |
+| `list_progress_notes` | tasks:read | A | `taskID, limit? (1-100, 50)`; neueste zuerst |
+| `list_agent_jobs` | runs:read | A | `projectID?, status?, limit? (1-100)`; `{items, nextCursor}`, nur eigene Projekte im Grant |
+| `list_runner_devices` | runs:read | A | keine; eigene Geräte (label, paired, revokedAt, activeRunCount), Bindungen nur zu Projekten im Grant, keine Tokens/Codes |
+| `start_agent_job` | runs:write | B | `taskID, deviceID?, mode? (clarify, implement), scope?, version?`; legt über eine bestehende Bindung einen queued-Job an |
+| `stop_agent_job` | runs:write | A | `jobID`; Zustand wird cancelled (Slot bleibt bis zur Bestätigung des Runners belegt) |
+
+Beispiele: `list_reviews {"status":"accepted","limit":10}`, `start_agent_job {"taskID":"…","deviceID":"…","version":3}`, `stop_agent_job {"jobID":"…"}`.
+
+Fehler: `insufficient_scope`, `not_found` (Projekt/Aufgabe/Job außerhalb Grant oder nicht Eigentümer), `invalid_status`, `invalid_limit`, `invalid_mode`, `invalid_version`, `invalid_arguments`, `no_binding` (keine nutzbare Bindung), `device_required` (mehrere Geräte, deviceID fehlt), `version_conflict` (veraltete Aufgabenversion), `task_revision_changed`, Konflikt beim Stopp eines beendeten Jobs. Handbuch und Version macht die Hauptsession; `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die sechs Tools fehl.

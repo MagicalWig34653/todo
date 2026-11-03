@@ -1,4 +1,4 @@
-<!-- manual-version: 1.10.0 -->
+<!-- manual-version: 1.11.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -272,6 +272,12 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `get_connection` | (none) | Describe this connection: client, scopes, grant projects, expiry. No tokens. |
 | `list_users` | admin:read | Administrators only: accounts, read-only. |
 | `list_invitations` | admin:read | Administrators only: invitations without codes. |
+| `list_reviews` | tasks:read | Reviews including decided ones, filter by project and status. |
+| `list_progress_notes` | tasks:read | Progress notes of a task, newest first. |
+| `list_agent_jobs` | runs:read | Local agent jobs in your granted projects. |
+| `list_runner_devices` | runs:read | Your Mac runner devices, without tokens. |
+| `start_agent_job` | runs:write | Class B: queue a job through an existing repository binding (`no_binding`, `device_required`). |
+| `stop_agent_job` | runs:write | Cancel a job. |
 
 Prompts: `setup_project`, `sync_project`, `session_start` (see "Project onboarding and keeping Todolino current").
 
@@ -280,6 +286,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.11.0:** stack 7. New scopes `runs:read`, `runs:write` (reconnect to get them). `list_reviews`, `list_progress_notes`, agent job and runner device tools.
 
 **Changed in 1.10.0:** stack 8. New scopes `account:read`, `account:write`, `admin:read` (reconnect to get them). Settings, notification preferences, `get_connection`, read-only admin lists. No notification inbox tools: the feed is derived.
 
