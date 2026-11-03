@@ -116,6 +116,8 @@ cat "$TMP" > "$ENV_FILE"; rm -f "$TMP"
 say "Wrote TODO_IMAGE_TAG=${TAG} (backup: ${ENV_FILE}.bak)."
 
 step "Migrate and start the rolling update (scripts/swarm-deploy.sh)"
+# Only the env file counts for the public URL; a PUBLIC_BASE_URL exported in the caller's shell (e.g. for another app) must not leak in.
+unset PUBLIC_BASE_URL
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
