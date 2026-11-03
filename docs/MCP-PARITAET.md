@@ -185,3 +185,21 @@ Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflic
 ## Review-Undo (ADR 0027)
 
 Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.
+
+
+## Umgesetzt: Stapel 8 (Einstellungen, Benachrichtigungen, Verbindung, Admin lesend)
+
+Stand 3.11.2026, Code `Sources/TodoKit/MCP/MCPAccountTools.swift`, Tests `MCPAccountToolsTests`. Neue Scopes `account:read`, `account:write`, `admin:read` (Registry, Discovery, Zustimmungsseite, `scope.*` in de.ts); bestehende Verbindungen bekommen sie nicht automatisch. Handbuch noch nicht nachgezogen (Hauptsession; der Handbuch-Test schlägt bis dahin für die sieben neuen Tools fehl).
+
+| Tool | Scope | Klasse | Parameter | Fehlercodes |
+| --- | --- | --- | --- | --- |
+| `get_settings` | account:read | A | keine; Antwort wie `GET /v1/me/preferences` | |
+| `update_settings` | account:write | A | `revision` (Pflicht, aus `get_settings`), optional `colorScheme`, `accent`, `accentCustomHex` (oder null), `glow`; teilweise Änderung | `version_conflict`, `invalid_revision`, `invalid_preferences` |
+| `get_notification_prefs` | account:read | A | keine; Push-Kategorien, `showContent`, `badge` | |
+| `update_notification_prefs` | account:write | A | optional `categories` (Name zu Bool), `showContent`, `badge` | `invalid_category`, `invalid_categories`, `invalid_arguments` |
+| `get_connection` | keiner | A | keine; `{client, scopes, projects:[{id,name}], refreshExpiresAt}`, nie Tokens | |
+| `list_users` | admin:read | A | optional `limit` 1..500; nur Administratoren | `forbidden`, `invalid_limit` |
+| `list_invitations` | admin:read | A | keine; Status open/used/expired, nie Codes; nur Administratoren | `forbidden` |
+
+- `update_settings` nutzt `PreferencesController.save` (dieselbe Validierung und Transaktion wie `PUT /v1/me/preferences`); die REST-Route hat keine Revisionsprüfung, das Tool prüft `revision` zusätzlich (409 `version_conflict`). Benachrichtigungen laufen über `PushService.update`.
+- Nicht umgesetzt: `list_notifications`, `mark_notification_read` (es gibt keinen gespeicherten Benachrichtigungs-Posteingang; der Feed "Für dich" ist abgeleitet, Push nur ein Zustellweg), `get_server_health`, `list_settings_audit` (Server-Einstellungen und Audit bleiben bewusst in der PWA). Geheimnisse, Passwörter, Passkeys, E-Mail-Adressen werden nie ausgegeben.

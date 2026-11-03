@@ -74,7 +74,7 @@ struct PreferencesController: RouteCollection {
         routes.put("v1", "me", "preferences", use: put)
     }
 
-    private func response(_ row: UserPreferences?) throws -> PreferencesResponse {
+    static func response(_ row: UserPreferences?) throws -> PreferencesResponse {
         guard let row else {
             return PreferencesResponse(version: PreferencesDocument.currentVersion, appearance: .defaults, revision: 0, updatedAt: nil)
         }
@@ -82,19 +82,13 @@ struct PreferencesController: RouteCollection {
         return PreferencesResponse(version: doc.version, appearance: doc.appearance, revision: row.revision, updatedAt: row.updatedAt)
     }
 
-    @Sendable func get(_ req: Request) async throws -> PreferencesResponse {
-        let userID = try await req.requireUser().requireID()
-        return try response(try await UserPreferences.query(on: req.db).filter(\.$userID == userID).first())
-    }
-
-    @Sendable func put(_ req: Request) async throws -> PreferencesResponse {
-        let userID = try await req.requireUser().requireID()
-        guard let buffer = req.body.data, buffer.readableBytes <= 4096 else { throw Abort(.badRequest, reason: "invalid_preferences") }
-        let doc = try PreferencesDocument.validated(from: Data(buffer.readableBytesView))
+    /// Shared by `PUT /v1/me/preferences` and the MCP tool `update_settings`. `expectedRevision` (MCP) makes a stale write fail with 409 `version_conflict`.
+    static func save(_ doc: PreferencesDocument, userID: UUID, expectedRevision: Int?, on database: any Database) async throws -> UserPreferences {
         let text = String(decoding: try JSONEncoder().encode(doc), as: UTF8.self)
-        let row = try await req.db.transaction { db -> UserPreferences in
+        return try await database.transaction { db -> UserPreferences in
             try await lockRow(table: User.schema, id: userID, on: db)
             let existing = try await UserPreferences.query(on: db).filter(\.$userID == userID).first()
+            if let expectedRevision, expectedRevision != (existing?.revision ?? 0) { throw Abort(.conflict, reason: "version_conflict") }
             let row = existing ?? UserPreferences()
             row.userID = userID
             row.version = doc.version
@@ -104,6 +98,18 @@ struct PreferencesController: RouteCollection {
             try await row.save(on: db)
             return row
         }
-        return try response(row)
+    }
+
+    @Sendable func get(_ req: Request) async throws -> PreferencesResponse {
+        let userID = try await req.requireUser().requireID()
+        return try Self.response(try await UserPreferences.query(on: req.db).filter(\.$userID == userID).first())
+    }
+
+    @Sendable func put(_ req: Request) async throws -> PreferencesResponse {
+        let userID = try await req.requireUser().requireID()
+        guard let buffer = req.body.data, buffer.readableBytes <= 4096 else { throw Abort(.badRequest, reason: "invalid_preferences") }
+        let doc = try PreferencesDocument.validated(from: Data(buffer.readableBytesView))
+        let row = try await Self.save(doc, userID: userID, expectedRevision: nil, on: req.db)
+        return try Self.response(row)
     }
 }
