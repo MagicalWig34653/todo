@@ -3,7 +3,7 @@
 	import { api, ApiError } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { cardOfConfirmation, cardOfNeed, cardOfPost, uniqueCards } from '#lib/cardRef.js';
-	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ActionRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
+	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ActionRequest, type ForYouAccessRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { startLiveRefresh, sameList } from '#lib/liveRefresh.js';
@@ -15,6 +15,7 @@
 	import EmptyState from './app/EmptyState.svelte';
 	import OptionButtons from './overview/OptionButtons.svelte';
 	import ConfirmationCard from './overview/ConfirmationCard.svelte';
+	import AccessRequestCard from './overview/AccessRequestCard.svelte';
 	import Dialog from './app/Dialog.svelte';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 
@@ -27,6 +28,7 @@
 		...confirmations.filter((c) => !decided[c.id]).map((item) => ({ item, result: null as ActionRequest | null })),
 		...Object.values(decided).map((d) => ({ item: d.item, result: d.result as ActionRequest | null }))
 	]);
+	let accessRequests = $state<ForYouAccessRequest[]>([]);
 	let posts = $state<ForYouPost[]>([]);
 	/** The cards in display order: what the window's up/down arrows step through. */
 	const orderedCards = $derived(uniqueCards([...confirmationCards.map((c) => cardOfConfirmation(c.item)), ...needs.map(cardOfNeed), ...posts.map(cardOfPost)]));
@@ -45,6 +47,7 @@
 		if (!sameList(needs, page.needsYou)) needs = page.needsYou;
 		needsTotal = page.needsYouTotal;
 		if (!sameList(confirmations, page.confirmations ?? [])) confirmations = page.confirmations ?? [];
+		if (!sameList(accessRequests, page.accessRequests ?? [])) accessRequests = page.accessRequests ?? [];
 		const merged = mergeFirstPage(posts, page.posts);
 		if (!sameList(posts, merged.posts)) posts = merged.posts;
 		if (!merged.keepCursor) next = page.nextCursor ?? null;
@@ -129,6 +132,11 @@
 		void attempt(load);
 		void attempt(() => workspace.refreshLive());
 	}
+	function onAccessDone(item: ForYouAccessRequest) {
+		accessRequests = accessRequests.filter((a) => a.id !== item.id);
+		void attempt(load);
+		void attempt(() => workspace.refreshLive());
+	}
 	function actor(p: ForYouPost): string {
 		return p.actor.name ?? (p.actor.type === 'Person' ? '' : t('forYou.agent'));
 	}
@@ -140,10 +148,10 @@
 
 	{#if unsupported}
 		<EmptyState title={t('forYou.unsupported')} icon={Sparkles} />
-	{:else if loaded && needs.length === 0 && posts.length === 0 && confirmationCards.length === 0}
+	{:else if loaded && needs.length === 0 && posts.length === 0 && confirmationCards.length === 0 && accessRequests.length === 0}
 		<EmptyState title={t('forYou.empty')} icon={Sparkles}><p>{t('forYou.emptyHint')}</p></EmptyState>
 	{:else if loaded}
-		{#if needs.length > 0 || confirmationCards.length > 0}
+		{#if needs.length > 0 || confirmationCards.length > 0 || accessRequests.length > 0}
 			<div class="flex flex-col gap-2" data-testid="needs-you">
 				<h3 class="text-muted-foreground flex items-baseline gap-2 text-xs font-semibold tracking-wide uppercase">
 					{t('forYou.needsYou')}
@@ -151,6 +159,9 @@
 				</h3>
 				{#each confirmationCards as c (c.item.id)}
 					<ConfirmationCard item={c.item} outcome={c.result} ondecided={onDecided} onopen={() => cardDetail.open(cardOfConfirmation(c.item), orderedCards)} />
+				{/each}
+				{#each accessRequests as a (a.id)}
+					<AccessRequestCard item={a} ondone={onAccessDone} />
 				{/each}
 				{#each needs as item (item.id)}
 					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>

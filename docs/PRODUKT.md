@@ -69,7 +69,7 @@ Einheitliche Begriffe (nur Anzeigetexte; Routen und Testids bleiben unverändert
 
 - **Überblick**: die Management-Ansicht (Spalten, Fragen, Reviews, Aktualisierungen). Nicht „Steuerzentrale“ oder „Command Center“.
 - **Teilen** ist die Handlung (Knopf, Dialog „Teilen: Projekt“); **Freigaben** sind die Liste der Gewährungen; **Berechtigungen & Zugriff** ist die Einstellungsseite mit der Rollenübersicht.
-- **Verbundene Apps** sind per OAuth/MCP verbundene KI-Anwendungen (nicht „Anwendungen“ oder „Verbindungen“); **Agenten** ist die Seite für Aufträge; **Runner** sind die gekoppelten Mac-Geräte.
+- **Verbundene Apps** sind per OAuth/MCP verbundene KI-Anwendungen (nicht „Anwendungen“); eine einzelne davon heißt **Verbindung** und hat einen frei wählbaren Namen (ADR 0028); **Agenten** ist die Seite für Aufträge; **Runner** sind die gekoppelten Mac-Geräte.
 - Nicht verfügbare Funktionen heißen „Noch nicht verfügbar“ (in der Navigation „Bald“), ohne Entwicklerbegriffe oder Repository-Pfade.
 
 ## Zustände

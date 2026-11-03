@@ -50,6 +50,10 @@ struct FeedService: Sendable {
         var needs: [FeedNeedsYouDTO] = []
         var total = 0
         var confirmations: [FeedConfirmationDTO] = []
+        var accessRequests: [FeedAccessRequestDTO] = []
+        if cursor == nil, mode != "classic", projectID == nil, allowedProjects == nil {
+            accessRequests = try await ConnectionService.openRequests(user: user, scopeProjects: scope.projects, db: db)
+        }
         if cursor == nil, mode != "classic", projectID == nil, allowedProjects == nil {
             confirmations = try await ActionRequestService.pending(of: user.requireID(), on: db).items.map {
                 let id = try $0.requireID()
@@ -63,7 +67,7 @@ struct FeedService: Sendable {
             needs = Array(all.prefix(Self.maxNeedsYou))
         }
         let (posts, next) = try await posts(scope: scope, kinds: mode == "classic" ? Self.classicKinds : Self.managementKinds, cursor: cursor, limit: limit)
-        return FeedResponse(generatedAt: now, mode: mode, projectID: projectID, needsYou: needs, needsYouTotal: total, confirmations: confirmations, posts: posts, nextCursor: next)
+        return FeedResponse(generatedAt: now, mode: mode, projectID: projectID, needsYou: needs, needsYouTotal: total, confirmations: confirmations, accessRequests: accessRequests, posts: posts, nextCursor: next)
     }
 
     // MARK: Needs you
@@ -222,12 +226,17 @@ struct FeedService: Sendable {
         let artifacts = Dictionary(uniqueKeysWithValues: try await BuildArtifact.query(on: db).filter(\.$id ~~ subjects(["build.added"])).all().map { ($0.id!, $0) })
         let attachments = Dictionary(uniqueKeysWithValues: try await Attachment.query(on: db).filter(\.$id ~~ artifacts.values.map(\.attachmentID)).all().map { ($0.id!, $0) })
         let names = try await displayNames(events.filter { $0.actorType == .person }.map(\.actorID), on: db)
+        // Integration actors carry the grant id: without a label the agent reported, show the connection's name.
+        let integrationIDs = Array(Set(events.filter { $0.actorType == .integration }.map(\.actorID)))
+        let grants = integrationIDs.isEmpty ? [] : try await OAuthGrant.query(on: db).filter(\.$id ~~ integrationIDs).all()
+        let clients = try await ConnectionService.clientNames(grants, on: db)
+        let connectionNames = Dictionary(uniqueKeysWithValues: grants.compactMap { g in g.id.map { ($0, ConnectionNames.display(g, clientName: clients[g.clientID])) } })
 
         var result: [FeedPostDTO] = []
         var buildIndex: [String: Int] = [:]  // taskID|buildID -> index in result
         for e in events {
             guard let task = tasks[e.taskID], let eventID = e.id else { continue }
-            var actorName: String? = e.actorType == .person ? names[e.actorID] : nil
+            var actorName: String? = e.actorType == .person ? names[e.actorID] : (e.actorType == .integration ? connectionNames[e.actorID] : nil)
             var kind = "", state: String?, text: String?, detail: String?, percent: Int?
             var images: [FeedImageDTO] = []
             switch e.kind {

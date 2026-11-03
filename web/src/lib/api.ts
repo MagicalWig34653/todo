@@ -419,6 +419,8 @@ export interface ConsentRequest {
 	redirect_uri: string;
 	scopes: string[];
 	projects: Project[];
+	/** Suggested connection name (the client name); absent on older servers. */
+	default_name?: string;
 }
 export interface OAuthGrant {
 	id: string;
@@ -428,6 +430,22 @@ export interface OAuthGrant {
 	scopes: string[];
 	project_ids: string[];
 	revoked: boolean;
+	/** Name of the connection (default: client name); absent on older servers. */
+	name?: string;
+	/** Last MCP request, ISO date; null/absent when never used. */
+	last_used_at?: string | null;
+}
+/** A connection as a participant of a project (`GET /v1/projects/{id}/connections`); its role is the owner's role. */
+export interface ProjectConnection {
+	grantID: string;
+	name: string;
+	clientName?: string | null;
+	ownerID: string;
+	ownerName?: string | null;
+	isOwn: boolean;
+	role?: Role | null;
+	scopes: string[];
+	lastUsedAt?: string | null;
 }
 export interface RegistrationBegin {
 	challengeID: string;
@@ -544,6 +562,8 @@ export interface CommandSummary {
 	staleProjects?: number;
 	/** Pending confirmation requests of agents (backend ADR 0026); absent on older servers. */
 	pendingConfirmations?: number;
+	/** Connections that asked for a project outside their grant (open notices); absent on older servers. */
+	pendingAccessRequests?: number;
 }
 /** contracts/project-sync.yaml */
 export type SyncState = 'fresh' | 'stale' | 'never';
@@ -1070,11 +1090,12 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		// OAuth consent and grants (contracts/oauth-mcp.yaml)
 		/** `search` is the raw query string of the authorization request, passed through unchanged. */
 		oauthAuthorize: (search: string) => request<ConsentRequest>('GET', `/oauth/authorize${search}`),
-		oauthConsent: (consentToken: string, approve: boolean, projectIDs: string[]) =>
+		oauthConsent: (consentToken: string, approve: boolean, projectIDs: string[], connectionName?: string) =>
 			request<{ redirect_uri: string }>('POST', '/oauth/consent', {
 				consent_token: consentToken,
 				approve,
-				project_ids: approve ? projectIDs : []
+				project_ids: approve ? projectIDs : [],
+				...(approve && connectionName !== undefined ? { connection_name: connectionName } : {})
 			}),
 		listOAuthGrants: () => request<OAuthGrant[]>('GET', '/oauth/grants'),
 		// Notifications (contracts/push.yaml) and e-mail (contracts/mail.yaml)
@@ -1097,6 +1118,14 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		sendTestEmail: () => request<{ status: string }>('POST', '/me/email/test', {}),
 		confirmEmail: (token: string) => request<void>('POST', '/email/confirm', { token }),
 
+		renameOAuthGrant: (id: string, name: string) => request<OAuthGrant>('PATCH', `/oauth/grants/${id}`, { name }),
+		/** Connections that reach a project (needs manage); the role is capped by the connection's owner. */
+		listProjectConnections: (projectID: string) => request<ProjectConnection[]>('GET', `/projects/${projectID}/connections`),
+		addProjectConnection: (projectID: string, grantID: string) => request<ProjectConnection[]>('PUT', `/projects/${projectID}/connections`, { grantID }),
+		removeProjectConnection: (projectID: string, grantID: string) => request<void>('DELETE', `/projects/${projectID}/connections/${grantID}`),
+		/** Notice "connection wanted a project": allow adds the project to the connection, ignore silences the notice. */
+		allowAccessRequest: (id: string) => request<void>('POST', `/connection-access-requests/${id}/allow`, {}),
+		ignoreAccessRequest: (id: string) => request<void>('POST', `/connection-access-requests/${id}/ignore`, {}),
 		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`),
 		/** Replaces the projects of an existing connection (authorise and deauthorise afterwards); effective immediately. */
 		setOAuthGrantProjects: (id: string, projectIDs: string[]) => request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: projectIDs })

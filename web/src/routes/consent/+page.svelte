@@ -8,6 +8,7 @@
 	import AuthShell from '#lib/components/app/AuthShell.svelte';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 
 	let request = $state<ConsentRequest | null>(null);
 	let selected = $state<Record<string, boolean>>({});
@@ -15,6 +16,7 @@
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	let leaving = $state(false);
+	let connectionName = $state('');
 	let loadedFor: string | null = null;
 
 	// Load once the user is signed in; the raw query string of the authorization request is passed through unchanged.
@@ -22,7 +24,10 @@
 		if (!auth.user || loadedFor === auth.user.id) return;
 		loadedFor = auth.user.id;
 		api.oauthAuthorize(location.search).then(
-			(r) => (request = r),
+			(r) => {
+				request = r;
+				connectionName = r.default_name ?? r.client_name;
+			},
 			(e) => {
 				if (e instanceof ApiError && e.isUnauthorized) {
 					loadedFor = null;
@@ -42,7 +47,7 @@
 		busy = true;
 		error = null;
 		try {
-			const { redirect_uri } = await api.oauthConsent(request.consent_token, approve, ids);
+			const { redirect_uri } = await api.oauthConsent(request.consent_token, approve, ids, connectionName);
 			const target = safeRedirect(redirect_uri);
 			if (!target) {
 				error = t('consent.badRedirect');
@@ -71,6 +76,11 @@
 		{:else}
 			<p>{t('consent.intro', { client: request.client_name })}</p>
 			<p class="text-muted-foreground text-sm" data-testid="consent-redirect">{t('consent.redirect', { target: redirectTarget(request.redirect_uri) })}</p>
+			<div class="flex flex-col gap-1">
+				<label for="consent-name" class="text-sm font-medium">{t('consent.name')}</label>
+				<Input id="consent-name" bind:value={connectionName} maxlength={80} autocomplete="off" data-testid="consent-name" />
+				<p class="text-muted-foreground text-xs">{t('consent.nameHint')}</p>
+			</div>
 			<div>
 				<h2 class="text-sm font-medium">{t('consent.scopes')}</h2>
 				<ul class="list-disc pl-5 text-sm">

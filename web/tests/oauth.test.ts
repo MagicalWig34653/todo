@@ -106,3 +106,36 @@ describe('connections in the share dialog', () => {
 		expect(wouldLeaveEmpty(g('1', 'A', ['p'], { scopes: ['projects:write'] }), 'p')).toBe(false);
 	});
 });
+
+describe('named connections and project participants', () => {
+	const grant = (over: Partial<OAuthGrant> = {}): OAuthGrant => ({ id: 'g1', client_id: 'cccccccc-1', client_name: 'Claude Code', scopes: ['tasks:read'], project_ids: ['p1'], revoked: false, ...over });
+	it('prefers the chosen name over the client name', async () => {
+		const { connectionName: name } = await import('../src/lib/oauth');
+		expect(name(grant({ name: 'Mac mini Claude Code' }))).toBe('Mac mini Claude Code');
+		expect(name(grant({ name: '  ' }))).toBe('Claude Code');
+	});
+	it('maps own connections that reach a project to participant rows', async () => {
+		const { connectionRows } = await import('../src/lib/oauth');
+		const rows = connectionRows([grant(), grant({ id: 'g2', project_ids: [] }), grant({ id: 'g3', revoked: true })], 'p1', 'edit');
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ grantID: 'g1', name: 'Claude Code', isOwn: true, role: 'edit' });
+	});
+	it('calls the connection endpoints', async () => {
+		const { calls, api } = recorder({ id: 'g1' });
+		await api.renameOAuthGrant('g1', 'Build-Mac');
+		await api.addProjectConnection('p1', 'g1');
+		await api.removeProjectConnection('p1', 'g1');
+		await api.allowAccessRequest('r1');
+		await api.ignoreAccessRequest('r1');
+		await api.oauthConsent('tok', true, ['p1'], 'Mein Name');
+		expect(calls.map((c) => `${c.init?.method} ${c.url.replace(/^.*?(\/oauth|\/projects|\/connection)/, '$1')}`)).toEqual([
+			'PATCH /oauth/grants/g1', 'PUT /projects/p1/connections', 'DELETE /projects/p1/connections/g1',
+			'POST /connection-access-requests/r1/allow', 'POST /connection-access-requests/r1/ignore', 'POST /oauth/consent'
+		]);
+		expect(JSON.parse(String(calls[5].init?.body))).toMatchObject({ connection_name: 'Mein Name', approve: true });
+	});
+	it('counts access notices in the attention badge', async () => {
+		const { attentionCount } = await import('../src/lib/commandCenter');
+		expect(attentionCount({ openQuestions: 1, pendingReviews: 1, pendingAccessRequests: 2 })).toBe(4);
+	});
+});

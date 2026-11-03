@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Select } from '#lib/components/ui/select/index.js';
-	import { api, ApiError, type EffectiveVisibility, type OAuthGrant, type PrincipalType, type Project, type ProjectGrant, type Role, type Team, type TeamMembership } from '#lib/api.js';
+	import { api, ApiError, type EffectiveVisibility, type OAuthGrant, type PrincipalType, type Project, type ProjectConnection, type ProjectGrant, type Role, type Team, type TeamMembership } from '#lib/api.js';
 	import { accessRows, inheritedChain, ROLES, whoCanSee, type AccessRow, type AncestorGrants } from '#lib/access.js';
 	import { auth } from '#lib/auth.svelte.js';
-	import { connectionName, connectionsForProject, projectsWith, scopeLabel, wouldLeaveEmpty } from '#lib/oauth.js';
+	import { connectionName, connectionRows, connectionsForProject, scopeLabel } from '#lib/oauth.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { ui } from '#lib/ui.svelte.js';
@@ -13,9 +13,9 @@
 	import Avatar from './app/Avatar.svelte';
 	import PersonPicker from './PersonPicker.svelte';
 	import RoleChip from './RoleChip.svelte';
-	import { createKeyedGate } from '#lib/serial.js';
-	import Trash2 from '@lucide/svelte/icons/trash-2';
+		import Trash2 from '@lucide/svelte/icons/trash-2';
 	import CornerLeftUp from '@lucide/svelte/icons/corner-left-up';
+	import Bot from '@lucide/svelte/icons/bot';
 
 	/** Share dialog content: who has access with which role, add/change/remove, inheritance, effective visibility, ownership. */
 	let { project, onchanged, onopen, onclose, onsettings }: { project: Project; onchanged: () => unknown; onopen?: (id: string) => void; onclose?: () => void; onsettings?: (area: string) => void } = $props();
@@ -32,12 +32,12 @@
 	let canManage = $state(false);
 	let loaded = $state(false);
 	let grants = $state<OAuthGrant[]>([]);
-	// Grants with a PUT in flight (one write per grant; a global flag would re-enable a toggle too early).
-	let mcpBusy = $state<string[]>([]);
-	const mcpGate = createKeyedGate((b) => (mcpBusy = b));
-	let mcpMessage = $state<{ ok: boolean; text: string } | null>(null);
+	/** Connections that reach this project (own and, for managers, those of other people). */
+	let projectConns = $state<ProjectConnection[]>([]);
+	let connectionID = $state('');
 
-	let type = $state<PrincipalType>('person');
+	/** What the add form adds: a person, a team or one of the viewer's own MCP connections. */
+	let type = $state<PrincipalType | 'connection'>('person');
 	let personID = $state('');
 	let pickerKey = $state(0);
 	let teamID = $state('');
@@ -63,14 +63,17 @@
 		grants = nextGrants;
 		let nextDirect: ProjectGrant[] = [];
 		let nextCanManage = false;
+		let nextConns: ProjectConnection[] | null = null;
 		try {
 			nextDirect = await api.listGrants(project.id);
 			nextCanManage = true;
+			nextConns = await api.listProjectConnections(project.id).catch(() => null);
 		} catch (e) {
 			if (!denied(e)) throw e;
 		}
 		if (stale()) return;
 		direct = nextDirect;
+		projectConns = nextConns ?? [];
 		canManage = nextCanManage;
 		const nextChain = nextCanManage
 			? await inheritedChain(project, nextVis.inherits, workspace.projects, async (anc) => {
@@ -126,20 +129,10 @@
 		})
 	);
 	const myID = $derived(auth.user?.id);
-	const connections = $derived(connectionsForProject(grants, project.id));
-
-	async function setConnection(grant: OAuthGrant, allowed: boolean) {
-		mcpMessage = null;
-		if (!allowed && wouldLeaveEmpty(grant, project.id)) {
-			mcpMessage = { ok: false, text: t('share.mcp.needOne') };
-			return;
-		}
-		const done = await mcpGate.run(grant.id, () => attempt(async () => {
-			const updated = await api.setOAuthGrantProjects(grant.id, projectsWith(grant, project.id, allowed));
-			grants = grants.map((g) => (g.id === updated.id ? { ...updated, client_name: updated.client_name || g.client_name } : g));
-		}));
-		if (done?.value) mcpMessage = { ok: true, text: t('share.mcp.updated') };
-	}
+	/** Own connections that do not reach this project yet (candidates for the add form). */
+	const available = $derived(connectionsForProject(grants, project.id).filter((c) => !c.allowed).map((c) => c.grant));
+	/** Connections as participants: all of them for managers, otherwise only the viewer's own. */
+	const connRows = $derived(canManage ? projectConns : connectionRows(grants, project.id, vis?.role));
 
 	const changed = async () => {
 		ui.accessTick++;
@@ -148,9 +141,17 @@
 	async function add(e: Event) {
 		e.preventDefault();
 		info = null;
-		const id = type === 'person' ? personID.trim() : teamID;
+		const id = type === 'person' ? personID.trim() : type === 'team' ? teamID : connectionID;
 		if (!id) return;
 		await attempt(async () => {
+			if (type === 'connection') {
+				await api.addProjectConnection(project.id, id);
+				connectionID = '';
+				info = t('share.conn.addDone');
+				await load();
+				await changed();
+				return;
+			}
 			await api.putGrant(project.id, type, id, role);
 			// Reset the form right away: the reloads below must not wipe what is typed next.
 			personID = '';
@@ -160,6 +161,9 @@
 			await load();
 			await changed();
 		}, load);
+	}
+	async function removeConnection(c: ProjectConnection) {
+		if (await attempt(async () => { await api.removeProjectConnection(project.id, c.grantID); await load(); await changed(); }, load)) removingKey = null;
 	}
 	const changeRole = (r: AccessRow, next: Role) =>
 		attempt(async () => { await api.putGrant(project.id, r.principal.type, r.principal.id, next); await load(); await changed(); }, load);
@@ -247,6 +251,27 @@
 					{/if}
 				</li>
 			{/each}
+			{#each connRows as c (c.grantID)}
+				<li class="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="mcp-connection">
+					<span class="bg-muted text-muted-foreground inline-flex size-8 shrink-0 items-center justify-center rounded-full" aria-hidden="true"><Bot class="size-4" /></span>
+					<span class="min-w-0 flex-1 basis-40">
+						<span class="block font-medium [overflow-wrap:anywhere]" data-testid="mcp-connection-name">{t('share.conn.line', { name: c.name })}{#if !c.isOwn}&nbsp;<span class="text-muted-foreground font-normal">{t('share.conn.of', { owner: c.ownerName ?? '' })}</span>{/if}</span>
+						<span class="text-muted-foreground block text-xs [overflow-wrap:anywhere]">{c.scopes.map(scopeLabel).join(', ')}</span>
+					</span>
+					<span class="bg-muted rounded-full px-2 py-0.5 text-xs font-medium" data-testid="mcp-badge">{t('share.conn.badge')}</span>
+					{#if c.role}<span class="text-sm" title={t('share.conn.capHint')} data-testid="mcp-role">{roleName(c.role)}</span>{/if}
+					<Button size="icon-sm" variant="ghost" aria-label={t('share.conn.removeTitle', { name: c.name })} title={t('share.remove')} data-testid="mcp-remove" onclick={() => (removingKey = `conn:${c.grantID}`)}>
+						<Trash2 aria-hidden="true" />
+					</Button>
+					{#if removingKey === `conn:${c.grantID}`}
+						<div class="bg-muted/60 flex basis-full flex-wrap items-center gap-2 rounded-md p-2" data-testid="mcp-remove-confirm">
+							<span class="flex-1 basis-48">{t('share.conn.removeConfirm', { name: c.name, project: project.name })}</span>
+							<Button size="sm" variant="destructive" onclick={() => removeConnection(c)}>{t('share.removeConfirmYes')}</Button>
+							<Button size="sm" variant="ghost" onclick={() => (removingKey = null)}>{t('common.cancel')}</Button>
+						</div>
+					{/if}
+				</li>
+			{/each}
 		</ul>
 		{#if loaded && canManage && rows.length === 0}<p class="text-muted-foreground text-xs">{t('share.listEmpty')}</p>{/if}
 		{#if loaded && owner?.type === 'team'}<p class="text-muted-foreground text-xs">{t('share.ownerTeam', { name: owner.name })}</p>{/if}
@@ -261,21 +286,34 @@
 				<Select class="w-32" aria-label={t('sharing.principalType')} bind:value={type}>
 					<option value="person">{t('sharing.person')}</option>
 					<option value="team">{t('sharing.team')}</option>
+					<option value="connection">{t('share.conn.type')}</option>
 				</Select>
 				{#if type === 'person'}
 					{#key pickerKey}<PersonPicker bind:value={personID} idLabel={t('sharing.personID')} />{/key}
+				{:else if type === 'connection'}
+					<Select class="min-w-40 flex-1" aria-label={t('share.conn.pick')} bind:value={connectionID} data-testid="connection-pick">
+						<option value="">{t('share.conn.pick')}</option>
+						{#each available as g (g.id)}<option value={g.id}>{connectionName(g)}</option>{/each}
+					</Select>
 				{:else}
 					<Select class="min-w-40 flex-1" aria-label={t('sharing.team')} bind:value={teamID}>
 						<option value="">{t('sharing.pickTeam')}</option>
 						{#each teams as team (team.id)}<option value={team.id}>{team.name}</option>{/each}
 					</Select>
 				{/if}
-				<Select class="w-40" aria-label={t('share.addRole')} bind:value={role}>
-					{#each ROLES as r (r)}<option value={r}>{roleName(r)}</option>{/each}
-				</Select>
-				<Button type="submit" size="lg" disabled={type === 'person' ? !personID.trim() : !teamID}>{t('share.add')}</Button>
+				{#if type !== 'connection'}
+					<Select class="w-40" aria-label={t('share.addRole')} bind:value={role}>
+						{#each ROLES as r (r)}<option value={r}>{roleName(r)}</option>{/each}
+					</Select>
+				{/if}
+				<Button type="submit" size="lg" disabled={type === 'person' ? !personID.trim() : type === 'team' ? !teamID : !connectionID}>{t('share.add')}</Button>
 			</div>
-			<p class="text-muted-foreground text-xs" data-testid="role-help-selected"><strong>{roleName(role)}:</strong> {roleHelp(role)}</p>
+			{#if type === 'connection'}
+				<p class="text-muted-foreground text-xs" data-testid="connection-help">{t('share.conn.addHint', { role: vis?.role ? roleName(vis.role) : '' })}</p>
+				{#if available.length === 0}<p class="text-muted-foreground text-xs">{t('share.conn.noneLeft')}</p>{/if}
+			{:else}
+				<p class="text-muted-foreground text-xs" data-testid="role-help-selected"><strong>{roleName(role)}:</strong> {roleHelp(role)}</p>
+			{/if}
 			{#if type === 'team' && teams.length === 0}<p class="text-muted-foreground text-xs">{t('share.noTeams')}</p>{/if}
 			{#if info}<p class="text-success text-xs" role="status" data-testid="share-info">{info}</p>{/if}
 		</form>
@@ -317,34 +355,7 @@
 	{/if}
 
 	{#if loaded}
-		<div class="flex flex-col gap-2" data-testid="mcp-connections">
-			<h3 class="text-sm font-semibold">{t('share.mcp.title')}</h3>
-			<p class="text-muted-foreground text-xs">{t('share.mcp.hint')}</p>
-			{#if connections.length === 0}<p class="text-muted-foreground text-xs">{t('share.mcp.empty')}</p>{/if}
-			<ul class="flex flex-col gap-1.5">
-				{#each connections as c (c.grant.id)}
-					<li class="flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm" data-testid="mcp-connection">
-						<label class="flex min-w-0 flex-1 basis-48 items-start gap-2">
-							<Checkbox
-								class="mt-0.5 size-4"
-								checked={c.allowed}
-								disabled={mcpBusy.includes(c.grant.id)}
-								aria-label={t('share.mcp.toggle', { name: connectionName(c.grant) })}
-								onchange={() => setConnection(c.grant, !c.allowed)}
-								data-testid="mcp-toggle"
-							/>
-							<span class="min-w-0">
-								<span class="block truncate font-medium">{connectionName(c.grant)}</span>
-								<span class="text-muted-foreground block text-xs">{c.grant.scopes.map(scopeLabel).join(', ')}</span>
-							</span>
-						</label>
-						<span class="bg-muted rounded-full px-2 py-0.5 text-xs font-medium">{c.allowed ? t('share.mcp.on') : t('share.mcp.off')}</span>
-					</li>
-				{/each}
-			</ul>
-			{#if mcpMessage}<p class={['text-xs', mcpMessage.ok ? 'text-success' : 'text-destructive']} role="status" data-testid="mcp-message">{mcpMessage.text}</p>{/if}
-			<div><Button size="sm" variant="ghost" onclick={() => { onclose?.(); onsettings?.('verbindungen'); }}>{t('share.mcp.manage')}</Button></div>
-		</div>
+		<div><Button size="sm" variant="ghost" onclick={() => { onclose?.(); onsettings?.('verbindungen'); }}>{t('share.mcp.manage')}</Button></div>
 	{/if}
 
 	{#if vis}

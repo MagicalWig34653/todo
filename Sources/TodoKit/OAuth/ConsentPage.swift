@@ -72,6 +72,12 @@ enum ConsentPage {
       const back = el('p', 'Danach geht es zurück zu: ', head, 'back');
       el('span', d.redirect_uri, back, 'uri');
 
+      const nc = card();
+      const nl = el('label', 'Name der Verbindung', nc, 'fieldlabel'); nl.htmlFor = 'conname';
+      const nameInput = el('input', '', nc, 'search namefield'); nameInput.id = 'conname'; nameInput.type = 'text'; nameInput.maxLength = 80; nameInput.autocomplete = 'off';
+      nameInput.value = String(d.default_name || name).slice(0, 80);
+      el('p', 'So erscheint diese Verbindung später im Teilen-Fenster und in den Einstellungen, zum Beispiel „Mac mini Claude Code“. Du kannst sie dort umbenennen.', nc, 'muted');
+
       const perms = card();
       el('h2', 'Berechtigungen', perms);
       const byScope = {}; CATALOG.scopes.forEach(s => { byScope[s.scope] = s; });
@@ -154,7 +160,7 @@ enum ConsentPage {
         msg.textContent = ''; ok.disabled = true; no.disabled = true;
         const res = await fetch('/oauth/consent', { method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ consent_token: d.consent_token, approve: approve, project_ids: approve ? ids : [] }) });
+          body: JSON.stringify({ consent_token: d.consent_token, approve: approve, project_ids: approve ? ids : [], connection_name: approve ? nameInput.value : undefined }) });
         if (!res.ok) { msg.textContent = 'Fehlgeschlagen (' + res.status + ').'; ok.disabled = false; no.disabled = false; return; }
         const out = await res.json();
         location.href = out.redirect_uri;
@@ -198,6 +204,8 @@ enum ConsentPage {
     .notice{margin-top:1rem;padding:.75rem;border-radius:var(--radius);background:var(--accent-soft);color:var(--accent-ink);font-size:.95rem}
     .tools{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0 .5rem}
     .search{flex:1 1 10rem;min-width:0;min-height:2.75rem;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--input);border-radius:var(--radius);padding:.25rem .75rem}
+    .fieldlabel{display:block;font-weight:600;margin-bottom:.5rem}
+    .namefield{width:100%}
     .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
     .plist{border:1px solid var(--border);border-radius:var(--radius);max-height:18rem;overflow:auto}
     .prow{display:flex;align-items:center;gap:.75rem;min-height:2.75rem;padding:.25rem .75rem;cursor:pointer}

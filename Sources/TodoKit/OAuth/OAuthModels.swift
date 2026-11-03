@@ -21,10 +21,14 @@ final class OAuthGrant: Model, @unchecked Sendable {
     @Field(key: "scopes") var scopes: [String]
     @Field(key: "projects") var projects: [UUID]
     @Field(key: "revoked") var revoked: Bool
+    /// Name of the connection chosen by the person (default: the client name). Rows from before the column are backfilled.
+    @OptionalField(key: "name") var name: String?
+    /// Last MCP request with this connection; written at most every few minutes.
+    @OptionalField(key: "last_used_at") var lastUsedAt: Date?
     init() {}
-    init(userID: UUID, clientID: UUID, resource: String, scopes: [String], projects: [UUID]) {
+    init(userID: UUID, clientID: UUID, resource: String, scopes: [String], projects: [UUID], name: String? = nil) {
         self.userID = userID; self.clientID = clientID; self.resource = resource
-        self.scopes = scopes; self.projects = projects; revoked = false
+        self.scopes = scopes; self.projects = projects; revoked = false; self.name = name
     }
 }
 

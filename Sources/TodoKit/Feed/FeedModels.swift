@@ -107,6 +107,8 @@ struct FeedResponse: Content {
     let needsYouTotal: Int
     /// Open confirmation requests (first page only, at most 20); absent on older servers.
     var confirmations: [FeedConfirmationDTO] = []
+    /// Connections that asked for a project outside their grant (ADR 0028); absent on older servers.
+    var accessRequests: [FeedAccessRequestDTO] = []
     let posts: [FeedPostDTO]
     /// nil = end of the feed. Opaque; only valid together with the same filters.
     let nextCursor: String?

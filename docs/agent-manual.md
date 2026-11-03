@@ -273,7 +273,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `update_settings` | account:write | Change your appearance settings (pass the revision). |
 | `get_notification_prefs` | account:read | Your push notification preferences. |
 | `update_notification_prefs` | account:write | Change your push notification preferences. |
-| `get_connection` | (none) | Describe this connection: client, scopes, grant projects, expiry. No tokens. |
+| `get_connection` | (none) | Describe this connection: client, name (chosen by the person), scopes, grant projects, expiry. No tokens. |
 | `list_users` | admin:read | Administrators only: accounts, read-only. |
 | `list_invitations` | admin:read | Administrators only: invitations without codes. |
 | `list_reviews` | tasks:read | Reviews including decided ones, filter by project and status. |
@@ -292,6 +292,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
 
 **Changed in 1.12.0:** compact answers. `get_command_center` and `list_open_questions` answer compactly by default (`compact:false` returns the full shape; `status` and `fields` filter questions). Plugin notes: core tool select line, Codex wrapper reporting.
+
+**Connections (unreleased, manual version not bumped):** your connection has a name the person chooses and can change (`get_connection.name`); it appears in the share dialog next to people and teams and in the activity feed. A project or task outside your grant still answers `not_found`, nothing more. If you need it, ask the person to grant access in the app: they see a notice "<connection name> wollte auf <project> zugreifen" in "Für dich" (only if they can read that project) and allow it with one click. Do not retry in a loop; repeated requests are only counted.
 
 **Changed in 1.11.0:** stack 7. New scopes `runs:read`, `runs:write` (reconnect to get them). `list_reviews`, `list_progress_notes`, agent job and runner device tools.
 
