@@ -27,7 +27,9 @@ extension MCPController {
                 "sort": Schema.string("attention (default), updated, due, progress or title.", values: ["attention", "updated", "due", "progress", "title"]),
                 "doneWithinDays": Schema.integer("How long finished tasks stay in the done lane (default 7).", min: 1, max: 365),
                 "laneLimit": Schema.integer("Kanban: maximum cards per lane (default 50); lane.count has the total.", min: 1, max: 200),
-                "updatesLimit": Schema.integer("Number of latest updates (default 20, 0 = none).", min: 0, max: 50),
+                "updatesLimit": Schema.integer("Number of latest updates (default 5 compact, 20 with compact=false, 0 = none).", min: 0, max: 50),
+                "compact": Schema.boolean("Default true: small answer (subtasks and builds as counts only, short texts, laneLimit 10, 5 updates, list limit 20, no build groups). false returns the full detail."),
+                "fields": Schema.string("Comma-separated card fields to keep (task is always kept), e.g. 'lane,openQuestionCount,latestUpdate'."),
                 "limit": Schema.integer("List view: page size (default 50).", min: 1, max: 200),
                 "offset": Schema.integer("List view: number of cards to skip.", min: 0)]),
         Tool(name: "get_task_context", scope: "tasks:read",
@@ -78,7 +80,10 @@ extension MCPController {
              properties: ["projectID": optionalProject,
                           "taskID": Schema.uuid("Optional: only questions of this task."),
                           "includeAnswered": Schema.boolean("Also return answered questions (default false)."),
-                          "limit": Schema.integer("Maximum number of questions (default 100).", min: 1, max: 200)]),
+                          "status": Schema.string("open (default), answered or all; overrides includeAnswered.", values: ["open", "answered", "all"]),
+                          "compact": Schema.boolean("Default true: leaves out internal ids and versions. false returns every field."),
+                          "fields": Schema.string("Comma-separated question fields to keep (id is always kept), e.g. 'id,taskID,prompt,options'."),
+                          "limit": Schema.integer("Maximum number of questions (default 50 compact, 100 with compact=false).", min: 1, max: 200)]),
         Tool(name: "get_question", scope: "tasks:read",
              description: "Read one question: state open|answered|withdrawn, the answer, who answered and when. Poll this to find out whether your question was answered.",
              properties: ["questionID": Schema.uuid("Question id.")], required: ["questionID"]),
@@ -180,6 +185,8 @@ extension MCPController {
         case "get_project_structure":
             return try .encoded(try await service.structure(uuid(a["projectID"])))
         case "get_command_center":
+            let compact = try optionalBool(a, "compact") ?? true
+            let fields = try MCPCompact.fields(optionalString(a, "fields"), allowed: MCPCompact.cardFields)
             var raw: [String: String] = [:]
             for key in ["includeSubprojects", "view", "lane", "kind", "hasQuestion", "includeSubtasks", "sort", "doneWithinDays",
                         "laneLimit", "updatesLimit", "limit", "offset"] where !a[key].isNull {
@@ -190,9 +197,15 @@ extension MCPController {
                 default: throw Abort(.badRequest, reason: "invalid_\(key)")
                 }
             }
+            if compact {
+                if raw["laneLimit"] == nil { raw["laneLimit"] = String(MCPCompact.compactLaneLimit) }
+                if raw["updatesLimit"] == nil { raw["updatesLimit"] = String(MCPCompact.compactUpdatesLimit) }
+                if raw["limit"] == nil { raw["limit"] = String(MCPCompact.compactListLimit) }
+            }
             let projectID = try optionalUUID(a, "projectID")
             let query = try CommandCenterQuery(scope: projectID == nil ? "account" : "project", projectID: projectID?.uuidString, raw: raw)
-            return try .encoded(try await CommandCenterService(user: user, db: db, allowedProjects: Set(grant.projects)).build(query))
+            let response = try await CommandCenterService(user: user, db: db, allowedProjects: Set(grant.projects)).build(query)
+            return MCPCompact.commandCenter(try .encoded(response), compact: compact, fields: fields)
         case "get_task_context":
             return try .encoded(try await service.context(uuid(a["taskID"])))
         case "claim_task":
@@ -226,8 +239,13 @@ extension MCPController {
             return try .encoded(try await service.ask(uuid(a["taskID"]), body, actor: actor))
         case "list_open_questions":
             let all = try optionalBool(a, "includeAnswered") ?? false
-            return try .encoded(try await service.questions(projectID: optionalUUID(a, "projectID"), taskID: optionalUUID(a, "taskID"),
-                state: all ? "all" : "open", limit: intArgument(a["limit"], reason: "invalid_limit") ?? 100))
+            let compact = try optionalBool(a, "compact") ?? true
+            let fields = try MCPCompact.fields(optionalString(a, "fields"), allowed: MCPCompact.questionFields)
+            let state = try optionalString(a, "status") ?? (all ? "all" : "open")
+            guard ["open", "answered", "all"].contains(state) else { throw Abort(.badRequest, reason: "invalid_status") }
+            let rows = try await service.questions(projectID: optionalUUID(a, "projectID"), taskID: optionalUUID(a, "taskID"),
+                state: state, limit: intArgument(a["limit"], reason: "invalid_limit") ?? (compact ? 50 : 100))
+            return MCPCompact.questions(try .encoded(rows), compact: compact, fields: fields)
         case "get_question":
             return try .encoded(try await service.question(uuid(a["questionID"])))
         case "answer_question":

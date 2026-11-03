@@ -220,3 +220,13 @@ Sechs Tools in `MCPRunTools.swift`, Tests `MCPRunToolsTests` (12). Fachpfad wie 
 Beispiele: `list_reviews {"status":"accepted","limit":10}`, `start_agent_job {"taskID":"…","deviceID":"…","version":3}`, `stop_agent_job {"jobID":"…"}`.
 
 Fehler: `insufficient_scope`, `not_found` (Projekt/Aufgabe/Job außerhalb Grant oder nicht Eigentümer), `invalid_status`, `invalid_limit`, `invalid_mode`, `invalid_version`, `invalid_arguments`, `no_binding` (keine nutzbare Bindung), `device_required` (mehrere Geräte, deviceID fehlt), `version_conflict` (veraltete Aufgabenversion), `task_revision_changed`, Konflikt beim Stopp eines beendeten Jobs. Handbuch und Version macht die Hauptsession; `testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed` schlägt bis dahin für die sechs Tools fehl.
+
+## Kompakte Antworten: get_command_center und list_open_questions
+
+Nur MCP; REST und PWA unverändert. Neue Parameter, gleiche Schlüssel (rückwärtskompatibel):
+
+- `compact` (Standard `true`; `false` = alte volle Antwort). `get_command_center` kompakt: Unteraufgaben und Builds je Karte leer (stattdessen `subtaskCount`, `buildCount`), keine Build-Gruppen, Texte gekürzt (Karte 200, Update 160, Frage 240 Zeichen), `laneLimit` 10, `updatesLimit` 5, Listenansicht `limit` 20, Sync-Einträge ohne Zusammenfassung; Antwort trägt `compact: true`. `list_open_questions` kompakt: ohne `askedByID`, `answeredBy`, `answeredVia`, `agentQuestionID`, `version`, Standardlimit 50.
+- `fields` (kommagetrennt): nur diese Karten- bzw. Fragefelder (`task` bzw. `id` bleiben); unbekannte Namen: `invalid_fields`.
+- `list_open_questions`: `status` = `open` (Standard) | `answered` | `all` (überschreibt `includeAnswered`; sonst `invalid_status`). Nur Fragen freigegebener Projekte; mit `projectID` nur dieses Projekt (und Unterprojekte).
+- `get_command_center`: `lane`, `limit`, `laneLimit`, `updatesLimit`, `projectID` wie bisher.
+- Messung (Testfixture, 6 Features mit je 2 Unteraufgaben, langen Notizen, 3 Fragen): `get_command_center` Standard 11011 Bytes gegenüber 21106 Bytes mit `compact:false` (rund 48 Prozent weniger); `MCPCompactTests` sichert Standard kleiner als voll. Die Plugin-Skripte (session-start.sh, stop.sh) parsen die Antworten nicht und bleiben unverändert; `includeAnswered:true` funktioniert weiter.

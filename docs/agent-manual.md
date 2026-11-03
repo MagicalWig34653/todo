@@ -62,7 +62,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 - `ask_question` creates a question with `prompt` (up to 4000 characters), optional `options` (up to 20 short strings; if given, the answer must be one of them), `blocking` (default true: you cannot continue without the answer) and an `idempotencyKey` for safe retries.
 - Write questions so that a person can decide in seconds: state the situation in one or two sentences, offer concrete options and name your recommendation first.
 - States: `open`, `answered`, `withdrawn` (the runner job ended). Only one answer is accepted; a second different answer fails with `question_already_answered`.
-- `list_open_questions {projectID?}` lists open questions of all granted projects (or one project, or one task); pass `includeAnswered: true` to also see answers.
+- `list_open_questions {projectID?}` lists open questions of all granted projects (or one project, or one task); pass `includeAnswered: true` to also see answers. Answers are compact by default (`compact: false` for every field); narrow with `status` (`open|answered|all`), `limit` and `fields`.
 - Humans answer in the app. `answer_question` exists for a person who steers you through the chat ("answer yes"); it refuses questions asked by your own connection (`cannot_answer_own_question`).
 - Questions asked by a local runner job use the same list; they are answered by the project owner.
 
@@ -88,7 +88,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 
 ## Command center
 
-`get_command_center` returns lanes with cards, a summary and the latest updates. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
+`get_command_center` returns lanes with cards, a summary and the latest updates. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. The answer is compact by default (subtasks and builds only as counts, short texts, 10 cards per lane, 5 updates); pass `compact: false` for the full detail and `fields` to keep only some card fields. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
 
 ## Project onboarding and keeping Todolino current
 

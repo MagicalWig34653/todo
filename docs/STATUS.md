@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 3.11.2026: Kompakte MCP-Antworten (Agent claude-code@mcp-compact)
+
+- Board-Aufgabe `2BFD6CA3-4DF7-4AAB-AA80-12EF76295E14` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration, keine neuen Scopes.
+- `MCPCompact.swift` (neu) und `MCPWorkflowTools.swift`: `get_command_center` und `list_open_questions` mit `compact` (Standard true), `fields`; Fragen zusaetzlich `status`. Standard ohne Build-Gruppen, Unteraufgaben-/Build-Detail, mit gekuerzten Texten, 10 Karten je Lane, 5 Updates. Beschreibung in `docs/MCP-PARITAET.md`, Handbuch nur zwei Zeilen (Version/embed Hauptsession).
+- Gemessen (Fixture): command center 11011 gegenueber 21106 Bytes. `MCPCompactTests` 3/3, `CommandCenterTests`, `MCPNumericArgumentTests` gruen. Plugin-Skripte parsen die Antworten nicht.
+- Offen: Handbuch-Version und embed; echte Messung gegen Live-Daten.
+
 ## Checkpoint 3.11.2026: Berechtigungsfenster neu gestaltet (Agent claude-code@consent-ui)
 
 - Board-Aufgabe `C35D897E-BEE1-4E77-A979-2EE14C4787AD` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration, Scopes und OAuth-Ablauf unveraendert.
