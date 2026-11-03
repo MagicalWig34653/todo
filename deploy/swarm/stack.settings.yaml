@@ -12,6 +12,7 @@ x-settings: &settings
 services:
   migrate: *settings
   backend: *settings
+  backend-pinned: *settings
 secrets:
   settings_key:
     external: true

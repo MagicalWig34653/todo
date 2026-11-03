@@ -19,6 +19,7 @@ services:
   # migrate loads the same settings and validates them, so it gets the secret too.
   migrate: *mail
   backend: *mail
+  backend-pinned: *mail
 secrets:
   smtp_password:
     external: true
