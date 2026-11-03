@@ -6,7 +6,12 @@ final class OAuthSharingTests: XCTestCase {
     func testConsentPageAndOptionalScopeResource() async throws {
         let f = try await OAuthFixture.make()
         do {
-            try await f.test.app.test(.GET, "/oauth/authorize?response_type=code", beforeRequest: { $0.headers.replaceOrAdd(name: .accept, value: "text/html") }, afterResponse: { res async in
+            // Logged out: redirected to the login with the exact request as return target.
+            try await f.test.app.test(.GET, "/oauth/authorize?response_type=code&state=a%2Bb", beforeRequest: { $0.headers.replaceOrAdd(name: .accept, value: "text/html") }, afterResponse: { res async in
+                XCTAssertEqual(res.status, .seeOther)
+                XCTAssertEqual(res.headers.first(name: .location), "/login?next=%2Foauth%2Fauthorize%3Fresponse_type%3Dcode%26state%3Da%252Bb")
+            })
+            try await f.test.app.test(.GET, "/oauth/authorize?response_type=code", beforeRequest: { $0.headers.replaceOrAdd(name: .accept, value: "text/html"); $0.headers.bearerAuthorization = BearerAuthorization(token: f.session) }, afterResponse: { res async in
                 XCTAssertEqual(res.status, .ok)
                 XCTAssertEqual(res.headers.contentType, .html)
                 XCTAssertTrue(res.headers.first(name: "Content-Security-Policy")?.contains("sha256-") == true)

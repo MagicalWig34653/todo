@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 3.11.2026: Berechtigungsfenster mit Login-Rueckkehr (Agent claude-code@consent-login)
+
+- Board-Aufgabe `C35D897E-BEE1-4E77-A979-2EE14C4787AD` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration.
+- Login-Rueckkehr: `GET /oauth/authorize` (Browser) ohne Sitzung antwortet 303 auf `/login?next=<codierte Anfrage>`; die Seite macht dasselbe bei 401. `OAuthController.isSafeAuthorizeNext`/`loginRedirect` lassen nur `/oauth/authorize[?...]` in druckbarem ASCII ohne Backslash zu. PWA: `oauthNextTarget` (routing.ts) + Effekt in `+layout.svelte` leitet nach Anmeldung per `location.replace` zurueck (Schleifenschutz per sessionStorage). OAuth-Query bleibt byte-genau.
+- Fix: Redirect-URI des Consent baut Query jetzt streng prozentcodiert (`encodedItem`); vorher wurde `+` im `state` als Leerzeichen gelesen.
+- Optik: Markenzeile, Legende ohne Rahmenbruch, Badge ueber Text auf schmalen Breiten, Knopfleiste umbricht bei 200 % Schrift, kleinere Einrueckung der Projektliste, Suchfeld volle Breite mobil.
+- Tests: `ConsentPageTests` (Ziel-Validierung mit //evil.com, https://evil, Backslash, CRLF, NUL, Umlaut, Laenge), `OAuthSharingTests`, `OAuthTests`, `OAuthIssuerTests` 17/17; vitest routing 9; Playwright `e2e/oauth-consent.spec.ts` 5/5 gegen echtes SQLite-Backend (Registrierung, Login-Umleitung, Passkey, Screenshots hell/dunkel 1280/390/320 und 200 %, Zustimmung, Token-Scopes exakt).
+- Offen: setup/recover-Wege nutzen `next` ebenfalls ueber den Layout-Effekt, aber nicht einzeln getestet; Screenreader von Hand; MariaDB/Firefox/WebKit nicht geprueft.
+
 ## Checkpoint 3.11.2026: Plugin 1.5.0 Hook-Fixes (Agent claude-code@plugin-fixes)
 
 - Board-Aufgaben `0B792EB2` (Commit-Hook), `E8D47A63` (Tools vorladen), `34AE21D4` (Codex-Weg), `ED599FCD` (Stop-Hook Subagenten); nicht erledigt gesetzt, kein Review. Nur claude-plugin und Docs, kein Backend.

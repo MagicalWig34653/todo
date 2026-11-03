@@ -68,11 +68,35 @@ struct OAuthController: RouteCollection {
         var code_challenge: String
         var code_challenge_method: String
     }
+    /// Only the authorization endpoint of this origin may be a post-login return target (no open redirect).
+    /// `next` must be `/oauth/authorize` or `/oauth/authorize?<query>` in printable ASCII without backslashes.
+    static func isSafeAuthorizeNext(_ next: String) -> Bool {
+        guard next.utf8.count <= 4000, next.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7f && $0 != UInt8(ascii: "\\") }) else { return false }
+        return next == "/oauth/authorize" || next.hasPrefix("/oauth/authorize?")
+    }
+    /// `/login?next=<percent-encoded authorize URL>`; the query is kept byte for byte. Nil if the target is not acceptable.
+    static func loginRedirect(forAuthorizeQuery query: String) -> String? {
+        let next = "/oauth/authorize" + query
+        guard isSafeAuthorizeNext(next) else { return nil }
+        var allowed = CharacterSet.alphanumerics; allowed.insert(charactersIn: "-._~")
+        guard let encoded = next.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return "/login?next=" + encoded
+    }
+    /// Query item with a strictly percent-encoded value: URLComponents leaves "+" and "&" alone, which clients would decode as space.
+    static func encodedItem(_ name: String, _ value: String) -> URLQueryItem {
+        var allowed = CharacterSet.alphanumerics; allowed.insert(charactersIn: "-._~")
+        return URLQueryItem(name: name, value: value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
+    }
     struct Pending: Codable { var userID: UUID; var request: Authorization }
     static func pack<T: Encodable>(_ value: T) throws -> String { String(decoding: try JSONEncoder().encode(value), as: UTF8.self) }
     /// Browsers (Accept: text/html) get the consent page; it talks to the JSON contract below.
     @Sendable func authorize(_ req: Request) async throws -> Response {
         if req.headers.first(name: .accept)?.contains("text/html") == true {
+            // Not signed in: send the browser to the PWA login and come back to exactly this request afterwards.
+            if (try? await req.requireUser()) == nil {
+                let query = req.url.query.map { "?" + $0 } ?? ""
+                if let location = Self.loginRedirect(forAuthorizeQuery: query) { return req.redirect(to: location, redirectType: .normal) }
+            }
             let response = Response(status: .ok, body: .init(string: ConsentPage.html))
             response.headers.contentType = .html
             response.headers.replaceOrAdd(name: "Content-Security-Policy", value: ConsentPage.csp)
@@ -116,9 +140,9 @@ struct OAuthController: RouteCollection {
             guard pending.userID == user.id else { throw Abort(.notFound) }
             let a = pending.request
             var url = URLComponents(string: a.redirect_uri)!
-            var items = url.queryItems ?? []
-            if let state = a.state { items.append(URLQueryItem(name: "state", value: state)) }
-            items.append(URLQueryItem(name: "iss", value: req.application.settings.oauthIssuer)) // RFC 9207
+            var items = url.percentEncodedQueryItems ?? []
+            if let state = a.state { items.append(Self.encodedItem("state", state)) }
+            items.append(Self.encodedItem("iss", req.application.settings.oauthIssuer)) // RFC 9207
             if b.approve {
                 // A grant that may create projects (projects:write) can start without existing projects: create_project extends it.
                 let mayCreateProjects = (a.scope ?? "").split(separator: " ").contains("projects:write")
@@ -129,10 +153,10 @@ struct OAuthController: RouteCollection {
                 try await g.save(on: db)
                 let code = AuthSupport.randomToken()
                 try await OAuthSecret(raw: code, kind: "code", grantID: g.requireID(), payload: Self.pack(a), lifetime: 120).save(on: db)
-                items.append(URLQueryItem(name: "code", value: code))
-            } else { items.append(URLQueryItem(name: "error", value: "access_denied")) }
+                items.append(Self.encodedItem("code", code))
+            } else { items.append(Self.encodedItem("error", "access_denied")) }
             s.consumed = true; try await s.save(on: db)
-            url.queryItems = items
+            url.percentEncodedQueryItems = items
             return .object(["redirect_uri": .string(url.string!)])
         }
     }

@@ -55,14 +55,14 @@ enum ConsentPage {
     async function main() {
       const r = await fetch('/oauth/authorize' + q, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
       if (r.status === 401) {
-        const c = card();
-        el('h1', 'Anmeldung erforderlich', c);
-        el('p', 'Bitte zuerst in der Todo-App anmelden (Passkey) und diese Seite danach neu laden.', c, 'muted');
+        // Not signed in (or session ended): sign in via the PWA and return to this exact authorization request.
+        location.replace('/login?next=' + encodeURIComponent('/oauth/authorize' + q));
         return;
       }
       if (!r.ok) { const c = card(); el('h1', 'Anfrage ungültig', c); el('p', 'Die Autorisierungsanfrage ist ungültig oder abgelaufen.', c, 'muted'); return; }
       const d = await r.json();
 
+      el('div', 'Todolino', root, 'brand');
       const head = card();
       head.classList.add('head');
       const name = String(d.client_name || 'Anwendung');
@@ -122,7 +122,7 @@ enum ConsentPage {
         const walk = (key, depth) => (kids[key] || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')).forEach(p => {
           if (seen.has(p.id)) return; seen.add(p.id);
           const row = el('label', '', list, 'prow');
-          row.style.paddingLeft = (0.75 + Math.min(depth, 6) * 1.25) + 'rem';
+          row.style.paddingLeft = (0.75 + Math.min(depth, 4) * 0.75) + 'rem';
           const cb = el('input', '', row); cb.type = 'checkbox'; cb.value = p.id;
           el('span', p.name, row, 'pname');
           row.dataset.name = p.name.toLowerCase();
@@ -180,6 +180,9 @@ enum ConsentPage {
     .card{background:var(--card);border:1px solid var(--border);border-radius:calc(var(--radius) * 1.4);box-shadow:var(--shadow);padding:1.25rem;margin:0;min-width:0}
     h1{font-size:1.4rem;line-height:1.25;margin:0 0 .5rem;overflow-wrap:anywhere}
     h2,legend{font-size:1.1rem;font-weight:600;margin:0 0 .5rem;padding:0}
+    legend{float:left;width:100%}
+    legend+*{clear:both}
+    .brand{font-size:.9rem;font-weight:700;letter-spacing:.02em;color:var(--muted);margin:.5rem .25rem 0}
     h3{font-size:.8rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:1rem 0 .25rem}
     p{margin:.25rem 0}
     .muted{color:var(--muted);font-size:.95rem}
@@ -188,11 +191,11 @@ enum ConsentPage {
     .back{font-size:.85rem;color:var(--muted);margin-top:.75rem}
     .uri{overflow-wrap:anywhere;word-break:break-all;font-family:ui-monospace,monospace;color:var(--fg)}
     .scopes{list-style:none;margin:0;padding:0}
-    .scope{display:flex;gap:.75rem;align-items:flex-start;padding:.5rem .5rem;border-radius:var(--radius)}
+    .scope{display:flex;gap:.75rem;align-items:flex-start;padding:.5rem 0;border-radius:var(--radius)}
     .scope+.scope{margin-top:.125rem}
-    .scope.critical{background:var(--warn-soft);border:1px solid var(--warn)}
+    .scope.critical{background:var(--warn-soft);border:1px solid var(--warn);padding:.5rem .75rem}
     .label{flex:1;min-width:0;overflow-wrap:anywhere}
-    .badge{flex:none;min-width:5.5rem;text-align:center;font-size:.75rem;font-weight:600;border-radius:999px;padding:.125rem .6rem;border:1px solid var(--border);background:var(--secondary);color:var(--muted)}
+    .badge{flex:none;min-width:5.5rem;text-align:center;margin-top:.1rem;font-size:.75rem;font-weight:600;border-radius:999px;padding:.125rem .6rem;border:1px solid var(--border);background:var(--secondary);color:var(--muted)}
     .badge.write{background:var(--accent-soft);color:var(--accent-ink);border-color:transparent}
     .badge.crit{background:var(--warn);color:var(--card);border-color:transparent}
     .notice{margin-top:1rem;padding:.75rem;border-radius:var(--radius);background:var(--accent-soft);color:var(--accent-ink);font-size:.95rem}
@@ -205,11 +208,11 @@ enum ConsentPage {
     .prow+.prow{border-top:1px solid var(--border)}
     .prow:hover{background:var(--secondary)}
     .prow input{flex:none;width:1.25rem;height:1.25rem;accent-color:var(--accent)}
-    .pname{min-width:0;overflow-wrap:anywhere}
+    .pname{min-width:0;overflow-wrap:break-word;hyphens:auto}
     .count{font-size:.9rem;font-weight:600;color:var(--accent-ink)}
     .msg{color:var(--warn);font-weight:600;margin:0}
     .msg:empty{display:none}
-    .bar{position:sticky;bottom:0;display:flex;gap:.75rem;justify-content:flex-end;padding:.75rem 1rem calc(.75rem + env(safe-area-inset-bottom));margin:0 -1rem;background:var(--bg);border-top:1px solid var(--border)}
+    .bar{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:.75rem;justify-content:flex-end;padding:.75rem 1rem calc(.75rem + env(safe-area-inset-bottom));margin:0 -1rem;background:var(--bg);border-top:1px solid var(--border)}
     .btn{font:inherit;font-weight:600;min-height:2.75rem;min-width:2rem;padding:.5rem 1.25rem;border-radius:var(--radius);border:1px solid var(--input);background:var(--card);color:var(--fg);cursor:pointer}
     .btn.small{padding:.25rem .9rem;font-weight:500}
     .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent;flex:1 1 auto}
@@ -217,7 +220,7 @@ enum ConsentPage {
     .btn:disabled{opacity:.6;cursor:default}
     .btn:hover:not(:disabled){filter:brightness(.96)}
     :focus-visible{outline:3px solid var(--ring);outline-offset:2px}
-    @media (max-width:30rem){.bar .btn{flex:1 1 0}.scope{flex-wrap:wrap;gap:.25rem}}
+    @media (max-width:30rem){.bar .btn{flex:1 1 auto}.scope{flex-direction:column;gap:.25rem}.badge{min-width:0;padding:.0625rem .6rem}.card{padding:1rem}.search{flex-basis:100%}.btn.small{flex:1 1 0}main{padding-bottom:1rem}}
     @media (prefers-reduced-motion: no-preference){.btn{transition:filter .15s}}
     """
 
