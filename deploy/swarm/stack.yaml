@@ -2,6 +2,7 @@ version: '3.8'
 # Swarm stack: API replicas plus a one-shot migration service.
 # MariaDB is EXTERNAL (not part of this stack). Attachments are stored in the database by default;
 # optional S3-compatible storage is added with the overlay file stack.s3.yaml (see scripts/swarm-deploy.sh).
+# The optional service backend-pinned lives only in the overlay stack.pinned.yaml (added when PINNED_NODE is set).
 # Configure via deploy/swarm/stack.env.example (copy, fill, `set -a; . file; set +a`)
 # and the external Swarm secrets referenced at the bottom.
 x-backend: &backend
@@ -29,7 +30,7 @@ x-backend: &backend
     AASA_APP_IDS: ${AASA_APP_IDS:-}
     PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-}
   secrets: [db_password, bootstrap_token]
-# Shared by backend and backend-pinned.
+# Shared deploy settings (backend-pinned in stack.pinned.yaml repeats them).
 x-backend-deploy: &backend-deploy
   resources:
     limits:
@@ -75,21 +76,6 @@ services:
     deploy:
       <<: *backend-deploy
       replicas: ${BACKEND_REPLICAS:-3}
-  # Optional extra API service pinned to one node (PINNED_NODE, see deploy/swarm/placement.sh). It sits in the base file
-  # with 0 replicas so that removing PINNED_NODE scales it down again (an overlay-only service would keep running).
-  # It publishes no port of its own (BACKEND_PINNED_PORT adds one); the ingress port belongs to backend.
-  # EXCLUDE_LABEL deliberately does not apply here: PINNED_NODE is an explicit placement wish.
-  backend-pinned:
-    <<: *backend
-    command: *serve-command
-    configs: *serve-configs
-    healthcheck: *serve-healthcheck
-    deploy:
-      <<: *backend-deploy
-      replicas: ${BACKEND_PINNED_EFFECTIVE_REPLICAS:-0}
-      placement:
-        constraints:
-          - ${BACKEND_PINNED_CONSTRAINT:-node.hostname == __no-pinned-node__}
 networks:
   internal:
     driver: overlay

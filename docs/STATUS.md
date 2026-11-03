@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 3.11.2026: backend-pinned nur mit PINNED_NODE (Agent claude-agent, Board-Aufgabe `EED44052-7C62-4E70-ADE3-6FB5E6C52F12`)
+
+- Worktree-Branch, lokal committed, kein Push, kein Deploy. `backend-pinned` steht nicht mehr in `stack.yaml`, sondern im neuen Overlay `deploy/swarm/stack.pinned.yaml`, das `scripts/swarm-deploy.sh` nur bei gesetztem `PINNED_NODE` einbindet. Die Feature-Overlays werden ohne ihre `backend-pinned`-Zeilen verwendet (`placement_overlay_copy`), sonst entstünde ein halber Dienst.
+- Aufräumen: `placement_pinned_guard` (vor dem Deploy: Altdienst mit Replikaten und ohne `PINNED_NODE` bricht mit Exit 2 ab) und `placement_pinned_cleanup` (nach dem Deploy: leerer Altdienst wird per `docker service rm` entfernt). `placement_prepare`-Exit-Codes, Migration-zuerst, `wait_for_pinned_rollout`, `EXCLUDE_LABEL` unverändert.
+- Geprüft: `scripts/test-placement.sh` 58 Checks ok (neu: Overlay-Kopien, Drift der `x-backend`-Blöcke zwischen den Stack-Dateien, Guard/Cleanup mit Docker-Stub, `docker compose config` ohne/mit `PINNED_NODE`); shellcheck ohne neue Warnungen. **Nicht gegen einen echten Swarm geprüft:** `docker stack deploy` mit den Overlays, `docker service rm`, Guard/Cleanup gegen echte Dienste, `update.sh`/`setup.sh`-Läufe.
+- Offen: Lauf auf einem Test-Swarm (`scripts/swarm-smoke.sh`); der Smoke-Test deckt `PINNED_NODE` nicht ab.
+
 ## Checkpoint 3.11.2026: Berechtigungsfenster mit Login-Rueckkehr (Agent claude-code@consent-login)
 
 - Board-Aufgabe `C35D897E-BEE1-4E77-A979-2EE14C4787AD` (nicht erledigt gesetzt, kein Review). Worktree-Branch, kein Push, keine Migration.

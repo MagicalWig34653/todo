@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests deploy/swarm/placement.sh and the stack files. No Swarm needed: only bash and `docker compose config` (optional).
 set -u
-cd "$(dirname "$0")/../deploy/swarm"
+cd "$(dirname "$0")/../deploy/swarm" || exit 2
 . ./placement.sh
 fail=0; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 ok() { echo "ok   $1"; }
@@ -39,13 +39,62 @@ run "bad preference" 2 PLACEMENT_PREFERENCES="zone"
 run "bad label" 2 EXCLUDE_LABEL='a b'
 run "bad node" 2 PINNED_NODE='n 1'
 run "bad replicas" 2 PINNED_NODE=n1 PINNED_REPLICAS=x
-# Compose rendering (skipped without docker compose).
+# Overlay copies: without PINNED_NODE the feature overlays lose their backend-pinned lines.
+for f in stack.s3.yaml stack.push.yaml stack.mail.yaml stack.settings.yaml stack.settings-previous.yaml; do
+  ( env -i PATH="$PATH" bash -c '. ./placement.sh; placement_overlay_copy "$0" "$1"' "$f" "$tmp/c" )
+  { ! grep -q 'backend-pinned' "$tmp/c" && grep -q 'backend: ' "$tmp/c"; } && ok "$f copy: no backend-pinned without PINNED_NODE" || bad "$f copy without node"
+  ( env -i PATH="$PATH" PINNED_NODE=n1 bash -c '. ./placement.sh; placement_overlay_copy "$0" "$1"' "$f" "$tmp/c" )
+  cmp -s "$f" "$tmp/c" && ok "$f copy: unchanged with PINNED_NODE" || bad "$f copy with node"
+done
+if grep -v '^ *#' stack.yaml | grep -q 'backend-pinned'; then bad "stack.yaml must not define backend-pinned"; else ok "stack.yaml has no backend-pinned service"; fi
+# stack.pinned.yaml repeats the x-backend / x-backend-deploy blocks of stack.yaml: they must stay identical.
+blocks() { awk '/^x-backend/ {p=1} /^services:/ {p=0} p' "$1" | grep -v '^ *#'; }
+if [[ -n "$(blocks stack.pinned.yaml)" && "$(blocks stack.yaml)" == "$(blocks stack.pinned.yaml)" ]]; then ok "stack.pinned.yaml x-backend blocks match stack.yaml"; else bad "x-backend blocks drifted between stack.yaml and stack.pinned.yaml"; fi
+# guard / cleanup with a fake docker: STUB_PINNED = replicas of an existing service, unset = service does not exist.
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$STUB_LOG"
+case "$1 $2" in
+  "service inspect") if [[ -n "${STUB_PINNED:-}" ]]; then echo "$STUB_PINNED"; else exit 1; fi ;;
+  "service rm") ;;
+  *) exit 9 ;;
+esac
+STUB
+chmod +x "$tmp/bin/docker"
+pin() { # name fn expected_rc expected_rm(0/1) env...
+  local name="$1" fn="$2" want="$3" rm_want="$4"; shift 4
+  : > "$tmp/log"; local rc
+  ( env -i PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/log" "$@" bash -c ". ./placement.sh; $fn todo" >"$tmp/out" 2>"$tmp/err" ); rc=$?
+  local rm_got=0; grep -q '^service rm todo_backend-pinned' "$tmp/log" && rm_got=1
+  [[ $rc == "$want" && $rm_got == "$rm_want" ]] && ok "$name" || bad "$name (rc $rc wanted $want, rm $rm_got wanted $rm_want)"
+}
+pin "cleanup: no service, no node -> nothing" placement_pinned_cleanup 0 0
+pin "cleanup: empty old service, no node -> removed" placement_pinned_cleanup 0 1 STUB_PINNED=0
+pin "cleanup: running old service, no node -> kept, error" placement_pinned_cleanup 1 0 STUB_PINNED=2
+pin "cleanup: PINNED_NODE set -> service kept" placement_pinned_cleanup 0 0 STUB_PINNED=0 PINNED_NODE=n1
+pin "guard: no service -> ok" placement_pinned_guard 0 0
+pin "guard: empty old service -> ok" placement_pinned_guard 0 0 STUB_PINNED=0
+pin "guard: running old service, no node -> error" placement_pinned_guard 1 0 STUB_PINNED=1
+grep -q 'docker service scale todo_backend-pinned=0' "$tmp/err" && ok "guard: error names the way out" || bad "guard message"
+pin "guard: PINNED_NODE set -> ok" placement_pinned_guard 0 0 STUB_PINNED=1 PINNED_NODE=n1
+# Compose rendering (skipped without docker compose). Mirrors scripts/swarm-deploy.sh: stack.pinned.yaml only with PINNED_NODE.
 if docker compose version >/dev/null 2>&1; then
-  render() { env -i PATH="$PATH" HOME="$HOME" DB_HOST=db "$@" bash -c '. ./placement.sh; o=$(mktemp); placement_prepare "$o"; rc=$?; args=(-f stack.yaml); [ $rc = 0 ] && args+=(-f "$o"); docker compose "${args[@]}" config 2>/dev/null; rm -f "$o"'; }
-  out=$(render); grep -A40 '^  backend-pinned:' <<<"$out" | grep -q 'replicas: 0' && ok "compose: pinned 0 replicas by default" || bad "compose default"
+  render() { env -i PATH="$PATH" HOME="$HOME" DB_HOST=db "$@" bash -c '. ./placement.sh; d=$(mktemp -d); placement_prepare "$d/p"; rc=$?; args=(-f stack.yaml)
+    if [ -n "$PINNED_NODE" ]; then args+=(-f stack.pinned.yaml); fi
+    placement_overlay_copy stack.settings.yaml "$d/s.yaml"; args+=(-f "$d/s.yaml")
+    [ $rc = 0 ] && args+=(-f "$d/p"); docker compose "${args[@]}" config 2>&1; rm -rf "$d"'; }
+  out=$(render); if grep -q '^  backend-pinned:' <<<"$out"; then bad "compose: default must not contain backend-pinned"; else ok "compose: no backend-pinned without PINNED_NODE"; fi
+  grep -q '^  backend:' <<<"$out" && grep -q '^  migrate:' <<<"$out" && ok "compose: backend and migrate still present" || bad "compose default services"
   out=$(render PINNED_NODE=node-2 PLACEMENT_CONSTRAINTS=node.role==worker EXCLUDE_LABEL=noapi PLACEMENT_PREFERENCES=node.labels.zone)
   grep -A60 '^  backend-pinned:' <<<"$out" | grep -q 'node.hostname == node-2' && ok "compose: pinned constraint" || bad "compose pinned constraint"
+  grep -A60 '^  backend-pinned:' <<<"$out" | grep -q 'replicas: 1' && ok "compose: pinned 1 replica" || bad "compose pinned replicas"
+  grep -A60 '^  backend-pinned:' <<<"$out" | grep -q 'settings_key' && ok "compose: feature overlay reaches backend-pinned" || bad "compose pinned overlay"
   [[ $(grep -c 'node.labels.noapi != true' <<<"$out") == 2 ]] && ok "compose: exclude on backend and migrate only" || bad "compose exclude count"
   grep -q 'spread: node.labels.zone' <<<"$out" && ok "compose: preference" || bad "compose preference"
+  out=$(render PINNED_NODE=node-2 PINNED_REPLICAS=0)
+  grep -A60 '^  backend-pinned:' <<<"$out" | grep -q 'replicas: 0' && ok "compose: PINNED_REPLICAS=0 keeps the service with 0" || bad "compose pinned 0"
+  out=$(render PINNED_NODE=node-2 BACKEND_PINNED_PORT=38081)
+  grep -A80 '^  backend-pinned:' <<<"$out" | grep -q 'published: "38081"' && ok "compose: pinned port" || bad "compose pinned port"
 else echo "skip docker compose rendering (not installed)"; fi
 exit $fail
