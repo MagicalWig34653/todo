@@ -245,6 +245,7 @@ paths:
                         parentTaskID: {type: string, format: uuid, nullable: true}
                         createdAt: {type: string, format: date-time, nullable: true}
                         updatedAt: {type: string, format: date-time, nullable: true}
+                        claimedLabel: {type: string, nullable: true, description: Agent oder Person, die die Aufgabe bearbeitet}
                       required: [taskID, kind]
                 required: [edges, tasks]
         '400':

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import Tag from '@lucide/svelte/icons/tag';
 	import { api, type Project, type Task } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
@@ -7,7 +9,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { descendantIDs } from '#lib/projectState.js';
-	import { edgePath, filterGraph, layoutGraph, neighbourNode, type GraphInput, type GraphTask, type LaidNode } from '#lib/taskGraph.js';
+	import { edgePath, filterGraph, layoutGraph, limitLayout, neighbourNode, shortID, type GraphInput, type GraphTask, type LaidNode } from '#lib/taskGraph.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -15,20 +17,23 @@
 
 	let { project }: { project: Project } = $props();
 
-	const LANE_W = 22;
+	const LANE_W = 18;
+	const PAGE = 300;
 	const MAX_PROJECTS = 40;
-	const LANE_HUES = [262, 150, 40, 330, 200, 90];
+	/** One hue per palette index; chosen to stay apart from each other (orange, green, cyan, pink, yellow, violet, red, blue). */
+	const LANE_HUES = [45, 150, 205, 335, 95, 285, 20, 250];
 
 	let includeSub = $state(false);
 	let featuresOnly = $state(false);
 	let hideDone = $state<string>('30');
+	let limit = $state(PAGE);
 	let loaded = $state(false);
 	let rawTasks = $state<GraphTask[]>([]);
 	let extraTasks = $state<GraphTask[]>([]);
 	let edges = $state<GraphInput['edges']>([]);
 	let milestones = $state<GraphInput['milestones']>([]);
 	let projectNames = $state<Record<string, string>>({});
-	let pitch = $state(56);
+	let pitch = $state(40);
 	let focusID = $state<string | null>(null);
 	let seq = 0;
 
@@ -44,19 +49,26 @@
 			api.milestones(id)
 		]);
 		if (my !== seq) return;
-		const kind = new Map(graph.tasks.map((x) => [x.taskID, x]));
+		const facts = new Map(graph.tasks.map((x) => [x.taskID, x]));
 		const milestoneOf = new Map<string, string>();
 		for (const m of ms) for (const task of m.tasks) milestoneOf.set(task.id, m.milestone.id);
-		const toGraph = (task: Task): GraphTask => ({
-			id: task.id,
-			title: task.title,
-			status: task.status,
-			projectID: task.projectID,
-			isFeature: kind.get(task.id)?.kind === 'feature',
-			dueAt: task.planning?.dueAt ?? null,
-			doneAt: task.status === 'done' ? (kind.get(task.id)?.updatedAt ?? null) : null,
-			milestoneID: milestoneOf.get(task.id) ?? null
-		});
+		const toGraph = (task: Task): GraphTask => {
+			const f = facts.get(task.id);
+			return {
+				id: task.id,
+				title: task.title,
+				status: task.status,
+				projectID: task.projectID,
+				isFeature: f?.kind === 'feature',
+				dueAt: task.planning?.dueAt ?? null,
+				doneAt: task.status === 'done' ? (f?.updatedAt ?? null) : null,
+				updatedAt: f?.updatedAt ?? null,
+				createdAt: f?.createdAt ?? null,
+				parentID: f?.parentTaskID ?? null,
+				agent: f?.claimedLabel ?? null,
+				milestoneID: milestoneOf.get(task.id) ?? null
+			};
+		};
 		const mine = lists.flat().map(toGraph);
 		const known = new Set(mine.map((x) => x.id));
 		// Milestone members outside the loaded projects only count for the milestone's progress.
@@ -78,11 +90,12 @@
 		loaded = false;
 		rawTasks = [];
 		edges = [];
+		limit = PAGE;
 	});
 	onMount(() => startLiveRefresh(() => load().catch(() => {}), { guardEditing: true }));
 
 	const now = $derived(new Date(Date.now() - (Date.now() % 60000)));
-	const layout = $derived.by(() => {
+	const full = $derived.by(() => {
 		const full: GraphInput = { tasks: [...rawTasks, ...extraTasks], edges, milestones };
 		const shown = filterGraph(
 			{ tasks: rawTasks, edges, milestones },
@@ -90,14 +103,17 @@
 		);
 		return layoutGraph(shown, now, full);
 	});
+	const layout = $derived(limitLayout(full, limit));
+	const hiddenRows = $derived(full.rows.length - layout.rows.length);
 	const titleOf = $derived(new Map(layout.nodes.map((n) => [n.task.id, n.task.title])));
-	const gutter = $derived(layout.laneCount * LANE_W + 12);
-	const x = (lane: number) => 10 + lane * LANE_W + LANE_W / 2;
+	const gutter = $derived(layout.laneCount * LANE_W + 14);
+	const x = (lane: number) => 9 + lane * LANE_W + LANE_W / 2;
 	const y = (row: number) => row * pitch + pitch / 2;
-	const laneColor = (lane: number) => `oklch(0.62 0.15 ${LANE_HUES[lane % LANE_HUES.length]})`;
+	const hue = (color: number) => LANE_HUES[color % LANE_HUES.length];
+	const lane = (color: number) => `oklch(0.68 0.17 ${hue(color)})`;
 	const nodeByID = $derived(new Map(layout.nodes.map((n) => [n.task.id, n])));
-	const milestoneByRow = $derived(new Map(layout.milestones.map((m) => [m.row, m])));
-	const focusEdges = $derived(new Set(layout.edges.filter((e) => e.taskID === focusID || e.prerequisiteID === focusID).map((e) => `${e.taskID}>${e.prerequisiteID}`)));
+	const focusEdges = $derived(new Set(layout.edges.filter((e) => e.taskID === focusID || e.targetID === focusID).map((e) => `${e.taskID}>${e.targetID}`)));
+	const pill = (color: number) => `--lc: oklch(0.68 0.17 ${hue(color)})`;
 
 	const statusLabel = (s: GraphTask['status']) => t(`status.${s}` as MessageKey);
 	function waitingText(n: LaidNode): string {
@@ -106,21 +122,26 @@
 			? t('graph.waitingForMore', { title: first, count: n.waitingFor.length - 1 })
 			: t('graph.waitingFor', { title: first });
 	}
+	function whenText(n: LaidNode): string {
+		const at = n.when.at ? formatWhen(n.when.at) : '';
+		if (!at) return '';
+		return t(n.when.kind === 'done' ? 'graph.when.done' : n.when.kind === 'due' ? 'graph.when.due' : 'graph.when.updated', { date: at });
+	}
 	function open(n: LaidNode) {
 		cardDetail.open({ type: 'task', id: n.task.id }, layout.nodes.map((m) => ({ type: 'task' as const, id: m.task.id })));
 	}
 	let host: HTMLElement | undefined = $state();
 	function onkey(e: KeyboardEvent, n: LaidNode) {
-		const dir = ({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' } as const)[e.key as 'ArrowUp'];
+		const dir = ({ ArrowUp: 'up', ArrowDown: 'down', Home: 'first', End: 'last' } as const)[e.key as 'ArrowUp'];
 		if (!dir) return;
 		const next = neighbourNode(layout, n.task.id, dir);
 		if (!next) return;
 		e.preventDefault();
 		host?.querySelector<HTMLElement>(`[data-node="${next}"]`)?.focus();
 	}
-	const nodeFill = (n: LaidNode) =>
-		n.task.status === 'done' ? 'var(--success)' : n.task.status === 'in_progress' ? 'var(--ui-accent)' : n.task.status === 'in_review' ? 'var(--warning)' : 'var(--background)';
-	const nodeStroke = (n: LaidNode) => (n.overdue ? 'var(--destructive)' : n.blocked ? 'var(--warning)' : n.task.status === 'open' ? 'var(--muted-foreground)' : nodeFill(n));
+	const nodeStroke = (n: LaidNode) => (n.overdue ? 'var(--destructive)' : n.blocked ? 'var(--warning)' : lane(n.color));
+	const nodeFill = (n: LaidNode) => (n.task.status === 'open' ? 'var(--background)' : n.task.status === 'in_review' ? 'var(--warning)' : lane(n.color));
+	const rowBg = (i: number) => (i % 2 === 1 ? 'bg-muted/40' : '');
 </script>
 
 <section class="flex min-w-0 flex-col gap-3" data-testid="task-graph" aria-label={t('graph.title')}>
@@ -143,77 +164,58 @@
 
 	{#if !loaded}
 		<p class="text-muted-foreground text-sm" role="status">{t('graph.loading')}</p>
-	{:else if layout.nodes.length === 0 && layout.milestones.length === 0}
+	{:else if layout.nodes.length === 0}
 		<p class="text-muted-foreground text-sm" data-testid="graph-empty">{rawTasks.length > 0 ? t('graph.emptyFiltered') : t('graph.empty')}</p>
 	{:else}
 		<div class="min-w-0 overflow-x-auto rounded-xl border" data-testid="graph-scroll" tabindex="-1">
-			<div bind:this={host} class="relative" style:--graph-row="3.75rem" style:min-width="{gutter + 240}px" role="list" aria-label={t('graph.canvas', { count: layout.nodes.length })}>
+			<div bind:this={host} class="relative min-w-[22rem]" style:--graph-row="2.5rem" role="list" aria-label={t('graph.canvas', { count: layout.nodes.length })}>
 				<div class="pointer-events-none invisible absolute w-0" style:height="var(--graph-row)" bind:clientHeight={pitch} aria-hidden="true"></div>
-				<svg class="pointer-events-none absolute top-0 left-0" width={gutter} height={layout.rows.length * pitch} aria-hidden="true" data-testid="graph-svg">
-					{#each layout.edges as e (e.taskID + e.prerequisiteID)}
-						{@const hot = focusEdges.has(`${e.taskID}>${e.prerequisiteID}`)}
+				<svg class="pointer-events-none absolute top-0 left-0 z-10" width={gutter} height={layout.rows.length * pitch} aria-hidden="true" data-testid="graph-svg">
+					{#each layout.edges as e (e.kind + e.taskID + e.targetID)}
+						{@const hot = focusEdges.has(`${e.taskID}>${e.targetID}`)}
 						<path
 							d={edgePath(e.points, x, y)}
 							fill="none"
-							stroke={e.blocking ? 'var(--warning)' : laneColor(nodeByID.get(e.taskID)?.lane ?? 0)}
-							stroke-width={hot ? 3 : 1.75}
+							stroke={e.blocking ? 'var(--warning)' : lane(e.color)}
+							stroke-width={hot ? 3.5 : 2.25}
+							stroke-linecap="round"
 							stroke-dasharray={e.blocking ? '4 3' : undefined}
-							opacity={e.blocking || hot ? 1 : 0.7}
-							data-edge="{e.taskID}>{e.prerequisiteID}"
+							data-edge="{e.taskID}>{e.targetID}"
+							data-kind={e.kind}
 							data-blocking={e.blocking}
 						/>
 					{/each}
 					{#each layout.nodes as n (n.task.id)}
-						<g transform="translate({x(n.lane)} {y(n.row)})">
-							{#if n.blocking}<circle r="10" fill="none" stroke="var(--warning)" stroke-width="1.5" stroke-dasharray="2 2" />{/if}
-							<circle r="6.5" fill={nodeFill(n)} stroke={nodeStroke(n)} stroke-width={n.task.status === 'in_review' || n.blocked || n.overdue ? 3 : 2} />
-							{#if n.task.status === 'done'}<path d="M-3 0l2 2.2L3.2 -2" fill="none" stroke="var(--background)" stroke-width="1.6" />{/if}
-							{#if n.task.isFeature}<rect x="-3" y="-3" width="6" height="6" fill="none" stroke="var(--background)" stroke-width="1.2" transform="rotate(45)" />{/if}
+						<g transform="translate({x(n.lane)} {y(n.row)})" data-lane={n.lane}>
+							{#if n.merge}
+								<circle r="7" fill="var(--background)" stroke={nodeStroke(n)} stroke-width="2.25" />
+								<path d="M-3.5 0h7M0 -3.5v7" stroke={nodeStroke(n)} stroke-width="1.75" stroke-linecap="round" />
+							{:else}
+								<circle r={n.task.isFeature ? 6 : 4.5} fill={nodeFill(n)} stroke={nodeStroke(n)} stroke-width={n.task.status === 'open' || n.blocked || n.overdue ? 2.25 : 1.5} />
+							{/if}
 						</g>
-					{/each}
-					{#each layout.milestones as m (m.row)}
-						<rect x={10} y={y(m.row) - 7} width="14" height="14" transform="rotate(45 {17} {y(m.row)})" fill={m.state === 'released' ? 'var(--success)' : m.overdue ? 'var(--destructive)' : 'var(--ui-accent)'} />
 					{/each}
 				</svg>
 
 				{#each layout.rows as r, i (i)}
-					{#if r.kind === 'milestone'}
-						{@const m = milestoneByRow.get(i)}
-						<div
-							role="listitem"
-							class="bg-muted/50 flex items-center gap-2 border-y pr-3"
-							style:height="var(--graph-row)"
-							style:padding-left="{gutter + 4}px"
-							data-testid="graph-milestone"
-							data-state={m?.state}
-						>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm font-semibold">{m?.milestone?.title ?? t('graph.milestone.none')}</p>
-								{#if m?.milestone}
-									<p class="text-muted-foreground truncate text-xs">
-										<span class={m.state === 'released' ? 'text-success font-medium' : m.overdue ? 'text-destructive font-medium' : 'font-medium'}>
-											{m.overdue ? t('graph.milestone.overdue') : t(m.state === 'released' ? 'graph.milestone.released' : 'graph.milestone.planned')}
-										</span>
-										· {m.milestone.dueAt ? formatWhen(m.milestone.dueAt) : t('graph.milestone.noDate')}
-										· {t('graph.milestone.progress', { done: m.doneCount, total: m.taskCount })}
-									</p>
-								{/if}
-							</div>
+					{#if r.kind === 'now'}
+						<div role="listitem" class="relative flex items-center" style:height="var(--graph-row)" data-testid="graph-now">
+							<div class="bg-ui-accent/60 absolute right-0 left-0 h-px" style:left="{gutter}px" aria-hidden="true"></div>
+							<span class="bg-background text-ui-accent relative rounded-full border px-2 py-0.5 text-xs font-medium" style:margin-left="{gutter + 8}px">{t('graph.now')}</span>
 						</div>
 					{:else}
 						{@const n = nodeByID.get(r.id)}
 						{#if n}
-							<div role="listitem" style:height="var(--graph-row)">
+							<div role="listitem" class={rowBg(i)} style:height="var(--graph-row)">
 								<button
 									type="button"
-									class="hover:bg-muted/60 focus-visible:ring-ring flex h-full w-full min-w-0 flex-col justify-center rounded-md pr-3 text-left focus-visible:ring-2 focus-visible:outline-none"
-									style:padding-left="{gutter + 4}px"
+									class="hover:bg-ui-accent/10 focus-visible:ring-ring grid h-full w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center text-left text-sm focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset sm:grid-cols-[minmax(0,1fr)_11rem_12rem_5rem]"
 									data-testid="graph-node"
 									data-node={n.task.id}
 									data-status={n.task.status}
 									data-blocked={n.blocked}
 									data-overdue={n.overdue}
-									aria-label={t('graph.node', { title: n.task.title, status: statusLabel(n.task.status) }) + (n.blocked ? ', ' + waitingText(n) : '')}
+									aria-label={t('graph.node', { title: n.task.title, status: statusLabel(n.task.status) }) + (n.blocked ? ', ' + waitingText(n) : '') + (whenText(n) ? ', ' + whenText(n) : '')}
 									onclick={() => open(n)}
 									onfocus={() => (focusID = n.task.id)}
 									onblur={() => (focusID = null)}
@@ -221,16 +223,26 @@
 									onmouseleave={() => (focusID = null)}
 									onkeydown={(e) => onkey(e, n)}
 								>
-									<span class={['truncate text-sm font-medium', n.task.status === 'done' && 'text-muted-foreground line-through']}>{n.task.title}</span>
-									<span class="text-muted-foreground flex min-w-0 items-center gap-x-2 truncate text-xs">
-										<span class="shrink-0">{statusLabel(n.task.status)}</span>
-										{#if n.task.isFeature}<span class="shrink-0">· {t('graph.feature')}</span>{/if}
-										{#if includeSub && n.task.projectID !== project.id}<span class="truncate">· {projectNames[n.task.projectID] ?? ''}</span>{/if}
-										{#if n.blocked}<span class="text-warning shrink-0 font-medium" data-testid="graph-waiting">· {waitingText(n)}</span>{/if}
-										{#if n.blocking}<span class="text-warning shrink-0">· {t('graph.blocking')}</span>{/if}
-										{#if n.overdue}<span class="text-destructive shrink-0 font-medium">· {t('graph.overdue')}</span>
-										{:else if n.task.dueAt && n.task.status !== 'done'}<span class="shrink-0">· {t('graph.due', { date: formatWhen(n.task.dueAt) })}</span>{/if}
+									<span class="flex min-w-0 items-center gap-1.5 pr-3" style:padding-left="{gutter + 6}px">
+										{#if n.task.isFeature}
+											<span class="badge" style={pill(n.color)} data-testid="graph-badge-feature"><GitBranch class="size-3" aria-hidden="true" />{t('graph.feature')}</span>
+										{/if}
+										{#each n.tags as tag (tag.milestoneID)}
+											<span class={['badge', 'tag', tag.state === 'planned' && 'planned', tag.overdue && 'overdue']} data-testid="graph-tag" data-state={tag.state} title={tag.dueAt ? formatWhen(tag.dueAt) : undefined}>
+												<Tag class="size-3" aria-hidden="true" />{tag.title}<span class="sr-only"> ({t(tag.state === 'released' ? 'graph.milestone.released' : tag.overdue ? 'graph.milestone.overdue' : 'graph.milestone.planned')})</span>
+											</span>
+										{/each}
+										{#if n.task.status === 'in_progress' || n.task.status === 'in_review'}
+											<span class={['badge status', n.task.status]}>{statusLabel(n.task.status)}</span>
+										{/if}
+										<span class={['truncate', n.task.status === 'done' && 'text-muted-foreground']}>{n.task.title}</span>
+										{#if n.blocked}<span class="text-warning hidden shrink-0 truncate text-xs font-medium sm:inline" data-testid="graph-waiting">{waitingText(n)}</span>{/if}
+										{#if n.blocking}<span class="text-warning hidden shrink-0 text-xs md:inline">{t('graph.blocking')}</span>{/if}
+										{#if n.overdue}<span class="text-destructive shrink-0 text-xs font-medium">{t('graph.overdue')}</span>{/if}
 									</span>
+									<span class="text-muted-foreground hidden h-full min-w-0 items-center truncate border-l px-3 sm:flex">{n.task.agent ?? projectNames[n.task.projectID] ?? ''}</span>
+									<span class={['hidden h-full min-w-0 items-center truncate border-l px-3 sm:flex', n.overdue ? 'text-destructive' : 'text-muted-foreground']}>{whenText(n)}</span>
+									<span class="text-muted-foreground hidden h-full items-center border-l px-3 font-mono text-xs sm:flex">{shortID(n.task.id)}</span>
 								</button>
 							</div>
 						{/if}
@@ -238,5 +250,47 @@
 				{/each}
 			</div>
 		</div>
+		{#if hiddenRows > 0}
+			<div class="flex items-center gap-3 text-sm">
+				<span class="text-muted-foreground">{t('graph.more.hint', { shown: layout.rows.length, total: full.rows.length })}</span>
+				<button type="button" class="text-ui-accent min-h-9 underline" data-testid="graph-more" onclick={() => (limit += PAGE)}>{t('graph.more', { count: Math.min(PAGE, hiddenRows) })}</button>
+			</div>
+		{/if}
+		<p class="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label={t('graph.legend')}>
+			<span>{t('graph.legend.open')}</span><span>{t('graph.legend.merge')}</span><span>{t('graph.legend.wait')}</span><span>{t('graph.legend.tag')}</span>
+		</p>
 	{/if}
 </section>
+
+<style>
+	.badge {
+		--lc: var(--ui-accent);
+		display: inline-flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 0.25rem;
+		border-radius: 0.5rem;
+		padding: 0.05rem 0.45rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		line-height: 1.25rem;
+		background: color-mix(in oklch, var(--lc) 20%, transparent);
+		color: color-mix(in oklch, var(--lc) 65%, var(--foreground));
+	}
+	.badge.tag {
+		--lc: oklch(0.65 0.22 325);
+	}
+	.badge.tag.planned {
+		background: transparent;
+		border: 1px dashed var(--lc);
+	}
+	.badge.tag.overdue {
+		--lc: var(--destructive);
+	}
+	.badge.status.in_progress {
+		--lc: var(--ui-accent);
+	}
+	.badge.status.in_review {
+		--lc: var(--warning);
+	}
+</style>

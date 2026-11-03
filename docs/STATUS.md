@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 3.11.2026: Aufgaben-Graph im Git-Client-Stil (Agent claude-code@git-graph, Board-Aufgabe `4E633799-F7B9-4704-BB9C-9D224798ACF3`)
+
+- Worktree-Branch, lokal committed, kein Push, kein Deploy, keine Migration. Route `/project/<id>/graph` und Einstieg unveraendert; die alte Netzansicht ist ersetzt.
+- Ansicht: eine Zeile je Aufgabe (Titel, Badges, Agent/Projekt, Datum, 7-stellige Kurz-ID), links Spuren mit Knoten und Kurven; Offenes oben, Linie "Jetzt", Erledigtes darunter (neu oben). Feature = Merge-Knoten (Plus) mit Feature-Pille, Unteraufgaben zweigen ab; "wartet auf" = gestrichelte Spurverbindung; Meilensteine = Tag-Pillen (gefuellt = veroeffentlicht, gestrichelt = geplant) an der Zeile der Aufgabe. Builds-Daten werden nicht verwendet (Meilensteine). Auf 300 Zeilen begrenzt, "weitere Zeilen laden"; unter `sm` nur Titel und Graph.
+- Code: `web/src/lib/taskGraph.ts` (reine Funktionen `layoutGraph`, `filterGraph`, `limitLayout`, `neighbourNode`; Farbindex je Strang per Hash, freie Farbe unter den aktiven Spuren; deterministisch), `TaskGraph.svelte`, Texte in `de.ts` (`graph.*`; nur Deutsch vorhanden, kein en-Katalog).
+- Vertrag: `GET /v1/planning/dependencies` liefert zusaetzlich `tasks[].claimedLabel` (additiv, `contracts/planning-ext.yaml`, `PlanningGraphNodeDTO`); kein Manual-Bump. Das Elternfeld `parentTaskID` und die Zeiten gab es schon.
+- Geprueft: vitest 303 gruen (`taskGraph.test.ts` 20), `PlanningExtTests` 9 (2 uebersprungen) gruen inkl. claimedLabel, Build gruen, Playwright `task-graph.spec.ts` 5/5 (frische SQLite, Chromium, Port 25911); `npm run check` nur der bekannte `./$types`-Fehler im Worktree.
+- Offen: Dark-Mode und Firefox/WebKit nur im Screenshot-Pfad des Specs, nicht per Auge bei grossen Daten; Builds als Tag-Pillen nicht umgesetzt; MariaDB nicht geprueft.
+
 ## Checkpoint 3.11.2026: backend-pinned nur mit PINNED_NODE (Agent claude-agent, Board-Aufgabe `EED44052-7C62-4E70-ADE3-6FB5E6C52F12`)
 
 - Worktree-Branch, lokal committed, kein Push, kein Deploy. `backend-pinned` steht nicht mehr in `stack.yaml`, sondern im neuen Overlay `deploy/swarm/stack.pinned.yaml`, das `scripts/swarm-deploy.sh` nur bei gesetztem `PINNED_NODE` einbindet. Die Feature-Overlays werden ohne ihre `backend-pinned`-Zeilen verwendet (`placement_overlay_copy`), sonst entstünde ein halber Dienst.

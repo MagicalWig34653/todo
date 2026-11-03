@@ -200,7 +200,7 @@ export interface MilestoneWithTasks {
 /** contracts/planning-ext.yaml: GET /planning/dependencies */
 export interface TaskGraphData {
 	edges: { taskID: string; prerequisiteID: string }[];
-	tasks: { taskID: string; kind: 'task' | 'feature'; parentTaskID?: string | null; createdAt?: string | null; updatedAt?: string | null }[];
+	tasks: { taskID: string; kind: 'task' | 'feature'; parentTaskID?: string | null; createdAt?: string | null; updatedAt?: string | null; claimedLabel?: string | null }[];
 }
 
 export type Role = 'read' | 'comment' | 'edit' | 'manage';

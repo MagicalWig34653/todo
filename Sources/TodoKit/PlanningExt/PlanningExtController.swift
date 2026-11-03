@@ -6,7 +6,7 @@ struct PlanningDependencyInput: Content { var prerequisiteID: UUID }
 struct PlanningMilestoneInput: Content { var projectID: UUID; var title: String; var dueAt: Date? }
 struct PlanningDependencyEdgeDTO: Content { var taskID: UUID; var prerequisiteID: UUID }
 /// Per-task facts the graph view needs and the plain task list does not carry.
-struct PlanningGraphNodeDTO: Content { var taskID: UUID; var kind: String; var parentTaskID: UUID?; var createdAt: Date?; var updatedAt: Date? }
+struct PlanningGraphNodeDTO: Content { var taskID: UUID; var kind: String; var parentTaskID: UUID?; var createdAt: Date?; var updatedAt: Date?; var claimedLabel: String? }
 struct PlanningGraphDTO: Content { var edges: [PlanningDependencyEdgeDTO]; var tasks: [PlanningGraphNodeDTO] }
 struct PlanningMilestoneDTO: Content { var milestone: PlanningMilestone; var tasks: [TaskDTO] }
 

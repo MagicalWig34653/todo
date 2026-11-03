@@ -105,7 +105,7 @@ extension PlanningService {
         let flows = Dictionary(uniqueKeysWithValues: try await TaskWorkflow.query(on: db).filter(\.$id ~~ Array(taskIDs)).all().compactMap { w in w.id.map { ($0, w) } })
         for t in rows { if let id = t.id, try await canSee(id) {
             let w = flows[id]
-            nodes.append(PlanningGraphNodeDTO(taskID: id, kind: w?.kind ?? "task", parentTaskID: w?.parentTaskID, createdAt: t.createdAt, updatedAt: t.updatedAt))
+            nodes.append(PlanningGraphNodeDTO(taskID: id, kind: w?.kind ?? "task", parentTaskID: w?.parentTaskID, createdAt: t.createdAt, updatedAt: t.updatedAt, claimedLabel: w?.claimedLabel))
         } }
         return PlanningGraphDTO(edges: result, tasks: nodes)
     }

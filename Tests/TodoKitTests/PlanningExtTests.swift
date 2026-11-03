@@ -133,7 +133,11 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertEqual(e1.status, .noContent)
         let e2 = try await f.t.json(.PUT, "/v1/planning/tasks/\(cid)/dependencies", ["prerequisiteID": f.tasks[1]], token: f.token)
         XCTAssertEqual(e2.status, .noContent)
+        let claimed = try await f.t.json(.POST, "/v1/tasks/\(f.tasks[0])/claim", ["agentName": "claude-code@graph"], token: f.token)
+        XCTAssertEqual(claimed.status, .ok)
         let own = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)", token: f.token)
+        let ownNodes = try XCTUnwrap(own.body?["tasks"] as? [[String: Any]])
+        XCTAssertEqual(ownNodes.first { ($0["taskID"] as? String) == f.tasks[0] }?["claimedLabel"] as? String, "claude-code@graph")
         let ownEdges = own.body?["edges"] as? [[String: Any]]
         XCTAssertEqual(ownEdges?.count, 1)
         XCTAssertEqual(ownEdges?.first?["prerequisiteID"] as? String, f.tasks[0])

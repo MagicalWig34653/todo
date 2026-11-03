@@ -1,8 +1,10 @@
 /**
- * Pure model of the task graph view ("git log for tasks"): filtering, topological row order, lane assignment and edge
- * routing. No DOM, no network. Rows run top to bottom, newest first: a task sits above everything it waits for, so the
- * prerequisites ("older commits") are below. Edges are polylines on a (lane, row) grid; the renderer turns lane changes
- * into curves.
+ * Pure model of the task graph view, drawn like the history of a Git client. One row per task, newest first, planned
+ * and open work above a "now" line, finished work below it. A lane is a strand of related work:
+ *  - a parent (feature) is a merge commit: it sits above its subtasks, which branch off below it;
+ *  - "waits for" is a lane connection too: a task sits above what it waits for;
+ *  - milestones are tags on the rows of the tasks they release.
+ * No DOM, no network. Everything is deterministic: same input, same rows, lanes and colours.
  */
 import type { TaskStatus } from './api.js';
 
@@ -13,8 +15,13 @@ export interface GraphTask {
 	projectID: string;
 	isFeature: boolean;
 	dueAt?: string | null;
-	/** When a done task was finished (last update); used by the "hide done older than N days" filter. */
+	/** When a done task was finished (last update); used by the filter and as its date. */
 	doneAt?: string | null;
+	updatedAt?: string | null;
+	createdAt?: string | null;
+	parentID?: string | null;
+	/** Agent or person working on it. */
+	agent?: string | null;
 	milestoneID?: string | null;
 }
 export interface GraphMilestone {
@@ -39,48 +46,74 @@ export interface GraphFilter {
 	now: Date;
 }
 export type MilestoneState = 'released' | 'planned';
+export type LinkKind = 'sub' | 'dep';
 
 export interface Point {
 	lane: number;
 	row: number;
 }
+export interface LaidTag {
+	milestoneID: string;
+	title: string;
+	state: MilestoneState;
+	overdue: boolean;
+	dueAt?: string | null;
+}
 export interface LaidNode {
 	task: GraphTask;
 	row: number;
 	lane: number;
+	/** Palette index (stable per strand). */
+	color: number;
 	/** Open prerequisites (ids) this task waits for. Empty for done tasks. */
 	waitingFor: string[];
 	blocked: boolean;
 	/** True when other open tasks wait for this one. */
 	blocking: boolean;
 	overdue: boolean;
+	/** Has subtasks below it: drawn as a merge point. */
+	merge: boolean;
+	/** The date shown in the row. */
+	when: { kind: 'done' | 'due' | 'updated'; at: string | null };
+	tags: LaidTag[];
 }
 export interface LaidEdge {
+	/** The upper end (feature / the task that waits). */
 	taskID: string;
-	prerequisiteID: string;
-	/** Waypoints from the dependent (top) to the prerequisite (bottom). */
+	/** The lower end (subtask / prerequisite). */
+	targetID: string;
+	kind: LinkKind;
+	/** Waypoints from the upper to the lower node. */
 	points: Point[];
-	/** The prerequisite is not done: the dependent is blocked by this edge. */
+	color: number;
+	/** Lane the edge travels in between the first and the last row. */
+	via: number;
+	/** The dependency is not done: the dependent is blocked by this edge. */
 	blocking: boolean;
 }
 export interface LaidMilestone {
-	milestone: GraphMilestone | null;
-	row: number;
+	milestone: GraphMilestone;
 	state: MilestoneState;
 	overdue: boolean;
 	taskCount: number;
 	doneCount: number;
 }
-export type GraphRow = { kind: 'node'; id: string } | { kind: 'milestone'; milestoneID: string | null };
+export type GraphRow = { kind: 'node'; id: string } | { kind: 'now' };
 export interface GraphLayout {
 	rows: GraphRow[];
 	nodes: LaidNode[];
 	edges: LaidEdge[];
 	milestones: LaidMilestone[];
 	laneCount: number;
+	/** Row index of the "now" line, or -1. */
+	nowRow: number;
+	/** True when rows were cut off by `limitLayout`. */
+	truncated: boolean;
 }
 
 const DAY = 86_400_000;
+/** Number of distinct lane colours (the renderer maps an index to a hue). */
+export const PALETTE_SIZE = 8;
 
 export function isOverdueTask(t: Pick<GraphTask, 'status' | 'dueAt'>, now: Date): boolean {
 	return t.status !== 'done' && !!t.dueAt && Date.parse(t.dueAt) < now.getTime();
@@ -91,9 +124,52 @@ export function milestoneState(tasks: Pick<GraphTask, 'status'>[]): MilestoneSta
 	return tasks.length > 0 && tasks.every((t) => t.status === 'done') ? 'released' : 'planned';
 }
 
+/** First 7 hex digits of the id, like an abbreviated commit hash. */
+export function shortID(id: string): string {
+	return id.replace(/-/g, '').slice(0, 7).toLowerCase();
+}
+
+function hash(s: string): number {
+	let h = 2166136261;
+	for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+	return h >>> 0;
+}
+
+const time = (s?: string | null): number => {
+	const v = s ? Date.parse(s) : NaN;
+	return Number.isNaN(v) ? 0 : v;
+};
+
+/** Sort key: done = finished, open = due date, else last change. Larger = further up. */
+function sortAt(t: GraphTask): number {
+	return t.status === 'done' ? time(t.doneAt ?? t.updatedAt) : time(t.dueAt) || time(t.updatedAt) || time(t.createdAt);
+}
+
+function whenOf(t: GraphTask): LaidNode['when'] {
+	if (t.status === 'done') return { kind: 'done', at: t.doneAt ?? t.updatedAt ?? null };
+	if (t.dueAt) return { kind: 'due', at: t.dueAt };
+	return { kind: 'updated', at: t.updatedAt ?? t.createdAt ?? null };
+}
+
+/** All links as `upper -> lower`, deduplicated, unknown tasks and self loops dropped. */
+function collectLinks(input: GraphInput): { taskID: string; targetID: string; kind: LinkKind }[] {
+	const known = new Set(input.tasks.map((t) => t.id));
+	const out: { taskID: string; targetID: string; kind: LinkKind }[] = [];
+	const seen = new Set<string>();
+	const add = (taskID: string, targetID: string, kind: LinkKind) => {
+		const key = `${kind}:${taskID}>${targetID}`;
+		if (taskID === targetID || !known.has(taskID) || !known.has(targetID) || seen.has(key)) return;
+		seen.add(key);
+		out.push({ taskID, targetID, kind });
+	};
+	for (const t of input.tasks) if (t.parentID) add(t.parentID, t.id, 'sub');
+	for (const e of input.edges) add(e.taskID, e.prerequisiteID, 'dep');
+	return out;
+}
+
 /**
- * Applies the view filters. "Only features" keeps features and bridges dependencies through the hidden open tasks
- * between them, so the order and the waiting relations stay intact. Done tasks older than the cutoff disappear.
+ * Applies the view filters. "Only features" keeps features and bridges links through the hidden open tasks between
+ * them, so order and relations stay intact. Done tasks older than the cutoff disappear.
  */
 export function filterGraph(input: GraphInput, f: GraphFilter): GraphInput {
 	const byID = new Map(input.tasks.map((t) => [t.id, t]));
@@ -101,44 +177,37 @@ export function filterGraph(input: GraphInput, f: GraphFilter): GraphInput {
 	const oldDone = (t: GraphTask) => cutoff != null && t.status === 'done' && !!t.doneAt && Date.parse(t.doneAt) < cutoff;
 	const keep = (t: GraphTask) => (!f.featuresOnly || t.isFeature) && !oldDone(t);
 
-	const prereqs = new Map<string, string[]>();
-	for (const e of input.edges) {
-		if (!byID.has(e.taskID) || !byID.has(e.prerequisiteID)) continue;
-		(prereqs.get(e.taskID) ?? prereqs.set(e.taskID, []).get(e.taskID)!).push(e.prerequisiteID);
-	}
+	const links = collectLinks(input);
+	const downs = new Map<string, { id: string; kind: LinkKind }[]>();
+	for (const l of links) (downs.get(l.taskID) ?? downs.set(l.taskID, []).get(l.taskID)!).push({ id: l.targetID, kind: l.kind });
 	const tasks = input.tasks.filter(keep);
 	const kept = new Set(tasks.map((t) => t.id));
 	const edges: GraphEdgeInput[] = [];
 	const seen = new Set<string>();
+	const parentOf = new Map<string, string>(); // visible parent after bridging
 	for (const t of tasks) {
-		// Walk through hidden, not yet done tasks to the next visible prerequisite.
-		const stack = [...(prereqs.get(t.id) ?? [])];
+		// Walk through hidden, not yet done tasks to the next visible target.
+		const stack = (downs.get(t.id) ?? []).map((d) => ({ ...d, direct: true }));
 		const visited = new Set<string>();
 		while (stack.length) {
-			const id = stack.pop()!;
-			if (visited.has(id)) continue;
-			visited.add(id);
-			if (kept.has(id)) {
-				const key = `${t.id}>${id}`;
+			const cur = stack.pop()!;
+			if (visited.has(cur.id)) continue;
+			visited.add(cur.id);
+			if (kept.has(cur.id)) {
+				if (cur.kind === 'sub' && cur.direct) continue; // restored from parentID below
+				const key = `${t.id}>${cur.id}`;
 				if (!seen.has(key)) {
 					seen.add(key);
-					edges.push({ taskID: t.id, prerequisiteID: id });
+					edges.push({ taskID: t.id, prerequisiteID: cur.id });
 				}
 			} else {
-				const hidden = byID.get(id)!;
-				if (hidden.status !== 'done' && !oldDone(hidden)) stack.push(...(prereqs.get(id) ?? []));
+				const hidden = byID.get(cur.id)!;
+				if (hidden.status !== 'done' && !oldDone(hidden)) stack.push(...(downs.get(cur.id) ?? []).map((d) => ({ ...d, direct: false })));
 			}
 		}
 	}
-	return { tasks, edges, milestones: input.milestones };
-}
-
-/** Descending by due date; milestones without a date come first (still open ended), then by title. */
-function milestoneOrder(a: GraphMilestone, b: GraphMilestone): number {
-	const da = a.dueAt ? Date.parse(a.dueAt) : Number.POSITIVE_INFINITY;
-	const db = b.dueAt ? Date.parse(b.dueAt) : Number.POSITIVE_INFINITY;
-	if (da !== db) return da > db ? -1 : 1;
-	return a.title.localeCompare(b.title) || (a.id < b.id ? -1 : 1);
+	for (const t of tasks) if (t.parentID && kept.has(t.parentID)) parentOf.set(t.id, t.parentID);
+	return { tasks: tasks.map((t) => ({ ...t, parentID: parentOf.get(t.id) ?? null })), edges, milestones: input.milestones };
 }
 
 /**
@@ -147,163 +216,218 @@ function milestoneOrder(a: GraphMilestone, b: GraphMilestone): number {
  */
 export function layoutGraph(input: GraphInput, now: Date, full: GraphInput = input): GraphLayout {
 	const byID = new Map(input.tasks.map((t) => [t.id, t]));
-	const index = new Map(input.tasks.map((t, i) => [t.id, i]));
-	// Dedupe and drop edges to unknown tasks / self loops.
-	const prereqs = new Map<string, string[]>();
-	const dependents = new Map<string, string[]>();
-	const seenEdge = new Set<string>();
-	for (const e of input.edges) {
-		const key = `${e.taskID}>${e.prerequisiteID}`;
-		if (e.taskID === e.prerequisiteID || !byID.has(e.taskID) || !byID.has(e.prerequisiteID) || seenEdge.has(key)) continue;
-		seenEdge.add(key);
-		(prereqs.get(e.taskID) ?? prereqs.set(e.taskID, []).get(e.taskID)!).push(e.prerequisiteID);
-		(dependents.get(e.prerequisiteID) ?? dependents.set(e.prerequisiteID, []).get(e.prerequisiteID)!).push(e.taskID);
+	// Display order basis: open work first (future on top), then done work, newest first; ties are stable.
+	const sorted = [...input.tasks].sort(
+		(a, b) =>
+			Number(b.status !== 'done') - Number(a.status !== 'done') || sortAt(b) - sortAt(a) || a.title.localeCompare(b.title) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+	);
+	const index = new Map(sorted.map((t, i) => [t.id, i]));
+	const links = collectLinks(input);
+	const downs = new Map<string, { id: string; kind: LinkKind }[]>();
+	const ups = new Map<string, number>();
+	for (const l of links) {
+		(downs.get(l.taskID) ?? downs.set(l.taskID, []).get(l.taskID)!).push({ id: l.targetID, kind: l.kind });
+		ups.set(l.targetID, (ups.get(l.targetID) ?? 0) + 1);
 	}
-	for (const list of prereqs.values()) list.sort((a, b) => index.get(a)! - index.get(b)!);
+	// Subtasks (branches) before prerequisites, each by display order, so the first branch continues the parent's strand.
+	for (const list of downs.values()) list.sort((a, b) => Number(a.kind === 'dep') - Number(b.kind === 'dep') || index.get(a.id)! - index.get(b.id)!);
 
-	// Groups: 0 = no milestone, then milestones by due date (latest on top).
-	const milestones = [...input.milestones].sort(milestoneOrder);
-	const groupOf = new Map<string, number>(milestones.map((m, i) => [m.id, i + 1]));
-	const group = (t: GraphTask) => (t.milestoneID ? (groupOf.get(t.milestoneID) ?? 0) : 0);
-
-	// Topological order, dependents first. Among ready tasks the top-most group wins, then the input order.
-	const waiting = new Map<string, number>(input.tasks.map((t) => [t.id, (dependents.get(t.id) ?? []).length]));
-	let ready = input.tasks.filter((t) => waiting.get(t.id) === 0);
+	// Topological order, upper nodes first. Among ready nodes the best display position wins.
+	const waiting = new Map<string, number>(sorted.map((t) => [t.id, ups.get(t.id) ?? 0]));
+	const ready: GraphTask[] = sorted.filter((t) => waiting.get(t.id) === 0);
 	const order: GraphTask[] = [];
 	const placed = new Set<string>();
-	const better = (a: GraphTask, b: GraphTask) => group(a) - group(b) || index.get(a.id)! - index.get(b.id)!;
 	const place = (t: GraphTask) => {
 		order.push(t);
 		placed.add(t.id);
-		for (const p of prereqs.get(t.id) ?? []) {
-			const left = (waiting.get(p) ?? 0) - 1;
-			waiting.set(p, left);
-			if (left === 0) ready.push(byID.get(p)!);
+		for (const d of downs.get(t.id) ?? []) {
+			const left = (waiting.get(d.id) ?? 0) - 1;
+			waiting.set(d.id, left);
+			if (left === 0) ready.push(byID.get(d.id)!);
 		}
 	};
-	while (order.length < input.tasks.length) {
+	while (order.length < sorted.length) {
 		if (ready.length === 0) {
-			// Defensive: a cycle (the server rejects them). Release the first unplaced task by input order.
-			const next = input.tasks.find((t) => !placed.has(t.id))!;
-			place(next);
+			// Defensive: a cycle (the server rejects them). Release the first unplaced task by display order.
+			place(sorted.find((t) => !placed.has(t.id))!);
 			continue;
 		}
 		let bi = 0;
-		for (let i = 1; i < ready.length; i++) if (better(ready[i], ready[bi]) < 0) bi = i;
+		for (let i = 1; i < ready.length; i++) if (index.get(ready[i].id)! < index.get(ready[bi].id)!) bi = i;
 		const [next] = ready.splice(bi, 1);
 		if (!placed.has(next.id)) place(next);
 	}
 
-	// Rows with milestone markers: a marker precedes the first task of its group; empty groups keep their slot.
+	// Rows: the "now" line sits before the first done task.
 	const rows: GraphRow[] = [];
-	const emitted = new Set<number>();
-	const hasUnassigned = input.tasks.some((t) => group(t) === 0);
-	const emitUpTo = (g: number) => {
-		for (let i = 0; i <= g; i++) {
-			if (emitted.has(i)) continue;
-			emitted.add(i);
-			if (i === 0) {
-				if (hasUnassigned && milestones.length > 0) rows.push({ kind: 'milestone', milestoneID: null });
-			} else rows.push({ kind: 'milestone', milestoneID: milestones[i - 1].id });
-		}
-	};
 	const rowOf = new Map<string, number>();
+	let nowRow = -1;
 	for (const t of order) {
-		emitUpTo(group(t));
+		if (nowRow < 0 && t.status === 'done') {
+			nowRow = rows.length;
+			rows.push({ kind: 'now' });
+		}
 		rowOf.set(t.id, rows.length);
 		rows.push({ kind: 'node', id: t.id });
 	}
-	emitUpTo(milestones.length);
+	if (nowRow < 0 && order.length > 0) {
+		nowRow = rows.length;
+		rows.push({ kind: 'now' });
+	}
 
-	// Lane assignment (top to bottom). `lanes[i]` is the task a lane is currently waiting to reach.
-	const lanes: (string | null)[] = [];
+	// Lane assignment, top to bottom. A lane entry is the task the lane is travelling to, with its strand colour.
+	type Entry = { id: string; color: number };
+	const lanes: (Entry | null)[] = [];
 	const laneOf = new Map<string, number>();
-	const via = new Map<string, number>(); // edge key -> lane the edge travels in
+	const colorOf = new Map<string, number>();
+	let maxLanes = 1;
+	const newColor = (id: string): number => {
+		const used = new Set(lanes.filter((l): l is Entry => !!l).map((l) => l.color));
+		const start = hash(id) % PALETTE_SIZE;
+		for (let i = 0; i < PALETTE_SIZE; i++) {
+			const c = (start + i) % PALETTE_SIZE;
+			if (!used.has(c)) return c;
+		}
+		return start;
+	};
 	const freeLane = () => {
 		const i = lanes.indexOf(null);
 		if (i >= 0) return i;
 		lanes.push(null);
 		return lanes.length - 1;
 	};
+	const via = new Map<string, { lane: number; color: number }>();
 	for (const t of order) {
-		let lane = lanes.indexOf(t.id);
-		if (lane < 0) lane = freeLane();
-		for (let i = 0; i < lanes.length; i++) if (lanes[i] === t.id) lanes[i] = null; // merge: all waiting lanes end here
+		let lane = lanes.findIndex((l) => l?.id === t.id);
+		let color: number;
+		if (lane < 0) {
+			color = newColor(t.id);
+			lane = freeLane();
+		} else color = lanes[lane]!.color;
+		for (let i = 0; i < lanes.length; i++) if (lanes[i]?.id === t.id) lanes[i] = null; // every lane arriving here ends
 		laneOf.set(t.id, lane);
-		let ownLaneTaken = false;
-		for (const p of prereqs.get(t.id) ?? []) {
-			let l = lanes.indexOf(p);
+		colorOf.set(t.id, color);
+		let own = false;
+		for (const d of downs.get(t.id) ?? []) {
+			let l = lanes.findIndex((e) => e?.id === d.id);
 			if (l < 0) {
-				if (!ownLaneTaken) {
+				if (!own) {
 					l = lane;
-					ownLaneTaken = true;
-				} else l = freeLane();
-				lanes[l] = p;
+					own = true;
+					lanes[l] = { id: d.id, color };
+				} else {
+					const c = newColor(d.id);
+					l = freeLane();
+					lanes[l] = { id: d.id, color: c };
+				}
 			}
-			via.set(`${t.id}>${p}`, l);
+			via.set(`${d.kind}:${t.id}>${d.id}`, { lane: l, color: lanes[l]!.color });
 		}
+		maxLanes = Math.max(maxLanes, lanes.length, lane + 1);
 	}
 
 	const laidEdges: LaidEdge[] = [];
-	for (const [tid, list] of prereqs) {
-		for (const pid of list) {
-			const r1 = rowOf.get(tid)!;
-			const r2 = rowOf.get(pid)!;
-			if (r2 <= r1) continue; // only reachable through a defensive cycle break
-			const start = { lane: laneOf.get(tid)!, row: r1 };
-			const end = { lane: laneOf.get(pid)!, row: r2 };
-			const through = via.get(`${tid}>${pid}`) ?? start.lane;
-			const points: Point[] = [start];
-			if (r2 - r1 >= 2) {
-				points.push({ lane: through, row: r1 + 1 });
-				if (r2 - 1 > r1 + 1) points.push({ lane: through, row: r2 - 1 });
-			}
-			points.push(end);
-			laidEdges.push({ taskID: tid, prerequisiteID: pid, points, blocking: byID.get(pid)!.status !== 'done' && byID.get(tid)!.status !== 'done' });
+	for (const l of links) {
+		const r1 = rowOf.get(l.taskID)!;
+		const r2 = rowOf.get(l.targetID)!;
+		if (r2 <= r1) continue; // only reachable through a defensive cycle break
+		const v = via.get(`${l.kind}:${l.taskID}>${l.targetID}`)!;
+		const points: Point[] = [{ lane: laneOf.get(l.taskID)!, row: r1 }];
+		if (r2 - r1 >= 2) {
+			points.push({ lane: v.lane, row: r1 + 1 });
+			if (r2 - 1 > r1 + 1) points.push({ lane: v.lane, row: r2 - 1 });
 		}
+		points.push({ lane: laneOf.get(l.targetID)!, row: r2 });
+		laidEdges.push({
+			taskID: l.taskID,
+			targetID: l.targetID,
+			kind: l.kind,
+			points,
+			color: v.color,
+			via: v.lane,
+			blocking: l.kind === 'dep' && byID.get(l.targetID)!.status !== 'done' && byID.get(l.taskID)!.status !== 'done'
+		});
 	}
 
 	const waitingFor = new Map<string, string[]>();
 	const blockingIDs = new Set<string>();
+	const merges = new Set<string>();
 	for (const e of laidEdges) {
+		if (e.kind === 'sub') merges.add(e.taskID);
 		if (!e.blocking) continue;
-		(waitingFor.get(e.taskID) ?? waitingFor.set(e.taskID, []).get(e.taskID)!).push(e.prerequisiteID);
-		blockingIDs.add(e.prerequisiteID);
+		(waitingFor.get(e.taskID) ?? waitingFor.set(e.taskID, []).get(e.taskID)!).push(e.targetID);
+		blockingIDs.add(e.targetID);
 	}
-	const nodes: LaidNode[] = order.map((t) => ({
-		task: t,
-		row: rowOf.get(t.id)!,
-		lane: laneOf.get(t.id)!,
-		waitingFor: waitingFor.get(t.id) ?? [],
-		blocked: (waitingFor.get(t.id) ?? []).length > 0,
-		blocking: blockingIDs.has(t.id),
-		overdue: isOverdueTask(t, now)
-	}));
 
+	// Milestones as tags; state comes from the unfiltered tasks. Only top-level members of a milestone carry the tag.
 	const fullByMilestone = new Map<string, GraphTask[]>();
 	for (const t of full.tasks) if (t.milestoneID) (fullByMilestone.get(t.milestoneID) ?? fullByMilestone.set(t.milestoneID, []).get(t.milestoneID)!).push(t);
 	const laidMilestones: LaidMilestone[] = [];
-	rows.forEach((r, row) => {
-		if (r.kind !== 'milestone') return;
-		const m = r.milestoneID ? (milestones.find((x) => x.id === r.milestoneID) ?? null) : null;
-		const own = m ? (fullByMilestone.get(m.id) ?? []) : [];
-		const state = m ? milestoneState(own) : 'planned';
-		laidMilestones.push({
-			milestone: m,
-			row,
-			state,
-			overdue: !!m && state === 'planned' && !!m.dueAt && Date.parse(m.dueAt) < now.getTime(),
-			taskCount: own.length,
-			doneCount: own.filter((t) => t.status === 'done').length
-		});
+	const tagOf = new Map<string, LaidTag>();
+	for (const m of [...input.milestones].sort((a, b) => time(b.dueAt) - time(a.dueAt) || a.title.localeCompare(b.title))) {
+		const own = fullByMilestone.get(m.id) ?? [];
+		const state = milestoneState(own);
+		const overdue = state === 'planned' && !!m.dueAt && Date.parse(m.dueAt) < now.getTime();
+		laidMilestones.push({ milestone: m, state, overdue, taskCount: own.length, doneCount: own.filter((t) => t.status === 'done').length });
+		tagOf.set(m.id, { milestoneID: m.id, title: m.title, state, overdue, dueAt: m.dueAt ?? null });
+	}
+
+	const nodes: LaidNode[] = order.map((t) => {
+		const parent = t.parentID ? byID.get(t.parentID) : undefined;
+		const tag = t.milestoneID && !(parent && parent.milestoneID === t.milestoneID) ? tagOf.get(t.milestoneID) : undefined;
+		return {
+			task: t,
+			row: rowOf.get(t.id)!,
+			lane: laneOf.get(t.id)!,
+			color: colorOf.get(t.id)!,
+			waitingFor: waitingFor.get(t.id) ?? [],
+			blocked: (waitingFor.get(t.id) ?? []).length > 0,
+			blocking: blockingIDs.has(t.id),
+			overdue: isOverdueTask(t, now),
+			merge: merges.has(t.id),
+			when: whenOf(t),
+			tags: tag ? [tag] : []
+		};
 	});
 
-	return { rows, nodes, edges: laidEdges, milestones: laidMilestones, laneCount: Math.max(1, lanes.length) };
+	return { rows, nodes, edges: laidEdges, milestones: laidMilestones, laneCount: maxLanes, nowRow, truncated: false };
 }
 
 /** Filters, then lays out. Milestone state always comes from the unfiltered tasks. */
 export function buildTaskGraph(input: GraphInput, f: GraphFilter): GraphLayout {
 	return layoutGraph(filterGraph(input, f), f.now, input);
+}
+
+/**
+ * Keeps the first `maxRows` rows. Edges leaving the window continue as a stub to the bottom edge; lane count shrinks to
+ * what is still visible.
+ */
+export function limitLayout(layout: GraphLayout, maxRows: number): GraphLayout {
+	if (layout.rows.length <= maxRows) return layout;
+	const nodes = layout.nodes.filter((n) => n.row < maxRows);
+	const edges: LaidEdge[] = [];
+	for (const e of layout.edges) {
+		if (e.points[0].row >= maxRows) continue;
+		if (e.points.at(-1)!.row < maxRows) {
+			edges.push(e);
+			continue;
+		}
+		const kept = e.points.filter((p) => p.row < maxRows);
+		kept.push({ lane: kept.length > 1 ? kept.at(-1)!.lane : e.via, row: maxRows });
+		edges.push({ ...e, points: kept });
+	}
+	let laneCount = 1;
+	for (const n of nodes) laneCount = Math.max(laneCount, n.lane + 1);
+	for (const e of edges) for (const p of e.points) laneCount = Math.max(laneCount, p.lane + 1);
+	return {
+		...layout,
+		rows: layout.rows.slice(0, maxRows),
+		nodes,
+		edges,
+		laneCount,
+		nowRow: layout.nowRow < maxRows ? layout.nowRow : -1,
+		truncated: true
+	};
 }
 
 /**
@@ -325,15 +449,12 @@ export function edgePath(points: Point[], x: (lane: number) => number, y: (row: 
 	return d;
 }
 
-/** Arrow-key navigation: next/previous node row, or the nearest node on a neighbouring lane. */
-export function neighbourNode(layout: GraphLayout, id: string, dir: 'up' | 'down' | 'left' | 'right'): string | null {
-	const cur = layout.nodes.find((n) => n.task.id === id);
-	if (!cur) return null;
+/** Arrow-key navigation between node rows (the "now" line is skipped). */
+export function neighbourNode(layout: GraphLayout, id: string, dir: 'up' | 'down' | 'first' | 'last'): string | null {
 	const byRow = [...layout.nodes].sort((a, b) => a.row - b.row);
-	const i = byRow.indexOf(cur);
-	if (dir === 'up') return byRow[i - 1]?.task.id ?? null;
-	if (dir === 'down') return byRow[i + 1]?.task.id ?? null;
-	const want = cur.lane + (dir === 'left' ? -1 : 1);
-	const candidates = byRow.filter((n) => n.lane === want).sort((a, b) => Math.abs(a.row - cur.row) - Math.abs(b.row - cur.row));
-	return candidates[0]?.task.id ?? null;
+	const i = byRow.findIndex((n) => n.task.id === id);
+	if (i < 0) return null;
+	if (dir === 'first') return byRow[0].task.id;
+	if (dir === 'last') return byRow.at(-1)!.task.id;
+	return byRow[dir === 'up' ? i - 1 : i + 1]?.task.id ?? null;
 }

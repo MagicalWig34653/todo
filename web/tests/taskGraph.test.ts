@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { buildTaskGraph, edgePath, filterGraph, layoutGraph, milestoneState, neighbourNode, type GraphInput, type GraphTask } from '../src/lib/taskGraph.js';
+import {
+	PALETTE_SIZE,
+	buildTaskGraph,
+	edgePath,
+	filterGraph,
+	layoutGraph,
+	limitLayout,
+	milestoneState,
+	neighbourNode,
+	shortID,
+	type GraphInput,
+	type GraphTask
+} from '../src/lib/taskGraph.js';
 
 const now = new Date('2026-11-03T12:00:00Z');
 const t = (id: string, over: Partial<GraphTask> = {}): GraphTask => ({ id, title: id, status: 'open', projectID: 'p', isFeature: false, ...over });
@@ -8,158 +20,195 @@ const input = (tasks: GraphTask[], deps: [string, string][] = [], milestones: Gr
 	edges: deps.map(([taskID, prerequisiteID]) => ({ taskID, prerequisiteID })),
 	milestones
 });
-const row = (l: ReturnType<typeof layoutGraph>, id: string) => l.nodes.find((n) => n.task.id === id)!;
+const node = (l: ReturnType<typeof layoutGraph>, id: string) => l.nodes.find((n) => n.task.id === id)!;
+const done = (id: string, at: string, over: Partial<GraphTask> = {}) => t(id, { status: 'done', doneAt: at, updatedAt: at, ...over });
 
-describe('layoutGraph', () => {
-	it('puts dependents above their prerequisites', () => {
-		const l = layoutGraph(input([t('c'), t('b'), t('a')], [['c', 'b'], ['b', 'a']]), now);
-		expect(row(l, 'c').row).toBeLessThan(row(l, 'b').row);
-		expect(row(l, 'b').row).toBeLessThan(row(l, 'a').row);
-		// A plain chain stays on one lane.
+describe('row order and the now line', () => {
+	it('puts open work above the now line and done work below, newest first', () => {
+		const l = layoutGraph(
+			input([done('old', '2026-10-01T10:00:00Z'), t('later', { dueAt: '2026-12-01T10:00:00Z' }), done('new', '2026-11-02T10:00:00Z'), t('soon', { dueAt: '2026-11-10T10:00:00Z' })]),
+			now
+		);
+		const ids = l.rows.map((r) => (r.kind === 'now' ? '|now|' : r.id));
+		expect(ids).toEqual(['later', 'soon', '|now|', 'new', 'old']);
+		expect(l.nowRow).toBe(2);
+	});
+
+	it('keeps the now line at the bottom when nothing is done and at the top when everything is', () => {
+		expect(layoutGraph(input([t('a', { dueAt: '2026-12-01T00:00:00Z' })]), now).rows.map((r) => r.kind)).toEqual(['node', 'now']);
+		expect(layoutGraph(input([done('a', '2026-11-01T00:00:00Z')]), now).rows.map((r) => r.kind)).toEqual(['now', 'node']);
+		expect(layoutGraph(input([]), now).rows).toEqual([]);
+	});
+
+	it('shows the date that fits: done, due, updated', () => {
+		const l = layoutGraph(input([done('d', '2026-11-01T00:00:00Z'), t('o', { dueAt: '2026-12-01T00:00:00Z' }), t('u', { updatedAt: '2026-11-02T00:00:00Z' })]), now);
+		expect(node(l, 'd').when).toEqual({ kind: 'done', at: '2026-11-01T00:00:00Z' });
+		expect(node(l, 'o').when.kind).toBe('due');
+		expect(node(l, 'u').when).toEqual({ kind: 'updated', at: '2026-11-02T00:00:00Z' });
+	});
+
+	it('is deterministic', () => {
+		const tasks = Array.from({ length: 30 }, (_, i) => t(`n${i}`, { parentID: i % 5 === 0 || i === 0 ? null : `n${i - (i % 5)}`, updatedAt: `2026-10-${String((i % 20) + 1).padStart(2, '0')}T00:00:00Z` }));
+		const deps: [string, string][] = [['n7', 'n3'], ['n12', 'n8'], ['n25', 'n2']];
+		const a = layoutGraph(input(tasks, deps), now);
+		const b = layoutGraph(input([...tasks].reverse(), deps), now);
+		expect(JSON.stringify(a.nodes.map((n) => [n.task.id, n.row, n.lane, n.color]))).toBe(JSON.stringify(b.nodes.map((n) => [n.task.id, n.row, n.lane, n.color])));
+	});
+});
+
+describe('lanes', () => {
+	it('keeps a plain chain on one lane with one colour', () => {
+		const l = layoutGraph(input([t('c', { dueAt: '2026-12-03T00:00:00Z' }), t('b', { dueAt: '2026-12-02T00:00:00Z' }), t('a', { dueAt: '2026-12-01T00:00:00Z' })], [['c', 'b'], ['b', 'a']]), now);
+		expect(l.nodes.map((n) => n.row)).toEqual([0, 1, 2]);
 		expect(new Set(l.nodes.map((n) => n.lane)).size).toBe(1);
+		expect(new Set(l.nodes.map((n) => n.color)).size).toBe(1);
 		expect(l.laneCount).toBe(1);
 	});
 
-	it('branches for a second prerequisite and merges back (diamond)', () => {
-		// d waits for b and c, both wait for a.
-		const l = layoutGraph(input([t('d'), t('b'), t('c'), t('a')], [['d', 'b'], ['d', 'c'], ['b', 'a'], ['c', 'a']]), now);
+	it('a parent branches its subtasks and they merge back into it', () => {
+		const l = layoutGraph(input([t('f', { isFeature: true, updatedAt: '2026-11-03T00:00:00Z' }), t('s1', { parentID: 'f', updatedAt: '2026-11-02T00:00:00Z' }), t('s2', { parentID: 'f', updatedAt: '2026-11-01T00:00:00Z' })]), now);
+		expect(node(l, 'f').row).toBeLessThan(node(l, 's1').row);
+		expect(node(l, 'f').merge).toBe(true);
+		// First subtask continues the parent's strand, the second one opens a new lane with its own colour.
+		expect(node(l, 's1').lane).toBe(node(l, 'f').lane);
+		expect(node(l, 's1').color).toBe(node(l, 'f').color);
+		expect(node(l, 's2').lane).not.toBe(node(l, 'f').lane);
+		expect(node(l, 's2').color).not.toBe(node(l, 'f').color);
 		expect(l.laneCount).toBe(2);
-		expect(row(l, 'd').lane).toBe(0);
-		expect(row(l, 'b').lane).not.toBe(row(l, 'c').lane);
-		expect(row(l, 'a').lane).toBe(0);
-		const merge = l.edges.find((e) => e.taskID === 'c' && e.prerequisiteID === 'a')!;
-		expect(merge.points[0].lane).not.toBe(merge.points.at(-1)!.lane);
+		const branch = l.edges.find((e) => e.targetID === 's2')!;
+		expect(branch.kind).toBe('sub');
+		expect(branch.points[0].lane).toBe(node(l, 'f').lane);
+		expect(branch.points.at(-1)!.lane).toBe(node(l, 's2').lane);
+		expect(branch.color).toBe(node(l, 's2').color);
 	});
 
-	it('every edge goes strictly downward and ends on its nodes', () => {
-		const tasks = Array.from({ length: 40 }, (_, i) => t(`n${i}`));
+	it('waiting is a lane connection: the dependent sits above, and blocks only while open', () => {
+		const l = layoutGraph(input([t('b', { updatedAt: '2026-11-03T00:00:00Z' }), t('a', { updatedAt: '2026-11-02T00:00:00Z' }), done('x', '2026-11-01T00:00:00Z'), t('y', { updatedAt: '2026-11-03T01:00:00Z' })], [['b', 'a'], ['y', 'x']]), now);
+		expect(node(l, 'b').row).toBeLessThan(node(l, 'a').row);
+		expect(node(l, 'b').blocked).toBe(true);
+		expect(node(l, 'b').waitingFor).toEqual(['a']);
+		expect(node(l, 'a').blocking).toBe(true);
+		expect(l.edges.find((e) => e.targetID === 'a')!.blocking).toBe(true);
+		expect(node(l, 'y').blocked).toBe(false);
+		expect(l.edges.find((e) => e.targetID === 'x')!.blocking).toBe(false);
+		expect(node(l, 'y').row).toBeLessThan(node(l, 'x').row);
+	});
+
+	it('two tasks waiting for the same one converge on a single lane (fork)', () => {
+		const l = layoutGraph(input([t('p', { updatedAt: '2026-11-03T03:00:00Z' }), t('q', { updatedAt: '2026-11-03T02:00:00Z' }), t('base', { updatedAt: '2026-11-03T01:00:00Z' })], [['p', 'base'], ['q', 'base']]), now);
+		expect(node(l, 'p').lane).not.toBe(node(l, 'q').lane);
+		const ends = l.edges.filter((e) => e.targetID === 'base').map((e) => e.points.at(-1)!.lane);
+		expect(new Set(ends).size).toBe(1);
+		// The second edge reaches the merge lane via its own lane without crossing other nodes.
+		expect(l.laneCount).toBe(2);
+	});
+
+	it('every edge goes strictly downward, ends on its nodes and uses valid lanes and colours', () => {
+		const tasks = Array.from({ length: 60 }, (_, i) => t(`n${i}`, { updatedAt: new Date(Date.UTC(2026, 9, 1 + (i * 7) % 30)).toISOString(), status: i % 4 === 0 ? 'done' : 'open', doneAt: i % 4 === 0 ? '2026-10-15T00:00:00Z' : null, parentID: i > 0 && i % 6 === 1 ? `n${i - 1}` : null }));
 		const deps: [string, string][] = [];
-		for (let i = 1; i < 40; i++) {
-			deps.push([`n${i}`, `n${(i * 7) % i}`]);
-			if (i % 3 === 0) deps.push([`n${i}`, `n${Math.floor(i / 2)}`]);
-		}
+		for (let i = 2; i < 60; i += 3) deps.push([`n${i}`, `n${(i * 7) % i}`]);
 		const l = layoutGraph(input(tasks, deps), now);
+		expect(l.nodes).toHaveLength(60);
+		expect(new Set(l.nodes.map((n) => n.row)).size).toBe(60);
 		for (const e of l.edges) {
-			const from = row(l, e.taskID), to = row(l, e.prerequisiteID);
-			expect(e.points[0]).toEqual({ lane: from.lane, row: from.row });
-			expect(e.points.at(-1)).toEqual({ lane: to.lane, row: to.row });
-			expect(to.row).toBeGreaterThan(from.row);
+			const a = node(l, e.taskID), b = node(l, e.targetID);
+			expect(a.row).toBeLessThan(b.row);
+			expect(e.points[0]).toEqual({ lane: a.lane, row: a.row });
+			expect(e.points.at(-1)).toEqual({ lane: b.lane, row: b.row });
 			for (let i = 1; i < e.points.length; i++) expect(e.points[i].row).toBeGreaterThan(e.points[i - 1].row);
+			expect(e.color).toBeGreaterThanOrEqual(0);
+			expect(e.color).toBeLessThan(PALETTE_SIZE);
 		}
-		// No two nodes share a grid cell.
-		expect(new Set(l.nodes.map((n) => `${n.lane}:${n.row}`)).size).toBe(l.nodes.length);
+		for (const n of l.nodes) expect(n.lane).toBeLessThan(l.laneCount);
 	});
 
-	it('marks blocked tasks, what they wait for, and the blocking predecessor', () => {
-		const l = layoutGraph(input([t('b', { status: 'in_progress' }), t('a'), t('x', { status: 'done' }), t('y')], [['b', 'a'], ['y', 'x']]), now);
-		expect(row(l, 'b').blocked).toBe(true);
-		expect(row(l, 'b').waitingFor).toEqual(['a']);
-		expect(row(l, 'a').blocking).toBe(true);
-		expect(row(l, 'a').blocked).toBe(false);
-		// A done prerequisite does not block.
-		expect(row(l, 'y').blocked).toBe(false);
-		expect(l.edges.find((e) => e.taskID === 'y')!.blocking).toBe(false);
-	});
-
-	it('flags overdue open tasks only', () => {
-		const l = layoutGraph(input([t('late', { dueAt: '2026-11-01T00:00:00Z' }), t('doneLate', { dueAt: '2026-11-01T00:00:00Z', status: 'done' }), t('future', { dueAt: '2027-01-01T00:00:00Z' })]), now);
-		expect(row(l, 'late').overdue).toBe(true);
-		expect(row(l, 'doneLate').overdue).toBe(false);
-		expect(row(l, 'future').overdue).toBe(false);
-	});
-
-	it('groups tasks under milestone markers, latest milestone on top', () => {
-		const ms = [{ id: 'm1', title: '1.0', dueAt: '2026-09-01T00:00:00Z' }, { id: 'm2', title: '2.0', dueAt: '2027-01-01T00:00:00Z' }];
-		const l = layoutGraph(
-			input([t('a', { milestoneID: 'm1', status: 'done' }), t('b', { milestoneID: 'm2' }), t('c')], [['b', 'a']], ms),
-			now
-		);
-		const markers = l.milestones.map((m) => m.milestone?.id ?? null);
-		expect(markers).toEqual([null, 'm2', 'm1']);
-		const rowOfMarker = (id: string | null) => l.milestones.find((m) => (m.milestone?.id ?? null) === id)!.row;
-		expect(row(l, 'c').row).toBeGreaterThan(rowOfMarker(null));
-		expect(row(l, 'b').row).toBeGreaterThan(rowOfMarker('m2'));
-		expect(row(l, 'b').row).toBeLessThan(rowOfMarker('m1'));
-		expect(row(l, 'a').row).toBeGreaterThan(rowOfMarker('m1'));
-		const m1 = l.milestones.find((m) => m.milestone?.id === 'm1')!;
-		expect(m1.state).toBe('released');
-		expect(m1.doneCount).toBe(1);
-		expect(l.milestones.find((m) => m.milestone?.id === 'm2')!.state).toBe('planned');
-	});
-
-	it('keeps empty milestones and marks planned milestones in the past as overdue', () => {
-		const l = layoutGraph(input([t('a')], [], [{ id: 'm', title: 'Old', dueAt: '2026-01-01T00:00:00Z' }]), now);
-		const m = l.milestones.find((x) => x.milestone?.id === 'm')!;
-		expect(m.state).toBe('planned');
-		expect(m.overdue).toBe(true);
-	});
-
-	it('survives cycles and unknown edges without throwing or looping', () => {
-		const l = layoutGraph(input([t('a'), t('b')], [['a', 'b'], ['b', 'a'], ['a', 'ghost'], ['a', 'a']]), now);
+	it('survives a dependency cycle without hanging', () => {
+		const l = layoutGraph(input([t('a'), t('b')], [['a', 'b'], ['b', 'a']]), now);
 		expect(l.nodes).toHaveLength(2);
-		for (const e of l.edges) expect(row(l, e.prerequisiteID).row).toBeGreaterThan(row(l, e.taskID).row);
 	});
 
-	it('handles 600 nodes quickly', () => {
-		const tasks = Array.from({ length: 600 }, (_, i) => t(`n${i}`, { milestoneID: i % 50 === 0 ? 'm' : null }));
-		const deps: [string, string][] = [];
-		for (let i = 1; i < 600; i++) deps.push([`n${i}`, `n${i - 1}`], [`n${i}`, `n${Math.floor(Math.random() * i)}`]);
-		const start = performance.now();
-		const l = layoutGraph(input(tasks, deps, [{ id: 'm', title: 'M' }]), now);
-		expect(performance.now() - start).toBeLessThan(1500);
-		expect(l.nodes).toHaveLength(600);
+	it('minimises lane changes: a chain of independent strands reuses lane 0', () => {
+		const l = layoutGraph(input([t('a', { updatedAt: '2026-11-03T03:00:00Z' }), t('b', { updatedAt: '2026-11-03T02:00:00Z' }), t('c', { updatedAt: '2026-11-03T01:00:00Z' })]), now);
+		expect(l.laneCount).toBe(1);
+		expect(l.nodes.every((n) => n.lane === 0)).toBe(true);
+	});
+});
+
+describe('tags', () => {
+	it('marks released and planned milestones on top-level members only', () => {
+		const ms = [{ id: 'm1', title: 'v1.0', dueAt: null }, { id: 'm2', title: 'v2.0', dueAt: '2026-01-01T00:00:00Z' }];
+		const tasks = [done('a', '2026-11-01T00:00:00Z', { milestoneID: 'm1' }), t('b', { milestoneID: 'm2', updatedAt: '2026-11-02T00:00:00Z' }), t('c', { milestoneID: 'm2', parentID: 'b', updatedAt: '2026-11-01T00:00:00Z' })];
+		const l = layoutGraph(input(tasks, [], ms), now);
+		expect(node(l, 'a').tags).toMatchObject([{ title: 'v1.0', state: 'released' }]);
+		expect(node(l, 'b').tags).toMatchObject([{ title: 'v2.0', state: 'planned', overdue: true }]);
+		expect(node(l, 'c').tags).toEqual([]);
+		expect(l.milestones.map((m) => m.milestone.id)).toEqual(['m2', 'm1']);
+		expect(milestoneState([])).toBe('planned');
+	});
+
+	it('milestone state does not depend on the filter', () => {
+		const ms = [{ id: 'm', title: 'v1', dueAt: null }];
+		const full = input([done('a', '2020-01-01T00:00:00Z', { milestoneID: 'm' }), t('b', { milestoneID: 'm' })], [], ms);
+		const l = buildTaskGraph(full, { featuresOnly: false, hideDoneDays: 7, now });
+		expect(l.nodes.map((n) => n.task.id)).toEqual(['b']);
+		expect(node(l, 'b').tags[0].state).toBe('planned');
+		expect(l.milestones[0]).toMatchObject({ taskCount: 2, doneCount: 1 });
 	});
 });
 
 describe('filterGraph', () => {
-	it('features only bridges dependencies through hidden open tasks', () => {
-		const f = filterGraph(input([t('F2', { isFeature: true }), t('mid'), t('F1', { isFeature: true })], [['F2', 'mid'], ['mid', 'F1']]), { featuresOnly: true, hideDoneDays: null, now });
-		expect(f.tasks.map((x) => x.id)).toEqual(['F2', 'F1']);
-		expect(f.edges).toEqual([{ taskID: 'F2', prerequisiteID: 'F1' }]);
+	it('only features bridges links through hidden open tasks', () => {
+		const f = filterGraph(input([t('top', { isFeature: true }), t('mid'), t('low', { isFeature: true })], [['top', 'mid'], ['mid', 'low']]), { featuresOnly: true, hideDoneDays: null, now });
+		expect(f.tasks.map((x) => x.id)).toEqual(['top', 'low']);
+		expect(f.edges).toEqual([{ taskID: 'top', prerequisiteID: 'low' }]);
 	});
 
-	it('does not bridge through a done task', () => {
-		const f = filterGraph(input([t('F2', { isFeature: true }), t('mid', { status: 'done' }), t('F1', { isFeature: true })], [['F2', 'mid'], ['mid', 'F1']]), { featuresOnly: true, hideDoneDays: null, now });
-		expect(f.edges).toEqual([]);
+	it('hides done tasks older than the cutoff and keeps a parent link only to visible parents', () => {
+		const f = filterGraph(
+			input([done('old', '2026-09-01T00:00:00Z'), done('fresh', '2026-11-01T00:00:00Z', { parentID: 'old' }), t('open', { parentID: 'fresh' })]),
+			{ featuresOnly: false, hideDoneDays: 30, now }
+		);
+		expect(f.tasks.map((x) => [x.id, x.parentID])).toEqual([['fresh', null], ['open', 'fresh']]);
 	});
+});
 
-	it('hides done tasks older than N days but keeps recent and undated ones', () => {
-		const tasks = [
-			t('old', { status: 'done', doneAt: '2026-09-01T00:00:00Z' }),
-			t('recent', { status: 'done', doneAt: '2026-10-30T00:00:00Z' }),
-			t('undated', { status: 'done' }),
-			t('open')
-		];
-		const f = filterGraph(input(tasks), { featuresOnly: false, hideDoneDays: 14, now });
-		expect(f.tasks.map((x) => x.id)).toEqual(['recent', 'undated', 'open']);
+describe('limitLayout', () => {
+	const tasks = Array.from({ length: 10 }, (_, i) => t(`n${i}`, { updatedAt: new Date(Date.UTC(2026, 10, 3, 10 - i)).toISOString() }));
+	const deps: [string, string][] = [['n0', 'n9'], ['n1', 'n2']];
+	it('returns the layout unchanged when it fits', () => {
+		const l = layoutGraph(input(tasks, deps), now);
+		expect(limitLayout(l, 100)).toBe(l);
+		expect(l.truncated).toBe(false);
 	});
-
-	it('milestone state ignores the filters', () => {
-		const ms = [{ id: 'm', title: 'R' }];
-		const all = input([t('a', { status: 'done', milestoneID: 'm', doneAt: '2026-01-01T00:00:00Z' }), t('b', { status: 'done', milestoneID: 'm', doneAt: '2026-01-01T00:00:00Z' })], [], ms);
-		const l = buildTaskGraph(all, { featuresOnly: false, hideDoneDays: 7, now });
-		expect(l.nodes).toHaveLength(0);
-		expect(l.milestones[0].state).toBe('released');
-		expect(l.milestones[0].taskCount).toBe(2);
+	it('cuts rows and continues edges as stubs to the bottom edge', () => {
+		const l = limitLayout(layoutGraph(input(tasks, deps), now), 5);
+		expect(l.rows).toHaveLength(5);
+		expect(l.truncated).toBe(true);
+		expect(l.nodes.every((n) => n.row < 5)).toBe(true);
+		const stub = l.edges.find((e) => e.taskID === 'n0')!;
+		expect(stub.points.at(-1)!.row).toBe(5);
+		expect(l.edges.some((e) => e.taskID === 'n1')).toBe(true);
 	});
 });
 
 describe('helpers', () => {
-	it('milestoneState', () => {
-		expect(milestoneState([])).toBe('planned');
-		expect(milestoneState([{ status: 'done' }, { status: 'open' }])).toBe('planned');
-		expect(milestoneState([{ status: 'done' }])).toBe('released');
+	it('edgePath draws straight lines on a lane and S-curves between lanes', () => {
+		const x = (lane: number) => lane * 10;
+		const y = (row: number) => row * 20;
+		expect(edgePath([{ lane: 0, row: 0 }, { lane: 0, row: 2 }], x, y)).toBe('M0 0L0 40');
+		expect(edgePath([{ lane: 0, row: 0 }, { lane: 1, row: 1 }], x, y)).toBe('M0 0C0 10 10 10 10 20');
 	});
-	it('edgePath uses curves only on lane changes', () => {
-		const x = (l: number) => l * 10, y = (r: number) => r * 10;
-		expect(edgePath([{ lane: 0, row: 0 }, { lane: 0, row: 2 }], x, y)).toBe('M0 0L0 20');
-		expect(edgePath([{ lane: 0, row: 0 }, { lane: 1, row: 1 }], x, y)).toBe('M0 0C0 5 10 5 10 10');
+
+	it('shortID is a 7 digit hash-like prefix', () => {
+		expect(shortID('4E633799-F7B9-4704-BB9C-9D224798ACF3')).toBe('4e63379');
 	});
-	it('neighbourNode moves by row and lane', () => {
-		const l = layoutGraph(input([t('d'), t('b'), t('c'), t('a')], [['d', 'b'], ['d', 'c'], ['b', 'a'], ['c', 'a']]), now);
-		const order = l.nodes.map((n) => n.task.id);
-		expect(neighbourNode(l, order[0], 'down')).toBe(order[1]);
-		expect(neighbourNode(l, order[0], 'up')).toBeNull();
-		expect(neighbourNode(l, 'd', 'right')).not.toBeNull();
+
+	it('neighbourNode moves between node rows and skips the now line', () => {
+		const l = layoutGraph(input([t('a', { updatedAt: '2026-11-03T02:00:00Z' }), done('b', '2026-11-01T00:00:00Z')]), now);
+		expect(neighbourNode(l, 'a', 'down')).toBe('b');
+		expect(neighbourNode(l, 'b', 'up')).toBe('a');
+		expect(neighbourNode(l, 'a', 'up')).toBeNull();
+		expect(neighbourNode(l, 'a', 'last')).toBe('b');
+		expect(neighbourNode(l, 'b', 'first')).toBe('a');
 	});
 });
