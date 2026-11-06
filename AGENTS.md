@@ -32,6 +32,8 @@ Vor Übergabe, Kontextwechsel oder Sessionende einen konsistenten Checkpoint sch
   - Parallele Schreiber nur in getrennten Worktrees (`isolation: worktree`) mit klarer Dateiverantwortung; Aufträge so schneiden, dass sich die Dateien nicht überschneiden.
   - Jeder Agent-Auftrag nennt: AGENTS.md und aktuellen STATUS-Checkpoint lesen, konkretes Ziel, diese Regeln, Doku-Checkpoint in STATUS/ARBEITSPLAN, Commit auf dem Worktree-Branch (kein Push) und einen Kurzbericht (Commit, Branch, Tests mit Ergebnis, offene Punkte).
   - Die Hauptsession liest nur die Berichte, nicht die Transkripte, und führt die Branches nach Prüfung zusammen. Entscheidungen, die dem Nutzer gehören (z. B. Datenschutz), werden vorher erfragt.
+  - Ergänzung (Nutzerentscheidung 6.11.2026): Die Hauptsession schreibt selbst keinen Feature-Code; auch Kleinigkeiten werden delegiert. Frei nutzbare Modelle: Sonnet, Haiku, gpt-6.1-sol, terra. Opus und gpt-6-astra nur mit ausdrücklicher Genehmigung des Nutzers (vorher `ask_question`).
+  - Rollen, Briefing-Vorlage, Verifikationsgate und Modellwahl: `docs/AGENT-ARBEITSWEISE.md`.
 
 ## Todolino laufend nutzen
 
