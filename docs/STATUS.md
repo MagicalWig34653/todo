@@ -1,5 +1,10 @@
 # Status
 
+## Checkpoint 6.11.2026 (Nachtrag): Freitext in "Für dich", Namensfeld der Zustimmungsseite
+
+- Auf `main` (`0e975e4` und Merge der Consent-Spec), kein Push, keine Migration. "Für dich" nutzt bei Optionsfragen `QuestionAnswer` (neues Prop `bare`), damit gibt es dort ebenfalls "Oder eigene Antwort schreiben". Selbst geprüft: vitest 320, Build; laut Worker Playwright `for-you` 3/3, `freetext-review` 3/3 (neuer Test bei 320 px). Nicht geprüft: Firefox/WebKit, hell/dunkel, Fehlerpfad "schon anderswo beantwortet", Apple-App. Karte `BBBE29C1` bleibt bei 95 %.
+- `web/e2e/oauth-consent.spec.ts` deckt jetzt das Namensfeld der Server-Zustimmungsseite ab (Vorbelegung, Standardname, 81 Zeichen → 400 `invalid_name`, 80 gespeichert). Laut Worker 8/8 grün in Chromium gegen frische SQLite, kein Produktfehler; selbst nicht erneut ausgeführt. Karte `8E538037` damit geklärt.
+
 ## Checkpoint 6.11.2026 (abends): Mehrfache Repository-Bindungen je Projekt (Board-Aufgabe `BE954C5C-D70B-4F25-8612-F48B53521899`, Plan `docs/PLAN-MEHRFACH-REPOSITORY-BINDUNGEN.md`, ADR 0029)
 
 - Alles lokal auf `main@6697c84` gemergt, kein Push, kein Deploy. Migration `AddProjectRepositoryBindings` (additiv, wiederholbar; vor Serve `App migrate --yes`); Alttabelle `project_bindings` bleibt als Altlast. Handbuch 1.17.0, Plugin 1.7.0, `contracts/project-sync.yaml` 1.1.0.
