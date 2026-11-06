@@ -317,4 +317,27 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertEqual(statuses.filter { $0 == .noContent }.count, 1)
         XCTAssertEqual(statuses.filter { $0 == .unprocessableEntity }.count, 1)
     }
+
+    /// REST PATCH with projectID must clean up exactly like MCP update_task (key moves, links and column are released).
+    func testRestMoveCleansUpLinksAndCarriesPlanKey() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        let moved = try XCTUnwrap(UUID(uuidString: f.tasks[0])), other = try XCTUnwrap(UUID(uuidString: f.tasks[1]))
+        let source = try XCTUnwrap(UUID(uuidString: f.project)), target = try XCTUnwrap(UUID(uuidString: f.child))
+        try await TaskExternalKey(taskID: moved, projectID: source, externalKey: "p/moved").save(on: db)
+        try await PlanningDependency(moved, other).save(on: db)
+        let wf = TaskWorkflow(taskID: moved); wf.parentTaskID = other; try await wf.save(on: db)
+        let response = try await f.t.json(.PATCH, "/v1/tasks/\(moved)", ["version": 1, "projectID": f.child], token: f.token)
+        XCTAssertEqual(response.status, .ok)
+        let key = try await TaskExternalKey.query(on: db).filter(\.$taskID == moved).first()
+        XCTAssertEqual(key?.projectID, target)
+        let deps = try await PlanningDependency.query(on: db).filter(\.$taskID == moved).count()
+        XCTAssertEqual(deps, 0)
+        let parent = try await TaskWorkflow.find(moved, on: db)?.parentTaskID
+        XCTAssertNil(parent)
+        let task = try await TodoTask.find(moved, on: db)
+        XCTAssertEqual(task?.projectID, target); XCTAssertNil(task?.columnID)
+        let stale = try await f.t.json(.PATCH, "/v1/tasks/\(moved)", ["version": 1, "title": "x"], token: f.token)
+        XCTAssertEqual(stale.status, .conflict)
+    }
 }
