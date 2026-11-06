@@ -45,21 +45,27 @@ extension MCPController {
                           "color": Schema.string("Colour as #RRGGBB.", maxLength: 7)],
              required: ["projectID", "version"]),
         Tool(name: "bind_repository", scope: "tasks:write",
-             description: "Bind an existing project to a repository identifier, or change the staleness threshold of an existing binding (omit repository then). One repository maps to one project per owner (repository_already_bound otherwise). Changing the repository of a bound project resets its sync history. Needs edit rights.",
+             description: "Add a repository binding to an existing project (up to 10, each with its own sync history that is never reset), or change the staleness threshold of an existing binding. Without repository this only works when the project has exactly one binding (repository_required otherwise). One repository maps to one project per owner (repository_already_bound otherwise; too_many_bindings above 10). Needs edit rights.",
              properties: ["projectID": Schema.uuid("Project id."), "repository": repositoryField, "staleAfterDays": staleDaysField],
              required: ["projectID"]),
         Tool(name: "record_sync", scope: "tasks:write",
-             description: "Record that the project's board was reconciled with the repository just now. Call it at the end of every working session after progress, statuses and questions are up to date; this timestamp is what the command center shows as fresh or stale. Fails with not_bound if the project has no repository binding (call bind_repository).",
-             properties: ["projectID": Schema.uuid("Project id."),
+             description: "Record that the project's board was reconciled with the repository just now. Call it at the end of every working session after progress, statuses and questions are up to date; this timestamp is what the command center shows as fresh or stale. Fails with not_bound if the project has no repository binding (call bind_repository). With several bindings name the repository, otherwise repository_required.",
+             properties: ["projectID": Schema.uuid("Project id."), "repository": repositoryField,
                           "summary": Schema.string("What was reconciled or done in this session, 1 to 4000 characters.", maxLength: 4000),
                           "repoRef": Schema.string("Repository state hint, for example 'main@a1b2c3d' (up to 200 characters).", maxLength: 200),
                           "agentName": agentNameField],
              required: ["projectID", "summary"]),
         Tool(name: "get_sync_status", scope: "projects:read",
-             description: "Read the sync state of one project: bound or not, repository, state fresh|stale|never, last sync time and author, days since, threshold, last repository hint and summary. Use it at session start to decide whether a reconciliation (sync_project) is due.",
+             description: "Read the sync state of one project: bound or not, repository, state fresh|stale|never, last sync time and author, days since, threshold, last repository hint and summary. Use it at session start to decide whether a reconciliation (sync_project) is due. With several bindings the flat fields describe the stalest one and bindings lists all; pass repository to read exactly one (not_bound if it is not bound).",
+             properties: ["projectID": Schema.uuid("Project id."), "repository": repositoryField], required: ["projectID"]),
+        Tool(name: "list_repository_bindings", scope: "projects:read",
+             description: "List all repository bindings of a project (oldest first), each with its own sync state, threshold, last author, repository hint and summary.",
              properties: ["projectID": Schema.uuid("Project id.")], required: ["projectID"]),
+        Tool(name: "unbind_repository", scope: "tasks:write",
+             description: "Remove one repository binding from a project together with its sync history (not recoverable; bind it again to start a new history). Other bindings stay. Needs edit rights; not_bound if the repository is not bound to this project.",
+             properties: ["projectID": Schema.uuid("Project id."), "repository": repositoryField], required: ["projectID", "repository"]),
         Tool(name: "get_stale_projects", scope: "projects:read",
-             description: "List bound projects whose data is stale or was never synced, most outdated first. Optionally narrow to one project and its sub-projects, or include projects without any repository binding.",
+             description: "List bound projects whose data is stale or was never synced, most outdated first; staleBindings names the bindings that are not fresh. Optionally narrow to one project and its sub-projects, or include projects without any repository binding.",
              properties: ["projectID": Schema.uuid("Optional: only this project and its sub-projects."),
                           "includeUnbound": Schema.boolean("Also list projects without a repository binding (default false).")]),
         Tool(name: "import_plan", scope: "tasks:write",
@@ -137,9 +143,16 @@ extension MCPController {
                 staleAfterDays: intArgument(a["staleAfterDays"], reason: "invalid_stale_after_days")))
         case "record_sync":
             return try .encoded(try await sync.recordSync(uuid(a["projectID"]), summary: requiredString(a, "summary"),
-                repoRef: optionalString(a, "repoRef"), actor: actor, agentName: optionalString(a, "agentName")))
+                repoRef: optionalString(a, "repoRef"), actor: actor, agentName: optionalString(a, "agentName"),
+                repository: optionalString(a, "repository")))
         case "get_sync_status":
-            return try .encoded(try await sync.status(uuid(a["projectID"])))
+            return try .encoded(try await sync.status(uuid(a["projectID"]), repository: optionalString(a, "repository")))
+        case "list_repository_bindings":
+            return try .encoded(try await sync.listBindings(uuid(a["projectID"])))
+        case "unbind_repository":
+            let overview = try await sync.unbind(uuid(a["projectID"]), repository: requiredString(a, "repository"))
+            return .object(["sync": try .encoded(overview),
+                "effect": .string("The binding and its sync history were removed; other bindings are unchanged. Bind the repository again with bind_repository to start a new history.")])
         case "get_stale_projects":
             return try .encoded(try await sync.stale(projectID: optionalUUID(a, "projectID"),
                 includeUnbound: optionalBool(a, "includeUnbound") ?? false))

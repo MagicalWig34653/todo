@@ -36,10 +36,32 @@ struct ProjectSyncService: Sendable {
     func status(_ projectID: UUID, repository: String? = nil) async throws -> ProjectSyncDTO {
         _ = try await project(projectID)
         let all = try await Self.bindings(of: projectID, on: db)
-        guard let repository else { return ProjectSyncDTO.make(stalest: all) }
+        guard let repository else { return ProjectSyncDTO.overview(all) }
         let key = try RepositoryKey.normalize(repository)
         guard let match = all.first(where: { $0.repoKey == key }) else { throw Abort(.conflict, reason: "not_bound") }
         return ProjectSyncDTO.make(match)
+    }
+
+    /// All bindings of a project in default order (read right).
+    func listBindings(_ projectID: UUID) async throws -> [ProjectSyncDTO] {
+        _ = try await project(projectID)
+        return ProjectSyncDTO.list(try await Self.bindings(of: projectID, on: db))
+    }
+
+    /// Removes one binding together with its sync history (edit right). Returns the remaining overview.
+    func unbind(_ projectID: UUID, repository: String) async throws -> ProjectSyncDTO {
+        let key = try RepositoryKey.normalize(repository)
+        let user = self.user, allowed = allowedProjects
+        return try await db.transaction { tx in
+            try await lockSharingGraph(on: tx)
+            try await lockRow(table: Project.schema, id: projectID, on: tx)
+            if let allowed, !allowed.contains(projectID) { throw Abort(.notFound) }
+            _ = try await ProjectAccess(user: user, db: tx).project(projectID, role: .edit)
+            guard let binding = try await ProjectRepositoryBinding.query(on: tx).filter(\.$projectID == projectID)
+                .filter(\.$repoKey == key).first() else { throw Abort(.conflict, reason: "not_bound") }
+            try await binding.delete(on: tx)
+            return ProjectSyncDTO.overview(try await Self.bindings(of: projectID, on: tx))
+        }
     }
 
     /// Adds a repository binding (an existing key only changes the threshold; history is never reset) and/or changes the
@@ -149,6 +171,7 @@ struct ProjectSyncService: Sendable {
         let scope = try await CommandCenterScope.resolve(user: user, db: db, projectID: projectID, includeSubprojects: true, allowed: allowedProjects)
         let entries = try await Self.entries(scope: scope, on: db, includeSummary: false)
         return entries.filter { $0.sync.state != "fresh" && (includeUnbound || $0.sync.bound) }
+            .map { var e = $0; e.staleBindings = $0.sync.bindings?.filter { $0.state != "fresh" }; return e }
             .sorted { a, b in
                 let (x, y) = (a.sync.daysSince ?? Int.max, b.sync.daysSince ?? Int.max)
                 return x != y ? x > y : a.name < b.name
@@ -166,7 +189,7 @@ struct ProjectSyncService: Sendable {
             for b in try await ProjectRepositoryBinding.query(on: db).filter(\.$projectID ~~ chunk).all() { bindings[b.projectID, default: []].append(b) }
         }
         return scope.projects.values.map {
-            ProjectSyncEntry(projectID: $0.id!, name: $0.name, sync: ProjectSyncDTO.make(stalest: bindings[$0.id!] ?? [], now: now, includeSummary: includeSummary))
+            ProjectSyncEntry(projectID: $0.id!, name: $0.name, sync: ProjectSyncDTO.overview(bindings[$0.id!] ?? [], now: now, includeSummary: includeSummary))
         }.sorted { ($0.name, $0.projectID.uuidString) < ($1.name, $1.projectID.uuidString) }
     }
 }

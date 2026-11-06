@@ -207,8 +207,26 @@ struct ProjectSyncDTO: Content {
     let staleAfterDays: Int
     let repoRef: String?
     let lastSummary: String?
+    /// All bindings of the project in default order (oldest first). Only set on project-level responses; the flat
+    /// fields above then describe the stalest binding (when `repository` selects one binding this stays nil).
+    var bindings: [ProjectSyncDTO]? = nil
 
     static let defaultStaleAfterDays = 3
+
+    /// Every binding as its own DTO in default order (oldest first, then id).
+    static func list(_ bindings: [ProjectRepositoryBinding], now: Date = Date(), includeSummary: Bool = true) -> [ProjectSyncDTO] {
+        bindings.sorted { a, b in
+            let (x, y) = (a.createdAt ?? .distantPast, b.createdAt ?? .distantPast)
+            return x != y ? x < y : (a.id?.uuidString ?? "") < (b.id?.uuidString ?? "")
+        }.map { make($0, now: now, includeSummary: includeSummary) }
+    }
+
+    /// Flat stalest state plus the `bindings` list.
+    static func overview(_ bindings: [ProjectRepositoryBinding], now: Date = Date(), includeSummary: Bool = true) -> ProjectSyncDTO {
+        var dto = make(stalest: bindings, now: now, includeSummary: includeSummary)
+        dto.bindings = list(bindings, now: now, includeSummary: includeSummary)
+        return dto
+    }
 
     static func make(_ binding: ProjectRepositoryBinding?, now: Date = Date(), includeSummary: Bool = true) -> ProjectSyncDTO {
         guard let binding else {
@@ -229,11 +247,7 @@ struct ProjectSyncDTO: Content {
     /// Flat state of a project with several bindings: the stalest one (never before stale before fresh, then the larger
     /// `daysSince`, then the default binding order). Zero bindings = unbound; one binding = that binding.
     static func make(stalest bindings: [ProjectRepositoryBinding], now: Date = Date(), includeSummary: Bool = true) -> ProjectSyncDTO {
-        let ordered = bindings.sorted { a, b in
-            let (x, y) = (a.createdAt ?? .distantPast, b.createdAt ?? .distantPast)
-            return x != y ? x < y : (a.id?.uuidString ?? "") < (b.id?.uuidString ?? "")
-        }
-        let dtos = ordered.map { make($0, now: now, includeSummary: includeSummary) }
+        let dtos = list(bindings, now: now, includeSummary: includeSummary)
         func rank(_ d: ProjectSyncDTO) -> Int { d.state == "never" ? 2 : d.state == "stale" ? 1 : 0 }
         var best: ProjectSyncDTO?
         for d in dtos {
@@ -249,6 +263,8 @@ struct ProjectSyncEntry: Content {
     let projectID: UUID
     let name: String
     let sync: ProjectSyncDTO
+    /// get_stale_projects only: the bindings that are not fresh.
+    var staleBindings: [ProjectSyncDTO]? = nil
 }
 
 struct RepositoryMatch: Content {
