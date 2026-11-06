@@ -453,27 +453,9 @@ struct PlanningController: RouteCollection {
         let user = try await req.requireUser()
         let body = try req.content.decode(UpdateTaskRequest.self)
         let taskID = try id(req)
+        // Single implementation shared with PlanningCompletionMiddleware (which intercepts this route first).
         return try await req.db.transaction { db in
-            try await lockSharingGraph(on: db)
-            let access = ProjectAccess(user: user, db: db)
-            try await lockRow(table: TodoTask.schema, id: taskID, on: db)
-            let task = try await access.task(taskID, role: .edit)
-            guard task.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
-            let before = TaskSnapshot(task)
-            if let title = body.title { task.title = try PlanningOperations.cleanName(title, reason: "invalid_title") }
-            if let description = body.description { task.details = description }
-            if let status = body.status {
-                guard TaskStatus.all.contains(status) else { throw Abort(.badRequest, reason: "invalid_status") }
-                task.status = status
-            }
-            if let projectID = body.projectID {
-                _ = try await access.project(projectID, role: .edit)
-                task.projectID = projectID
-            }
-            task.version += 1
-            try await task.save(on: db)
-            try await appendTaskChangeActivity(task, from: before, actorID: user.requireID(), on: db)
-            return try TaskDTO(task)
+            try await PlanningService(user: user, db: db).update(taskID, body: body)
         }
     }
 
