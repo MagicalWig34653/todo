@@ -1,14 +1,19 @@
 openapi: 3.1.0
 info:
   title: Todolino – Repository-Bindung und Aktualität (Project Sync)
-  version: 1.0.0
-  description: 'ADR 0018. Ein Projekt kann an eine Repository-Kennung gebunden werden (normalisierte Git-Remote oder freier Schlüssel);
-    record_sync hält fest, wann Board und Repository zuletzt abgeglichen wurden. Zustand: fresh (innerhalb staleAfterDays, Standard 3),
-    stale, never. Unsichtbare/fremde Projekte: 404, zu geringe Rolle: 403, Konflikte: 409 (repository_already_bound). Die Steuerzentrale
-    (GET /v1/command-center) liefert zusätzlich projects[{projectID,name,sync}] und summary.staleProjects. MCP-Werkzeuge:
-    find_project_by_repository, create_project (Scope projects:write), bind_repository, record_sync, get_sync_status, get_stale_projects,
-    import_plan (idempotent per externalKey, höchstens 300 Einträge, Unteraufgaben eine Ebene), list_plan_keys, set_agent_brief.
-    MCP-Prompts: setup_project, sync_project, session_start. Details: docs/agent-manual.md.'
+  version: 1.1.0
+  description: 'ADR 0018. Ein Projekt kann an bis zu 10 Repository-Kennungen gebunden werden (normalisierte Git-Remote oder freier Schlüssel);
+    jede Bindung hat einen eigenen Sync-Verlauf, der nie zurückgesetzt wird. record_sync hält fest, wann Board und Repository zuletzt
+    abgeglichen wurden. Zustand: fresh (innerhalb staleAfterDays, Standard 3), stale, never. Ein Projekt gilt als veraltet, sobald eine
+    Bindung nicht frisch ist (veraltetste Bindung bestimmt die flachen Felder). Unsichtbare/fremde Projekte: 404, zu geringe Rolle: 403,
+    Konflikte: 409 (repository_already_bound, too_many_bindings, repository_required, not_bound). Die Steuerzentrale
+    (GET /v1/command-center) liefert zusätzlich projects[{projectID,name,sync}] (sync flach plus bindings) und summary.staleProjects.
+    MCP-Werkzeuge: find_project_by_repository, create_project (Scope projects:write), bind_repository (legt mit repository eine weitere
+    Bindung an), record_sync und get_sync_status (optional repository), list_repository_bindings (projects:read), unbind_repository
+    (tasks:write, kein neuer Scope), get_stale_projects (zusätzlich staleBindings), import_plan (idempotent per externalKey, höchstens
+    300 Einträge, Unteraufgaben eine Ebene), list_plan_keys, set_agent_brief. MCP-Prompts: setup_project, sync_project, session_start.
+    Details: docs/agent-manual.md und docs/PLAN-MEHRFACH-REPOSITORY-BINDUNGEN.md. Änderungen 1.1.0 sind additiv: bei 0 oder 1 Bindung
+    bleibt die Antwortform wie 1.0.0 (plus bindings).'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -17,18 +22,48 @@ paths:
     get:
       operationId: getProjectSync
       summary: Sync-Zustand eines Projekts
-      description: 'Antwort: {bound, repository, state fresh|stale|never, lastSyncedAt, lastSyncedBy, daysSince, staleAfterDays, repoRef, lastSummary}.'
+      description: 'Antwort: {bound, repository, state fresh|stale|never, lastSyncedAt, lastSyncedBy, daysSince, staleAfterDays, repoRef, lastSummary, bindings[]}.
+        Ohne Query beschreiben die flachen Felder die veraltetste Bindung (never vor stale vor fresh, dann größtes daysSince, dann älteste Bindung);
+        bindings listet alle Bindungen (älteste zuerst, gleiche Felder, ohne verschachteltes bindings). Query repository (optional) wählt genau
+        eine Bindung (dann ohne bindings); nicht gebunden: 409 not_bound.'
+      parameters:
+      - {name: repository, in: query, required: false, schema: {type: string}}
       responses:
         '200': {description: Erfolgreich}
         '404': {description: Projekt fehlt oder unsichtbar}
+        '409': {description: not_bound (nur mit repository)}
     put:
       operationId: putProjectSync
-      summary: Projekt an ein Repository binden oder Schwelle ändern
-      description: 'Body: {repository?, staleAfterDays? (1-365)}. Edit-Recht nötig. Eine andere Repository-Kennung setzt die Sync-Historie zurück.'
+      summary: Repository-Bindung hinzufügen oder Schwelle ändern
+      description: 'Body: {repository?, staleAfterDays? (1-365)}. Edit-Recht nötig. Mit repository wird eine weitere Bindung angelegt
+        (höchstens 10); existiert sie schon, ändert sich nur die Schwelle. Der Sync-Verlauf wird nie zurückgesetzt. Ohne repository nur bei genau
+        einer Bindung (Schwelle ändern). Antwort wie GET (bei neuer Bindung: diese Bindung).'
       responses:
         '200': {description: Erfolgreich}
         '400': {description: invalid_repository, repository_required, invalid_stale_after_days}
-        '409': {description: repository_already_bound}
+        '403': {description: Rolle zu gering}
+        '404': {description: Projekt fehlt oder unsichtbar}
+        '409': {description: repository_already_bound, too_many_bindings}
+  /v1/projects/{id}/bindings:
+    get:
+      operationId: listProjectBindings
+      summary: Alle Repository-Bindungen eines Projekts
+      description: 'Leserecht. Antwort: Liste der Bindungen (älteste zuerst) mit {bound, repository, state, lastSyncedAt, lastSyncedBy, daysSince, staleAfterDays, repoRef, lastSummary}.'
+      responses:
+        '200': {description: Erfolgreich}
+        '404': {description: Projekt fehlt oder unsichtbar}
+    delete:
+      operationId: deleteProjectBinding
+      summary: Eine Repository-Bindung samt Verlauf lösen
+      description: 'Query repository (Pflicht, wird normalisiert). Edit-Recht nötig. Antwort: Übersicht wie GET /sync mit den verbleibenden Bindungen. Der Verlauf der gelösten Bindung ist nicht wiederherstellbar.'
+      parameters:
+      - {name: repository, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Erfolgreich}
+        '400': {description: invalid_repository}
+        '403': {description: Rolle zu gering}
+        '404': {description: Projekt fehlt oder unsichtbar}
+        '409': {description: not_bound}
   /v1/projects/by-repository:
     get:
       operationId: findProjectsByRepository

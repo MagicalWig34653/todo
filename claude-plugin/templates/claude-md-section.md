@@ -1,7 +1,7 @@
 <!-- todolino:begin -->
 ## Todolino
 
-Dieses Projekt wird in Todolino geplant (Projekt-ID in `.todolino.json`). Das Board laufend nutzen, nicht nur einmal am Ende:
+Dieses Projekt wird in Todolino geplant (Projekt-ID und `repository` in `.todolino.json`; `repository` bei `get_sync_status` und `record_sync` immer mitgeben, ein Projekt kann mehrere Bindungen haben). Das Board laufend nutzen, nicht nur einmal am Ende:
 - Start: `session_start` (Skill `todolino`) oder `get_sync_status`, `get_command_center`, `list_open_questions`, `list_pending_reviews` (immer mit der `projectID` aus `.todolino.json`; Aufgaben fremder Projekte nie bearbeiten, erwähnen oder anbieten); ist das Board veraltet, zuerst `sync_project`.
 - Vor der Arbeit: passende Aufgabe suchen oder mit `create_task` anlegen (keine Duplikate), dann `claim_task`.
 - Nach jedem abgeschlossenen Teilschritt und jedem Commit: `post_progress`.

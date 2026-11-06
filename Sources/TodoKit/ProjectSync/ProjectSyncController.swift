@@ -7,6 +7,8 @@ struct ProjectSyncController: RouteCollection {
         let v1 = routes.grouped("v1")
         v1.get("projects", ":id", "sync", use: get)
         v1.put("projects", ":id", "sync", use: put)
+        v1.get("projects", ":id", "bindings", use: bindings)
+        v1.delete("projects", ":id", "bindings", use: unbind)
         v1.get("projects", "by-repository", use: byRepository)
     }
 
@@ -18,9 +20,20 @@ struct ProjectSyncController: RouteCollection {
         return id
     }
 
-    @Sendable func get(_ req: Request) async throws -> ProjectSyncDTO { try await service(req).status(id(req)) }
+    /// Flat fields of the stalest binding plus `bindings`; `?repository=` selects one binding (409 not_bound).
+    @Sendable func get(_ req: Request) async throws -> ProjectSyncDTO {
+        try await service(req).status(id(req), repository: req.query[String.self, at: "repository"])
+    }
 
-    /// Binds the project to a repository and/or changes the staleness threshold.
+    @Sendable func bindings(_ req: Request) async throws -> [ProjectSyncDTO] { try await service(req).listBindings(id(req)) }
+
+    /// Removes one binding and its history (edit right).
+    @Sendable func unbind(_ req: Request) async throws -> ProjectSyncDTO {
+        guard let repository = req.query[String.self, at: "repository"] else { throw Abort(.badRequest, reason: "invalid_repository") }
+        return try await service(req).unbind(id(req), repository: repository)
+    }
+
+    /// Adds a repository binding (history is never reset) and/or changes the staleness threshold.
     @Sendable func put(_ req: Request) async throws -> ProjectSyncDTO {
         struct Body: Content { let repository: String?; let staleAfterDays: Int? }
         let body = try req.content.decode(Body.self)

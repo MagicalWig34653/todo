@@ -59,7 +59,7 @@ END {
 
 case "$kind" in
   commit)
-    emit_context PostToolUse "Todolino: you just committed. Do it NOW, before the next step: post_progress on the task this commit belongs to (commit hash, what is done, what is next); if no task exists yet, create_task and claim_task first. Update information (this commit, tests) belongs into post_progress, not into a review; request_review only if the user has to look at or decide something concrete (never mark done yourself). Open user decision: ask_question. Keep it short, in bullet points. record_sync before the session ends." ;;
+    emit_context PostToolUse "Todolino: you just committed. Do it NOW, before the next step: post_progress on the task this commit belongs to (commit hash, what is done, what is next); if no task exists yet, create_task and claim_task first. Update information (this commit, tests) belongs into post_progress, not into a review; request_review only if the user has to look at or decide something concrete (never mark done yourself). Open user decision: ask_question. Keep it short, in bullet points. record_sync (with repository from .todolino.json if present) before the session ends." ;;
   push)
     emit_context PostToolUse "Todolino: you just pushed. If the board does not show it yet: post_progress on the task (what was pushed, what is next), short and in bullet points." ;;
 esac
