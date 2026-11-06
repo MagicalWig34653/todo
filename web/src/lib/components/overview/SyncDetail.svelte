@@ -9,25 +9,44 @@
 	import SyncChip from './SyncChip.svelte';
 
 	/** Last sync summary, repository reference, author and the stale threshold of one project. */
-	let { projectID, onchanged }: { projectID: string; onchanged?: () => unknown } = $props();
+	let {
+		projectID,
+		onchanged,
+		sync: given,
+		role: givenRole,
+		onsync
+	}: {
+		projectID: string;
+		onchanged?: () => unknown;
+		/** Data already loaded by the parent (RepositoryLine); without it the component loads its own. */
+		sync?: ProjectSync | null;
+		role?: Role | null;
+		onsync?: (sync: ProjectSync) => void;
+	} = $props();
 
-	let sync = $state<ProjectSync | null>(null);
-	let role = $state<Role | null>(null);
+	let own = $state<ProjectSync | null>(null);
+	let ownRole = $state<Role | null>(null);
+	const shared = $derived(given !== undefined);
+	const sync = $derived(shared ? given : own);
+	const role = $derived(shared ? (givenRole ?? null) : ownRole);
 	let threshold = $state('');
 	let invalid = $state(false);
 	let saved = $state(false);
 
 	async function load() {
 		const [s, v] = await Promise.all([api.getProjectSync(projectID), api.visibility(projectID).catch(() => null)]);
-		sync = s;
-		role = v?.role ?? null;
-		threshold = String(s.staleAfterDays);
+		own = s;
+		ownRole = v?.role ?? null;
 	}
 	$effect(() => {
 		void projectID;
-		sync = null;
 		saved = false;
+		if (shared) return;
+		own = null;
 		attempt(load);
+	});
+	$effect(() => {
+		if (sync) threshold = String(sync.staleAfterDays);
 	});
 
 	const editable = $derived(canEditSync(role));
@@ -40,8 +59,11 @@
 		if (days === null) return;
 		if (
 			await attempt(async () => {
-				sync = await api.putProjectSync(projectID, { staleAfterDays: days });
-				threshold = String(sync.staleAfterDays);
+				// With several bindings the flat fields describe one of them; name it so the backend does not answer repository_required.
+				const next = await api.putProjectSync(projectID, { staleAfterDays: days, ...(sync?.repository ? { repository: sync.repository } : {}) });
+				if (shared) onsync?.(await api.getProjectSync(projectID));
+				else own = await api.getProjectSync(projectID);
+				threshold = String(next.staleAfterDays);
 			})
 		) {
 			saved = true;
@@ -64,7 +86,7 @@
 		</div>
 		{#if !sync.bound}
 			<p class="text-muted-foreground text-xs" data-testid="sync-unbound">{t('sync.unbound')}</p>
-		{:else}
+		{:else if !shared}
 			<p class="text-xs"><span class="text-muted-foreground">{t('sync.repository')}:</span> <code class="break-all" data-testid="sync-repository">{sync.repository}</code></p>
 		{/if}
 		{#if sync.repoRef}<p class="text-xs break-all" data-testid="sync-ref">{t('sync.repoRef', { ref: sync.repoRef })}</p>{/if}

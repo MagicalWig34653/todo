@@ -72,3 +72,78 @@ test('free repository keys are plain text; load failure shows an error; fits 320
 	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 	await page.unroute(`**/v1/projects/${free.id}/sync`);
 });
+
+test('lists several bindings, adds one with errors, and unbinds with a confirmation', async () => {
+	const p = await createProject('Mehrfach', 'github.com/example/eins');
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await openOverview('Mehrfach');
+	const head = page.getByTestId('cc-sync-head');
+	await expect(head.getByTestId('repo-row')).toHaveCount(1);
+
+	// Add: empty input first, then a valid repository.
+	await head.getByTestId('repo-add').click();
+	await head.getByTestId('repo-add-submit').click();
+	await expect(head.getByTestId('repo-form-error')).toHaveText('Bitte ein Repository eingeben.');
+	await head.getByTestId('repo-add-input').fill('github.com/example/zwei');
+	await head.getByTestId('repo-add-submit').click();
+	await expect(head.getByTestId('repo-status')).toHaveText('Repository hinzugefügt.');
+	await expect(head.getByTestId('repo-row')).toHaveCount(2);
+	await expect(head.getByTestId('repo-row').nth(1).getByTestId('repo-name')).toHaveText('github.com/example/zwei');
+	await expect(head.getByTestId('repo-row').nth(1).getByTestId('sync-chip')).toBeVisible();
+
+	// A repository already bound to another project: readable error.
+	const fremd = await createProject('Fremd', 'github.com/example/belegt');
+	expect(fremd.id).not.toBe(p.id);
+	await head.getByTestId('repo-add').click();
+	await head.getByTestId('repo-add-input').fill('github.com/example/belegt');
+	await head.getByTestId('repo-add-submit').click();
+	await expect(head.getByTestId('repo-form-error')).toHaveText('Dieses Repository ist bereits mit einem anderen Projekt verknüpft.');
+	await head.getByRole('button', { name: 'Abbrechen' }).click();
+
+	// The detail panel shares the data; the threshold can be changed with two bindings.
+	await page.getByTestId('cc-sync-toggle').click();
+	await head.getByTestId('sync-threshold').fill('7');
+	await head.getByTestId('sync-threshold-save').click();
+	await expect(head.getByTestId('sync-saved')).toBeVisible();
+
+	// Unbind with a confirmation; cancel keeps the row.
+	await head.getByTestId('repo-row').first().getByTestId('repo-remove').click();
+	await expect(head.getByTestId('repo-confirm')).toContainText('github.com/example/eins');
+	await head.getByTestId('repo-confirm').getByRole('button', { name: 'Abbrechen' }).click();
+	await expect(head.getByTestId('repo-row')).toHaveCount(2);
+	await head.getByTestId('repo-row').first().getByTestId('repo-remove').click();
+	await head.getByTestId('repo-remove-yes').click();
+	await expect(head.getByTestId('repo-status')).toHaveText('Repository gelöst.');
+	await expect(head.getByTestId('repo-row')).toHaveCount(1);
+	await expect(head.getByTestId('repo-name')).toHaveText('github.com/example/zwei');
+
+	const left = (await (await page.request.get(`/v1/projects/${p.id}/bindings`)).json()) as unknown[];
+	expect(left).toHaveLength(1);
+
+	// Last binding removed: empty state.
+	await head.getByTestId('repo-remove').click();
+	await head.getByTestId('repo-remove-yes').click();
+	await expect(head.getByTestId('repo-none')).toBeVisible();
+});
+
+test('hides add and unbind without the edit right; fits 320 px with several bindings', async () => {
+	const p = await createProject('Schmal', 'github.com/example/sehr-langer-name-fuer-den-schmalen-bildschirm');
+	const more = await page.request.put(`/v1/projects/${p.id}/sync`, { ...json, data: { repository: 'zweiterschluessel' } });
+	expect(more.ok()).toBeTruthy();
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await openOverview('Schmal');
+	await page.setViewportSize({ width: 320, height: 700 });
+	const head = page.getByTestId('cc-sync-head');
+	await expect(head.getByTestId('repo-row')).toHaveCount(2);
+	await head.getByTestId('repo-remove').first().click();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+	await page.route(`**/v1/projects/${p.id}/visibility*`, (route) =>
+		route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'view' }) })
+	);
+	await page.reload();
+	await expect(head.getByTestId('repo-row')).toHaveCount(2);
+	await expect(head.getByTestId('repo-remove')).toHaveCount(0);
+	await expect(head.getByTestId('repo-add')).toHaveCount(0);
+	await page.unroute(`**/v1/projects/${p.id}/visibility*`);
+});

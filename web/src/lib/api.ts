@@ -603,7 +603,11 @@ export interface ProjectSync extends SyncBrief {
 	staleAfterDays: number;
 	repoRef?: string | null;
 	lastSummary?: string | null;
+	/** All repository bindings, oldest first (contract 1.1.0); absent on older servers. */
+	bindings?: ProjectBinding[];
 }
+/** One repository binding: the same fields as the flat overview, without nested `bindings`. */
+export type ProjectBinding = Omit<ProjectSync, 'bindings'>;
 export interface UpdateItem {
 	id: string;
 	taskID: string;
@@ -1093,6 +1097,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 
 		// Repository sync (contracts/project-sync.yaml)
 		getProjectSync: (projectID: string) => request<ProjectSync>('GET', `/projects/${projectID}/sync`),
+		deleteProjectBinding: (projectID: string, repository: string) =>
+			request<ProjectSync>('DELETE', `/projects/${projectID}/bindings?repository=${encodeURIComponent(repository)}`),
 		putProjectSync: (projectID: string, body: { repository?: string; staleAfterDays?: number }) =>
 			request<ProjectSync>('PUT', `/projects/${projectID}/sync`, body),
 
