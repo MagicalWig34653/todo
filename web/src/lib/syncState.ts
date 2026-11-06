@@ -48,6 +48,12 @@ export function parseStaleAfter(raw: string | number): number | null {
 	return n >= STALE_AFTER_MIN && n <= STALE_AFTER_MAX ? n : null;
 }
 
+/** Browser link for a bound repository: only normalized remotes (`host.tld/owner/repo`); free keys stay plain text. */
+export function repositoryLink(repository: string | null | undefined): string | null {
+	const value = (repository ?? '').trim();
+	return /^[a-z0-9-]+(\.[a-z0-9-]+)+\/[\w.~-]+(\/[\w.~-]+)+$/i.test(value) ? `https://${value}` : null;
+}
+
 /** The contract requires the edit right for PUT; manage includes it. The server enforces the rule either way. */
 export function canEditSync(role: Role | null | undefined): boolean {
 	return role === 'edit' || role === 'manage';
