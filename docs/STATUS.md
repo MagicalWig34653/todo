@@ -1,11 +1,13 @@
 # Status
 
-## Checkpoint 6.11.2026: update_task mit projectID behält Plan-Keys (Board-Aufgabe `730FA055-9738-489E-A557-EAE2AC7AEE1F`)
+## Checkpoint 6.11.2026: Plan-Keys beim Verschieben, Agenten-Arbeitsweise (Board-Aufgabe `730FA055-9738-489E-A557-EAE2AC7AEE1F`)
 
-- Ursache: `PlanningService.update` räumte beim Projektwechsel Abhängigkeiten, Meilensteine, Eltern/Kinder und Spalte auf, ließ aber `task_external_keys.project_id` auf dem alten Projekt. `list_plan_keys` (Filter auf Projekt der Aufgabe) war in beiden Projekten leer, ein erneuter `import_plan` im Ziel legte Duplikate an.
-- Fix (`Sources/TodoKit/PlanningExt/PlanningExtService.swift`): Key wandert mit ins Zielprojekt; belegt das Ziel den Key schon für eine andere Aufgabe, gewinnt das Ziel und der Key der verschobenen Aufgabe entfällt. Gilt für MCP `update_task` (gemeinsamer Pfad).
-- Geprüft: neu `ProjectSyncTests.testMovingTaskKeepsPlanKey` (ohne Fix 3 Fehlschläge, mit Fix grün); `ProjectSyncTests` 5/5, `PlanningExtTests`, `MCPProjectToolsTests` grün. Gesamtlauf und MariaDB nicht ausgeführt.
-- Offen: `PlanningController.updateTask` (REST-Zweig im Controller) räumt beim Verschieben nichts auf; prüfen, ob die Route noch genutzt wird oder auf `PlanningService` umgestellt werden soll.
+- Alles lokal auf `main` gemergt, kein Push, keine Migration, keine Vertragsänderung. Arbeitsweise ab jetzt: Hauptsession koordiniert, Worker/Verifier/Explorer in Subagenten (`docs/AGENT-ARBEITSWEISE.md`, Projekt-Subagenten unter `.claude/agents/`, werden evtl. erst nach Session-Neustart geladen). Modelle frei: Sonnet, Haiku, gpt-6.1-sol, terra; Opus und gpt-6-astra nur mit Genehmigung (Nutzerentscheidung 6.11.2026, auch in `AGENTS.md`).
+- Ursache: `PlanningService.update` räumte beim Projektwechsel vieles auf, ließ aber `task_external_keys.project_id` stehen; `list_plan_keys` war in beiden Projekten leer, ein erneuter `import_plan` im Ziel legte Duplikate an.
+- Fix (`a276d99`, `Sources/TodoKit/PlanningExt/PlanningExtService.swift`): Key wandert ins Zielprojekt; ist der Key im Ziel belegt, gewinnt das Ziel und die verschobene Aufgabe verliert ihren Key. Der REST-Controller `PlanningController.updateTask` war durch `PlanningCompletionMiddleware` verdeckt; er ruft jetzt ebenfalls `PlanningService.update` (`1cf88ac`), eine Implementierung für REST und MCP.
+- Tests: `testMovingTaskKeepsPlanKey` (ohne Fix rot belegt), `testRestMoveCleansUpLinksAndCarriesPlanKey`, plus Randfälle (Key-Kollision, ohne Key, Rückverschieben, Eltern/Kind) in `ProjectSyncTests`. Gesamtlauf auf `main@03fb13e` selbst ausgeführt: `swift test` 440 Tests, 20 übersprungen, 0 Fehlschläge, Exit 0, 109 s. Unabhängiger Verifier bestätigte die beiden Akzeptanzkriterien.
+- Grenzen: nur SQLite; MariaDB, Linux und die Apple-App nicht geprüft; Controller-Pfad ist durch die Middleware weiter praktisch nicht getrennt testbar. Die verschobene Aufgabe verliert bei Key-Kollision den Key ohne Hinweis in der Antwort (bewusst, nicht gemeldet).
+- Nächster Schritt: Board mit dem Code abgleichen (viele Karten stehen auf "Läuft", obwohl auf `main`), Review `598FA538` (Chat) wartet auf den Nutzer; danach Aufgabe aus "Bereit" (z. B. "update.sh: falsche URL im Health-Check", "PWA: verknüpfte Repositories anzeigen").
 
 ## Checkpoint 3.11.2026: Aktuelles Projekt im MCP (Agent claude-code@current-project, Board-Aufgabe `5288F3C0-ACF4-4AE4-A99A-A7FDFE60C674`)
 
