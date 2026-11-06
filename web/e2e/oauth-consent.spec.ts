@@ -14,6 +14,7 @@ let page: Page;
 let authorizeUrl = '';
 let clientID = '';
 let verifier = '';
+let appOrigin = '';
 
 async function shot(name: string) {
 	if (!SHOTS) return;
@@ -36,6 +37,7 @@ test('set up account and projects, then sign out', async () => {
 		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
 	});
 	await page.goto('/setup');
+	appOrigin = new URL(page.url()).origin;
 	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
 	await page.getByLabel('Anzeigename').fill('Consent Tester');
 	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
@@ -147,4 +149,102 @@ test('approve issues a token with exactly the requested scopes', async () => {
 	const body = await token.json();
 	expect(body.scope.split(' ').sort()).toEqual(['comments:write', 'projects:read', 'sharing:write', 'tasks:read', 'tasks:write']);
 	expect(body.access_token).toBeTruthy();
+});
+
+// ---- Connection name (`connection_name`, default `default_name`, at most 80 characters) on the server-rendered page ----
+
+async function registerClient(clientName: string) {
+	const reg = await page.request.post('/oauth/register', {
+		data: { client_name: clientName, redirect_uris: [CALLBACK], token_endpoint_auth_method: 'none' }
+	});
+	expect(reg.ok()).toBeTruthy();
+	const id = (await reg.json()).client_id as string;
+	const nameVerifier = randomBytes(32).toString('base64url');
+	const query = new URLSearchParams({
+		response_type: 'code',
+		client_id: id,
+		redirect_uri: CALLBACK,
+		scope: 'projects:read tasks:read',
+		state: 'n',
+		code_challenge: createHash('sha256').update(nameVerifier).digest('base64url'),
+		code_challenge_method: 'S256'
+	});
+	return { id, verifier: nameVerifier, url: `${appOrigin}/oauth/authorize?${query}` };
+}
+
+async function exchange(client: { id: string; verifier: string }, code: string): Promise<string> {
+	const token = await page.request.post('/oauth/token', {
+		form: { grant_type: 'authorization_code', client_id: client.id, code, redirect_uri: CALLBACK, code_verifier: client.verifier }
+	});
+	expect(token.ok()).toBeTruthy();
+	return (await token.json()).access_token as string;
+}
+
+async function connectionName(access: string): Promise<string> {
+	// The Vite dev proxy does not forward /mcp; talk to the backend directly when BACKEND_URL is set.
+	const r = await page.request.post(`${process.env.BACKEND_URL ?? ''}/mcp`, {
+		headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
+		data: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_connection', arguments: {} } }
+	});
+	return JSON.parse((await r.json()).result.content[0].text).name as string;
+}
+
+async function approveOnPage(): Promise<string> {
+	await page.getByRole('checkbox', { name: 'Haushalt' }).check();
+	let callback = '';
+	await page.route(`${CALLBACK}**`, async (route) => {
+		callback = route.request().url();
+		await route.fulfill({ status: 200, contentType: 'text/html', body: 'ok' });
+	});
+	await page.getByRole('button', { name: 'Erlauben' }).click();
+	await expect.poll(() => callback).toContain('code=');
+	return new URL(callback).searchParams.get('code')!;
+}
+
+test('consent page: name field is prefilled with the default, capped at 80, a custom name is stored and shown in settings', async () => {
+	const client = await registerClient('Namens-Client');
+	await page.goto(client.url);
+	const field = page.getByLabel('Name der Verbindung');
+	await expect(field).toHaveValue('Namens-Client');
+	await expect(field).toHaveAttribute('maxlength', '80');
+	await field.fill('Mac mini Claude Code');
+	const access = await exchange(client, await approveOnPage());
+	expect(await connectionName(access)).toBe('Mac mini Claude Code');
+
+	await page.goto('/settings/connections');
+	await expect(page.getByTestId('oauth-grant').filter({ hasText: 'Mac mini Claude Code' })).toBeVisible();
+});
+
+test('consent page: an untouched field keeps the default name', async () => {
+	const client = await registerClient('Standard-Client');
+	await page.goto(client.url);
+	await expect(page.getByLabel('Name der Verbindung')).toHaveValue('Standard-Client');
+	expect(await connectionName(await exchange(client, await approveOnPage()))).toBe('Standard-Client');
+});
+
+test('consent endpoint: 81 characters are rejected with invalid_name and the request stays usable, 80 are accepted', async () => {
+	const client = await registerClient('Grenz-Client');
+	const origin = appOrigin;
+	// Without Accept: text/html the authorize endpoint speaks the JSON contract the consent page uses.
+	const pending = await page.request.get(client.url);
+	expect(pending.ok()).toBeTruthy();
+	const offer = await pending.json();
+	expect(offer.default_name).toBe('Grenz-Client');
+	const projects = (await (await page.request.get('/v1/projects')).json()) as { id: string; name: string }[];
+	const home = projects.find((p) => p.name === 'Haushalt')!.id;
+	const consent = (name: string) =>
+		page.request.post('/oauth/consent', {
+			headers: { Origin: origin },
+			data: { consent_token: offer.consent_token, approve: true, project_ids: [home], connection_name: name }
+		});
+
+	const tooLong = await consent('x'.repeat(81));
+	expect(tooLong.status()).toBe(400);
+	expect(await tooLong.text()).toContain('invalid_name');
+
+	const exact = 'y'.repeat(80);
+	const ok = await consent(exact);
+	expect(ok.ok()).toBeTruthy();
+	const code = new URL((await ok.json()).redirect_uri).searchParams.get('code')!;
+	expect(await connectionName(await exchange(client, code))).toBe(exact);
 });
