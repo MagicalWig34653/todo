@@ -137,6 +137,129 @@ final class ProjectSyncTests: XCTestCase {
         await f.test.shutdown()
     }
 
+    // MARK: Plan key handling on project moves
+
+    private func newProject(_ f: OAuthFixture, _ name: String, _ access: String) async throws -> String {
+        let r = try await call(f, "create_project", ["name": name], access: access)
+        XCTAssertFalse(r.isError, r.text)
+        return try XCTUnwrap(((r.json as? [String: Any])?["project"] as? [String: Any])?["id"] as? String)
+    }
+
+    private func planKeys(_ f: OAuthFixture, _ project: String, _ access: String) async throws -> [String] {
+        let r = try await call(f, "list_plan_keys", ["projectID": project], access: access)
+        XCTAssertFalse(r.isError, r.text)
+        return ((r.json as? [[String: Any]]) ?? []).compactMap { $0["externalKey"] as? String }.sorted()
+    }
+
+    private func taskID(_ f: OAuthFixture, key: String, project: String) async throws -> UUID {
+        let pid = try XCTUnwrap(UUID(uuidString: project))
+        let row = try await XCTUnwrapAsync { try await TaskExternalKey.query(on: f.test.app.db).filter(\.$projectID == pid).filter(\.$externalKey == key).first() }
+        return row.taskID
+    }
+
+    private func moveTask(_ f: OAuthFixture, _ id: UUID, to project: String, _ access: String) async throws -> (isError: Bool, json: Any?, text: String) {
+        let task = try await XCTUnwrapAsync { try await TodoTask.find(id, on: f.test.app.db) }
+        return try await call(f, "update_task", ["id": id.uuidString, "version": task.version, "projectID": project], access: access)
+    }
+
+    func testMovingTaskWithTakenKeyInTargetLosesKeyWithoutDataLoss() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let t = try await f.tokens(scope: Self.scopes)
+            let a = try await newProject(f, "Source", t.access), b = try await newProject(f, "Target", t.access)
+            _ = try await call(f, "import_plan", ["projectID": a, "items": [["externalKey": "p/one", "title": "Moved"]]], access: t.access)
+            _ = try await call(f, "import_plan", ["projectID": b, "items": [["externalKey": "p/one", "title": "Resident"]]], access: t.access)
+            let movedID = try await taskID(f, key: "p/one", project: a)
+            let residentID = try await taskID(f, key: "p/one", project: b)
+            let r = try await moveTask(f, movedID, to: b, t.access)
+            XCTAssertFalse(r.isError, r.text)
+            let moved = try await XCTUnwrapAsync { try await TodoTask.find(movedID, on: f.test.app.db) }
+            XCTAssertEqual(moved.title, "Moved"); XCTAssertEqual(moved.projectID, UUID(uuidString: b))
+            let keyRowsOfMoved = try await TaskExternalKey.query(on: f.test.app.db).filter(\.$taskID == movedID).count()
+            XCTAssertEqual(keyRowsOfMoved, 0)
+            let stillResident = try await taskID(f, key: "p/one", project: b)
+            XCTAssertEqual(stillResident, residentID)
+            let sourceKeys = try await planKeys(f, a, t.access), targetKeys = try await planKeys(f, b, t.access)
+            XCTAssertEqual(sourceKeys, []); XCTAssertEqual(targetKeys, ["p/one"])
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
+    func testMovingTaskWithoutKeyAndBackAgain() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let t = try await f.tokens(scope: Self.scopes)
+            let a = try await newProject(f, "Source", t.access), b = try await newProject(f, "Target", t.access)
+            // (2) task without any plan key
+            let created = try await call(f, "create_task", ["projectID": a, "title": "Keyless"], access: t.access)
+            XCTAssertFalse(created.isError, created.text)
+            let keylessID = try XCTUnwrap(UUID(uuidString: try XCTUnwrap((created.json as? [String: Any])?["id"] as? String ?? ((created.json as? [String: Any])?["task"] as? [String: Any])?["id"] as? String)))
+            let r = try await moveTask(f, keylessID, to: b, t.access)
+            XCTAssertFalse(r.isError, r.text)
+            let keyless = try await XCTUnwrapAsync { try await TodoTask.find(keylessID, on: f.test.app.db) }
+            XCTAssertEqual(keyless.projectID, UUID(uuidString: b))
+            let none = try await planKeys(f, b, t.access)
+            XCTAssertEqual(none, [])
+            // (3) move a keyed task there and back: the key returns when it is free
+            _ = try await call(f, "import_plan", ["projectID": a, "items": [["externalKey": "p/one", "title": "One"]]], access: t.access)
+            let id = try await taskID(f, key: "p/one", project: a)
+            let there = try await moveTask(f, id, to: b, t.access)
+            XCTAssertFalse(there.isError, there.text)
+            let targetKeys = try await planKeys(f, b, t.access)
+            XCTAssertEqual(targetKeys, ["p/one"])
+            let back = try await moveTask(f, id, to: a, t.access)
+            XCTAssertFalse(back.isError, back.text)
+            let sourceKeys = try await planKeys(f, a, t.access), targetAfter = try await planKeys(f, b, t.access)
+            XCTAssertEqual(sourceKeys, ["p/one"]); XCTAssertEqual(targetAfter, [])
+            // Back-move while the source key was re-taken meanwhile: the returning task loses its key.
+            let there2 = try await moveTask(f, id, to: b, t.access)
+            XCTAssertFalse(there2.isError, there2.text)
+            _ = try await call(f, "import_plan", ["projectID": a, "items": [["externalKey": "p/one", "title": "Replacement"]]], access: t.access)
+            let back2 = try await moveTask(f, id, to: a, t.access)
+            XCTAssertFalse(back2.isError, back2.text)
+            let replacement = try await taskID(f, key: "p/one", project: a)
+            XCTAssertNotEqual(replacement, id)
+            let rows = try await TaskExternalKey.query(on: f.test.app.db).filter(\.$taskID == id).count()
+            XCTAssertEqual(rows, 0)
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
+    func testMovingParentOrChildDetachesLinkAndKeepsChildKeysInSource() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let t = try await f.tokens(scope: Self.scopes)
+            let a = try await newProject(f, "Source", t.access), b = try await newProject(f, "Target", t.access)
+            let plan: [[String: Any]] = [["externalKey": "f/1", "title": "Feature", "children": [
+                ["externalKey": "f/1/a", "title": "Child A"], ["externalKey": "f/1/b", "title": "Child B"]]]]
+            let imp = try await call(f, "import_plan", ["projectID": a, "items": plan], access: t.access)
+            XCTAssertFalse(imp.isError, imp.text)
+            let featureID = try await taskID(f, key: "f/1", project: a)
+            let childA = try await taskID(f, key: "f/1/a", project: a), childB = try await taskID(f, key: "f/1/b", project: a)
+            let parentBefore = try await TaskWorkflow.find(childA, on: f.test.app.db)?.parentTaskID
+            XCTAssertEqual(parentBefore, featureID)
+            // Move a child: it leaves its parent and brings its key along.
+            let rc = try await moveTask(f, childB, to: b, t.access)
+            XCTAssertFalse(rc.isError, rc.text)
+            let childBParent = try await TaskWorkflow.find(childB, on: f.test.app.db)?.parentTaskID
+            XCTAssertNil(childBParent)
+            let afterChildSource = try await planKeys(f, a, t.access), afterChildTarget = try await planKeys(f, b, t.access)
+            XCTAssertEqual(afterChildSource, ["f/1", "f/1/a"]); XCTAssertEqual(afterChildTarget, ["f/1/b"])
+            // Move the feature: remaining child is released, its key stays in the source.
+            let rf = try await moveTask(f, featureID, to: b, t.access)
+            XCTAssertFalse(rf.isError, rf.text)
+            let childAParent = try await TaskWorkflow.find(childA, on: f.test.app.db)?.parentTaskID
+            XCTAssertNil(childAParent)
+            let childAProject = try await TodoTask.find(childA, on: f.test.app.db)?.projectID
+            XCTAssertEqual(childAProject, UUID(uuidString: a))
+            let sourceKeys = try await planKeys(f, a, t.access), targetKeys = try await planKeys(f, b, t.access)
+            XCTAssertEqual(sourceKeys, ["f/1/a"]); XCTAssertEqual(targetKeys, ["f/1", "f/1/b"])
+            let all = try await TodoTask.query(on: f.test.app.db).filter(\.$id ~~ [featureID, childA, childB]).count()
+            XCTAssertEqual(all, 3)
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
     func testRightsScopesAndForeignProjects() async throws {
         let f = try await OAuthFixture.make()
         do {
