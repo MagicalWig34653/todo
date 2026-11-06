@@ -173,6 +173,22 @@ final class ProjectRepositoryBindingTests: XCTestCase {
         XCTAssertEqual(edited.staleAfterDays, 2)
     }
 
+    func testConstraintFailureMappingDistinguishesUniqueFromMissingProject() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let (user, token) = try await account(t)
+        let pid = try await project(t, token)
+        let s = service(t, user)
+        _ = try await s.bind(pid, repository: "github.com/acme/one", staleAfterDays: nil)
+        struct Boom: Error {}
+        let unique = try await ProjectSyncService.mapConstraintFailure(Boom(), projectID: pid, key: "github.com/acme/one", on: t.app.db)
+        XCTAssertEqual((unique as? Abort)?.reason, "repository_already_bound")
+        let other = try await ProjectSyncService.mapConstraintFailure(Boom(), projectID: pid, key: "github.com/acme/none", on: t.app.db)
+        XCTAssertTrue(other is Boom)
+        let gone = try await ProjectSyncService.mapConstraintFailure(Boom(), projectID: UUID(), key: "github.com/acme/one", on: t.app.db)
+        XCTAssertEqual((gone as? Abort)?.status, .notFound)
+    }
+
     func testSingleBindingKeepsLegacyBehaviourAndAgentRelated() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
