@@ -38,6 +38,7 @@
 	import QuestionAnswer from './overview/QuestionAnswer.svelte';
 	import SyncChip from './overview/SyncChip.svelte';
 	import SyncDetail from './overview/SyncDetail.svelte';
+	import RepositoryLine from './overview/RepositoryLine.svelte';
 	import SyncList from './overview/SyncList.svelte';
 	import ReviewDecision from './overview/ReviewDecision.svelte';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
@@ -370,6 +371,7 @@
 					{showSync ? t('sync.hideDetails') : t('sync.details')}
 				</button>
 			</div>
+			<RepositoryLine {projectID} />
 			{#if showSync}<SyncDetail {projectID} onchanged={refresh} />{/if}
 		</div>
 	{:else if scope === 'account' && section === 'board' && syncEntries.length > 0}
