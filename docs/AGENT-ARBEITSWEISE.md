@@ -65,3 +65,19 @@ Delegiert: Implementierung, Tests schreiben, breite Suche, Review.
 - Einfach anfangen: so wenige Worker wie möglich; Multi-Agent kostet ca. 15x Tokens und lohnt bei eng gekoppelten Änderungen kaum.
 - Parallelität nur bei disjunkten Dateien und getrennten Worktrees.
 - Wahrheit liegt in Repo und Board; ein neuer Agent muss ohne alten Chat weiterarbeiten können.
+
+## Projekt-Subagenten
+
+Schlanke eigene Rollenbeschreibungen unter `.claude/agents/`, angeregt durch die Sammlung [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents). Die Prompts sind eigene Fassungen auf Todolino zugeschnitten, keine Kopien.
+
+| Name | Rolle | Modell | Tools |
+| --- | --- | --- | --- |
+| verifier | Diff gegen Akzeptanzkriterien prüfen, Tests selbst ausführen, Findings mit Datei:Zeile (read-only) | sonnet | Read, Grep, Glob, Bash |
+| security-auditor | Passkey/WebAuthn, OAuth/MCP-Scopes, Mandanten-/Freigaberechte, Eingabevalidierung, Secrets (read-only) | sonnet | Read, Grep, Glob, Bash (nur Tests) |
+| debugger | Root-Cause vor Fix, reproduzieren, Ursache und Fixvorschlag (ändert keinen Code) | sonnet | Read, Grep, Glob, Bash |
+| test-writer | Tests im vorhandenen Setup nach TDD, roten Zustand belegen (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
+| swift-worker | Vapor/Fluent/SwiftUI-Implementierung (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
+| svelte-worker | SvelteKit-PWA unter `web/` (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
+| explorer | Codesuche, liefert Fundstellen Datei:Zeile (read-only) | haiku | Read, Grep, Glob, Bash |
+
+Nutzung: über das Agent-Tool mit `subagent_type=<name>`. Neu angelegte oder geänderte Dateien werden meist erst nach einem Neustart der Session geladen. Alle Rollen enden mit demselben Regelblock (kein STATUS/Arbeitsplan/Board, keine Subagenten, kein Push, keine Installation, kein Netzwerk, Kurzbericht); die Hauptsession schreibt STATUS und Board. Die schreibenden Rollen laufen mit `isolation: worktree`.
