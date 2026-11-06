@@ -37,7 +37,6 @@
 	import OverviewCard from './overview/OverviewCard.svelte';
 	import QuestionAnswer from './overview/QuestionAnswer.svelte';
 	import SyncChip from './overview/SyncChip.svelte';
-	import SyncDetail from './overview/SyncDetail.svelte';
 	import RepositoryLine from './overview/RepositoryLine.svelte';
 	import SyncList from './overview/SyncList.svelte';
 	import ReviewDecision from './overview/ReviewDecision.svelte';
@@ -371,8 +370,7 @@
 					{showSync ? t('sync.hideDetails') : t('sync.details')}
 				</button>
 			</div>
-			<RepositoryLine {projectID} />
-			{#if showSync}<SyncDetail {projectID} onchanged={refresh} />{/if}
+			<RepositoryLine {projectID} showDetails={showSync} onchanged={refresh} />
 		</div>
 	{:else if scope === 'account' && section === 'board' && syncEntries.length > 0}
 		<SyncList entries={syncEntries} onchanged={refresh} />

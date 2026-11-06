@@ -1,4 +1,5 @@
-import type { ProjectSyncEntry, Role, SyncBrief, SyncState } from './api.js';
+import { ApiError, type ProjectBinding, type ProjectSync, type ProjectSyncEntry, type Role, type SyncBrief, type SyncState } from './api.js';
+import type { MessageKey } from './i18n/index.js';
 
 /** Filter of the account overview (contracts/project-sync.yaml, ADR 0018). */
 export type SyncFilter = 'all' | 'attention' | 'stale' | 'never' | 'fresh';
@@ -57,4 +58,27 @@ export function repositoryLink(repository: string | null | undefined): string | 
 /** The contract requires the edit right for PUT; manage includes it. The server enforces the rule either way. */
 export function canEditSync(role: Role | null | undefined): boolean {
 	return role === 'edit' || role === 'manage';
+}
+
+/** Upper limit of repository bindings per project (backend `too_many_bindings`). */
+export const MAX_BINDINGS = 10;
+
+export function canAddBinding(count: number): boolean {
+	return count < MAX_BINDINGS;
+}
+
+/** All bindings of a project; older servers without `bindings` fall back to the flat fields. */
+export function bindingList(sync: ProjectSync | null | undefined): ProjectBinding[] {
+	if (!sync?.bound) return [];
+	if (sync.bindings) return sync.bindings.filter((b) => b.bound !== false);
+	const { bindings: _ignored, ...flat } = sync;
+	return [flat];
+}
+
+const BINDING_REASONS = ['too_many_bindings', 'repository_already_bound', 'not_bound', 'repository_required', 'invalid_repository'];
+
+/** Message key for the known binding errors; `null` leaves the generic error handling. */
+export function bindingError(e: unknown): MessageKey | null {
+	if (e instanceof ApiError && e.reason && BINDING_REASONS.includes(e.reason)) return `sync.error.${e.reason}` as MessageKey;
+	return null;
 }
