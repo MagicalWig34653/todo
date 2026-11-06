@@ -63,7 +63,7 @@ if [ "$edited" = 1 ] || [ "$committed" = 1 ]; then
     if [ "$n" -lt "$max" ]; then
       safe_write "$counter" $((n + 1)) || exit 0
       safe_write "$flag" ""
-      printf '%s\n' '{"decision":"block","reason":"Todolino ist in diesem Repository eingerichtet (.todolino.json), aber in dieser Sitzung gab es Aenderungen oder Commits ohne Board-Aktivitaet (kein post_progress, request_review oder ask_question). Aktualisiere jetzt das Board: passende Aufgabe suchen oder mit create_task anlegen (keine Duplikate), claim_task, post_progress mit dem erledigten Stand und dem naechsten Schritt, bei Fertigstellung request_review (nie selbst auf erledigt setzen), offene Entscheidungen des Nutzers als ask_question auf der Aufgabe, danach record_sync. Wenn Todolino nicht erreichbar ist, nenne das dem Nutzer kurz und beende dann die Sitzung. Diese Erinnerung kommt hoechstens einmal pro Sitzung."}'
+      printf '%s\n' '{"decision":"block","reason":"Todolino ist in diesem Repository eingerichtet (.todolino.json), aber in dieser Sitzung gab es Aenderungen oder Commits ohne Board-Aktivitaet (kein post_progress, request_review oder ask_question). Aktualisiere jetzt das Board: passende Aufgabe suchen oder mit create_task anlegen (keine Duplikate), claim_task, post_progress mit dem erledigten Stand und dem naechsten Schritt, bei Fertigstellung request_review (nie selbst auf erledigt setzen), offene Entscheidungen des Nutzers als ask_question auf der Aufgabe, danach record_sync (mit repository aus .todolino.json, falls vorhanden). Wenn Todolino nicht erreichbar ist, nenne das dem Nutzer kurz und beende dann die Sitzung. Diese Erinnerung kommt hoechstens einmal pro Sitzung."}'
       exit 0
     fi
   fi
@@ -74,5 +74,5 @@ used record_sync && exit 0
 # Was anything changed? Only then Todolino can be out of date.
 [ "$edited" = 1 ] || exit 0
 safe_write "$flag" "" || exit 0
-printf '%s\n' '{"decision":"block","reason":"Todolino ist in diesem Repository eingerichtet (.todolino.json), aber in dieser Sitzung wurde record_sync nicht aufgerufen, obwohl Dateien geaendert wurden. Bring das Board jetzt auf den aktuellen Stand: post_progress fuer die erledigte Arbeit, Status/Fragen/Review aktualisieren (import_plan fuer neue oder erledigte Plan-Punkte) und dann record_sync mit kurzer Zusammenfassung aufrufen. Wenn Todolino nicht erreichbar ist, nenne das dem Nutzer kurz und beende dann die Sitzung. Diese Erinnerung kommt nur einmal pro Sitzung."}'
+printf '%s\n' '{"decision":"block","reason":"Todolino ist in diesem Repository eingerichtet (.todolino.json), aber in dieser Sitzung wurde record_sync nicht aufgerufen, obwohl Dateien geaendert wurden. Bring das Board jetzt auf den aktuellen Stand: post_progress fuer die erledigte Arbeit, Status/Fragen/Review aktualisieren (import_plan fuer neue oder erledigte Plan-Punkte) und dann record_sync mit kurzer Zusammenfassung aufrufen (mit repository aus .todolino.json, falls vorhanden). Wenn Todolino nicht erreichbar ist, nenne das dem Nutzer kurz und beende dann die Sitzung. Diese Erinnerung kommt nur einmal pro Sitzung."}'
 exit 0

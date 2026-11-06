@@ -88,6 +88,7 @@ has "start bound demands claim_task" "claim_task" "$out"
 has "start bound lists open questions and reviews" "list_pending_reviews" "$out"
 has "start bound names the current project and forbids foreign projects" "ALWAYS pass projectID=" "$out"
 has "start bound mentions foreignProject" "foreignProject=true" "$out"
+has "start bound passes the repository from the marker" "ALWAYS pass repository=local/x to get_sync_status and record_sync" "$out"
 # Stop: open blocking question (variant 2)
 QA=aaaaaaaa-1111-2222-3333-444444444444; QB=bbbbbbbb-1111-2222-3333-444444444444; TK=cccccccc-1111-2222-3333-444444444444
 # q TOOL INPUT [TOOLUSEID]: one assistant line with a single tool_use; r TOOLUSEID QID: its tool_result line.

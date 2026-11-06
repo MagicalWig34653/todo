@@ -20,5 +20,5 @@ Work step by step, idempotently. Optional project name from the user: $ARGUMENTS
 9. Open decisions: `ask_question` with idempotency keys (task ids via `list_plan_keys`). Work in flight: `post_progress`.
 10. Write `.todolino.json` in the repository root: `{"schema": 1, "server": "<MCP URL>", "projectID": "<id>", "repository": "<normalised key>"}`. No secrets; may be committed.
 11. Add or replace the section between `<!-- todolino:begin -->` and `<!-- todolino:end -->` in CLAUDE.md (or AGENTS.md if that is what the project uses; create CLAUDE.md if neither exists), using the text of `${CLAUDE_PLUGIN_ROOT}/templates/claude-md-section.md`.
-12. `record_sync {projectID, summary, repoRef}` with `repoRef` like `main@<short commit>`.
+12. `record_sync {projectID, repository, summary, repoRef}` (`repository` = the key written to `.todolino.json`) with `repoRef` like `main@<short commit>`.
 13. Report in a few lines: project name and id, counts created, what was not imported and why.
