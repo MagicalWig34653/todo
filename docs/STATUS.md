@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 6.11.2026 (spät): Parallelrunde Worker (Orchestrator-Sitzung, Details siehe `docs/AGENT-ARBEITSWEISE.md`)
+
+- Auf `main` gemergt, kein Push, keine Migration, keine Vertragsänderung: (1) `scripts/test-update.sh` (`b614770`; Fix aus `6f5290d` wirkt, 4 Fälle, ohne `unset` 2 rot belegt; Karte `86632B82` erledigt). (2) PWA: Zeile "Repository: <Name>" im Überblick-Tab (`bb409be`, `RepositoryLine.svelte`; vitest 313 selbst geprüft, Build/Playwright 2/2 laut Worker; Karte `30A4C13A` bei 60 %). (3) SMTP-Test: `waitFor("QUIT")` im Fake-Server (`64072a6`; Ursache war Test-Rennen, mit 0,3-s-Verzögerung rot belegt, danach 10/10 und 20/20 grün unter Last; natürlicher Flake nie reproduziert, Karte `66711FBB` bleibt offen).
+- Board abgeglichen: fünf Karten erledigt gesetzt (Graph langsam, PWA-Performance, backend-pinned, Zugriffshinweis, Teilen-Fenster MCP). Bewusst offen: `5288F3C0`, `8C9D4BB6`, `BBBE29C1`, `4E633799`, `8E538037` (unklar, ob Zustimmungsseite im Browser geprüft). Neue Karte `BE954C5C`: Backend mit mehreren Repository-Bindungen je Projekt (Entscheidung 2.11. liegt vor; frühere STATUS-Aussage "wartet auf Nutzerentscheidung" ist überholt).
+- Grenzen: nur SQLite; MariaDB, echter Swarm, Safari/Mobile nicht geprüft. Der Haiku-Testlauf (185 Tests) war wegen `tail -30` unbrauchbar; maßgeblich ist der eigene Lauf 440 Tests/0 Fehlschläge auf `main@03fb13e` (vor diesen drei Merges; seither nur Teilläufe).
+- Nächster Schritt: Gesamtlauf `swift test` + vitest nach den Merges, dann `BE954C5C` (Backend Mehrfach-Bindung) per swift-worker, danach PWA-Liste.
+
 ## Checkpoint 6.11.2026: Plan-Keys beim Verschieben, Agenten-Arbeitsweise (Board-Aufgabe `730FA055-9738-489E-A557-EAE2AC7AEE1F`)
 
 - Alles lokal auf `main` gemergt, kein Push, keine Migration, keine Vertragsänderung. Arbeitsweise ab jetzt: Hauptsession koordiniert, Worker/Verifier/Explorer in Subagenten (`docs/AGENT-ARBEITSWEISE.md`, Projekt-Subagenten unter `.claude/agents/`, werden evtl. erst nach Session-Neustart geladen). Modelle frei: Sonnet, Haiku, gpt-6.1-sol, terra; Opus und gpt-6-astra nur mit Genehmigung (Nutzerentscheidung 6.11.2026, auch in `AGENTS.md`).
