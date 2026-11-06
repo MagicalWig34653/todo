@@ -9,6 +9,7 @@ struct ProjectSyncService: Sendable {
     var allowedProjects: Set<UUID>? = nil
 
     static let maxStaleDays = 365
+    static let maxBindings = 10
 
     private func checkScope(_ id: UUID) throws {
         if let allowedProjects, !allowedProjects.contains(id) { throw Abort(.notFound) }
@@ -25,45 +26,58 @@ struct ProjectSyncService: Sendable {
         return days
     }
 
-    /// Sync state of one project (read right). Unbound projects report `bound: false`.
-    func status(_ projectID: UUID) async throws -> ProjectSyncDTO {
-        _ = try await project(projectID)
-        return ProjectSyncDTO.make(try await ProjectBinding.find(projectID, on: db))
+    /// Bindings of a project in default order (oldest first).
+    private static func bindings(of projectID: UUID, on db: any Database) async throws -> [ProjectRepositoryBinding] {
+        try await ProjectRepositoryBinding.query(on: db).filter(\.$projectID == projectID).sort(\.$createdAt).sort(\.$id).all()
     }
 
-    /// Binds (or re-binds) the project to a repository key and/or changes the staleness threshold.
-    /// Without `repository` an existing binding keeps its key (threshold change only).
+    /// Sync state of one project (read right). Unbound projects report `bound: false`; with several bindings the
+    /// stalest one is reported unless `repository` names one.
+    func status(_ projectID: UUID, repository: String? = nil) async throws -> ProjectSyncDTO {
+        _ = try await project(projectID)
+        let all = try await Self.bindings(of: projectID, on: db)
+        guard let repository else { return ProjectSyncDTO.make(stalest: all) }
+        let key = try RepositoryKey.normalize(repository)
+        guard let match = all.first(where: { $0.repoKey == key }) else { throw Abort(.conflict, reason: "not_bound") }
+        return ProjectSyncDTO.make(match)
+    }
+
+    /// Adds a repository binding (an existing key only changes the threshold; history is never reset) and/or changes the
+    /// staleness threshold. Without `repository` the project must have exactly one binding.
     func bind(_ projectID: UUID, repository: String?, staleAfterDays: Int?) async throws -> ProjectSyncDTO {
         let days = try Self.cleanDays(staleAfterDays)
         let key = try repository.map(RepositoryKey.normalize)
         let user = self.user, allowed = allowedProjects
-        return try await db.transaction { tx in
-            try await lockSharingGraph(on: tx)
-            try await lockRow(table: Project.schema, id: projectID, on: tx)
-            if let allowed, !allowed.contains(projectID) { throw Abort(.notFound) }
-            let project = try await ProjectAccess(user: user, db: tx).project(projectID, role: .edit)
-            let existing = try await ProjectBinding.find(projectID, on: tx)
-            guard let resolved = key ?? existing?.repoKey else { throw Abort(.badRequest, reason: "repository_required") }
-            if let other = try await ProjectBinding.query(on: tx).filter(\.$ownerID == project.ownerID).filter(\.$repoKey == resolved).first(),
-               other.id != projectID {
-                throw Abort(.conflict, reason: "repository_already_bound")
-            }
-            if let existing {
-                var changed = false
-                if existing.repoKey != resolved {
-                    existing.repoKey = resolved; changed = true
-                    // A different repository starts without a sync history.
-                    existing.lastSyncedAt = nil; existing.lastSyncedByType = nil; existing.lastSyncedByLabel = nil
-                    existing.lastRepoRef = nil; existing.lastSummary = nil
+        do {
+            return try await db.transaction { tx in
+                try await lockSharingGraph(on: tx)
+                try await lockRow(table: Project.schema, id: projectID, on: tx)
+                if let allowed, !allowed.contains(projectID) { throw Abort(.notFound) }
+                let project = try await ProjectAccess(user: user, db: tx).project(projectID, role: .edit)
+                let existing = try await Self.bindings(of: projectID, on: tx)
+                let target: ProjectRepositoryBinding?
+                if let key {
+                    target = existing.first { $0.repoKey == key }
+                } else {
+                    guard existing.count == 1 else { throw Abort(.badRequest, reason: "repository_required") }
+                    target = existing[0]
                 }
-                if let days, existing.staleAfterDays != days { existing.staleAfterDays = days; changed = true }
-                if changed { existing.version += 1; try await existing.save(on: tx) }
-                return ProjectSyncDTO.make(existing)
+                if let target {
+                    if let days, target.staleAfterDays != days { target.staleAfterDays = days; target.version += 1; try await target.save(on: tx) }
+                    return ProjectSyncDTO.make(target)
+                }
+                guard let key else { throw Abort(.badRequest, reason: "repository_required") }
+                if existing.count >= Self.maxBindings { throw Abort(.conflict, reason: "too_many_bindings") }
+                if try await ProjectRepositoryBinding.query(on: tx).filter(\.$ownerID == project.ownerID).filter(\.$repoKey == key).first() != nil {
+                    throw Abort(.conflict, reason: "repository_already_bound")
+                }
+                let binding = ProjectRepositoryBinding(projectID: projectID, ownerID: project.ownerID, repoKey: key,
+                                                       staleAfterDays: days ?? ProjectSyncDTO.defaultStaleAfterDays)
+                try await binding.save(on: tx)
+                return ProjectSyncDTO.make(binding)
             }
-            let binding = ProjectBinding(projectID: projectID, ownerID: project.ownerID, repoKey: resolved,
-                                         staleAfterDays: days ?? ProjectSyncDTO.defaultStaleAfterDays)
-            try await binding.save(on: tx)
-            return ProjectSyncDTO.make(binding)
+        } catch let error as any DatabaseError where error.isConstraintFailure {
+            throw Abort(.conflict, reason: "repository_already_bound")
         }
     }
 
@@ -71,11 +85,11 @@ struct ProjectSyncService: Sendable {
     static func bindNew(_ project: Project, repository: String, staleAfterDays: Int?, on db: any Database) async throws -> ProjectSyncDTO {
         let key = try RepositoryKey.normalize(repository)
         let days = try cleanDays(staleAfterDays)
-        if try await ProjectBinding.query(on: db).filter(\.$ownerID == project.ownerID).filter(\.$repoKey == key).first() != nil {
+        if try await ProjectRepositoryBinding.query(on: db).filter(\.$ownerID == project.ownerID).filter(\.$repoKey == key).first() != nil {
             throw Abort(.conflict, reason: "repository_already_bound")
         }
-        let binding = ProjectBinding(projectID: try project.requireID(), ownerID: project.ownerID, repoKey: key,
-                                     staleAfterDays: days ?? ProjectSyncDTO.defaultStaleAfterDays)
+        let binding = ProjectRepositoryBinding(projectID: try project.requireID(), ownerID: project.ownerID, repoKey: key,
+                                               staleAfterDays: days ?? ProjectSyncDTO.defaultStaleAfterDays)
         try await binding.save(on: db)
         return ProjectSyncDTO.make(binding)
     }
@@ -85,8 +99,8 @@ struct ProjectSyncService: Sendable {
         let key = try RepositoryKey.normalize(repository)
         var matches: [RepositoryMatch] = []
         var outside = 0
-        for row in try await ProjectBinding.query(on: db).filter(\.$repoKey == key).all() {
-            let id = try row.requireID()
+        for row in try await ProjectRepositoryBinding.query(on: db).filter(\.$repoKey == key).all() {
+            let id = row.projectID
             guard let project = try? await ProjectAccess(user: user, db: db).project(id) else { continue }
             if let allowedProjects, !allowedProjects.contains(id) { outside += 1; continue }
             matches.append(RepositoryMatch(projectID: id, name: project.name, sync: ProjectSyncDTO.make(row)))
@@ -104,17 +118,25 @@ struct ProjectSyncService: Sendable {
 
     /// Records that the project was reconciled with the repository now (edit right, binding required).
     func recordSync(_ projectID: UUID, summary rawSummary: String, repoRef rawRef: String?, actor: WorkflowActor,
-                    agentName: String?) async throws -> ProjectSyncDTO {
+                    agentName: String?, repository: String? = nil) async throws -> ProjectSyncDTO {
         let summary = try WorkflowService.text(rawSummary, reason: "invalid_summary")
         let ref = try WorkflowService.optionalLabel(rawRef, max: 200, reason: "invalid_repo_ref")
         let label = try WorkflowService.optionalLabel(agentName, reason: "invalid_agent_name") ?? actor.label ?? "agent"
+        let key = try repository.map(RepositoryKey.normalize)
         let user = self.user, allowed = allowedProjects
         return try await db.transaction { tx in
             try await lockSharingGraph(on: tx)
             try await lockRow(table: Project.schema, id: projectID, on: tx)
             if let allowed, !allowed.contains(projectID) { throw Abort(.notFound) }
             _ = try await ProjectAccess(user: user, db: tx).project(projectID, role: .edit)
-            guard let binding = try await ProjectBinding.find(projectID, on: tx) else { throw Abort(.conflict, reason: "not_bound") }
+            let existing = try await Self.bindings(of: projectID, on: tx)
+            guard !existing.isEmpty else { throw Abort(.conflict, reason: "not_bound") }
+            let chosen: ProjectRepositoryBinding?
+            if let key { chosen = existing.first { $0.repoKey == key } } else {
+                guard existing.count == 1 else { throw Abort(.conflict, reason: "repository_required") }
+                chosen = existing[0]
+            }
+            guard let binding = chosen else { throw Abort(.conflict, reason: "not_bound") }
             binding.lastSyncedAt = Date(); binding.lastSyncedByType = actor.type.rawValue; binding.lastSyncedByLabel = label
             binding.lastRepoRef = ref; binding.lastSummary = summary; binding.version += 1
             try await binding.save(on: tx)
@@ -136,15 +158,15 @@ struct ProjectSyncService: Sendable {
     /// Sync entries for every project in `scope`, ordered by name.
     static func entries(scope: CommandCenterScope, on db: any Database, now: Date = Date(), includeSummary: Bool = true) async throws -> [ProjectSyncEntry] {
         let ids = scope.projectIDs
-        var bindings: [UUID: ProjectBinding] = [:]
+        var bindings: [UUID: [ProjectRepositoryBinding]] = [:]
         var index = 0
         while index < ids.count {
             let chunk = Array(ids[index..<min(index + 400, ids.count)])
             index += 400
-            for b in try await ProjectBinding.query(on: db).filter(\.$id ~~ chunk).all() { bindings[b.id!] = b }
+            for b in try await ProjectRepositoryBinding.query(on: db).filter(\.$projectID ~~ chunk).all() { bindings[b.projectID, default: []].append(b) }
         }
         return scope.projects.values.map {
-            ProjectSyncEntry(projectID: $0.id!, name: $0.name, sync: ProjectSyncDTO.make(bindings[$0.id!], now: now, includeSummary: includeSummary))
+            ProjectSyncEntry(projectID: $0.id!, name: $0.name, sync: ProjectSyncDTO.make(stalest: bindings[$0.id!] ?? [], now: now, includeSummary: includeSummary))
         }.sorted { ($0.name, $0.projectID.uuidString) < ($1.name, $1.projectID.uuidString) }
     }
 }

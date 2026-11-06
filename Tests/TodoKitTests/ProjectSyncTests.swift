@@ -93,7 +93,7 @@ final class ProjectSyncTests: XCTestCase {
                 return ((entry?["sync"] as? [String: Any])?["state"] as? String, (o["summary"] as? [String: Any])?["staleProjects"] as? Int)
             }
             var s = try await state(); XCTAssertEqual(s.0, "fresh"); XCTAssertEqual(s.1, 0)
-            let binding = try await XCTUnwrapAsync { try await ProjectBinding.find(UUID(uuidString: pid), on: f.test.app.db) }
+            let binding = try await XCTUnwrapAsync { try await ProjectRepositoryBinding.query(on: f.test.app.db).filter(\.$projectID == UUID(uuidString: pid)!).first() }
             binding.lastSyncedAt = Date().addingTimeInterval(-4 * 86_400); try await binding.save(on: f.test.app.db)
             s = try await state(); XCTAssertEqual(s.0, "stale"); XCTAssertEqual(s.1, 1)
             let stale = try await call(f, "get_stale_projects", [:], access: t.access)
