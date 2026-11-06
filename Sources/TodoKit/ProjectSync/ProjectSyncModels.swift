@@ -3,8 +3,9 @@ import Vapor
 
 // MARK: - Models (ADR 0018)
 
-/// Binds a project to an external repository identifier and records when the project was last reconciled with it.
-/// One row per project (`id` = project id). `owner_id` is the project owner; `repo_key` is unique per owner, so two
+/// Legacy single-binding table (one row per project, `id` = project id). Only read by `AddProjectRepositoryBindings`;
+/// `ProjectRepositoryBinding` is the live model. The table stays until a later cleanup migration.
+/// Originally: binds a project to an external repository identifier. `owner_id` is the project owner; `repo_key` is unique per owner, so two
 /// accounts can bind the same public repository to their own projects without learning about each other.
 final class ProjectBinding: Model, @unchecked Sendable {
     static let schema = "project_bindings"
@@ -26,6 +27,43 @@ final class ProjectBinding: Model, @unchecked Sendable {
     init() {}
     init(projectID: UUID, ownerID: UUID, repoKey: String, staleAfterDays: Int) {
         id = projectID; self.ownerID = ownerID; self.repoKey = repoKey; self.staleAfterDays = staleAfterDays; version = 1
+    }
+}
+
+/// Binds a project to an external repository identifier and records when the project was last reconciled with it.
+/// A project can have several bindings (at most `ProjectSyncService.maxBindings`), each with its own sync history.
+/// `owner_id` is the project owner; `repo_key` is unique per owner, so two accounts can bind the same public
+/// repository to their own projects without learning about each other.
+final class ProjectRepositoryBinding: Model, @unchecked Sendable {
+    static let schema = "project_repository_bindings"
+    @ID(key: .id) var id: UUID?
+    @Field(key: "project_id") var projectID: UUID
+    @Field(key: "owner_id") var ownerID: UUID
+    /// Normalised repository key, see `RepositoryKey`.
+    @Field(key: "repo_key") var repoKey: String
+    @Field(key: "stale_after_days") var staleAfterDays: Int
+    @OptionalField(key: "last_synced_at") var lastSyncedAt: Date?
+    /// `Integration` | `Person`
+    @OptionalField(key: "last_synced_by_type") var lastSyncedByType: String?
+    @OptionalField(key: "last_synced_by_label") var lastSyncedByLabel: String?
+    /// Free hint about the repository state of the last sync (commit, branch), at most 200 characters.
+    @OptionalField(key: "last_repo_ref") var lastRepoRef: String?
+    @OptionalField(key: "last_summary") var lastSummary: String?
+    @Field(key: "version") var version: Int
+    @Timestamp(key: "created_at", on: .create) var createdAt: Date?
+    @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?
+    init() {}
+    init(id: UUID? = nil, projectID: UUID, ownerID: UUID, repoKey: String, staleAfterDays: Int) {
+        self.id = id; self.projectID = projectID; self.ownerID = ownerID; self.repoKey = repoKey
+        self.staleAfterDays = staleAfterDays; version = 1
+    }
+
+    /// Default binding = oldest (`created_at`, then `id`).
+    static func defaultBinding(of bindings: [ProjectRepositoryBinding]) -> ProjectRepositoryBinding? {
+        bindings.min { a, b in
+            let (x, y) = (a.createdAt ?? .distantPast, b.createdAt ?? .distantPast)
+            return x != y ? x < y : (a.id?.uuidString ?? "") < (b.id?.uuidString ?? "")
+        }
     }
 }
 
@@ -69,8 +107,56 @@ struct CreateProjectSync: AsyncMigration {
     }
 }
 
+/// Additive and repeatable: creates `project_repository_bindings` if missing and copies legacy `project_bindings` rows
+/// (new id = legacy project id) that are not copied yet. The legacy table is never modified; revert drops only the new one.
+struct AddProjectRepositoryBindings: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(ProjectRepositoryBinding.schema)
+            .ignoreExisting()
+            .id()
+            .field("project_id", .uuid, .required, .references("projects", "id", onDelete: .cascade))
+            .field("owner_id", .uuid, .required)
+            .field("repo_key", .string, .required)
+            .field("stale_after_days", .int, .required)
+            .field("last_synced_at", .datetime)
+            .field("last_synced_by_type", .string).field("last_synced_by_label", .string)
+            .field("last_repo_ref", .string)
+            .field("last_summary", .sql(raw: "TEXT"))
+            .field("version", .int, .required)
+            .field("created_at", .datetime).field("updated_at", .datetime)
+            .unique(on: "owner_id", "repo_key")
+            .unique(on: "project_id", "repo_key")
+            .create()
+        let pageSize = 400
+        var lastID: UUID?
+        while true {
+            var query = ProjectBinding.query(on: db).sort(\.$id).limit(pageSize)
+            if let lastID { query = query.filter(\.$id > lastID) }
+            let page = try await query.all()
+            guard let last = page.last?.id else { break }
+            lastID = last
+            let ids = page.compactMap(\.id)
+            let copied = Set(try await ProjectRepositoryBinding.query(on: db).filter(\.$id ~~ ids).all().compactMap(\.id))
+            for old in page where !copied.contains(old.id!) {
+                let row = ProjectRepositoryBinding(id: old.id, projectID: old.id!, ownerID: old.ownerID, repoKey: old.repoKey,
+                                                   staleAfterDays: old.staleAfterDays)
+                row.lastSyncedAt = old.lastSyncedAt; row.lastSyncedByType = old.lastSyncedByType
+                row.lastSyncedByLabel = old.lastSyncedByLabel; row.lastRepoRef = old.lastRepoRef
+                row.lastSummary = old.lastSummary; row.version = old.version
+                row.createdAt = old.createdAt; row.updatedAt = old.updatedAt
+                try await row.create(on: db)
+            }
+            if page.count < pageSize { break }
+        }
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(ProjectRepositoryBinding.schema).delete()
+    }
+}
+
 func configureProjectSync(_ app: Application) {
     app.migrations.add(CreateProjectSync())
+    app.migrations.add(AddProjectRepositoryBindings())
 }
 
 // MARK: - Repository key
@@ -124,7 +210,7 @@ struct ProjectSyncDTO: Content {
 
     static let defaultStaleAfterDays = 3
 
-    static func make(_ binding: ProjectBinding?, now: Date = Date(), includeSummary: Bool = true) -> ProjectSyncDTO {
+    static func make(_ binding: ProjectRepositoryBinding?, now: Date = Date(), includeSummary: Bool = true) -> ProjectSyncDTO {
         guard let binding else {
             return ProjectSyncDTO(bound: false, repository: nil, state: "never", lastSyncedAt: nil, lastSyncedBy: nil, daysSince: nil,
                                   staleAfterDays: defaultStaleAfterDays, repoRef: nil, lastSummary: nil)
@@ -138,6 +224,23 @@ struct ProjectSyncDTO: Content {
         return ProjectSyncDTO(bound: true, repository: binding.repoKey, state: state, lastSyncedAt: binding.lastSyncedAt,
             lastSyncedBy: binding.lastSyncedByLabel, daysSince: days, staleAfterDays: binding.staleAfterDays,
             repoRef: binding.lastRepoRef, lastSummary: includeSummary ? binding.lastSummary : nil)
+    }
+
+    /// Flat state of a project with several bindings: the stalest one (never before stale before fresh, then the larger
+    /// `daysSince`, then the default binding order). Zero bindings = unbound; one binding = that binding.
+    static func make(stalest bindings: [ProjectRepositoryBinding], now: Date = Date(), includeSummary: Bool = true) -> ProjectSyncDTO {
+        let ordered = bindings.sorted { a, b in
+            let (x, y) = (a.createdAt ?? .distantPast, b.createdAt ?? .distantPast)
+            return x != y ? x < y : (a.id?.uuidString ?? "") < (b.id?.uuidString ?? "")
+        }
+        let dtos = ordered.map { make($0, now: now, includeSummary: includeSummary) }
+        func rank(_ d: ProjectSyncDTO) -> Int { d.state == "never" ? 2 : d.state == "stale" ? 1 : 0 }
+        var best: ProjectSyncDTO?
+        for d in dtos {
+            guard let current = best else { best = d; continue }
+            if rank(d) > rank(current) || (rank(d) == rank(current) && (d.daysSince ?? 0) > (current.daysSince ?? 0)) { best = d }
+        }
+        return best ?? make(nil)
     }
 }
 

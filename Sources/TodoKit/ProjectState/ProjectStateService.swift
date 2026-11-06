@@ -214,7 +214,7 @@ struct ProjectStateService: Sendable {
             for brief in try await ProjectAgentBrief.query(on: db).filter(\.$id ~~ chunk).all()
             where !brief.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { found.insert(brief.id!) }
             for b in try await ProjectRunnerBinding.query(on: db).filter(\.$projectID ~~ chunk).all() { found.insert(b.projectID) }
-            for b in try await ProjectBinding.query(on: db).filter(\.$id ~~ chunk).all() { found.insert(b.id!) }
+            for b in try await ProjectRepositoryBinding.query(on: db).filter(\.$projectID ~~ chunk).all() { found.insert(b.projectID) }
             let questions = try await TaskQuestion.query(on: db)
                 .join(TodoTask.self, on: \TaskQuestion.$taskID == \TodoTask.$id)
                 .filter(TodoTask.self, \.$projectID ~~ chunk)
