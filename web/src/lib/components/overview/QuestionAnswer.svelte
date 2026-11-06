@@ -22,9 +22,11 @@
 		size?: 'sm' | 'default';
 		/** Opens the card detail; renders a footer button inside the card. */
 		onopen?: () => void;
+		/** Only the answer controls (options and own-answer field): the host card already shows the prompt. */
+		bare?: boolean;
 		onanswered: () => void | Promise<void>;
 	}
-	let { id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, onanswered }: Props = $props();
+	let { id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, bare = false, onanswered }: Props = $props();
 
 	let text = $state('');
 	let busy = $state(false);
@@ -43,7 +45,8 @@
 	}
 </script>
 
-<div class="bg-ui-accent-soft/50 flex min-w-0 flex-col gap-2 rounded-lg border p-2.5 text-sm" data-testid="question" data-question-id={id}>
+<div class={['flex min-w-0 flex-col gap-2 text-sm', !bare && 'bg-ui-accent-soft/50 rounded-lg border p-2.5']} data-testid="question" data-question-id={id}>
+	{#if !bare}
 	<div class="flex items-start gap-2">
 		<CircleHelp class="text-ui-accent-ink mt-0.5 size-4 shrink-0" aria-hidden="true" />
 		<div class="min-w-0 flex-1">
@@ -52,6 +55,7 @@
 			<p class="font-medium break-words whitespace-pre-wrap" data-testid="question-prompt">{prompt}</p>
 		</div>
 	</div>
+	{/if}
 	{#if options.length > 0}
 		<OptionButtons {size} items={options.map((o) => ({ key: o, label: o }))} onpick={(o) => send(o)} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
 	{/if}

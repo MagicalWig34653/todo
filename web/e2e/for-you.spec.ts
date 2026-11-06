@@ -53,6 +53,23 @@ test('empty state, then needs-you card with options and a progress post; answeri
 	await expect(page).toHaveURL(/\/project\/.+\?task=/);
 });
 
+test('needs-you question with options also takes an own text answer (320 px, no horizontal overflow)', async () => {
+	await page.setViewportSize({ width: 320, height: 700 });
+	const project = await (await page.request.post('/v1/projects', { ...json, data: { name: 'Freitextfeed' } })).json();
+	const task = await (await page.request.post('/v1/tasks', { ...json, data: { projectID: project.id, title: 'Freitextaufgabe' } })).json();
+	expect((await page.request.post(`/v1/tasks/${task.id}/questions`, { ...json, data: { prompt: 'Welche Farbe?', options: ['Rot', 'Blau'] } })).status()).toBe(201);
+	await page.goto('/for-you');
+	const card = page.getByTestId('needs-card').filter({ hasText: 'Welche Farbe?' });
+	await expect(card).toBeVisible();
+	await expect(card.getByTestId('question-option')).toHaveCount(2);
+	await expect(card.getByTestId('question-send')).toBeDisabled();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+	await card.getByTestId('question-answer').fill('Grün, bitte');
+	await card.getByTestId('question-send').click();
+	await expect(card).toHaveCount(0);
+	await expect(page.getByTestId('post-card').filter({ hasText: 'Grün, bitte' })).toBeVisible();
+});
+
 test('mobile: Für dich is the first tab', async () => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/');
