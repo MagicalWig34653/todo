@@ -98,9 +98,20 @@ struct ProjectSyncService: Sendable {
                 try await binding.save(on: tx)
                 return ProjectSyncDTO.make(binding)
             }
-        } catch let error as any DatabaseError where error.isConstraintFailure {
-            throw Abort(.conflict, reason: "repository_already_bound")
+        } catch let error where (error as? any DatabaseError)?.isConstraintFailure == true {
+            throw try await Self.mapConstraintFailure(error, projectID: projectID, key: key, on: db)
         }
+    }
+
+    /// The drivers do not tell a unique violation from a foreign-key violation portably, so re-read the state:
+    /// project gone -> 404, key now bound to another project of the owner -> 409, anything else is passed through.
+    static func mapConstraintFailure(_ error: any Error, projectID: UUID, key: String?, on db: any Database) async throws -> any Error {
+        guard let project = try await Project.find(projectID, on: db) else { return Abort(.notFound) }
+        if let key, try await ProjectRepositoryBinding.query(on: db).filter(\.$ownerID == project.ownerID)
+            .filter(\.$repoKey == key).first() != nil {
+            return Abort(.conflict, reason: "repository_already_bound")
+        }
+        return error
     }
 
     /// Creates the binding inside a caller transaction (create_project). The caller holds the locks and the rights.
