@@ -13,6 +13,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import PageHeader from './app/PageHeader.svelte';
 	import EmptyState from './app/EmptyState.svelte';
+	import QuestionAnswer from './overview/QuestionAnswer.svelte';
 	import OptionButtons from './overview/OptionButtons.svelte';
 	import ConfirmationCard from './overview/ConfirmationCard.svelte';
 	import AccessRequestCard from './overview/AccessRequestCard.svelte';
@@ -122,6 +123,13 @@
 		await attempt(load);
 		void attempt(() => workspace.refreshLive());
 	}
+	/** Answered through the shared question controls (options or own text): drop the card, then reload. */
+	async function answered(item: ForYouNeed) {
+		needs = needs.filter((n) => n.id !== item.id);
+		needsTotal = Math.max(0, needsTotal - 1);
+		await attempt(load);
+		void attempt(() => workspace.refreshLive());
+	}
 	function click(item: ForYouNeed, action: ForYouAction) {
 		if (action.requiresInput && action.inputField === 'note' && noteFor !== item.id) noteFor = item.id;
 		else void run(item, action);
@@ -175,7 +183,9 @@
 						</button>
 						{#if item.actions.length > 0}
 							{@const free = item.actions.length === 1 && item.actions[0].requiresInput && item.actions[0].inputField === 'answer'}
-							{#if free}
+							{#if item.kind === 'question' && item.questionID && item.options.length > 0}
+								<QuestionAnswer bare id={item.questionID} prompt={item.title} options={item.options} onanswered={() => answered(item)} />
+							{:else if free}
 								<form class="flex gap-2" onsubmit={(e) => { e.preventDefault(); void run(item, item.actions[0]); }}>
 									<Input class="min-w-0 flex-1" placeholder={t('forYou.answerPlaceholder')} aria-label={t('forYou.answerPlaceholder')} bind:value={texts[item.id]} />
 									<Button type="submit" disabled={busy.has(item.id) || !(texts[item.id] ?? '').trim()}>{t('forYou.send')}</Button>
