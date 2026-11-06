@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 6.11.2026: update_task mit projectID behält Plan-Keys (Board-Aufgabe `730FA055-9738-489E-A557-EAE2AC7AEE1F`)
+
+- Ursache: `PlanningService.update` räumte beim Projektwechsel Abhängigkeiten, Meilensteine, Eltern/Kinder und Spalte auf, ließ aber `task_external_keys.project_id` auf dem alten Projekt. `list_plan_keys` (Filter auf Projekt der Aufgabe) war in beiden Projekten leer, ein erneuter `import_plan` im Ziel legte Duplikate an.
+- Fix (`Sources/TodoKit/PlanningExt/PlanningExtService.swift`): Key wandert mit ins Zielprojekt; belegt das Ziel den Key schon für eine andere Aufgabe, gewinnt das Ziel und der Key der verschobenen Aufgabe entfällt. Gilt für MCP `update_task` (gemeinsamer Pfad).
+- Geprüft: neu `ProjectSyncTests.testMovingTaskKeepsPlanKey` (ohne Fix 3 Fehlschläge, mit Fix grün); `ProjectSyncTests` 5/5, `PlanningExtTests`, `MCPProjectToolsTests` grün. Gesamtlauf und MariaDB nicht ausgeführt.
+- Offen: `PlanningController.updateTask` (REST-Zweig im Controller) räumt beim Verschieben nichts auf; prüfen, ob die Route noch genutzt wird oder auf `PlanningService` umgestellt werden soll.
+
 ## Checkpoint 3.11.2026: Aktuelles Projekt im MCP (Agent claude-code@current-project, Board-Aufgabe `5288F3C0-ACF4-4AE4-A99A-A7FDFE60C674`)
 
 - Worktree-Branch, lokal committed, kein Push, keine Migration, Web unverändert. Handbuch 1.16.0 (Embed neu erzeugt).

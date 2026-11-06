@@ -104,6 +104,39 @@ final class ProjectSyncTests: XCTestCase {
         await f.test.shutdown()
     }
 
+    /// update_task with projectID must carry the plan key to the target project (no duplicate on the next import_plan).
+    func testMovingTaskKeepsPlanKey() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let t = try await f.tokens(scope: Self.scopes)
+            func projectID(_ name: String) async throws -> String {
+                let r = try await call(f, "create_project", ["name": name], access: t.access)
+                XCTAssertFalse(r.isError, r.text)
+                return try XCTUnwrap(((r.json as? [String: Any])?["project"] as? [String: Any])?["id"] as? String)
+            }
+            let a = try await projectID("Source"), b = try await projectID("Target")
+            let items: [[String: Any]] = [["externalKey": "p/one", "title": "One"], ["externalKey": "p/two", "title": "Two"]]
+            let imported = try await call(f, "import_plan", ["projectID": a, "items": items], access: t.access)
+            XCTAssertFalse(imported.isError, imported.text)
+            func keys(_ project: String) async throws -> [String] {
+                let r = try await call(f, "list_plan_keys", ["projectID": project], access: t.access)
+                return ((r.json as? [[String: Any]]) ?? []).compactMap { $0["externalKey"] as? String }
+            }
+            let rows = try await XCTUnwrapAsync { try await TaskExternalKey.query(on: f.test.app.db).filter(\.$externalKey == "p/one").first() }
+            let task = try await XCTUnwrapAsync { try await TodoTask.find(rows.taskID, on: f.test.app.db) }
+            let moved = try await call(f, "update_task", ["id": rows.taskID.uuidString, "version": task.version, "projectID": b], access: t.access)
+            XCTAssertFalse(moved.isError, moved.text)
+            let sourceKeys = try await keys(a), targetKeys = try await keys(b)
+            XCTAssertEqual(sourceKeys, ["p/two"]); XCTAssertEqual(targetKeys, ["p/one"])
+            // Importing the same plan item into the target finds the moved task instead of duplicating it.
+            let again = try await call(f, "import_plan", ["projectID": b, "items": [["externalKey": "p/one", "title": "One"]]], access: t.access)
+            XCTAssertEqual((again.json as? [String: Any])?["created"] as? Int, 0, again.text)
+            let titles = try await TodoTask.query(on: f.test.app.db).filter(\.$title == "One").count()
+            XCTAssertEqual(titles, 1)
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
     func testRightsScopesAndForeignProjects() async throws {
         let f = try await OAuthFixture.make()
         do {

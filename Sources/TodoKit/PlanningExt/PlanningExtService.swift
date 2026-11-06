@@ -126,6 +126,12 @@ struct PlanningService: Sendable {
                 // Subtask links never cross a project: release this task from its parent and its own children from it.
                 if let wf = try await TaskWorkflow.find(id, on: db), wf.parentTaskID != nil { wf.parentTaskID = nil; try await wf.save(on: db) }
                 for child in try await TaskWorkflow.query(on: db).filter(\.$parentTaskID == id).all() { child.parentTaskID = nil; try await child.save(on: db) }
+                // Plan keys are unique per project: carry the key over so a later import_plan finds the task instead of
+                // duplicating it. A key the target already uses for another task wins; the moved task then loses its key.
+                if let row = try await TaskExternalKey.query(on: db).filter(\.$taskID == id).first() {
+                    let taken = try await TaskExternalKey.query(on: db).filter(\.$projectID == project).filter(\.$externalKey == row.externalKey).count() > 0
+                    if taken { try await row.delete(on: db) } else { row.projectID = project; try await row.save(on: db) }
+                }
                 // Columns belong to one project; the task lands in "Ohne Spalte" of the target.
                 t.columnID = nil; t.boardPosition = 0
             }
