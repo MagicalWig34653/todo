@@ -1,5 +1,14 @@
 # Status
 
+## Checkpoint 6.11.2026 (abends): Mehrfache Repository-Bindungen je Projekt (Board-Aufgabe `BE954C5C-D70B-4F25-8612-F48B53521899`, Plan `docs/PLAN-MEHRFACH-REPOSITORY-BINDUNGEN.md`, ADR 0029)
+
+- Alles lokal auf `main@6697c84` gemergt, kein Push, kein Deploy. Migration `AddProjectRepositoryBindings` (additiv, wiederholbar; vor Serve `App migrate --yes`); Alttabelle `project_bindings` bleibt als Altlast. Handbuch 1.17.0, Plugin 1.7.0, `contracts/project-sync.yaml` 1.1.0.
+- Stand: Schritt 1 Modell/Migration/Service (`459365a`), Schritt 2 REST/MCP (`list_repository_bindings`, `unbind_repository`, optionales `repository` bei `record_sync`/`get_sync_status`, `bindings`/`staleBindings`), Schritt 3 Handbuch/Plugin/ADR, Schritt 4 PWA-Liste mit Hinzufügen/Lösen (`266a012`), Audit-Nachbesserung (`6697c84`: Constraint-Mapping, keine Credentials im Plugin-Hinweis).
+- Verhalten: ein Projekt ist veraltet, sobald eine Bindung nicht frisch ist; max. 10 Bindungen; ohne `repository` bei mehreren Bindungen `repository_required`. `unbind_repository` schreibt keinen Aktivitätseintrag (es gibt keine Projekt-Aktivität), liefert `effect`.
+- Geprüft (selbst, auf `main@6697c84`): `swift test` 453 Tests, 20 übersprungen, 0 Fehlschläge; Hook-Tests 0 FAIL; vitest 320 grün, Build grün (Stand `266a012`). Playwright 4/4 Chromium und `npm run check` 0 Fehler laut Worker. Security-Audit statisch: keine kritischen bis mittleren Befunde.
+- Nicht geprüft: MariaDB (Migration, `ignoreExisting`), Apple-App, Firefox/WebKit, Screenreader; FK-Race bei parallelem Projektlöschen nur über die Mapping-Funktion getestet. Mehrere Worker belegten den roten Testzustand nicht (Schritte 1, 2).
+- Offen/Nächster Schritt: Karte `BE954C5C` und `30A4C13A` abschließen; Rückbau der Alttabelle in späterer Migration; `owner_id`-Drift der Bindung bei Eigentümerwechsel prüfen (bestehende Lücke); Server-Update durch Lino (Image bauen, `App migrate`).
+
 ## Checkpoint 6.11.2026 (spät): Parallelrunde Worker (Orchestrator-Sitzung, Details siehe `docs/AGENT-ARBEITSWEISE.md`)
 
 - Auf `main` gemergt, kein Push, keine Migration, keine Vertragsänderung: (1) `scripts/test-update.sh` (`b614770`; Fix aus `6f5290d` wirkt, 4 Fälle, ohne `unset` 2 rot belegt; Karte `86632B82` erledigt). (2) PWA: Zeile "Repository: <Name>" im Überblick-Tab (`bb409be`, `RepositoryLine.svelte`; vitest 313 selbst geprüft, Build/Playwright 2/2 laut Worker; Karte `30A4C13A` bei 60 %). (3) SMTP-Test: `waitFor("QUIT")` im Fake-Server (`64072a6`; Ursache war Test-Rennen, mit 0,3-s-Verzögerung rot belegt, danach 10/10 und 20/20 grün unter Last; natürlicher Flake nie reproduziert, Karte `66711FBB` bleibt offen).
