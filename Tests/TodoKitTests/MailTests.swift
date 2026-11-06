@@ -512,6 +512,13 @@ final class FakeSMTPServer: @unchecked Sendable {
     }
     func stop() async { try? await channel?.close().get() }
 
+    /// The client sends QUIT fire-and-forget and closes right away, so the server records it on its own
+    /// event loop after `send` has returned. Waits (up to `timeout`) until `command` has been recorded.
+    func waitFor(_ command: String, timeout: TimeInterval = 10) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !received.commands.contains(command), Date() < deadline { try? await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
     final class Handler: ChannelInboundHandler, @unchecked Sendable {
         typealias InboundIn = ByteBuffer
         typealias OutboundOut = ByteBuffer
@@ -576,6 +583,7 @@ final class SMTPClientTests: XCTestCase {
         let server = FakeSMTPServer(); try await server.start()
         let client = try SMTPClient(config: config(server.port))
         try await client.send(message)
+        await server.waitFor("QUIT")
         await server.stop()
         let got = server.received
         XCTAssertEqual(got.commands, ["EHLO todolino.local", "MAIL FROM:<todolino@example.org>", "RCPT TO:<anna@example.org>", "DATA", "QUIT"])
