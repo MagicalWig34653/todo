@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
+import { signedInPage } from './support/session';
 import { mkdirSync } from 'node:fs';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
@@ -37,9 +38,8 @@ const node = (id: string) => page.locator(`[data-testid="graph-node"][data-node=
 const noOverflow = async () => expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
 	mkdirSync(SHOTS, { recursive: true });
-	page = await (await browser.newContext()).newPage();
+	page = await signedInPage(browser, 'Graph Tester');
 	if (process.env.E2E_EDGE_SHIM) {
 		await page.route('**/v1/planning/dependencies?*', async (route) => {
 			const url = new URL(route.request().url());
@@ -53,16 +53,6 @@ test.beforeAll(async ({ browser }) => {
 			await route.fulfill({ json: { edges, tasks: kinds } });
 		});
 	}
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-	});
-	await page.goto('/setup');
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel('Anzeigename').fill('Graph Tester');
-	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByTestId('account-menu')).toBeVisible();
 
 	const project = await send<{ id: string }>('post', '/v1/projects', { name: 'Graphprojekt' });
 	const child = await send<{ id: string }>('post', '/v1/projects', { name: 'Unterprojekt', parentID: project.id });

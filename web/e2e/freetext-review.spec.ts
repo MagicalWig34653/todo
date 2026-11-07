@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { signedInPage } from './support/session';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
 //   npx playwright test e2e/freetext-review.spec.ts --project=chromium
@@ -18,18 +19,7 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 const dialog = () => page.getByTestId('card-dialog');
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
-	page = await (await browser.newContext()).newPage();
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-	});
-	await page.goto('/setup');
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel('Anzeigename').fill('Freitext Tester');
-	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByTestId('account-menu')).toBeVisible();
+	page = await signedInPage(browser, 'Freitext Tester');
 	const project = await post<{ id: string }>('/v1/projects', { name: 'Freitextprojekt' });
 	const mk = (title: string) => post<{ id: string }>('/v1/tasks', { projectID: project.id, title });
 	const optTask = await mk('Optionsaufgabe');
@@ -85,3 +75,23 @@ test('attachment: Hochladen without a file opens the picker, choosing a file upl
 	const list = await (await page.request.get(`/v1/tasks/${ids.fileTask}/attachments`)).json();
 	expect(list).toHaveLength(1);
 });
+
+// Light/dark check of the "Für dich" free-text question (no horizontal overflow); screenshots go to E2E_SHOT_DIR only when set (never into the repo).
+for (const scheme of ['light', 'dark'] as const) {
+	test(`for you: free-text question card renders without overflow in ${scheme} mode`, async ({ browserName }, testInfo) => {
+		const task = await post<{ id: string }>('/v1/tasks', { projectID: ids.project, title: `Farbschema ${scheme}` });
+		await post(`/v1/tasks/${task.id}/claim`, { agentName: 'Claude Code' });
+		await post(`/v1/tasks/${task.id}/questions`, { prompt: `Welche Variante soll es sein (${scheme})?`, options: ['Variante A', 'Variante B'] });
+		await page.emulateMedia({ colorScheme: scheme });
+		await page.goto('/for-you');
+		await page.getByText(`Welche Variante soll es sein (${scheme})?`).first().click();
+		await expect(dialog()).toBeVisible();
+		await expect(dialog().getByTestId('question-answer')).toBeVisible();
+		await dialog().getByTestId('question-answer').fill('Weder noch, lieber eine dritte Variante');
+		expect(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(scheme === 'dark');
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+		const dir = process.env.E2E_SHOT_DIR;
+		if (dir) await page.screenshot({ path: `${dir}/for-you-freetext-${testInfo.project.name}-${browserName}-${scheme}.png` });
+		await page.emulateMedia({ colorScheme: null });
+	});
+}
