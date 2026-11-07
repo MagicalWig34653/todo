@@ -92,6 +92,6 @@ describe('layout stays identical to the reference implementation', () => {
 		const { createHash } = await import('node:crypto');
 		const data = bigInput(n, { wideFeature: wide });
 		const l = layoutGraph(filterGraph(data, { featuresOnly: false, hideDoneDays: 30, now }), now, data);
-		expect(createHash('sha1').update(JSON.stringify(l)).digest('hex')).toBe(digest);
+		expect(createHash('sha1').update(JSON.stringify(l, (k, v) => (k === 'builds' || k === 'buildsMore' ? undefined : v))).digest('hex')).toBe(digest);
 	});
 });

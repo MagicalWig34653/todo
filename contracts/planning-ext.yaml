@@ -222,7 +222,7 @@ paths:
       - name: details
         in: query
         required: false
-        description: Additiv. true liefert je Aufgabe zusätzlich title, status, projectID, dueAt und die Meilensteine mit sichtbaren Mitgliedern (die Graph-Ansicht braucht dann nur diesen Aufruf). Ohne den Parameter bleibt die Antwort unverändert.
+        description: Additiv. true liefert je Aufgabe zusätzlich title, status, projectID, dueAt, builds und die Meilensteine mit sichtbaren Mitgliedern (die Graph-Ansicht braucht dann nur diesen Aufruf). Ohne den Parameter bleibt die Antwort unverändert.
         schema:
           type: boolean
       responses:
@@ -256,6 +256,18 @@ paths:
                         status: {type: string, enum: [open, in_progress, in_review, done], description: Nur mit details=true}
                         projectID: {type: string, format: uuid, description: Nur mit details=true}
                         dueAt: {type: string, format: date-time, nullable: true, description: Nur mit details=true}
+                        builds:
+                          type: array
+                          description: Nur mit details=true und nur wenn die Aufgabe fertige Build-Artefakte hat (additiv). Artefakte nach buildID gruppiert, neueste zuerst.
+                          items:
+                            type: object
+                            properties:
+                              buildID: {type: string}
+                              label: {type: string, nullable: true}
+                              platform: {type: string, nullable: true}
+                              count: {type: integer, description: Anzahl der Artefakte dieses Builds an der Aufgabe}
+                              createdAt: {type: string, format: date-time, nullable: true, description: Neuestes Artefakt}
+                            required: [buildID, count]
                       required: [taskID, kind]
                   milestones:
                     type: array
