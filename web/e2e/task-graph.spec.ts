@@ -158,7 +158,8 @@ test('builds are square pills next to the milestone tag, with tooltip and access
 	await expect(a.getByTestId('graph-build-more')).toHaveText(/\+1/);
 	await expect(a.getByTestId('graph-build-more')).toHaveAttribute('title', '+1 weitere Builds');
 	// Screen readers get the same text, and the milestone tag stays next to it.
-	await expect(pills.nth(1)).toContainText('Build Beta, Plattform ios, 2 Anhänge');
+	await expect(pills.nth(1)).toHaveAttribute('aria-label', /Build Beta, Plattform ios, 2 Anhänge/);
+	await expect(pills.nth(1)).not.toContainText('Anhänge');
 	await expect(a.getByTestId('graph-tag')).toContainText('Version 1.0');
 	// Visually distinct from the tag: different corner radius and different colour.
 	const style = async (loc: typeof pills) => loc.first().evaluate((el) => ({ radius: getComputedStyle(el).borderTopLeftRadius, color: getComputedStyle(el).color }));

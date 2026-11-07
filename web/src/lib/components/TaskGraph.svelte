@@ -288,12 +288,12 @@
 											</span>
 										{/each}
 										{#each n.builds as b (b.buildID)}
-											<span class="badge build" data-testid="graph-build" data-build={b.buildID} title={buildText(b)}>
-												<Package class="size-3" aria-hidden="true" /><span class="max-w-32 truncate">{b.title}</span>{#if b.platform}<span class="opacity-80">· {b.platform}</span>{/if}<span class="sr-only"> ({buildText(b)})</span>
+											<span class="badge build" data-testid="graph-build" data-build={b.buildID} title={buildText(b)} role="img" aria-label={buildText(b)}>
+												<Package class="size-3" aria-hidden="true" /><span class="max-w-32 truncate">{b.title}</span>{#if b.platform}<span class="opacity-80">· {b.platform}</span>{/if}
 											</span>
 										{/each}
 										{#if n.buildsMore > 0}
-											<span class="badge build more" data-testid="graph-build-more" title={t('graph.build.more', { count: n.buildsMore })}>+{n.buildsMore}<span class="sr-only"> {t('graph.build.more', { count: n.buildsMore })}</span></span>
+											<span class="badge build more" data-testid="graph-build-more" title={t('graph.build.more', { count: n.buildsMore })} role="img" aria-label={t('graph.build.more', { count: n.buildsMore })}>+{n.buildsMore}</span>
 										{/if}
 										{#if n.task.status === 'in_progress' || n.task.status === 'in_review'}
 											<span class={['badge status', n.task.status]}>{statusLabel(n.task.status)}</span>

@@ -185,6 +185,51 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertFalse(String(describing: full.body ?? [:]).contains("secret"))
     }
 
+    private func addArtifact(_ db: any Database, task: String, build: String, at: Int) async throws {
+        let att = Attachment()
+        att.taskID = UUID(uuidString: task)!; att.ownerID = UUID(); att.filename = "s.png"; att.role = "result"
+        att.mediaType = "image/png"; att.size = 3; att.checksum = "x"; att.status = "complete"; att.objectKey = UUID().uuidString
+        try await att.save(on: db)
+        let art = BuildArtifact()
+        art.attachmentID = try att.requireID(); art.taskID = att.taskID; art.buildID = build
+        art.createdByType = .person; art.createdByID = att.ownerID; art.createdAt = Date(timeIntervalSince1970: TimeInterval(at))
+        try await art.save(on: db)
+    }
+
+    /// More artifacts and tasks than one chunk: nothing is lost and the order stays newest first.
+    func testBuildLookupWorksAcrossChunks() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        for i in 0..<7 { try await addArtifact(db, task: f.tasks[i % 2], build: "b\(i)", at: 1_000 + i) }
+        let ids = f.tasks.compactMap { UUID(uuidString: $0) }
+        let result = try await WorkflowService.builds(of: ids, on: db, chunkSize: 2)
+        XCTAssertEqual(result[ids[0]]?.map(\.buildID), ["b6", "b4", "b2", "b0"])
+        XCTAssertEqual(result[ids[1]]?.map(\.buildID), ["b5", "b3", "b1"])
+    }
+
+    /// A sub-project the caller may not read contributes no builds, even with includeSubprojects.
+    func testGraphDetailsHideBuildsOfUnreadableSubproject() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        let childTask = try await f.t.json(.POST, "/v1/tasks", ["projectID": f.child, "title": "Sub"], token: f.token)
+        let cid = try XCTUnwrap(childTask.body?["id"] as? String)
+        try await addArtifact(db, task: f.tasks[0], build: "visible-build", at: 1_000)
+        try await addArtifact(db, task: cid, build: "hidden-build", at: 2_000)
+        let me = try await f.t.json(.GET, "/v1/me", token: f.foreignToken)
+        let bob = try XCTUnwrap(me.body?["id"] as? String)
+        let grant = try await f.t.json(.PUT, "/v1/projects/\(f.project)/grants", ["principalType": "person", "principalID": bob, "role": "read"], token: f.token)
+        XCTAssertEqual(grant.status, .ok)
+        let restrict = try await f.t.json(.PUT, "/v1/projects/\(f.child)/inheritance", ["version": 1, "inherits": false], token: f.token)
+        XCTAssertEqual(restrict.status, .ok)
+        let seen = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)&includeSubprojects=true&details=true", token: f.foreignToken)
+        XCTAssertEqual(seen.status, .ok)
+        let text = String(describing: seen.body ?? [:])
+        XCTAssertTrue(text.contains("visible-build"))
+        XCTAssertFalse(text.contains("hidden-build"))
+        let own = try await f.t.json(.GET, "/v1/planning/dependencies?projectID=\(f.project)&includeSubprojects=true&details=true", token: f.token)
+        XCTAssertTrue(String(describing: own.body ?? [:]).contains("hidden-build"))
+    }
+
     /// `details=true` carries everything the graph view needs; hidden tasks and milestone members never leak, and the
     /// batched milestone list returns exactly what the per-member checks did.
     func testGraphDetailsAndBatchedMilestonesRespectVisibility() async throws {

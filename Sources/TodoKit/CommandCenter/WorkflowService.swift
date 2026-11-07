@@ -605,12 +605,18 @@ struct WorkflowService: Sendable {
     }
 
     /// Completed build artifacts of the given tasks, newest first.
-    static func builds(of taskIDs: [UUID], on db: any Database, limitPerTask: Int? = nil) async throws -> [UUID: [BuildArtifactDTO]] {
+    static func builds(of taskIDs: [UUID], on db: any Database, limitPerTask: Int? = nil, chunkSize: Int = 500) async throws -> [UUID: [BuildArtifactDTO]] {
         guard !taskIDs.isEmpty else { return [:] }
-        let artifacts = try await BuildArtifact.query(on: db).filter(\.$taskID ~~ taskIDs).sort(\.$createdAt, .descending).sort(\.$id, .descending).all()
+        let size = max(1, chunkSize)
+        func chunked<T>(_ values: [T]) -> [[T]] { stride(from: 0, to: values.count, by: size).map { Array(values[$0..<min($0 + size, values.count)]) } }
+        var artifacts: [BuildArtifact] = []
+        for chunk in chunked(taskIDs) { artifacts += try await BuildArtifact.query(on: db).filter(\.$taskID ~~ chunk).all() }
         guard !artifacts.isEmpty else { return [:] }
-        let attachments = Dictionary(uniqueKeysWithValues: try await Attachment.query(on: db)
-            .filter(\.$id ~~ artifacts.map(\.attachmentID)).filter(\.$status == "complete").all().map { (try $0.requireID(), $0) })
+        artifacts.sort { ($0.createdAt ?? .distantPast, $0.id?.uuidString ?? "") > ($1.createdAt ?? .distantPast, $1.id?.uuidString ?? "") }
+        var attachments: [UUID: Attachment] = [:]
+        for chunk in chunked(artifacts.map(\.attachmentID)) {
+            for a in try await Attachment.query(on: db).filter(\.$id ~~ chunk).filter(\.$status == "complete").all() { attachments[try a.requireID()] = a }
+        }
         var result: [UUID: [BuildArtifactDTO]] = [:]
         for artifact in artifacts {
             guard let attachment = attachments[artifact.attachmentID] else { continue }
