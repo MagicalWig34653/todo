@@ -78,6 +78,7 @@ Schlanke eigene Rollenbeschreibungen unter `.claude/agents/`, angeregt durch die
 | test-writer | Tests im vorhandenen Setup nach TDD, roten Zustand belegen (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
 | swift-worker | Vapor/Fluent/SwiftUI-Implementierung (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
 | svelte-worker | SvelteKit-PWA unter `web/` (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
+| swiftui-designer | SwiftUI-Gestaltung im Apple-Repo, Tokens aus Theme.swift, Layout-Checkliste, Screenshots/Previews (Worktree) | sonnet | Read, Write, Edit, Bash, Grep, Glob |
 | explorer | Codesuche, liefert Fundstellen Datei:Zeile (read-only) | haiku | Read, Grep, Glob, Bash |
 
 Nutzung: über das Agent-Tool mit `subagent_type=<name>`. Neu angelegte oder geänderte Dateien werden meist erst nach einem Neustart der Session geladen. Alle Rollen enden mit demselben Regelblock (kein STATUS/Arbeitsplan/Board, keine Subagenten, kein Push, keine Installation, kein Netzwerk, Kurzbericht); die Hauptsession schreibt STATUS und Board. Die schreibenden Rollen laufen mit `isolation: worktree`.
