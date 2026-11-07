@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { signedInPage } from './support/session';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
 //   npx playwright test e2e/for-you.spec.ts --project=chromium
@@ -8,18 +9,7 @@ let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
-	page = await (await browser.newContext()).newPage();
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-	});
-	await page.goto('/setup');
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel('Anzeigename').fill('Feed Tester');
-	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByTestId('account-menu')).toBeVisible();
+	page = await signedInPage(browser, 'Feed Tester');
 });
 test.afterAll(async () => {
 	await page?.context().close();

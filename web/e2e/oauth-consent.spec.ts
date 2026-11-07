@@ -1,18 +1,23 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Cookie, type Page } from '@playwright/test';
+import { signedInPage } from './support/session';
 
 // Real OAuth run against the running backend: dynamic client registration, logged-out authorize redirects to the
 // login, passkey login returns to the (server-rendered) consent page, screenshots, approval and token scopes.
 // Screenshots go to E2E_SHOT_DIR when set (never into the repo).
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 const SHOTS = process.env.E2E_SHOT_DIR;
-const CALLBACK = 'http://127.0.0.1:9/callback';
+// Not port 9: WebKit refuses navigations to restricted ports (discard) before Playwright can route them.
+const CALLBACK = 'http://127.0.0.1:59999/callback';
 
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 let authorizeUrl = '';
 let clientID = '';
+// Firefox/WebKit have no virtual authenticator: their session comes from a Chromium helper, so the passkey login step is replaced by restoring that session cookie.
+let chromiumPasskey = true;
+let savedCookies: Cookie[] = [];
 let verifier = '';
 let appOrigin = '';
 
@@ -23,26 +28,15 @@ async function shot(name: string) {
 }
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(browser.browserType().name() !== 'chromium', 'passkey flow needs the Chromium CDP virtual authenticator');
-	page = await (await browser.newContext()).newPage();
+	page = await signedInPage(browser, 'Consent Tester');
+	chromiumPasskey = browser.browserType().name() === 'chromium';
 });
 test.afterAll(async () => {
 	await page?.context().close();
 });
 
 test('set up account and projects, then sign out', async () => {
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-	});
-	await page.goto('/setup');
 	appOrigin = new URL(page.url()).origin;
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel('Anzeigename').fill('Consent Tester');
-	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByTestId('account-menu')).toBeVisible();
-
 	// Projects through the cookie session (same origin).
 	const make = async (name: string, parentID: string | null) => {
 		const res = await page.request.post('/v1/projects', { data: { name, parentID }, headers: { Origin: new URL(page.url()).origin } });
@@ -54,8 +48,14 @@ test('set up account and projects, then sign out', async () => {
 	await make('Steuererklärung', null);
 	await make('Reise', null);
 
-	await page.getByTestId('account-menu').click();
-	await page.getByRole('button', { name: 'Abmelden' }).click();
+	if (chromiumPasskey) {
+		await page.getByTestId('account-menu').click();
+		await page.getByRole('button', { name: 'Abmelden' }).click();
+	} else {
+		savedCookies = await page.context().cookies();
+		await page.context().clearCookies();
+		await page.goto('/');
+	}
 	await expect(page.getByRole('button', { name: 'Mit Passkey anmelden' })).toBeVisible();
 });
 
@@ -84,7 +84,11 @@ test('logged-out authorize redirects to login and returns to consent after passk
 	await expect(page.getByRole('button', { name: 'Mit Passkey anmelden' })).toBeVisible();
 	await shot('login-redirect');
 
-	await page.getByRole('button', { name: 'Mit Passkey anmelden' }).click();
+	if (chromiumPasskey) await page.getByRole('button', { name: 'Mit Passkey anmelden' }).click();
+	else {
+		await page.context().addCookies(savedCookies);
+		await page.goto(authorizeUrl);
+	}
 	await page.waitForURL(/\/oauth\/authorize\?/);
 	// The OAuth query comes back unchanged.
 	expect(new URL(page.url()).search).toBe(`?${params}`);
