@@ -214,6 +214,8 @@ export interface TaskGraphData {
 		status?: TaskStatus;
 		projectID?: string;
 		dueAt?: string | null;
+		/** Only with `details=true`, only for tasks with builds: grouped by build id, newest first. */
+		builds?: { buildID: string; label?: string | null; platform?: string | null; count: number; createdAt?: string | null }[];
 	}[];
 	/** Only with `details=true`: milestones of the project with their visible members. */
 	milestones?: { id: string; title: string; dueAt?: string | null; tasks: { taskID: string; status: TaskStatus }[] }[];

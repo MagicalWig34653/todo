@@ -22,13 +22,14 @@
 	import { onMount, untrack } from 'svelte';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import Tag from '@lucide/svelte/icons/tag';
+	import Package from '@lucide/svelte/icons/package';
 	import { api, type Project } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
-		import { edgePath, filterGraph, layoutGraph, limitLayout, neighbourNode, shortID, type LaidNode } from '#lib/taskGraph.js';
+		import { edgePath, filterGraph, layoutGraph, limitLayout, neighbourNode, shortID, type LaidBuild, type LaidNode } from '#lib/taskGraph.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -90,7 +91,8 @@
 			createdAt: f.createdAt ?? null,
 			parentID: f.parentTaskID ?? null,
 			agent: f.claimedLabel ?? null,
-			milestoneID: milestoneOf.get(f.taskID) ?? null
+			milestoneID: milestoneOf.get(f.taskID) ?? null,
+			builds: f.builds
 		}));
 		const known = new Set(mine.map((x) => x.id));
 		// Milestone members outside the shown projects only count for the milestone's progress.
@@ -168,6 +170,10 @@
 		if (!at) return '';
 		return t(n.when.kind === 'done' ? 'graph.when.done' : n.when.kind === 'due' ? 'graph.when.due' : 'graph.when.updated', { date: at });
 	}
+	const buildText = (b: LaidBuild) =>
+		[t('graph.build', { title: b.title }), b.platform ? t('graph.build.platform', { platform: b.platform }) : '', b.count === 1 ? t('graph.build.file') : t('graph.build.files', { count: b.count }), b.createdAt ? formatWhen(b.createdAt) : '']
+			.filter(Boolean)
+			.join(', ');
 	function open(n: LaidNode) {
 		cardDetail.open({ type: 'task', id: n.task.id }, layout.nodes.map((m) => ({ type: 'task' as const, id: m.task.id })));
 	}
@@ -281,6 +287,14 @@
 												<Tag class="size-3" aria-hidden="true" />{tag.title}<span class="sr-only"> ({t(tag.state === 'released' ? 'graph.milestone.released' : tag.overdue ? 'graph.milestone.overdue' : 'graph.milestone.planned')})</span>
 											</span>
 										{/each}
+										{#each n.builds as b (b.buildID)}
+											<span class="badge build" data-testid="graph-build" data-build={b.buildID} title={buildText(b)}>
+												<Package class="size-3" aria-hidden="true" /><span class="max-w-32 truncate">{b.title}</span>{#if b.platform}<span class="opacity-80">· {b.platform}</span>{/if}<span class="sr-only"> ({buildText(b)})</span>
+											</span>
+										{/each}
+										{#if n.buildsMore > 0}
+											<span class="badge build more" data-testid="graph-build-more" title={t('graph.build.more', { count: n.buildsMore })}>+{n.buildsMore}<span class="sr-only"> {t('graph.build.more', { count: n.buildsMore })}</span></span>
+										{/if}
 										{#if n.task.status === 'in_progress' || n.task.status === 'in_review'}
 											<span class={['badge status', n.task.status]}>{statusLabel(n.task.status)}</span>
 										{/if}
@@ -306,7 +320,7 @@
 			</div>
 		{/if}
 		<p class="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label={t('graph.legend')}>
-			<span>{t('graph.legend.open')}</span><span>{t('graph.legend.merge')}</span><span>{t('graph.legend.wait')}</span><span>{t('graph.legend.tag')}</span>
+			<span>{t('graph.legend.open')}</span><span>{t('graph.legend.merge')}</span><span>{t('graph.legend.wait')}</span><span>{t('graph.legend.tag')}</span><span>{t('graph.legend.build')}</span>
 		</p>
 	{/if}
 </section>
@@ -333,6 +347,16 @@
 	}
 	.badge.tag {
 		--lc: oklch(0.65 0.22 325);
+	}
+	/* Builds: square-cornered, monospaced, teal and solid-bordered, so they never look like the round magenta milestone tags. */
+	.badge.build {
+		--lc: oklch(0.62 0.12 195);
+		border-radius: 0.25rem;
+		border: 1px solid color-mix(in oklch, var(--lc) 70%, transparent);
+		background: color-mix(in oklch, var(--lc) 12%, transparent);
+		color: color-mix(in oklch, var(--lc) 40%, var(--foreground));
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 0.6875rem;
 	}
 	.badge.tag.planned {
 		background: transparent;

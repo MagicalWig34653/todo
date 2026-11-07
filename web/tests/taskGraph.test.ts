@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	MAX_BUILD_PILLS,
 	PALETTE_SIZE,
 	buildTaskGraph,
 	edgePath,
@@ -153,6 +154,44 @@ describe('tags', () => {
 		expect(l.nodes.map((n) => n.task.id)).toEqual(['b']);
 		expect(node(l, 'b').tags[0].state).toBe('planned');
 		expect(l.milestones[0]).toMatchObject({ taskCount: 2, doneCount: 1 });
+	});
+});
+
+describe('build pills', () => {
+	const b = (buildID: string, over: Partial<NonNullable<GraphTask['builds']>[number]> = {}) => ({ buildID, label: null, platform: null, createdAt: null, count: 1, ...over });
+
+	it('puts builds on the row of their task, newest first, one pill per build id', () => {
+		const tasks = [
+			t('a', {
+				builds: [
+					b('old', { createdAt: '2026-11-01T10:00:00Z', platform: 'ios' }),
+					b('new', { createdAt: '2026-11-02T10:00:00Z', label: 'Nightly', platform: 'web', count: 3 }),
+					b('old', { createdAt: '2026-11-01T11:00:00Z', platform: 'ios' })
+				]
+			}),
+			t('c')
+		];
+		const l = layoutGraph(input(tasks), now);
+		expect(node(l, 'a').builds.map((x) => x.buildID)).toEqual(['new', 'old']);
+		expect(node(l, 'a').builds[0]).toMatchObject({ buildID: 'new', title: 'Nightly', platform: 'web', count: 3 });
+		expect(node(l, 'a').builds[1]).toMatchObject({ title: 'old', count: 2 });
+		expect(node(l, 'c').builds).toEqual([]);
+		expect(node(l, 'c').buildsMore).toBe(0);
+	});
+
+	it('shows at most MAX_BUILD_PILLS and counts the rest', () => {
+		const builds = ['1', '2', '3', '4', '5'].map((id, i) => b(id, { createdAt: `2026-11-0${i + 1}T00:00:00Z` }));
+		const n = node(layoutGraph(input([t('a', { builds })]), now), 'a');
+		expect(n.builds).toHaveLength(MAX_BUILD_PILLS);
+		expect(n.builds[0].buildID).toBe('5');
+		expect(n.buildsMore).toBe(5 - MAX_BUILD_PILLS);
+	});
+
+	it('keeps builds independent of milestones and of the filter', () => {
+		const tasks = [done('a', '2026-11-01T00:00:00Z', { milestoneID: 'm', builds: [b('x')] })];
+		const l = buildTaskGraph(input(tasks, [], [{ id: 'm', title: 'v1' }]), { featuresOnly: false, hideDoneDays: null, now });
+		expect(node(l, 'a').tags).toHaveLength(1);
+		expect(node(l, 'a').builds).toHaveLength(1);
 	});
 });
 

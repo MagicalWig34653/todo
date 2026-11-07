@@ -129,12 +129,14 @@ extension PlanningService {
         for chunk in chunks(Array(taskIDs)) { for w in try await TaskWorkflow.query(on: db).filter(\.$id ~~ chunk).all() { if let id = w.id { flows[id] = w } } }
         var plans: [UUID: TaskPlanning] = [:]
         if details { for chunk in chunks(Array(taskIDs)) { for p in try await TaskPlanning.query(on: db).filter(\.$id ~~ chunk).all() { if let id = p.id { plans[id] = p } } } }
+        var buildsByTask: [UUID: [BuildArtifactDTO]] = [:]
+        if details { for chunk in chunks(Array(taskIDs)) { buildsByTask.merge(try await WorkflowService.builds(of: chunk, on: db)) { a, _ in a } } }
         var nodes: [PlanningGraphNodeDTO] = []
         for t in rows {
             guard let id = t.id else { continue }
             let w = flows[id]
             var node = PlanningGraphNodeDTO(taskID: id, kind: w?.kind ?? "task", parentTaskID: w?.parentTaskID, createdAt: t.createdAt, updatedAt: t.updatedAt, claimedLabel: w?.claimedLabel)
-            if details { node.title = t.title; node.status = t.status; node.projectID = t.projectID; node.dueAt = plans[id]?.dueAt }
+            if details { node.title = t.title; node.status = t.status; node.projectID = t.projectID; node.dueAt = plans[id]?.dueAt; node.builds = Self.buildGroups(buildsByTask[id] ?? []) }
             nodes.append(node)
         }
         var milestones: [PlanningGraphMilestoneDTO]? = nil
@@ -144,6 +146,18 @@ extension PlanningService {
             }
         }
         return PlanningGraphDTO(edges: result, tasks: nodes, milestones: milestones)
+    }
+
+    /// Artifacts (newest first) grouped by build id, in order of the newest artifact; nil when there are none.
+    static func buildGroups(_ artifacts: [BuildArtifactDTO]) -> [PlanningGraphBuildDTO]? {
+        var order: [String] = []
+        var groups: [String: PlanningGraphBuildDTO] = [:]
+        for a in artifacts {
+            if var g = groups[a.buildID] { g.count += 1; groups[a.buildID] = g; continue }
+            order.append(a.buildID)
+            groups[a.buildID] = PlanningGraphBuildDTO(buildID: a.buildID, label: a.label, platform: a.platform, count: 1, createdAt: a.createdAt)
+        }
+        return order.isEmpty ? nil : order.compactMap { groups[$0] }
     }
 
     /// Replace as one transaction, preserving the REST add path's cycle and role checks.

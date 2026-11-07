@@ -23,6 +23,16 @@ export interface GraphTask {
 	/** Agent or person working on it. */
 	agent?: string | null;
 	milestoneID?: string | null;
+	/** Build artifacts (screenshots, files) attached to the task; one entry per artifact. */
+	builds?: GraphBuildInput[];
+}
+export interface GraphBuildInput {
+	buildID: string;
+	label?: string | null;
+	platform?: string | null;
+	createdAt?: string | null;
+	/** Number of artifacts this entry stands for (default 1). */
+	count?: number;
 }
 export interface GraphMilestone {
 	id: string;
@@ -59,6 +69,16 @@ export interface LaidTag {
 	overdue: boolean;
 	dueAt?: string | null;
 }
+/** One build pill: all artifacts of one build id on one task. */
+export interface LaidBuild {
+	buildID: string;
+	/** Text shown in the pill: the label, else the build id. */
+	title: string;
+	platform: string | null;
+	/** Number of artifacts (screenshots/files) in the build. */
+	count: number;
+	createdAt: string | null;
+}
 export interface LaidNode {
 	task: GraphTask;
 	row: number;
@@ -76,6 +96,10 @@ export interface LaidNode {
 	/** The date shown in the row. */
 	when: { kind: 'done' | 'due' | 'updated'; at: string | null };
 	tags: LaidTag[];
+	/** Newest builds first, at most `MAX_BUILD_PILLS`. */
+	builds: LaidBuild[];
+	/** Builds not shown as pills. */
+	buildsMore: number;
 }
 export interface LaidEdge {
 	/** The upper end (feature / the task that waits). */
@@ -156,6 +180,28 @@ class MinHeap<T> {
 const DAY = 86_400_000;
 /** Number of distinct lane colours (the renderer maps an index to a hue). */
 export const PALETTE_SIZE = 8;
+/** Build pills per row; the rest is summed up as "+n". */
+export const MAX_BUILD_PILLS = 2;
+
+/** Groups artifacts by build id (newest build first) and returns the pills to show plus the number left out. */
+export function layoutBuilds(builds: GraphBuildInput[] | undefined): { builds: LaidBuild[]; more: number } {
+	const groups = new Map<string, LaidBuild>();
+	for (const b of builds ?? []) {
+		const g = groups.get(b.buildID);
+		const at = b.createdAt ?? null;
+		if (!g) groups.set(b.buildID, { buildID: b.buildID, title: b.label || b.buildID, platform: b.platform || null, count: b.count ?? 1, createdAt: at });
+		else {
+			g.count += b.count ?? 1;
+			if (time(at) > time(g.createdAt)) {
+				g.createdAt = at;
+				if (b.label) g.title = b.label;
+				if (b.platform) g.platform = b.platform;
+			}
+		}
+	}
+	const all = [...groups.values()].sort((a, b) => time(b.createdAt) - time(a.createdAt) || (a.buildID < b.buildID ? -1 : a.buildID > b.buildID ? 1 : 0));
+	return { builds: all.slice(0, MAX_BUILD_PILLS), more: Math.max(0, all.length - MAX_BUILD_PILLS) };
+}
 
 export function isOverdueTask(t: Pick<GraphTask, 'status' | 'dueAt'>, now: Date): boolean {
 	return t.status !== 'done' && !!t.dueAt && Date.parse(t.dueAt) < now.getTime();
@@ -433,6 +479,7 @@ export function layoutGraph(input: GraphInput, now: Date, full: GraphInput = inp
 
 	const nodes: LaidNode[] = order.map((t) => {
 		const parent = t.parentID ? byID.get(t.parentID) : undefined;
+		const laidBuilds = layoutBuilds(t.builds);
 		const tag = t.milestoneID && !(parent && parent.milestoneID === t.milestoneID) ? tagOf.get(t.milestoneID) : undefined;
 		return {
 			task: t,
@@ -445,7 +492,9 @@ export function layoutGraph(input: GraphInput, now: Date, full: GraphInput = inp
 			overdue: isOverdueTask(t, now),
 			merge: merges.has(t.id),
 			when: whenOf(t),
-			tags: tag ? [tag] : []
+			tags: tag ? [tag] : [],
+			builds: laidBuilds.builds,
+			buildsMore: laidBuilds.more
 		};
 	});
 

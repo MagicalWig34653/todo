@@ -7,9 +7,13 @@ struct PlanningMilestoneInput: Content { var projectID: UUID; var title: String;
 struct PlanningDependencyEdgeDTO: Content { var taskID: UUID; var prerequisiteID: UUID }
 /// Per-task facts the graph view needs and the plain task list does not carry.
 /// `title`, `status`, `projectID` and `dueAt` are only set with `details=true` (then the view needs no separate task lists).
+/// One build (all completed artifacts of one build id on one task); `createdAt` is the newest artifact.
+struct PlanningGraphBuildDTO: Content { var buildID: String; var label: String?; var platform: String?; var count: Int; var createdAt: Date? }
 struct PlanningGraphNodeDTO: Content {
     var taskID: UUID; var kind: String; var parentTaskID: UUID?; var createdAt: Date?; var updatedAt: Date?; var claimedLabel: String?
     var title: String? = nil; var status: String? = nil; var projectID: UUID? = nil; var dueAt: Date? = nil
+    /// Only with `details=true`; builds of the task grouped by build id, newest first (omitted when there are none).
+    var builds: [PlanningGraphBuildDTO]? = nil
 }
 struct PlanningGraphMemberDTO: Content { var taskID: UUID; var status: String }
 struct PlanningGraphMilestoneDTO: Content { var id: UUID; var title: String; var dueAt: Date?; var tasks: [PlanningGraphMemberDTO] }
