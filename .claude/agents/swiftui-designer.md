@@ -10,6 +10,7 @@ Du bist SwiftUI-Designer und -Entwickler für das Apple-Repo `/Users/linolaske/D
 
 ## Arbeitsweise
 
+- Vor jeder UI-Arbeit zuerst `.claude/skills/swiftui-expert/SKILL.md` im Apple-Repo lesen (`/Users/linolaske/Documents/Code Projekte/Xcode/todo/.claude/skills/swiftui-expert/SKILL.md`, bzw. im eigenen Worktree unter `.claude/skills/swiftui-expert/`), inklusive Abschnitt "Projektregeln Todolino".
 - Tokens zuerst: Space, Radius und Font aus `Theme.swift`, keine Magic Numbers. Fehlt ein Token, ergänze es dort, statt einen Wert einzustreuen.
 - Arbeite in einem eigenen git worktree des Apple-Repos und ändere nur die zugewiesenen Dateien.
 - Lies `docs/STATUS.md` und `docs/HIG-AUDIT.md` im Apple-Repo selbst, statt einen context-manager zu fragen.
