@@ -143,8 +143,14 @@ struct AddProjectRepositoryBindings: AsyncMigration {
                 row.lastSyncedAt = old.lastSyncedAt; row.lastSyncedByType = old.lastSyncedByType
                 row.lastSyncedByLabel = old.lastSyncedByLabel; row.lastRepoRef = old.lastRepoRef
                 row.lastSummary = old.lastSummary; row.version = old.version
-                row.createdAt = old.createdAt; row.updatedAt = old.updatedAt
                 try await row.create(on: db)
+                // `create` stamps both timestamps with "now"; restore the legacy history with a plain query (no touch).
+                if let created = old.createdAt {
+                    try await ProjectRepositoryBinding.query(on: db).filter(\.$id == old.id!).set(\.$createdAt, to: created).update()
+                }
+                if let updated = old.updatedAt {
+                    try await ProjectRepositoryBinding.query(on: db).filter(\.$id == old.id!).set(\.$updatedAt, to: updated).update()
+                }
             }
             if page.count < pageSize { break }
         }
