@@ -27,6 +27,7 @@ Vor Übergabe, Kontextwechsel oder Sessionende einen konsistenten Checkpoint sch
 - Vorhandene Änderungen erhalten; keine destruktiven Bereinigungen für einen sauberen Status.
 - Keine Secrets, Tokens, privaten Laufzeitdaten oder vollständigen Chats ins Repository.
 - Keine automatischen Pushes, Veröffentlichungen oder Deployments aus einer bloßen Implementierungsaufgabe ableiten.
+- Nutzerentscheidung 11.11.2026 (dauerhaft, von Lino bestätigt): Ist ein Feature fertig (Tests grün, auf `main` gemergt, Review angefragt), wird sofort gepusht, nicht gesammelt; die CI baut dann direkt ein Image. Gilt nur für die Hauptsession nach Prüfung, nie für Subagenten; vorher MariaDB-/Testbefunde beachten (rot = nicht pushen, Befund an die Review-Karte). Deploy bleibt allein bei Lino.
 - Routineentscheidungen selbst treffen; nur bei tatsächlich blockierenden Unklarheiten nachfragen.
 - Arbeitsweise (Nutzerentscheidung 1.11.2026, dauerhaft): Die Hauptsession bleibt so klein wie möglich und koordiniert nur (Status und Board lesen, Aufträge schneiden, Agents starten, Berichte lesen, Branches zusammenführen, Todolino abgleichen). Implementierung, Builds, Tests und Recherche erledigen Subagenten.
   - Parallele Schreiber nur in getrennten Worktrees (`isolation: worktree`) mit klarer Dateiverantwortung; Aufträge so schneiden, dass sich die Dateien nicht überschneiden.

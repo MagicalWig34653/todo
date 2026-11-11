@@ -2,6 +2,10 @@
 
 Arbeitsprotokoll für Hauptsession (Orchestrator) und Subagenten. Ergänzt `AGENTS.md` (Abschnitt „Arbeitsweise“, Nutzerentscheidung 1.11.2026) und ändert sie nicht. Das Repository und das Board sind die Wahrheit, nie ein Worker-Chat.
 
+## Nutzerentscheidung 11.11.2026 (dauerhaft): sofort pushen
+
+Sobald ein Feature fertig ist (Tests grün, gemergt auf `main`, Review angefragt), pusht die Hauptsession sofort und verfolgt CI und Docker publish bis grün; den entstandenen sha-Tag meldet sie. Subagenten pushen nie. Ein roter Test- oder MariaDB-Lauf verhindert den Push; der Befund geht an die Review-Karte. Deploy macht allein Lino.
+
 ## Nutzerentscheidung 6.11.2026 (dauerhaft)
 
 Die Hauptsession koordiniert nur und schreibt selbst keinen Feature-Code. Implementierung, Tests, Suche und Review laufen in Subagenten.
