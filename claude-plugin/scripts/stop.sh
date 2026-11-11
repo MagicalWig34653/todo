@@ -1,6 +1,7 @@
 #!/bin/sh
-# Stop: in a repository bound to Todolino (.todolino.json) block the end of a turn ONCE per session when files were
-# changed but record_sync was never called in this session. Never loops (stop_hook_active, per-session marker),
+# Stop: in a repository bound to Todolino (.todolino.json) block the end of a turn when work happened without board
+# activity (once per new work state, see third duty) or when files were changed but record_sync was never called in
+# this session (once per session). Never loops (stop_hook_active, at most one block per turn, state markers),
 # fails open on every error, needs no network and handles no secrets.
 # Second duty (PUSH-AN-CLAUDE-CODE.md, option b, variant 2): while a blocking ask_question of this session has no
 # get_question after it, block the stop with a FIXED text telling the agent to call wait_for_events and then
@@ -36,14 +37,20 @@ fi
 [ "$active" = "true" ] && exit 0
 dir="$state"
 flag="$dir/stop-$session"
-# Third duty (board usage): files changed or commits made, but no post_progress/request_review/ask_question call in
-# the transcript -> reminder, at most TODOLINO_STOP_MAX (default 1) times per session (counter file). Tool names only
-# count as tool_use names; transcript text is never quoted.
+# Third duty (board usage): work (Edit/Write or git commit) happened after the last board activity (post_progress,
+# request_review, ask_question or record_sync as tool_use name, in the session or a subagent transcript) -> reminder,
+# ONCE PER NEW WORK STATE: a fingerprint (git HEAD + hash of "git status --porcelain -uall" + diff shortstat) is kept in a
+# private marker file; the same fingerprint never blocks twice, a new commit or changed files do again, however long
+# the session runs. TODOLINO_STOP_MAX caps the reminders per session (default 20, 0 = unlimited). Without git or
+# outside a repository this duty stays silent (fail open). Tool names only count as tool_use names; transcript text is
+# never quoted.
 counter="$dir/board-$session"
-max="${TODOLINO_STOP_MAX:-1}"
-case "$max" in *[!0-9]*|"") max=1 ;; esac
+fpfile="$dir/boardfp-$session"
+max="${TODOLINO_STOP_MAX:-20}"
+case "$max" in *[!0-9]*|"") max=20 ;; esac
 # Subagent transcripts live next to the session transcript (<session>/subagents/*.jsonl); their board calls count too.
 subdir="${transcript%.jsonl}/subagents"
+BOARD_RE='"name": ?"mcp__[A-Za-z0-9_-]*(post_progress|request_review|ask_question|record_sync)"'
 used() {
   grep -Eq '"name": ?"mcp__[A-Za-z0-9_-]*'"$1"'"' "$transcript" 2>/dev/null && return 0
   [ -d "$subdir" ] && [ ! -L "$subdir" ] || return 1
@@ -58,12 +65,36 @@ grep -Eq '"name": ?"(Edit|Write|MultiEdit|NotebookEdit)"' "$transcript" 2>/dev/n
 committed=0
 grep -Eq '"name": ?"Bash".*git commit' "$transcript" 2>/dev/null && committed=1
 if [ "$edited" = 1 ] || [ "$committed" = 1 ]; then
-  if ! used post_progress && ! used request_review && ! used ask_question; then
+  command -v git >/dev/null 2>&1 || exit 0
+  git -C "$cwd" rev-parse --git-dir >/dev/null 2>&1 || exit 0
+  head=$(git -C "$cwd" rev-parse HEAD 2>/dev/null) || head=nohead
+  st=$(git -C "$cwd" status --porcelain --untracked-files=all 2>/dev/null | cksum) || exit 0
+  df=$(git -C "$cwd" diff HEAD --shortstat 2>/dev/null | cksum)
+  fp="$head $st $df"
+  { [ -L "$fpfile" ] || [ -L "$counter" ]; } && exit 0
+  stored=$(cat "$fpfile" 2>/dev/null)
+  # Position (line number) of the last work and the last board call in the main transcript.
+  lastwork=$(grep -nE '"name": ?"(Edit|Write|MultiEdit|NotebookEdit)"|"name": ?"Bash".*git commit' "$transcript" 2>/dev/null | tail -n 1 | cut -d: -f1)
+  lastboard=$(grep -nE "$BOARD_RE" "$transcript" 2>/dev/null | tail -n 1 | cut -d: -f1)
+  board_after=0
+  if [ -n "$lastboard" ] && [ "$lastboard" -ge "${lastwork:-0}" ]; then board_after=1; fi
+  # Subagent board calls have no position: they count as current when their transcript is newer than the marker.
+  if [ "$board_after" = 0 ] && [ -d "$subdir" ] && [ ! -L "$subdir" ]; then
+    for f in "$subdir"/*.jsonl; do
+      [ -f "$f" ] && [ ! -L "$f" ] || continue
+      grep -Eq "$BOARD_RE" "$f" 2>/dev/null || continue
+      if [ ! -e "$fpfile" ] || [ "$f" -nt "$fpfile" ]; then board_after=1; break; fi
+    done
+  fi
+  if [ "$board_after" = 1 ]; then
+    safe_write "$fpfile" "$fp" || exit 0
+  elif [ "$fp" != "$stored" ]; then
     n=$(cat "$counter" 2>/dev/null); case "$n" in *[!0-9]*|"") n=0 ;; esac
-    if [ "$n" -lt "$max" ]; then
+    if [ "$max" = 0 ] || [ "$n" -lt "$max" ]; then
       safe_write "$counter" $((n + 1)) || exit 0
+      safe_write "$fpfile" "$fp" || exit 0
       safe_write "$flag" ""
-      printf '%s\n' '{"decision":"block","reason":"Todolino ist in diesem Repository eingerichtet (.todolino.json), aber in dieser Sitzung gab es Aenderungen oder Commits ohne Board-Aktivitaet (kein post_progress, request_review oder ask_question). Aktualisiere jetzt das Board: passende Aufgabe suchen oder mit create_task anlegen (keine Duplikate), claim_task, post_progress mit dem erledigten Stand und dem naechsten Schritt, bei Fertigstellung request_review (nie selbst auf erledigt setzen), offene Entscheidungen des Nutzers als ask_question auf der Aufgabe, danach record_sync (mit repository aus .todolino.json, falls vorhanden). Wenn Todolino nicht erreichbar ist, nenne das dem Nutzer kurz und beende dann die Sitzung. Diese Erinnerung kommt hoechstens einmal pro Sitzung."}'
+      printf '%s\n' '{"decision":"block","reason":"Todolino ist in diesem Repository eingerichtet (.todolino.json), aber seit der letzten Board-Aktivitaet gab es neue Aenderungen oder Commits (kein post_progress, request_review, ask_question oder record_sync danach). Aktualisiere jetzt das Board: passende Aufgabe suchen oder mit create_task anlegen (keine Duplikate), claim_task, post_progress mit dem erledigten Stand und dem naechsten Schritt, bei Fertigstellung request_review (nie selbst auf erledigt setzen), offene Entscheidungen des Nutzers als ask_question auf der Aufgabe, danach record_sync (mit repository aus .todolino.json, falls vorhanden). Wenn Todolino nicht erreichbar ist, nenne das dem Nutzer kurz und beende dann die Sitzung. Diese Erinnerung kommt einmal je neuem Arbeitsstand, nicht erneut bei unveraendertem Stand."}'
       exit 0
     fi
   fi
