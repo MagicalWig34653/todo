@@ -1068,3 +1068,9 @@ Ziel: `https://todo.linolaske.de/` lieferte nur JSON-404, weil das Image die PWA
 - Server (Handbuch 1.18.0): verwaiste Ansprüche (in_progress, Anspruch, > 24 h ohne Lebenszeichen aus Notiz, Kommentar, Aktivität, Runner-Event, claimedAt): Felder `orphaned`/`lastSignOfLifeAt`, `summary.orphanedClaims`, Filter `orphaned=true|false` (REST + MCP), nie automatische Freigabe. Migration `AddSignOfLifeIndexes`. Verträge: command-center 1.2.0, oauth-mcp 1.1.0, openapi 0.2.0.
 - Geprüft: `swift test` auf main@106abdf: 465 Tests, 20 übersprungen, 0 Fehler, Exit 0; unabhängiger Verifier (kein Blocker, Auflagen umgesetzt).
 - Offen: MariaDB nicht ausgeführt; Chunking > 400 nicht eigens getestet; UI-Anzeige (web/) und Board-Gärtner stehen aus; Deploy nur durch Lino.
+
+## Checkpoint 11.11.2026: Tagesbericht (Karte ACFC922E)
+
+- `GET /v1/daily-brief` und MCP `get_daily_brief` (Scope `tasks:read`, Handbuch 1.19.0, command-center 1.3.0, push 1.1.0): Abschnitte waiting, orphaned, stale, running, done nach Vorrang, `format=line` ≤ 200 Zeichen; Tagesgrenze UTC (keine Kontozeitzone). Push-Kategorie `daily_brief` (Standard aus), `dailyBriefHour` (Standard 8, Migration `AddPushDailyBriefHour`), höchstens eine Zeile je Konto und UTC-Tag, 6 h Lookback.
+- Geprüft: `swift test` auf main: 488 Tests, 20 übersprungen, 0 Fehler, Exit 0; DailyBriefTests (22) und PushTests (15) laut Worker auch auf MariaDB grün; unabhängiger Verifier ohne Blocker.
+- Offen: Apple-Clients/PWA zeigen die Einstellung nicht (Swift-Decoder ignoriert neue Felder); echter APNs-Versand ungeprüft; volle MariaDB-Suite nicht erneut gelaufen.
