@@ -146,7 +146,7 @@ final class PushTests: XCTestCase {
     func testPreferencesDefaultsAndPartialUpdates() async throws {
         let f = try await fixture(); defer { Task { await f.t.shutdown() } }
         let d = try await f.t.json(.GET, "/v1/me/push-prefs", token: f.owner.token)
-        XCTAssertEqual(d.body?["categories"] as? [String: Bool], ["reminders": true, "agent_questions": true, "agent_reviews": true, "assignments": false, "comments": false, "confirmations": true])
+        XCTAssertEqual(d.body?["categories"] as? [String: Bool], ["reminders": true, "agent_questions": true, "agent_reviews": true, "assignments": false, "comments": false, "confirmations": true, "daily_brief": false])
         XCTAssertEqual(d.body?["showContent"] as? Bool, false)
         let u = try await f.t.json(.POST, "/v1/me/push-prefs", ["categories": ["comments": true, "reminders": false], "showContent": true], token: f.owner.token)
         XCTAssertEqual(u.status, .ok)

@@ -35,6 +35,11 @@ extension MCPController {
                 "fields": Schema.string("Comma-separated card fields to keep (task is always kept), e.g. 'lane,openQuestionCount,latestUpdate'."),
                 "limit": Schema.integer("List view: page size (default 50).", min: 1, max: 200),
                 "offset": Schema.integer("List view: number of cards to skip.", min: 0)]),
+        Tool(name: "get_daily_brief", scope: "tasks:read",
+             description: "Daily brief ('Tagesbericht'): what waits for the person (open questions, pending reviews, confirmation requests), orphaned claims, stale projects, what runs and what got done since a date, as short sections with counts and up to 5 items each (id, title, projectID; truncated=true when the list was shortened, counts are always exact). format=line returns only one German line of at most 200 characters, ideal for a status line. Without projectID all readable projects of this connection are covered; sub-projects are included. Default since: start of yesterday (UTC).",
+             properties: ["projectID": Schema.uuid("Optional: only this project and its sub-projects."),
+                          "since": Schema.string("ISO 8601 date-time or date (YYYY-MM-DD, UTC); tasks done since then count as done. Default: start of yesterday UTC.", maxLength: 40),
+                          "format": Schema.string("full (default, sections) or line (one short line).", values: ["full", "line"])]),
         Tool(name: "get_task_context", scope: "tasks:read",
              description: "Everything about one task in one call: task, workflow state (kind, parent, blocked reason, claimed by), progress rollup, progress notes, acceptance criteria, subtasks, comments, questions with answers, the latest review (state, decision note) and build screenshots. Use it to resume work and to read review feedback or answers.",
              properties: ["taskID": taskIDField], required: ["taskID"]),
@@ -212,6 +217,10 @@ extension MCPController {
             let response = try await CommandCenterService(user: user, db: db, allowedProjects: Set(grant.projects)).build(query)
             let marked = context.markCards(try .encoded(response))
             return context.decorate(MCPCompact.commandCenter(marked, compact: compact, fields: fields))
+        case "get_daily_brief":
+            let brief = DailyBriefService(user: user, db: db, allowedProjects: Set(grant.projects))
+            return try .encoded(try await brief.build(projectID: optionalUUID(a, "projectID"),
+                since: DailyBriefService.parseSince(optionalString(a, "since")), format: DailyBriefService.parseFormat(optionalString(a, "format"))))
         case "get_task_context":
             return try .encoded(try await service.context(uuid(a["taskID"])))
         case "claim_task":

@@ -6,6 +6,7 @@ struct CommandCenterController: RouteCollection {
         let v1 = routes.grouped("v1")
         v1.get("manual", use: manual)
         v1.get("command-center", use: commandCenter)
+        v1.get("daily-brief", use: dailyBrief)
         v1.get("projects", ":id", "structure", use: structure)
         v1.get("projects", ":id", "agent-brief", use: getBrief)
         v1.put("projects", ":id", "agent-brief", use: putBrief)
@@ -56,6 +57,13 @@ struct CommandCenterController: RouteCollection {
         }
         let query = try CommandCenterQuery(scope: raw["scope"], projectID: raw["projectID"], raw: raw)
         return try await CommandCenterService(user: user, db: req.db).build(query)
+    }
+
+    @Sendable func dailyBrief(_ req: Request) async throws -> DailyBriefResponse {
+        let user = try await req.requireUser()
+        return try await DailyBriefService(user: user, db: req.db).build(projectID: uuidQuery(req, "projectID"),
+            since: DailyBriefService.parseSince(req.query[String.self, at: "since"]),
+            format: DailyBriefService.parseFormat(req.query[String.self, at: "format"]))
     }
 
     @Sendable func structure(_ req: Request) async throws -> ProjectStructureDTO {

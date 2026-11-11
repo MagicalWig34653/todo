@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Push-Benachrichtigungen (APNs)
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0021, Betrieb: docs/PUSH-EINRICHTUNG.md. Geräte-Registrierung und Einstellungen je Konto; Sitzung oder Bearer nötig,
     jedes Konto sieht und ändert nur seine eigenen Geräte. Geräte-Tokens werden nie ausgegeben und nie geloggt. Registrierung ist auch
     möglich, wenn der Server Push noch nicht aktiviert hat (APNS_ENABLED=false); bei aktiviertem Push muss bundleId zu APNS_TOPIC passen.
@@ -82,7 +82,7 @@ paths:
             schema: {$ref: '#/components/schemas/UpdatePushPrefs'}
       responses:
         '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/PushPrefs'}}}}
-        '400': {description: invalid_category}
+        '400': {description: 'invalid_category, invalid_daily_brief_hour'}
     put:
       operationId: putPushPrefs
       summary: Wie POST (Alias)
@@ -93,7 +93,7 @@ paths:
             schema: {$ref: '#/components/schemas/UpdatePushPrefs'}
       responses:
         '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/PushPrefs'}}}}
-        '400': {description: invalid_category}
+        '400': {description: 'invalid_category, invalid_daily_brief_hour'}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
@@ -139,17 +139,20 @@ components:
               detail: {type: [string, 'null'], description: 'APNs-Grund (z. B. BadDeviceToken, InvalidProviderToken) oder Fehlerklasse (network)'}
     PushPrefs:
       type: object
-      required: [categories, showContent, badge]
+      required: [categories, showContent, badge, dailyBriefHour]
       properties:
         categories:
           type: object
-          description: 'Alle fünf Schlüssel sind immer vorhanden. Standard: reminders, agent_questions, agent_reviews true; assignments, comments false.'
+          description: 'Alle Schlüssel sind immer vorhanden. Standard: reminders, agent_questions, agent_reviews, confirmations true; assignments, comments, daily_brief false.'
           properties:
             reminders: {type: boolean}
             agent_questions: {type: boolean}
             agent_reviews: {type: boolean}
             assignments: {type: boolean}
             comments: {type: boolean}
+            confirmations: {type: boolean}
+            daily_brief: {type: boolean, description: 'Additiv 1.1.0: täglicher Tagesbericht (Zeile mit Zählern, höchstens 200 Zeichen, nie Titel), Standard aus. kind daily_brief, aps.category TODO_DAILY_BRIEF.'}
+        dailyBriefHour: {type: integer, minimum: 0, maximum: 23, description: 'Additiv 1.1.0: UTC-Stunde, ab der der Tagesbericht gesendet wird (Standard 8); höchstens einmal je Konto und UTC-Tag, nur innerhalb von 6 Stunden nach dieser Stunde.'}
         showContent: {type: boolean, description: 'false (Standard): generische Texte. true: Aufgabentitel und bei Fragen/Reviews der Text (gekürzt) in der Benachrichtigung.'}
         badge: {type: boolean, description: 'Standard true: aps.badge = offene Fragen + ausstehende Reviews.'}
     UpdatePushPrefs:
@@ -160,3 +163,4 @@ components:
           additionalProperties: {type: boolean}
         showContent: {type: boolean}
         badge: {type: boolean}
+        dailyBriefHour: {type: integer, minimum: 0, maximum: 23}

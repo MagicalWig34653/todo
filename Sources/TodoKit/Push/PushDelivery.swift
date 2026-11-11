@@ -89,6 +89,8 @@ struct PushDelivery: Sendable {
 
     let db: any Database
     let sender: APNsSender
+    /// Injectable clock (tests, worker tick).
+    var clock: @Sendable () -> Date = { Date() }
 
     static func backoff(attempt: Int) -> TimeInterval { min(3600, 30 * pow(2, Double(max(0, attempt - 1)))) }
 
@@ -164,10 +166,45 @@ struct PushDelivery: Sendable {
         return result
     }
 
+    /// The daily brief line holds counts only (no titles, no project names), so it is sent whatever `showContent` says.
+    /// A row of an earlier day is dropped instead of reporting stale numbers.
+    private func deliverDailyBrief(_ row: PushOutbox, user: User, prefs: PushPrefsDTO) async throws -> Result {
+        guard let data = row.payload.data(using: .utf8), let event = try? JSONDecoder().decode(PushDailyBriefEvent.self, from: data) else {
+            return Result(state: "failed", error: "invalid_payload")
+        }
+        let now = clock()
+        guard event.day == PushDailyBriefEvent.day(of: now) else { return Result(state: "skipped", error: "no_longer_relevant") }
+        let devices = try await PushDevice.query(on: db).filter(\.$userID == row.userID).filter(\.$revokedAt == nil).sort(\.$id).all()
+        guard !devices.isEmpty else { return Result(state: "skipped", error: "no_device") }
+        let line = try await DailyBriefService(user: user, db: db, clock: clock).build(format: "line").line
+        let badge = prefs.badge ? await badge(for: user) : nil
+        var result = Result(state: "sent")
+        var retry: String?, permanent: String?
+        for device in devices {
+            let de = PushContent.isGerman(device.locale)
+            let message = PushMessage(title: de ? "Tagesbericht" : "Daily brief", body: line, kind: "daily_brief", taskID: nil, projectID: nil,
+                subjectID: nil, badge: badge, threadID: nil, category: "TODO_DAILY_BRIEF", priority: 5, ttl: 12 * 3600)
+            let outcome = await sender.send(to: device, payload: try message.payload(), priority: message.priority, ttl: message.ttl, collapseKey: row.dedupeKey)
+            switch outcome {
+            case .delivered: result.delivered += 1
+            case .revoke: device.revokedAt = Date(); try await device.save(on: db); result.revoked += 1
+            case .retry(let why): retry = why
+            case .permanent(let why): permanent = why
+            }
+        }
+        if let retry, row.attempts + 1 < Self.maxAttempts {
+            return Result(state: "pending", error: retry, retryAfter: Self.backoff(attempt: row.attempts + 1), revoked: result.revoked, delivered: result.delivered)
+        }
+        if let why = retry ?? permanent, result.delivered == 0 { result.state = "failed"; result.error = why }
+        else if result.delivered == 0 { result.state = "skipped"; result.error = "all_devices_revoked" }
+        return result
+    }
+
     func deliver(_ row: PushOutbox) async throws -> Result {
         guard let user = try await User.find(row.userID, on: db) else { return Result(state: "skipped", error: "account_gone") }
         let prefs = try await PushService.prefs(of: row.userID, on: db)
         guard prefs.categories[row.category] == true else { return Result(state: "skipped", error: "category_disabled") }
+        if row.category == PushCategory.dailyBrief.rawValue { return try await deliverDailyBrief(row, user: user, prefs: prefs) }
         if row.category == PushCategory.confirmations.rawValue { return try await deliverConfirmation(row, user: user, prefs: prefs) }
         guard let data = row.payload.data(using: .utf8), let event = try? JSONDecoder().decode(PushEvent.self, from: data) else {
             return Result(state: "failed", error: "invalid_payload")

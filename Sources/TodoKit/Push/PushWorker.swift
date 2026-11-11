@@ -95,7 +95,7 @@ final class PushWorker: LifecycleHandler, @unchecked Sendable {
             report.enqueued += try await PushTriggers(db: db, candidates: candidates, since: now.addingTimeInterval(-lookback), now: now).run()
         }
         guard let sender else { return report }
-        let delivery = PushDelivery(db: db, sender: sender)
+        let delivery = PushDelivery(db: db, sender: sender, clock: { now })
         let due = try await PushOutbox.query(on: db).filter(\.$state == "pending").filter(\.$nextAttemptAt <= now)
             .sort(\.$dueAt).sort(\.$id).limit(50).all()
         for row in due {
@@ -218,7 +218,7 @@ struct PushTriggers: Sendable {
     }
 
     func run() async throws -> Int {
-        try await reminders() + questions() + reviews() + comments() + confirmations()
+        try await reminders() + questions() + reviews() + comments() + confirmations() + dailyBriefs()
     }
 
     private func reminders() async throws -> Int {
@@ -273,6 +273,23 @@ struct PushTriggers: Sendable {
                 let event = PushEvent(kind: "review", taskID: taskID, projectID: task.projectID, subjectID: rid, at: nil)
                 if try await enqueue(c.id, .agentReviews, event, key: "review:\(rid)") { count += 1 }
             }
+        }
+        return count
+    }
+
+    /// Opt-in daily brief (category `daily_brief`, default off): one row per account and UTC day, from the chosen hour on.
+    /// Within the lookback only, so switching it on in the afternoon does not push a morning report. The payload is
+    /// the day; the line (counts only) is computed when sending, after the same checks as every other category.
+    private func dailyBriefs() async throws -> Int {
+        let who = enabled(.dailyBrief)
+        guard !who.isEmpty else { return 0 }
+        let day = PushDailyBriefEvent.day(of: now)
+        let payload = String(decoding: try JSONEncoder().encode(PushDailyBriefEvent(day: day)), as: UTF8.self)
+        var count = 0
+        for c in who {
+            let scheduled = PushDailyBriefEvent.startOfDay(now).addingTimeInterval(Double(c.prefs.dailyBriefHour) * 3600)
+            guard now >= scheduled, scheduled > since else { continue }
+            if try await enqueueRaw(c.id, .dailyBrief, payload, key: "daily_brief:\(day)") { count += 1 }
         }
         return count
     }
