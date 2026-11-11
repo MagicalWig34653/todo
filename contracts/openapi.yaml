@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino API
-  version: 0.1.0
+  version: 0.2.0
   description: 'Implemented health, AuthController and PlanningController API. Other areas are maintained
     in separate contracts/<area>.yaml files.
 
@@ -544,6 +544,12 @@ paths:
             type: boolean
             default: false
           description: With true only visible unfinished tasks with planning.dueAt before server time. False or omission does not filter.
+        - name: orphaned
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: With true only in-progress tasks whose claim has had no sign of life (progress note, comment, activity, runner event) for more than 24 hours; with false the others; omitted does not filter. The matching tasks carry orphaned in the list. Additive.
         - name: includeLabels
           in: query
           required: false

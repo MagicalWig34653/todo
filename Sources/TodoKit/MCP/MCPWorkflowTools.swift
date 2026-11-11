@@ -25,6 +25,7 @@ extension MCPController {
                 "lane": Schema.string("Comma-separated lane keys to keep: running,question,review,ready,blocked,done."),
                 "kind": Schema.string("Only tasks of this kind.", values: ["task", "feature"]),
                 "hasQuestion": Schema.boolean("Only cards with (true) or without (false) open questions."),
+                "orphaned": Schema.boolean("Only cards with (true) or without (false) an orphaned claim: in progress, claimed, no sign of life for over 24 hours (summary.orphanedClaims counts them)."),
                 "includeSubtasks": Schema.boolean("List view: also list subtasks as their own cards."),
                 "sort": Schema.string("attention (default), updated, due, progress or title.", values: ["attention", "updated", "due", "progress", "title"]),
                 "doneWithinDays": Schema.integer("How long finished tasks stay in the done lane (default 7).", min: 1, max: 365),
@@ -190,7 +191,7 @@ extension MCPController {
             let compact = try optionalBool(a, "compact") ?? true
             let fields = try MCPCompact.fields(optionalString(a, "fields"), allowed: MCPCompact.cardFields)
             var raw: [String: String] = [:]
-            for key in ["includeSubprojects", "view", "lane", "kind", "hasQuestion", "includeSubtasks", "sort", "doneWithinDays",
+            for key in ["includeSubprojects", "view", "lane", "kind", "hasQuestion", "orphaned", "includeSubtasks", "sort", "doneWithinDays",
                         "laneLimit", "updatesLimit", "limit", "offset"] where !a[key].isNull {
                 switch a[key] {
                 case .string(let s): raw[key] = s

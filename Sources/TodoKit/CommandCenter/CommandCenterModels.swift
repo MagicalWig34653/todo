@@ -321,6 +321,10 @@ struct WorkflowDTO: Content {
     let claimedByID: UUID?
     let claimedLabel: String?
     let claimedAt: Date?
+    /// True for an in-progress claim without a sign of life for more than 24 hours (flag only, never released automatically).
+    var orphaned: Bool = false
+    /// Newest sign of life (progress, comment, activity, runner event, claim time); only set while the task is claimed.
+    var lastSignOfLifeAt: Date? = nil
 }
 
 struct TaskContextDTO: Content {

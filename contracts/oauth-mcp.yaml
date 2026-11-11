@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -209,7 +209,7 @@ components:
 x-mcp-tools:
   list_projects: {scope: 'projects:read', arguments: {}, result: ProjectDTO-Liste explizit freigegebener Projekte}
   update_project: {scope: 'projects:write', required: [projectID, version], arguments: {projectID: UUID, version: integer, name: 'string 1-200', description: 'string bis 10000, leer/null löscht', color: '#RRGGBB'}, result: '{id, name, description, color, version, parentID}; Fehler version_conflict, invalid_name, not_found (außerhalb des Grants), Rolle Verwalten wie PATCH /v1/projects/{id}'}
-  list_tasks: {scope: 'tasks:read', required: [projectID], arguments: {projectID: UUID, overdue: boolean}, result: TaskDTO-Liste mit planning, notes: 'overdue=true: sichtbare nicht erledigte Aufgaben mit planning.dueAt vor Serverzeit; false/fehlend ungefiltert.'}
+  list_tasks: {scope: 'tasks:read', required: [projectID], arguments: {projectID: UUID, overdue: boolean, orphaned: boolean}, result: TaskDTO-Liste mit planning, notes: 'overdue=true: sichtbare nicht erledigte Aufgaben mit planning.dueAt vor Serverzeit; false/fehlend ungefiltert. orphaned=true|false (additiv): nur in_progress-Aufgaben mit/ohne verwaisten Anspruch (kein Lebenszeichen > 24 h), TaskDTO.orphaned gesetzt; fehlend ungefiltert.'}
   get_task: {scope: 'tasks:read', required: [id], arguments: {id: UUID}, result: TaskDTO}
   create_task: {scope: 'tasks:write', required: [projectID, title], arguments: {projectID: UUID, title: string, description: string, columnID: UUID, dueDate: 'ISO 8601 oder YYYY-MM-DD', priority: 'integer 0-3'}, result: TaskDTO, notes: 'Wie POST /v1/tasks (PlanningOperations): Aktivität, Spalte; dueDate/priority über PlanningService.'}
   update_task: {scope: 'tasks:write', required: [id, version], arguments: {id: UUID, version: integer, title: string, description: string, status: 'open|in_progress|in_review|done', projectID: UUID}, result: TaskDTO}

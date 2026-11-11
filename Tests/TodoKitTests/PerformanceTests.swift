@@ -53,10 +53,11 @@ final class PerformanceTests: XCTestCase {
         defer { Task { await t.shutdown() } }
         guard let sql = t.app.db as? any SQLDatabase else { return XCTFail("SQL database expected") }
         try await AddPerformanceIndexes().prepare(on: t.app.db)  // second run: IF NOT EXISTS
+        try await AddSignOfLifeIndexes().prepare(on: t.app.db)
         if sql.dialect.name == "sqlite" {
             let rows = try await sql.raw("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'perf_%'").all()
             let names = Set(try rows.map { try $0.decode(column: "name", as: String.self) })
-            XCTAssertEqual(names, Set(AddPerformanceIndexes.indexes.map(\.name)))
+            XCTAssertEqual(names, Set((AddPerformanceIndexes.indexes + AddSignOfLifeIndexes.indexes).map(\.name)))
         }
     }
 }

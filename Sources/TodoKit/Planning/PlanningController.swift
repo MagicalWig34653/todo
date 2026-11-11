@@ -70,6 +70,8 @@ struct TaskDTO: Content {
     var planning: TaskPlanningSummary?
     /// Only set by the task list with `includeLabels=true`: names of the caller's own labels on the task.
     var labels: [String]?
+    /// Only set by the task list with `orphaned=true|false`: claim in progress without a sign of life for over 24 hours.
+    var orphaned: Bool?
 
     init(_ t: TodoTask) throws {
         id = try t.requireID()
@@ -381,7 +383,8 @@ struct PlanningController: RouteCollection {
     @Sendable func listTasks(_ req: Request) async throws -> [TaskDTO] {
         let user = try await req.requireUser()
         let tasks = try await Self.taskList(user: user, db: req.db,
-            projectID: req.query[UUID.self, at: "projectID"], overdue: req.query[Bool.self, at: "overdue"] == true)
+            projectID: req.query[UUID.self, at: "projectID"], overdue: req.query[Bool.self, at: "overdue"] == true,
+            orphaned: try Self.optionalBool(req, "orphaned"))
         // Optional (`includeLabels=true`): the caller's own label names per task in one pass, instead of one search per label.
         var labelNames: [UUID: [String]]? = nil
         if req.query[Bool.self, at: "includeLabels"] == true {
@@ -395,7 +398,7 @@ struct PlanningController: RouteCollection {
     }
 
     /// Shared REST/MCP list: resolve visibility once, then load planning in bounded batches.
-    static func taskList(user: User, db: any Database, projectID: UUID?, overdue: Bool, now: Date = Date()) async throws -> [TaskDTO] {
+    static func taskList(user: User, db: any Database, projectID: UUID?, overdue: Bool, orphaned: Bool? = nil, now: Date = Date()) async throws -> [TaskDTO] {
         let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
         var visibleIDs = try ordered.filter { try snapshot.visibility($0).role != nil }.map { try $0.requireID() }
         if let projectID {
@@ -408,7 +411,21 @@ struct PlanningController: RouteCollection {
             query = query.join(TaskPlanning.self, on: \TodoTask.$id == \TaskPlanning.$id)
                 .filter(\.$status != "done").filter(TaskPlanning.self, \.$dueAt < now)
         }
-        let tasks = try await query.sort(\.$createdAt).sort(\.$id).all()
+        if orphaned == true { query = query.filter(\.$status == "in_progress") }
+        var tasks = try await query.sort(\.$createdAt).sort(\.$id).all()
+        var orphanedIDs: Set<UUID>?
+        if let wanted = orphaned {
+            // Claims of the readable tasks only; sign-of-life lookups are batched (ClaimLiveness).
+            var claims: [UUID: Date?] = [:]
+            let candidateIDs = try tasks.filter { $0.status == "in_progress" }.map { try $0.requireID() }
+            for start in stride(from: 0, to: candidateIDs.count, by: 400) {
+                let chunk = Array(candidateIDs[start..<min(start + 400, candidateIDs.count)])
+                for wf in try await TaskWorkflow.query(on: db).filter(\.$id ~~ chunk).filter(\.$claimedByID != nil).all() { claims[try wf.requireID()] = wf.claimedAt }
+            }
+            let signs = try await ClaimLiveness.lastSignOfLife(claims: claims, on: db)
+            orphanedIDs = Set(claims.keys.filter { ClaimLiveness.isOrphaned(status: "in_progress", hasClaim: true, lastSignOfLife: signs[$0], now: now) })
+            tasks = try tasks.filter { try (orphanedIDs?.contains($0.requireID()) ?? false) == wanted }
+        }
         let ids = try tasks.map { try $0.requireID() }
         var planning: [UUID: TaskPlanning] = [:]
         for start in stride(from: 0, to: ids.count, by: 400) {
@@ -418,8 +435,15 @@ struct PlanningController: RouteCollection {
         return try tasks.map {
             var dto = try TaskDTO($0)
             dto.planning = TaskPlanningSummary(planning[dto.id])
+            if let orphanedIDs { dto.orphaned = orphanedIDs.contains(dto.id) }
             return dto
         }
+    }
+
+    private static func optionalBool(_ req: Request, _ key: String) throws -> Bool? {
+        guard let raw = req.query[String.self, at: key] else { return nil }
+        guard raw == "true" || raw == "false" else { throw Abort(.badRequest, reason: "invalid_\(key)") }
+        return raw == "true"
     }
 
     /// Label names (sorted) of `owner`'s labels per task; assignments are private to their owner.

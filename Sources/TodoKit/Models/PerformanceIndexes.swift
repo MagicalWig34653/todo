@@ -42,3 +42,31 @@ struct AddPerformanceIndexes: AsyncMigration {
         }
     }
 }
+
+/// Serves the "newest row per task" subqueries of `ClaimLiveness` (orphaned claims): `activity_events` and `comments`
+/// had no index that ends in `created_at` per task. Runner events (`agent_event_job`) and progress notes
+/// (`perf_notes_task`) already have one. Separate migration because `AddPerformanceIndexes` has already run in production.
+struct AddSignOfLifeIndexes: AsyncMigration {
+    static let indexes: [(name: String, table: String, columns: String)] = [
+        ("perf_activity_task_created", "activity_events", "task_id, created_at"),
+        ("perf_comments_task_created", "comments", "task_id, created_at"),
+    ]
+
+    func prepare(on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase else { return }
+        for index in Self.indexes {
+            try await sql.raw("CREATE INDEX IF NOT EXISTS \(unsafeRaw: index.name) ON \(unsafeRaw: index.table) (\(unsafeRaw: index.columns))").run()
+        }
+    }
+
+    func revert(on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase else { return }
+        for index in Self.indexes {
+            if sql.dialect.name == "sqlite" {
+                try await sql.raw("DROP INDEX IF EXISTS \(unsafeRaw: index.name)").run()
+            } else {
+                try await sql.raw("DROP INDEX \(unsafeRaw: index.name) ON \(unsafeRaw: index.table)").run()
+            }
+        }
+    }
+}

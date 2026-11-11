@@ -100,6 +100,7 @@ struct SubtaskBrief: Content {
     let status: String
     let lane: String
     let progressPercent: Int
+    var orphaned: Bool = false
 }
 
 struct CommandCard: Content {
@@ -123,6 +124,9 @@ struct CommandCard: Content {
     let nextDue: Date?
     let priority: Int
     let subtasks: [SubtaskBrief]
+    /// Own or subtask claim in progress without a sign of life for more than 24 hours (flag only).
+    var orphaned: Bool = false
+    var lastSignOfLifeAt: Date? = nil
 }
 
 struct LaneDTO: Content {
@@ -153,6 +157,8 @@ struct SummaryDTO: Content {
     var pendingConfirmations: Int = 0
     /// Open notices of connections that asked for a project outside their grant (ADR 0028); same scope rule as above.
     var pendingAccessRequests: Int = 0
+    /// Readable in-progress tasks (incl. subtasks) whose claim has had no sign of life for more than 24 hours.
+    var orphanedClaims: Int = 0
 }
 
 struct UpdateItem: Content {
@@ -207,6 +213,7 @@ struct CommandCenterQuery: Sendable {
     var lanes: Set<String>? = nil
     var kind: String? = nil
     var hasQuestion: Bool? = nil
+    var orphaned: Bool? = nil
     var includeSubtasks = false
     var sort = "attention"
     var limit = 50
@@ -243,6 +250,7 @@ struct CommandCenterQuery: Sendable {
         offset = try int("offset", 0...1_000_000) ?? 0
         includeSubtasks = try bool("includeSubtasks") ?? false
         hasQuestion = try bool("hasQuestion")
+        orphaned = try bool("orphaned")
         if let lane = raw["lane"] {
             let set = Set(lane.split(separator: ",").map(String.init))
             guard !set.isEmpty, set.isSubset(of: LaneInfo.keys) else { throw Abort(.badRequest, reason: "invalid_lane") }
@@ -259,6 +267,8 @@ struct CommandCenterService: Sendable {
     let user: User
     let db: any Database
     var allowedProjects: Set<UUID>? = nil
+    /// Injectable clock (tests).
+    var clock: @Sendable () -> Date = { Date() }
 
     static let updateKinds = [
         "progress.posted", "question.asked", "question.answered", "question.withdrawn", "review.requested",
@@ -293,7 +303,7 @@ struct CommandCenterService: Sendable {
     }
 
     func build(_ q: CommandCenterQuery) async throws -> CommandCenterResponse {
-        let now = Date()
+        let now = clock()
         let scope = try await CommandCenterScope.resolve(user: user, db: db, projectID: q.projectID,
             includeSubprojects: q.includeSubprojects, allowed: allowedProjects)
         let projectIDs = scope.projectIDs
@@ -373,6 +383,10 @@ struct CommandCenterService: Sendable {
             let role = task.columnID.flatMap { columnByID[$0] }.flatMap(ColumnRole.of)
             states[id] = TaskState(lane: "ready", role: role, wf: workflows[id])
         }
+        // Orphaned claims: only in-progress tasks with a claim need the (batched) sign-of-life lookup.
+        let claimed = (loaded + childTasks.filter { byID[$0.id!] == nil }).filter { $0.status == "in_progress" && workflows[$0.id!]?.claimedByID != nil }
+        let signOfLife = try await ClaimLiveness.lastSignOfLife(claims: Dictionary(claimed.map { ($0.id!, workflows[$0.id!]?.claimedAt) }, uniquingKeysWith: { first, _ in first }), on: db)
+        let orphanedIDs = Set(claimed.map { $0.id! }.filter { ClaimLiveness.isOrphaned(status: "in_progress", hasClaim: true, lastSignOfLife: signOfLife[$0], now: now) })
         for q in questions { states[q.taskID]?.questions.append(q) }
         for r in reviews where states[r.taskID]?.review == nil { states[r.taskID]?.review = r }
         for n in notes where states[n.taskID]?.latestNote == nil { states[n.taskID]?.latestNote = n }
@@ -431,6 +445,10 @@ struct CommandCenterService: Sendable {
             }
             let column = task.columnID.flatMap { columnByID[$0] }
             let due = planning[id]?.dueAt
+            let family = [id] + kids.map { $0.id! }
+            let orphanedFamily = family.filter { orphanedIDs.contains($0) }
+            let claimDates = family.compactMap { signOfLife[$0] }
+            let lastSign = orphanedFamily.isEmpty ? claimDates.max() : orphanedFamily.compactMap { signOfLife[$0] }.min()
             let kidDue = kids.filter { $0.status != "done" }.compactMap { planning[$0.id!]?.dueAt }
             let kind = (s.wf?.kind == "feature" || !kids.isEmpty) ? "feature" : "task"
             return CommandCard(
@@ -446,7 +464,8 @@ struct CommandCenterService: Sendable {
                 blockedReason: s.wf?.blockedReason, blockedBy: s.blockedBy, latestUpdate: update,
                 builds: Array(sortedBuilds.prefix(3)), buildCount: sortedBuilds.count,
                 dueDate: due, nextDue: ((task.status == "done" ? [] : [due].compactMap { $0 }) + kidDue).min(), priority: planning[id]?.priority ?? 0,
-                subtasks: kids.map { SubtaskBrief(id: $0.id!, title: $0.title, status: $0.status, lane: states[$0.id!]?.lane ?? "ready", progressPercent: progress($0).percent) })
+                subtasks: kids.map { SubtaskBrief(id: $0.id!, title: $0.title, status: $0.status, lane: states[$0.id!]?.lane ?? "ready", progressPercent: progress($0).percent, orphaned: orphanedIDs.contains($0.id!)) },
+                orphaned: !orphanedFamily.isEmpty, lastSignOfLifeAt: lastSign)
         }
 
         let tops = loaded.filter { task in
@@ -474,7 +493,8 @@ struct CommandCenterService: Sendable {
             openQuestions: questions.count, pendingReviews: reviews.count, features: topCards.filter { $0.isFeature && $0.lane != "done" }.count,
             activeAgents: activeAgents.count, staleProjects: syncEntries.filter { $0.sync.bound && $0.sync.state != "fresh" }.count,
             pendingConfirmations: q.projectID == nil && allowedProjects == nil ? try await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total : 0,
-            pendingAccessRequests: q.projectID == nil && allowedProjects == nil ? try await ConnectionService.openRequests(user: user, scopeProjects: scope.projects, db: db).count : 0)
+            pendingAccessRequests: q.projectID == nil && allowedProjects == nil ? try await ConnectionService.openRequests(user: user, scopeProjects: scope.projects, db: db).count : 0,
+            orphanedClaims: orphanedIDs.count)
 
         let updates = q.updatesLimit == 0 ? [] : try await self.updates(scope: scope, limit: q.updatesLimit)
         let buildGroups = Self.groups(builds, limit: 10)
@@ -515,6 +535,7 @@ struct CommandCenterService: Sendable {
             if let lanes = q.lanes { pool = pool.filter { lanes.contains($0.lane) } }
             if let kind = q.kind { pool = pool.filter { $0.kind == kind } }
             if let has = q.hasQuestion { pool = pool.filter { ($0.openQuestionCount > 0) == has } }
+            if let orphaned = q.orphaned { pool = pool.filter { $0.orphaned == orphaned } }
             let ordered = sorted(pool, by: q.sort, lane: nil)
             let page = Array(ordered.dropFirst(q.offset).prefix(q.limit))
             return CommandCenterResponse(generatedAt: now, scope: q.projectID == nil ? "account" : "project", projectID: q.projectID,
@@ -526,6 +547,7 @@ struct CommandCenterService: Sendable {
             var cards = topCards.filter { $0.lane == key }
             if let kind = q.kind { cards = cards.filter { $0.kind == kind } }
             if let has = q.hasQuestion { cards = cards.filter { ($0.openQuestionCount > 0) == has } }
+            if let orphaned = q.orphaned { cards = cards.filter { $0.orphaned == orphaned } }
             let ordered = sorted(cards, by: q.sort, lane: key)
             lanes.append(LaneDTO(key: key, title: title, count: ordered.count, truncated: ordered.count > q.laneLimit,
                 cards: Array(ordered.prefix(q.laneLimit))))
