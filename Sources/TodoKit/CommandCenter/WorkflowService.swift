@@ -244,7 +244,8 @@ struct WorkflowService: Sendable {
     static func dto(_ wf: TaskWorkflow, hasChildren: Bool = false, orphaned: Bool = false, lastSignOfLifeAt: Date? = nil) -> WorkflowDTO {
         WorkflowDTO(taskID: wf.id!, kind: wf.kind, isFeature: wf.kind == "feature" || hasChildren, parentTaskID: wf.parentTaskID,
             blockedReason: wf.blockedReason, claimedByType: wf.claimedByType, claimedByID: wf.claimedByID,
-            claimedLabel: wf.claimedLabel, claimedAt: wf.claimedAt, orphaned: orphaned, lastSignOfLifeAt: lastSignOfLifeAt)
+            claimedLabel: wf.claimedLabel, claimedAt: wf.claimedAt, orphaned: orphaned,
+            lastSignOfLifeAt: lastSignOfLifeAt ?? (wf.claimedByID != nil ? wf.claimedAt : nil))
     }
 
     // MARK: Criteria

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige

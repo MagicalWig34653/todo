@@ -190,4 +190,75 @@ final class OrphanedClaimTests: XCTestCase {
             XCTAssertEqual(history.queries.count, centerQueries)
         }
     }
+
+    func testParentCardWithOrphanedChildAndKanbanFilter() async throws {
+        let f = try await OAuthFixture.make()
+        try await run(f) {
+            let db = f.test.app.db
+            let parent = try await claimedTask(f, title: "Parent", claimedAt: base, claim: false)
+            let child = try await claimedTask(f, title: "Child", claimedAt: base)
+            let ownParent = try await claimedTask(f, title: "Own", claimedAt: base)
+            let found = try await TaskWorkflow.find(try child.requireID(), on: db)
+            let wf = try XCTUnwrap(found)
+            wf.parentTaskID = try parent.requireID(); try await wf.save(on: db)
+            _ = ownParent
+            let now = base.addingTimeInterval(48 * hour)
+            let kanban = try await center(f, at: now, { var q = CommandCenterQuery(); q.orphaned = true; return q }())
+            let cards = (kanban.lanes ?? []).flatMap(\.cards)
+            XCTAssertEqual(Set(cards.map(\.task.title)), ["Parent", "Own"])
+            let parentCard = try XCTUnwrap(cards.first { $0.task.title == "Parent" })
+            XCTAssertTrue(parentCard.orphaned)
+            XCTAssertEqual(parentCard.subtasks.first?.orphaned, true)
+            XCTAssertEqual(parentCard.lastSignOfLifeAt, base)
+            XCTAssertEqual(kanban.summary.orphanedClaims, 2, "tasks are counted individually (child and Own), cards with the flag are 2 as well")
+            let negated = try await center(f, at: now, { var q = CommandCenterQuery(); q.orphaned = false; return q }())
+            XCTAssertTrue((negated.lanes ?? []).flatMap(\.cards).isEmpty)
+            XCTAssertEqual(negated.summary.orphanedClaims, 2, "summary is not narrowed by card filters")
+        }
+    }
+
+    func testGrantScopeAndMultipleJobsPerTask() async throws {
+        let f = try await OAuthFixture.make()
+        try await run(f) {
+            let db = f.test.app.db
+            _ = try await claimedTask(f, title: "Allowed", claimedAt: base)
+            _ = try await claimedTask(f, title: "Excluded", project: f.other, claimedAt: base)
+            let now = base.addingTimeInterval(48 * hour)
+            let all = try await center(f, at: now)
+            XCTAssertEqual(all.summary.orphanedClaims, 2)
+            let granted = try await CommandCenterService(user: f.user, db: db, allowedProjects: [try f.project.requireID()], clock: { now }).build(listQuery { $0.orphaned = true })
+            XCTAssertEqual(granted.summary.orphanedClaims, 1)
+            XCTAssertEqual(granted.items?.map(\.task.title), ["Allowed"])
+
+            // Two jobs on one task: the newest event of any job counts.
+            let task = try await claimedTask(f, title: "Jobs", claimedAt: base)
+            let device = RunnerDevice(ownerID: try f.user.requireID(), label: "Mac", tokenHash: "h", revokedAt: nil)
+            try await device.save(on: db)
+            let binding = ProjectRunnerBinding(projectID: try f.project.requireID(), deviceID: try device.requireID(), repositoryKey: "r", label: "l")
+            try await binding.save(on: db)
+            var jobIDs: [UUID] = []
+            for state in ["failed", "running"] {
+                let job = AgentJob(taskID: try task.requireID(), projectID: try f.project.requireID(), bindingID: try binding.requireID(), requestedBy: try f.user.requireID(),
+                    taskRevision: 0, mode: "implement", scope: "task", state: state, progress: "", result: nil)
+                try await job.save(on: db); jobIDs.append(try job.requireID())
+            }
+            try await AgentEvent(jobID: jobIDs[0], runID: nil, kind: "checkpoint", detail: "", createdAt: base.addingTimeInterval(10 * hour)).save(on: db)
+            try await AgentEvent(jobID: jobIDs[1], runID: nil, kind: "checkpoint", detail: "", createdAt: base.addingTimeInterval(40 * hour)).save(on: db)
+            try await AgentEvent(jobID: jobIDs[1], runID: nil, kind: "progress", detail: "", createdAt: base.addingTimeInterval(41 * hour)).save(on: db)
+            let signs = try await ClaimLiveness.lastSignOfLife(claims: [try task.requireID(): base], on: db)
+            XCTAssertEqual(signs[try task.requireID()], base.addingTimeInterval(41 * hour))
+        }
+    }
+
+    func testClaimResponseCarriesLastSignOfLife() async throws {
+        let f = try await OAuthFixture.make()
+        try await run(f) {
+            let task = TodoTask(ownerID: try f.user.requireID(), projectID: try f.project.requireID(), title: "To claim", details: "")
+            try await task.save(on: f.test.app.db)
+            let context = try await WorkflowService(user: f.user, db: f.test.app.db)
+                .claim(try task.requireID(), agentName: "Claude", takeOver: false, actor: WorkflowActor(type: .integration, id: UUID(), label: "Claude", via: "mcp"))
+            XCTAssertFalse(context.workflow.orphaned)
+            XCTAssertNotNil(context.workflow.lastSignOfLifeAt)
+        }
+    }
 }

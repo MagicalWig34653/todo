@@ -105,6 +105,7 @@ public func configureMigrations(_ app: Application) {
     configureActionRequests(app)
     app.migrations.add(AddAccountLock())
     app.migrations.add(AddPerformanceIndexes())
+    app.migrations.add(AddSignOfLifeIndexes())
     // Last: appends label upserts to the change log (needs the sync tables and the discovery tables).
     app.migrations.add(BackfillLabelSync())
 }
