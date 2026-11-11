@@ -11,6 +11,7 @@ has() { case "$3" in *"$2"*) echo "ok   $1" ;; *) echo "FAIL $1: [$3] lacks [$2]
 
 bound="$tmp/bound/sub"; mkdir -p "$bound"
 printf '{"schema":1,"server":"https://todo.example/mcp","projectID":"11111111-2222-3333-4444-555555555555","repository":"local/x"}\n' > "$tmp/bound/.todolino.json"
+git init -q "$tmp/bound"
 plain="$tmp/plain"; mkdir -p "$plain"; git -C "$plain" init -q
 none="$tmp/none"; mkdir -p "$none"
 
@@ -56,12 +57,12 @@ EOF2
 }
 out=$(stop sA "$none" "$edit"); check "stop unbound is silent" "" "$out"
 out=$(stop sB "$bound" "$readonly_t"); check "stop bound without edits is silent" "" "$out"
-out=$(stop sC "$bound" "$synced"); has "stop: synced but no progress call still reminds once" "Board-Aktivitaet" "$out"
+out=$(stop sC "$bound" "$synced"); check "stop: edit followed by record_sync counts as board activity" "" "$out"
 out=$(stop sC2 "$bound" "$full"); check "stop: progress and sync present is silent" "" "$out"
 out=$(stop sD "$bound" "$edit" true); check "stop with stop_hook_active is silent" "" "$out"
 out=$(stop sE "$bound" "$tmp/missing.jsonl"); check "stop with unreadable transcript fails open" "" "$out"
 out=$(stop sF "$bound" "$edit"); has "stop bound, edits, stale blocks" '"decision":"block"' "$out"
-out=$(stop sF "$bound" "$edit"); check "stop blocks at most once per session" "" "$out"
+out=$(stop sF "$bound" "$edit"); check "stop blocks once for an unchanged work state" "" "$out"
 out=$(stop sG "$bound" "$mention"); has "stop: mere mention of record_sync does not count" '"decision":"block"' "$out"
 out=$(TODOLINO_HOOKS_OFF=1 stop sH "$bound" "$edit"); check "stop honours TODOLINO_HOOKS_OFF" "" "$out"
 out=$(stop "bad/../id" "$bound" "$edit"); check "stop rejects unsafe session id" "" "$out"
@@ -69,10 +70,14 @@ printf '%s' "$(stop sI "$bound" "$edit")" | sed 's/.*/&/' | grep -q '^{' && echo
 
 # Board activity reminder
 out=$(stop sJ "$bound" "$commit"); has "board: commit without board call reminds" "Board-Aktivitaet" "$out"
-out=$(stop sJ "$bound" "$commit"); check "board: reminder capped at one per session" "" "$out"
+out=$(stop sJ "$bound" "$commit"); check "board: no second reminder for the same state" "" "$out"
 out=$(TODOLINO_STOP_MAX=2 stop sK "$bound" "$commit"); has "board: cap 2, first" '"decision":"block"' "$out"
-out=$(TODOLINO_STOP_MAX=2 stop sK "$bound" "$commit"); has "board: cap 2, second still blocks" '"decision":"block"' "$out"
-out=$(TODOLINO_STOP_MAX=2 stop sK "$bound" "$commit"); check "board: cap 2, third silent" "" "$out"
+echo a > "$bound/f1"; out=$(TODOLINO_STOP_MAX=2 stop sK "$bound" "$commit"); has "board: cap 2, second (new state) blocks" '"decision":"block"' "$out"
+echo b > "$bound/f2"; out=$(TODOLINO_STOP_MAX=2 stop sK "$bound" "$commit"); check "board: cap 2, third (new state) silent" "" "$out"
+echo c > "$bound/f3"; out=$(TODOLINO_STOP_MAX=1 stop sK2 "$bound" "$commit"); has "board: cap 1 first" '"decision":"block"' "$out"
+echo d > "$bound/f4"; out=$(TODOLINO_STOP_MAX=1 stop sK2 "$bound" "$commit"); check "board: cap 1 caps new states too" "" "$out"
+echo e > "$bound/f5"; out=$(TODOLINO_STOP_MAX=0 stop sK3 "$bound" "$commit"); has "board: cap 0 first" '"decision":"block"' "$out"
+echo f > "$bound/f6"; out=$(TODOLINO_STOP_MAX=0 stop sK3 "$bound" "$commit"); has "board: cap 0 = unlimited" '"decision":"block"' "$out"
 out=$(stop sL "$bound" "$progress_only"); has "board: ask_question counts as activity, record_sync block follows" "wurde record_sync nicht aufgerufen" "$out"
 out=$(stop sM "$bound" "$commit" true); check "board: stop_hook_active is silent" "" "$out"
 out=$(TODOLINO_HOOKS_OFF=1 stop sN "$bound" "$commit"); check "board: opt-out is silent" "" "$out"
@@ -125,6 +130,29 @@ out=$(stop qM4 "$bound" "$qdef"); has "ask: blocking omitted defaults to blockin
 out=$(stop qM5 "$bound" "$qlist"); check "ask: list_open_questions includeAnswered handles it" "" "$out"
 out=$(stop qM6 "$bound" "$qnbonly"); check "ask: non-blocking question never blocks" "" "$out"
 stop qM7 "$bound" "$qnb" >/dev/null; out=$(stop qM7 "$bound" "$qnb" true); check "ask: non-blocking never blocks even repeatedly" "" "$out"
+# Reminder per new work state (fingerprint HEAD + git status), long-running sessions
+gb="$tmp/gitbound"; mkdir -p "$gb"; cp "$tmp/bound/.todolino.json" "$gb/"; git -C "$gb" init -q
+echo x > "$gb/a"; git -C "$gb" add -A; git -C "$gb" -c user.name=t -c user.email=t@t commit -qm init
+out=$(stop fp1 "$gb" "$edit"); has "fp: (a) first reminder after edit without board activity" "Board-Aktivitaet" "$out"
+out=$(stop fp1 "$gb" "$edit"); check "fp: (b) unchanged state does not block again" "" "$out"
+echo y > "$gb/b"; out=$(stop fp1 "$gb" "$edit"); has "fp: (c) changed file blocks again" '"decision":"block"' "$out"
+git -C "$gb" add -A; git -C "$gb" -c user.name=t -c user.email=t@t commit -qm two
+out=$(stop fp1 "$gb" "$edit"); has "fp: (c) new commit blocks again although the counter fired before" '"decision":"block"' "$out"
+out=$(stop fp1 "$gb" "$edit"); check "fp: (c) and then stays silent" "" "$out"
+echo z > "$gb/c"; progress_after="$tmp/progress_after.jsonl"; cp "$edit" "$progress_after"; printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__plugin_todolino_todolino__post_progress","input":{}}]}}\n{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__plugin_todolino_todolino__record_sync","input":{}}]}}\n' >> "$progress_after"
+out=$(stop fp2 "$gb" "$progress_after"); check "fp: (d) post_progress after the work does not block" "" "$out"
+printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{}}]}}\n' >> "$progress_after"; echo w > "$gb/d"
+out=$(stop fp2 "$gb" "$progress_after"); has "fp: new work after the board call blocks again" '"decision":"block"' "$out"
+echo v > "$gb/e"; out=$(stop fp3 "$gb" "$edit" true); check "fp: (e) stop_hook_active never blocks" "" "$out"
+out=$(stop fp3 "$gb" "$edit"); has "fp: (e) the same state still blocks in the next turn" '"decision":"block"' "$out"
+nogit="$tmp/nogit"; mkdir -p "$nogit"; cp "$tmp/bound/.todolino.json" "$nogit/"
+out=$(stop fp4 "$nogit" "$edit"); check "fp: (f) no git repository -> fail open" "" "$out"
+nogitbin="$tmp/nogitbin"; mkdir -p "$nogitbin"
+for d in /bin /usr/bin; do for t in "$d"/*; do b=${t##*/}; [ "$b" = git ] || [ -e "$nogitbin/$b" ] || ln -s "$t" "$nogitbin/$b" 2>/dev/null; done; done
+out=$(PATH="$nogitbin" /bin/sh "$here/scripts/stop.sh" <<EOF2
+{"session_id":"fp5","cwd":"$gb","transcript_path":"$edit","stop_hook_active":false}
+EOF2
+); rc=$?; check "fp: (f) without git binary exits 0" "0" "$rc"
 # Private state dir: 0700, symlink never followed
 sd="$tmp/todolino-hooks-$(id -u)"
 [ -d "$sd" ] && [ "$(ls -ld "$sd" | cut -c1-10)" = "drwx------" ] && echo "ok   state dir is private 0700" || { echo "FAIL state dir mode"; fail=1; }
