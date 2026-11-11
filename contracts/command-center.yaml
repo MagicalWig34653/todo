@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
-  version: 1.2.0
+  version: 1.3.0
   description: 'ADR 0014. Alle Pfade außer /v1/manual verlangen Sitzung oder Bearer. Unsichtbare/fremde Objekte: 404, zu geringe Rolle: 403,
     Konflikte: 409. Zuordnung der Lanes (feste Reihenfolge): done > question > review > blocked > running > ready; Backlog-Spalten nur im Zähler.
     Fortschritt: done=100 (status), sonst Unteraufgaben, sonst Kriterien, sonst letzter Notiz-Prozentwert (agent), sonst 0 (none).
@@ -35,6 +35,21 @@ paths:
       responses:
         '200': {description: Erfolgreich}
         '400': {description: invalid_scope, project_required, invalid_view, invalid_lane, invalid_sort, ...}
+        '404': {description: Projekt fehlt oder unsichtbar}
+  /v1/daily-brief:
+    get:
+      operationId: getDailyBrief
+      summary: Tagesbericht (additiv, 1.3.0; MCP get_daily_brief, tasks:read)
+      description: 'Query: projectID (optional; sonst alle lesbaren Projekte des Kontos, mit Unterprojekten), since (ISO 8601 oder YYYY-MM-DD, UTC; Standard Beginn von gestern in UTC),
+        format=full|line (Standard full). Antwort full: {generatedAt, since, scope, projectID, format, line, summary{waiting,openQuestions,pendingReviews,pendingConfirmations,orphanedClaims,staleProjects,running,done},
+        sections[{key,title,count,truncated,items[{id,title,projectID,kind}]}]} mit Abschnitten in fester Reihenfolge waiting, orphaned, stale, running, done; count ist immer exakt, items höchstens 5 (waiting älteste zuerst, done neueste zuerst),
+        Titel höchstens 120 Zeichen. Antwort line: {generatedAt, since, scope, projectID, format, line} ohne summary und sections. line ist eine deutsche Zeile mit höchstens 200 Zeichen
+        (Ruhetag: "Alles ruhig: nichts wartet auf dich."). Erledigt = Status done und updatedAt >= since. Bestätigungsanfragen (kind confirmation, projectID null) zählen nur ohne projectID.
+        Rechte wie /v1/command-center: nur lesbare Projekte.'
+      responses:
+        '200': {description: Erfolgreich}
+        '400': {description: 'invalid_since (auch Zeitpunkt in der Zukunft), invalid_format, invalid_project'}
+        '401': {description: Nicht angemeldet}
         '404': {description: Projekt fehlt oder unsichtbar}
   /v1/projects/{id}/structure:
     get:

@@ -84,7 +84,8 @@ struct PushService: Sendable {
     static func dto(_ row: PushPrefs?) -> PushPrefsDTO {
         var cats = PushCategory.defaults
         for (k, v) in row?.categories ?? [:] where cats[k] != nil { cats[k] = v }
-        return PushPrefsDTO(categories: cats, showContent: row?.showContent ?? false, badge: row?.badge ?? true)
+        return PushPrefsDTO(categories: cats, showContent: row?.showContent ?? false, badge: row?.badge ?? true,
+                            dailyBriefHour: row?.dailyBriefHour ?? PushCategory.defaultDailyBriefHour)
     }
 
     static func prefs(of userID: UUID, on db: any Database) async throws -> PushPrefsDTO {
@@ -96,18 +97,21 @@ struct PushService: Sendable {
     func update(_ body: UpdatePushPrefsRequest) async throws -> PushPrefsDTO {
         let userID = try user.requireID()
         for key in (body.categories ?? [:]).keys where PushCategory.defaults[key] == nil { throw Abort(.badRequest, reason: "invalid_category") }
+        if let hour = body.dailyBriefHour, !(0...23).contains(hour) { throw Abort(.badRequest, reason: "invalid_daily_brief_hour") }
         let row = try await PushPrefs.query(on: db).filter(\.$userID == userID).first() ?? {
             let r = PushPrefs(); r.userID = userID; r.categories = [:]; r.showContent = false; r.badge = true; return r
         }()
         for (k, v) in body.categories ?? [:] { row.categories[k] = v }
         if let s = body.showContent { row.showContent = s }
         if let b = body.badge { row.badge = b }
+        if let h = body.dailyBriefHour { row.dailyBriefHour = h }
         do { try await row.save(on: db) } catch {
             // Two first writes at once: the unique user_id rejected one; apply onto the winner.
             guard row.$id.value == nil, let winner = try await PushPrefs.query(on: db).filter(\.$userID == userID).first() else { throw error }
             for (k, v) in body.categories ?? [:] { winner.categories[k] = v }
             if let s = body.showContent { winner.showContent = s }
             if let b = body.badge { winner.badge = b }
+            if let h = body.dailyBriefHour { winner.dailyBriefHour = h }
             try await winner.save(on: db)
             return Self.dto(winner)
         }

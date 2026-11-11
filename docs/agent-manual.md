@@ -1,4 +1,4 @@
-<!-- manual-version: 1.18.0 -->
+<!-- manual-version: 1.19.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -91,6 +91,16 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 
 `get_command_center {projectID, scope?}` returns lanes with cards (plus `currentProject`, `hint` and `foreignProject` on cards as described in "Start here"), a summary and the latest updates. `summary.overdue` counts all visible unfinished tasks with `planning.dueAt < generatedAt`, including subtasks and backlog, before card filters or pagination. It respects project scope and the OAuth grant. Each card has `dueDate` (its own planning dueAt) and `nextDue` (earliest dueAt of its unfinished task or unfinished subtasks); completed tasks do not contribute to nextDue. These timestamps remain in compact responses. `list_tasks {projectID, overdue: true}` and `GET /v1/tasks?overdue=true` return only visible unfinished overdue tasks with planning data; false or omission leaves the list unfiltered. **Orphaned claims.** A claim (`claim_task`) is orphaned when the task is `in_progress` and the newest sign of life is older than 24 hours. Signs of life are progress notes, comments, activity of the task (status changes, questions, reviews), runner events such as checkpoints, and at least `claimedAt`. `summary.orphanedClaims` counts tasks (parents and subtasks individually, all readable ones, before card filters), so the number of cards with `orphaned: true` can be smaller; cards carry `orphaned` and `lastSignOfLifeAt`. Take over an orphaned task with `claim_task {takeOver: true}` or ask the person; the server never releases on its own. A card contains the task, project, progress, current agent, open question count and preview, pending review, last progress text, build screenshots (up to 3) and the next due date. Lanes, in order: `running` (Läuft), `question` (Frage offen), `review` (Review fällig), `ready` (Bereit), `blocked` (Blockiert), `done` (Erledigt kürzlich). A task lands in the first matching lane: done, open question, review, blocked, running, ready. The answer is compact by default (subtasks and builds only as counts, short texts, 10 cards per lane, 5 updates); pass `compact: false` for the full detail and `fields` to keep only some card fields. Use `view: "list"` with `lane`, `kind`, `hasQuestion`, `sort` (`attention|updated|due|progress|title`), `limit` and `offset` for a flat list.
 
+## Daily brief
+
+`get_daily_brief {projectID?, since?, format?}` (REST `GET /v1/daily-brief`) is the short morning read: what needs the person, what is stuck, what runs, what got done. Use it for a status line or a standup summary instead of reading the whole command center. Without `projectID` it covers all readable projects of the connection (with `projectID`: that project and its sub-projects); nothing outside the OAuth grant appears.
+
+- `format=full` (default): `{generatedAt, since, scope, projectID, format, line, summary, sections}`. `sections` come in priority order: `waiting` (open questions, pending reviews, confirmation requests of the account), `orphaned` (claims without a sign of life for over 24 hours), `stale` (bound projects with a stale or missing sync), `running` (in progress with a claim, not orphaned), `done` (done since `since`). Each section has `key`, `title`, `count` (always exact), `truncated` and up to 5 `items` `{id, title, projectID, kind}` (waiting: oldest first, done: newest first). `summary` has the exact counters.
+- `format=line`: `{generatedAt, since, scope, projectID, format, line}` with one German line of at most 200 characters, for example `3 warten auf dich, 2 verwaist, 1 Projekt veraltet · 5 erledigt, 4 laufen`, or `Alles ruhig: nichts wartet auf dich.` on a quiet day.
+- `since`: ISO 8601 date-time or a date (`YYYY-MM-DD`, UTC midnight); default is the start of yesterday in UTC (the account has no time zone setting). A date in the future fails with `invalid_since`; an unknown `format` with `invalid_format`. A done task counts when its last change is at or after `since`.
+- Confirmation requests belong to the account, not to a project: they are counted only without `projectID` and without an OAuth grant limit (so over MCP they are not part of it; use `get_action_request`/the app).
+- The person can switch on a daily push of the line (`update_notification_prefs {categories: {daily_brief: true}, dailyBriefHour}`, default off, hour 0 to 23 in UTC, default 8). The push carries only the counts line, never titles.
+
 ## Project onboarding and keeping Todolino current
 
 Todolino is only useful if it is current. Treat the board as part of the repository's definition of done.
@@ -170,6 +180,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `list_projects` | projects:read | Projects you may use. |
 | `get_project_structure` | projects:read | Brief, columns, workflow template status, counts. |
 | `get_command_center` | tasks:read | Kanban/list overview, summary, updates, build groups. |
+| `get_daily_brief` | tasks:read | Daily brief: what waits for the person, orphaned claims, stale projects, running, done since a date; `format=line` gives one short line. |
 | `list_tasks` | tasks:read | Tasks of a project with planning; optional `overdue: true` for unfinished overdue tasks, `orphaned: true` for in-progress tasks with a claim that shows no sign of life for over 24 hours. |
 | `get_task` | tasks:read | One task. |
 | `get_task_context` | tasks:read | Task plus subtasks, criteria, comments, questions, review, builds, progress. |
@@ -296,6 +307,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.19.0:** daily brief. New tool `get_daily_brief` (tasks:read, no new scope) and REST `GET /v1/daily-brief`; push category `daily_brief` (default off) and `dailyBriefHour` in the notification preferences (`get_notification_prefs`, `update_notification_prefs`, REST `/v1/me/push-prefs`). All additive.
 
 **Changed in 1.18.0:** orphaned claims. `get_command_center` answers `summary.orphanedClaims` and each card has `orphaned` and `lastSignOfLifeAt`; `get_command_center {orphaned: true}` and `list_tasks {projectID, orphaned: true}` (REST `?orphaned=true`) keep only in-progress tasks whose claim has had no sign of life for more than 24 hours. Flag only: nothing is released automatically. `get_task_context.workflow` carries the same two fields. All additive; calls without the new parameter behave as before.
 

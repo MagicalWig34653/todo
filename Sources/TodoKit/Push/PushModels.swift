@@ -34,6 +34,8 @@ final class PushPrefs: Model, @unchecked Sendable {
     /// Include task titles and short texts in the notification (default off, see ADR 0021).
     @Field(key: "show_content") var showContent: Bool
     @Field(key: "badge") var badge: Bool
+    /// Hour (UTC, 0...23) from which the daily brief is pushed; nil = default 8. Added later, hence optional.
+    @OptionalField(key: "daily_brief_hour") var dailyBriefHour: Int?
     @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?
     init() {}
 }
@@ -69,14 +71,29 @@ struct PushEvent: Codable, Equatable, Sendable {
     var at: Int?
 }
 
+/// Outbox payload of category `daily_brief`: only the day (UTC, yyyy-MM-dd); the line is computed when sending.
+struct PushDailyBriefEvent: Codable, Equatable, Sendable {
+    var day: String
+
+    private static var utc: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(secondsFromGMT: 0)!; return c }
+    static func startOfDay(_ date: Date) -> Date { utc.startOfDay(for: date) }
+    static func day(of date: Date) -> String {
+        let p = utc.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", p.year!, p.month!, p.day!)
+    }
+}
+
 /// Outbox payload of category `confirmations` (ADR 0026): only the request id.
 struct PushConfirmationEvent: Codable, Equatable, Sendable { var subjectID: UUID }
 
 enum PushCategory: String, CaseIterable, Sendable {
     case reminders, agentQuestions = "agent_questions", agentReviews = "agent_reviews", assignments, comments, confirmations
+    case dailyBrief = "daily_brief"
     static let defaults: [String: Bool] = [
         "reminders": true, "agent_questions": true, "agent_reviews": true, "assignments": false, "comments": false, "confirmations": true,
+        "daily_brief": false,
     ]
+    static let defaultDailyBriefHour = 8
 }
 
 struct CreatePushSchema: AsyncMigration {
@@ -107,8 +124,20 @@ struct CreatePushSchema: AsyncMigration {
     }
 }
 
+/// Additive: hour of the optional daily brief push (nullable; nil = default). The `daily_brief` category itself lives in
+/// the existing `categories` JSON and needs no column.
+struct AddPushDailyBriefHour: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(PushPrefs.schema).field("daily_brief_hour", .int).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(PushPrefs.schema).deleteField("daily_brief_hour").update()
+    }
+}
+
 func configurePush(_ app: Application) {
     app.migrations.add(CreatePushSchema())
+    app.migrations.add(AddPushDailyBriefHour())
     app.asyncCommands.use(PushTestCommand(), as: "push-test")
 }
 
@@ -142,12 +171,15 @@ struct PushPrefsDTO: Content, Equatable {
     var categories: [String: Bool]
     var showContent: Bool
     var badge: Bool
+    /// UTC hour 0...23 of the daily brief push (only relevant while category `daily_brief` is on); default 8.
+    var dailyBriefHour: Int = PushCategory.defaultDailyBriefHour
 }
 
 struct UpdatePushPrefsRequest: Content {
     var categories: [String: Bool]?
     var showContent: Bool?
     var badge: Bool?
+    var dailyBriefHour: Int?
 }
 
 struct PushServerStatus: Content, Equatable { var enabled: Bool }

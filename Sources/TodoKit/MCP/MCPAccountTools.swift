@@ -17,13 +17,14 @@ extension MCPController {
                           "glow": Schema.string("off, subtle, medium or strong.", values: ["off", "subtle", "medium", "strong"])],
              required: ["revision"]),
         Tool(name: "get_notification_prefs", scope: "account:read",
-             description: "Read your push notification preferences: {categories:{reminders, agent_questions, agent_reviews, assignments, comments, confirmations}, showContent, badge}."),
+             description: "Read your push notification preferences: {categories:{reminders, agent_questions, agent_reviews, assignments, comments, confirmations, daily_brief}, showContent, badge, dailyBriefHour}. daily_brief (default off) pushes the one-line daily brief once a day from dailyBriefHour (UTC, default 8)."),
         Tool(name: "update_notification_prefs", scope: "account:write",
              description: "Change your push notification preferences (partial). Unknown categories fail with invalid_category. Returns the new preferences.",
              properties: ["categories": .object(["type": .string("object"), "description": .string("Category name to boolean, for example {\"comments\": true}."),
                                                 "additionalProperties": .object(["type": .string("boolean")])]),
                           "showContent": Schema.boolean("Show task text in push notifications."),
-                          "badge": Schema.boolean("Show the badge count.")]),
+                          "badge": Schema.boolean("Show the badge count."),
+                          "dailyBriefHour": Schema.integer("UTC hour 0 to 23 from which the daily brief is pushed (category daily_brief).", min: 0, max: 23)]),
         Tool(name: "get_connection", scope: "",
              description: "Describe this MCP connection: {client, name, scopes, projects:[{id,name}], refreshExpiresAt}. The project list is exactly this connection's grant. No tokens."),
         Tool(name: "list_users", scope: "admin:read",
@@ -65,9 +66,10 @@ extension MCPController {
                 categories = parsed
             }
             let show = try optionalBool(a, "showContent"), badge = try optionalBool(a, "badge")
-            guard categories != nil || show != nil || badge != nil else { throw Abort(.badRequest, reason: "invalid_arguments") }
+            let hour = try intArgument(a["dailyBriefHour"], reason: "invalid_daily_brief_hour")
+            guard categories != nil || show != nil || badge != nil || hour != nil else { throw Abort(.badRequest, reason: "invalid_arguments") }
             let dto = try await PushService(user: user, db: db, settings: settings.apns)
-                .update(UpdatePushPrefsRequest(categories: categories, showContent: show, badge: badge))
+                .update(UpdatePushPrefsRequest(categories: categories, showContent: show, badge: badge, dailyBriefHour: hour))
             return try .encoded(dto)
         case "get_connection":
             let client = try await OAuthClient.find(grant.clientID, on: db)?.name
