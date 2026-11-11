@@ -64,6 +64,43 @@ final class ProjectRepositoryBindingTests: XCTestCase {
         XCTAssertEqual(again, 2)
     }
 
+    func testMigrationKeepsLegacyTimestampsAcrossRepeatAndRevert() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let (user, token) = try await account(t)
+        let a = try await project(t, token, "A"), b = try await project(t, token, "B")
+        let db = t.app.db
+        try await ProjectBinding(projectID: a, ownerID: user.requireID(), repoKey: "github.com/acme/a", staleAfterDays: 5).save(on: db)
+        try await ProjectBinding(projectID: b, ownerID: user.requireID(), repoKey: "github.com/acme/b", staleAfterDays: 3).save(on: db)
+        // Fluent stamps timestamps on save; write the historical values with a query (no touch).
+        let stamps: [UUID: (created: Date, updated: Date)] = [
+            a: (Date(timeIntervalSince1970: 1_788_246_000), Date(timeIntervalSince1970: 1_790_848_800)),  // 2026-09-01 / 2026-10-01
+            b: (Date(timeIntervalSince1970: 1_788_332_400), Date(timeIntervalSince1970: 1_788_332_400)),
+        ]
+        for (id, s) in stamps {
+            try await ProjectBinding.query(on: db).filter(\.$id == id)
+                .set(\.$createdAt, to: s.created).set(\.$updatedAt, to: s.updated).update()
+        }
+        try await ProjectRepositoryBinding.query(on: db).delete()  // the app migrated an empty legacy table before
+
+        func assertStamps(_ context: String) async throws {
+            let all = try await ProjectRepositoryBinding.query(on: db).all()
+            XCTAssertEqual(all.count, 2, context)
+            for (id, s) in stamps {
+                let row = try XCTUnwrap(all.first { $0.id == id }, context)
+                XCTAssertEqual(row.createdAt?.timeIntervalSince1970 ?? 0, s.created.timeIntervalSince1970, accuracy: 1, "created_at \(context)")
+                XCTAssertEqual(row.updatedAt?.timeIntervalSince1970 ?? 0, s.updated.timeIntervalSince1970, accuracy: 1, "updated_at \(context)")
+            }
+        }
+        try await AddProjectRepositoryBindings().prepare(on: db)
+        try await assertStamps("after first run")
+        try await AddProjectRepositoryBindings().prepare(on: db)
+        try await assertStamps("after repeat")
+        try await AddProjectRepositoryBindings().revert(on: db)
+        try await AddProjectRepositoryBindings().prepare(on: db)
+        try await assertStamps("after revert and re-apply")
+    }
+
     // MARK: Service
 
     func testSecondBindingIsAddedWithSeparateHistoryAndDefaultIsOldest() async throws {
