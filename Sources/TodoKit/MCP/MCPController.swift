@@ -170,7 +170,7 @@ struct MCPController: RouteCollection {
             let id = try uuid(a["projectID"])
             _ = try await project(id, user: user, grant: grant, db: db)
             return try .encoded(await PlanningController.taskList(user: user, db: db, projectID: id,
-                overdue: optionalBool(a, "overdue") ?? false))
+                overdue: optionalBool(a, "overdue") ?? false, orphaned: optionalBool(a, "orphaned")))
         case "get_task":
             let task = try await ProjectAccess(user: user, db: db).task(uuid(a["id"]))
             _ = try await project(task.projectID, user: user, grant: grant, db: db)

@@ -4,7 +4,7 @@ import Vapor
 /// Keys stay the same; bulky parts are emptied or shortened and `compact: true` marks the reduced form.
 enum MCPCompact {
     static let cardFields: Set<String> = ["task", "project", "kind", "isFeature", "parentTaskID", "lane", "progress", "agent", "openQuestionCount",
-        "questions", "pendingReview", "blockedReason", "blockedBy", "latestUpdate", "builds", "buildCount", "dueDate", "nextDue", "priority", "subtasks", "subtaskCount", "foreignProject"]
+        "questions", "pendingReview", "blockedReason", "blockedBy", "latestUpdate", "builds", "buildCount", "dueDate", "nextDue", "priority", "subtasks", "subtaskCount", "foreignProject", "orphaned", "lastSignOfLifeAt"]
     static let questionFields: Set<String> = ["id", "taskID", "taskTitle", "projectID", "projectName", "askedByType", "askedByID", "askedByLabel",
         "askedByName", "prompt", "options", "blocking", "state", "answer", "answeredBy", "answeredVia", "answeredAt", "createdAt", "agentQuestionID", "version", "foreignProject"]
     private static let dropFromQuestion: Set<String> = ["askedByID", "answeredBy", "answeredVia", "agentQuestionID", "version"]

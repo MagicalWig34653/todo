@@ -241,10 +241,10 @@ struct WorkflowService: Sendable {
         }
     }
 
-    static func dto(_ wf: TaskWorkflow, hasChildren: Bool = false) -> WorkflowDTO {
+    static func dto(_ wf: TaskWorkflow, hasChildren: Bool = false, orphaned: Bool = false, lastSignOfLifeAt: Date? = nil) -> WorkflowDTO {
         WorkflowDTO(taskID: wf.id!, kind: wf.kind, isFeature: wf.kind == "feature" || hasChildren, parentTaskID: wf.parentTaskID,
             blockedReason: wf.blockedReason, claimedByType: wf.claimedByType, claimedByID: wf.claimedByID,
-            claimedLabel: wf.claimedLabel, claimedAt: wf.claimedAt)
+            claimedLabel: wf.claimedLabel, claimedAt: wf.claimedAt, orphaned: orphaned, lastSignOfLifeAt: lastSignOfLifeAt)
     }
 
     // MARK: Criteria
@@ -660,7 +660,7 @@ struct WorkflowService: Sendable {
 
     // MARK: Progress rollup and context
 
-    func context(_ taskID: UUID) async throws -> TaskContextDTO {
+    func context(_ taskID: UUID, now: Date = Date()) async throws -> TaskContextDTO {
         let task = try await readableTask(taskID)
         let id = try task.requireID()
         let wf = try await TaskWorkflow.find(id, on: db)
@@ -672,7 +672,11 @@ struct WorkflowService: Sendable {
         let names = try await displayNames(comments.map(\.authorID), on: db)
         let questions = try await TaskQuestion.query(on: db).filter(\.$taskID == id).sort(\.$createdAt).sort(\.$id).all()
         let review = try await TaskReview.query(on: db).filter(\.$taskID == id).sort(\.$createdAt, .descending).sort(\.$id, .descending).first()
-        let wfDTO = Self.dto(wf ?? TaskWorkflow(taskID: id), hasChildren: !children.isEmpty)
+        var lastSign: Date?
+        if wf?.claimedByID != nil { lastSign = try await ClaimLiveness.lastSignOfLife(claims: [id: wf?.claimedAt], on: db)[id] }
+        let wfDTO = Self.dto(wf ?? TaskWorkflow(taskID: id), hasChildren: !children.isEmpty,
+            orphaned: ClaimLiveness.isOrphaned(status: task.status, hasClaim: wf?.claimedByID != nil, lastSignOfLife: lastSign, now: now),
+            lastSignOfLifeAt: lastSign)
         return TaskContextDTO(task: try TaskDTO(task), projectID: task.projectID, workflow: wfDTO, progress: progress,
             progressNotes: try notes.map(ProgressNoteDTO.init), criteria: try criteria.map(CriterionDTO.init),
             subtasks: try children.map(TaskDTO.init),
