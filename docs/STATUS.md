@@ -1057,3 +1057,10 @@ Ziel: `https://todo.linolaske.de/` lieferte nur JSON-404, weil das Image die PWA
 - Entscheidung: `EXCLUDE_LABEL` und `PLACEMENT_*` gelten nicht für `backend-pinned` (wie form-backend).
 - Geprüft: `scripts/test-placement.sh` (Validierung, Overlay-Inhalt, `docker compose config` mit/ohne Variablen, mit s3-Overlay), `bash -n` aller Skripte. **Nur Syntax geprüft, nie gegen Swarm gelaufen:** `swarm-deploy.sh`-Abläufe, `lib.sh`-awk-Match, `update.sh`/`setup.sh`-Änderungen, Scale-down durch Entfernen von `PINNED_NODE`.
 - Offen: Lauf auf einem Test-Swarm (`scripts/swarm-smoke.sh`), Proxy-Upstream bei `BACKEND_PINNED_PORT`.
+
+## Checkpoint 11.11.2026: Board darf nicht veralten (Karte 5ECBF57C)
+
+- Stop-Hook (Plugin 1.8.0): `claude-plugin/scripts/stop.sh` erinnert einmal je neuem Arbeitsstand (Fingerprint aus HEAD, `git status --porcelain --untracked-files=all`, `diff --shortstat`) statt einmal pro Sitzung; Board-Aktivität nach der letzten Arbeit unterdrückt die Erinnerung; `stop_hook_active` verhindert Schleifen; `TODOLINO_STOP_MAX` Standard 20 (0 = unbegrenzt). Tests: `sh claude-plugin/tests/test-hooks.sh` (135 ok, 0 FAIL).
+- Server (Handbuch 1.18.0): verwaiste Ansprüche (in_progress, Anspruch, > 24 h ohne Lebenszeichen aus Notiz, Kommentar, Aktivität, Runner-Event, claimedAt): Felder `orphaned`/`lastSignOfLifeAt`, `summary.orphanedClaims`, Filter `orphaned=true|false` (REST + MCP), nie automatische Freigabe. Migration `AddSignOfLifeIndexes`. Verträge: command-center 1.2.0, oauth-mcp 1.1.0, openapi 0.2.0.
+- Geprüft: `swift test` auf main@106abdf: 465 Tests, 20 übersprungen, 0 Fehler, Exit 0; unabhängiger Verifier (kein Blocker, Auflagen umgesetzt).
+- Offen: MariaDB nicht ausgeführt; Chunking > 400 nicht eigens getestet; UI-Anzeige (web/) und Board-Gärtner stehen aus; Deploy nur durch Lino.
