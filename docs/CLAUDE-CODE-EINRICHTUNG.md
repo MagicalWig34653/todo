@@ -30,7 +30,7 @@ Wirkung danach:
 ## Todolino
 Enthält ein Repository eine Datei `.todolino.json`, ist es an Todolino gebunden und Todolino muss aktuell bleiben.
 - Sitzungsbeginn: Todolino-Prompt `session_start` ausführen (oder `get_sync_status` und `get_command_center`). Ist der Stand `stale` oder `never`, zuerst `sync_project`.
-- Während der Arbeit: `claim_task`, `post_progress` nach jedem sinnvollen Schritt, `ask_question` statt zu raten, `request_review` bei Fertigstellung; eigene Arbeit nie selbst auf erledigt setzen.
+- Während der Arbeit: `claim_task`, `post_progress` nach jedem sinnvollen Schritt, `ask_question` statt zu raten, bei belegter Fertigstellung (gemergt, Tests grün, nichts zu entscheiden) selbst `update_task status=done` nach `post_progress` mit Beleg, sonst `request_review` (sichtbares Ergebnis, Risiko, Rollout, Entscheidung).
 - Sitzungsende: Status aktualisieren und `record_sync` aufrufen. Aufgaben gelten erst als erledigt, wenn Todolino sie widerspiegelt.
 - Ohne `.todolino.json`: nichts einrichten, außer der Nutzer sagt „Richte das Projekt in Todolino ein“ (Prompt `setup_project`).
 ```

@@ -26,7 +26,7 @@ extension MCPController {
                           "priority": Schema.integer("Optional priority 0 (none) to 3 (high).", min: 0, max: 3)],
              required: ["projectID", "title"]),
         Tool(name: "update_task", scope: "tasks:write",
-             description: "Change title, description, status or project of a task. For normal agent work prefer claim_task, request_review and the question tools, which also move the card to the right board column. Pass the task's current version.",
+             description: "Change title, description, status or project of a task. For normal agent work prefer claim_task, request_review and the question tools, which also move the card to the right board column. status=done is allowed for agents when the work is proven finished (merged, tests green, criteria met) and nothing needs the person: post_progress with the proof first. Pass the task's current version.",
              properties: ["id": Schema.uuid("Task id."), "version": versionField,
                           "title": Schema.string("New title, 1 to 200 characters.", maxLength: 200),
                           "description": Schema.string("New description (Markdown); replaces the old text."),

@@ -100,7 +100,7 @@ extension MCPController {
              properties: ["questionID": Schema.uuid("Question id."), "answer": Schema.string("The answer text; must equal one of the options if the question has options.", maxLength: 4000)],
              required: ["questionID", "answer"]),
         Tool(name: "request_review", scope: "tasks:write",
-             description: "Ask a person to review finished work: sets the task to in_review, moves it to the 'Review' column and shows it as 'Review fällig' on the overview. Summarise what changed, how you verified it and what to look at. Attach build screenshots first. Do not mark your own work done.",
+             description: "Ask a person to review finished work: sets the task to in_review, moves it to the 'Review' column and shows it as 'Review fällig' on the overview. Summarise what changed, how you verified it and what to look at. Attach build screenshots first. Only for a visible result, risk, rollout or decision; proven-finished work with nothing to check is closed with update_task status=done after a post_progress with the proof.",
              properties: ["taskID": taskIDField,
                           "summary": Schema.string("Review summary, 1 to 4000 characters.", maxLength: 4000),
                           "reviewerID": Schema.uuid("Optional user id of the person who must review (must be able to read the project)."),
