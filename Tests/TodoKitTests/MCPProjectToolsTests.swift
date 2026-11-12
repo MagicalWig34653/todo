@@ -313,4 +313,29 @@ final class MCPProjectToolsTests: XCTestCase {
         } catch { await f.test.shutdown(); throw error }
         await f.test.shutdown()
     }
+
+    // MARK: done withdraws open reviews
+
+    func testSettingTaskDoneWithdrawsPendingReview() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let t = try await f.tokens(scope: all)
+            let pid = try f.project.requireID()
+            let a = try await call(f, "create_task", ["projectID": pid.uuidString, "title": "A"], t.access)
+            let aID = try XCTUnwrap(UUID(uuidString: try XCTUnwrap(a.json?["id"] as? String)))
+            let review = try await call(f, "request_review", ["taskID": aID.uuidString, "summary": "Ready"], t.access)
+            XCTAssertFalse(review.isError, review.text)
+            let task = try await XCTUnwrapAsync(try await TodoTask.find(aID, on: f.test.app.db))
+            let done = try await call(f, "update_task", ["id": aID.uuidString, "version": task.version, "status": "done"], t.access)
+            XCTAssertFalse(done.isError, done.text)
+            let reviews = try await TaskReview.query(on: f.test.app.db).filter(\.$taskID == aID).all()
+            XCTAssertEqual(reviews.map(\.state), ["withdrawn"])
+            XCTAssertNotNil(reviews.first?.decisionNote)
+            let pending = try await call(f, "list_pending_reviews", [:], t.access)
+            XCTAssertEqual((pending.json?["items"] as? [[String: Any]])?.count, 0, pending.text)
+            let kinds = try await ActivityEvent.query(on: f.test.app.db).filter(\.$taskID == aID).all().map(\.kind)
+            XCTAssertTrue(kinds.contains("review.withdrawn"), "\(kinds)")
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
 }

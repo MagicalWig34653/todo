@@ -739,6 +739,16 @@ enum WorkflowMirror {
         try await q.save(on: db)
     }
 
+    /// A task set to done by any route (update_task, REST, column move) no longer needs its open reviews: they become
+    /// `withdrawn` with a note. Runner-backed reviews stay; their job transition is authoritative.
+    static func withdrawPendingReviews(taskID: UUID, actorType: ActivityActorType, actorID: UUID, on db: any Database) async throws {
+        for r in try await TaskReview.query(on: db).filter(\.$taskID == taskID).filter(\.$state == "pending").filter(\.$agentJobID == .null).all() {
+            r.state = "withdrawn"; r.decidedAt = Date(); r.decisionNote = "Karte auf erledigt gesetzt"; r.version += 1
+            try await r.save(on: db)
+            try await appendActivity(taskID: taskID, actorType: actorType, actorID: actorID, kind: "review.withdrawn", subjectID: r.id, on: db)
+        }
+    }
+
     /// Job ended without an answer: open mirrors become withdrawn.
     static func runnerWithdrawn(jobID: UUID, on db: any Database) async throws {
         let ids = try await AgentQuestion.query(on: db).filter(\.$jobID == jobID).all().map { try $0.requireID() }

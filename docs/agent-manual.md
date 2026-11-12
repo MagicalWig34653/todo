@@ -1,4 +1,4 @@
-<!-- manual-version: 1.21.0 -->
+<!-- manual-version: 1.22.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -307,6 +307,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.22.0:** when a task is set to `done` (`update_task`, REST, column move), its open non-runner reviews are withdrawn automatically (`state` `withdrawn`, `decisionNote` "Karte auf erledigt gesetzt", activity `review.withdrawn`); they no longer stay `pending`. Additive, no API change.
 
 **Changed in 1.21.0:** agents may close their own proven-finished tasks (`update_task status=done`, after a `post_progress` with the proof). `request_review` stays for visible results, risk, rollout or decisions. No API change (the server always allowed it).
 

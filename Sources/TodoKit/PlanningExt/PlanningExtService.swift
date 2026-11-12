@@ -146,6 +146,9 @@ struct PlanningService: Sendable {
         t.version += 1
         try await t.save(on: db)
         try await appendTaskChangeActivity(t, from: before, actorID: user.requireID(), on: db)
+        if t.status == "done", before.status != "done" {
+            try await WorkflowMirror.withdrawPendingReviews(taskID: id, actorType: .person, actorID: user.requireID(), on: db)
+        }
         if t.status == "done", let p = try await TaskPlanning.find(id, on: db) { try await spawnNext(t, planning: p) }
         return try TaskDTO(t)
     }
