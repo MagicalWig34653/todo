@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
+
+- Neu: `PUT /v1/system-status[?source=]` (Runner-Gerätetoken des Mac-Wächters oder Sitzung) speichert den letzten Lagestand je Konto und Quelle (Tabelle `system_status`, additive Migration `CreateSystemStatus`, vor Serve `App migrate --yes`); `GET /v1/system-status` und MCP `get_system_status` (account:read) lesen. Bekannte Felder werden geprüft (Ampeln gruen|gelb|rot, Zahlen, `codex`-Objekt, `zeit`), Rest bleibt erhalten; max. 16 KB, 10 Quellen. Vertrag `contracts/system-status.yaml`, Handbuch 1.23.0.
+- Live: das Modell hängt an der `live_events`-Middleware, jede Meldung ändert das Live-Token (ADR 0022); die PWA lädt dann neu, dazu 60-s-Poll. PWA: Zeile `SystemStatusBar` im Überblick (Claude, Codex, Platte, "Stand vor X min", älter als 30 min grau).
+- Geprüft: `SystemStatusTests` (9), vitest `systemStatus.test.ts`, Playwright `e2e/system-status.spec.ts` gegen echtes Backend (SQLite). Nicht geprüft: MariaDB-Migration (JSON-Feld), Apple-App (Folgekarte "Apple: Lage-Ampel anzeigen").
+- Wächter (`orchestrator/tools/waechter.py`) meldet nach dem Schreiben von `status.json`; Token aus Schlüsselbund `todolino-waechter` oder `~/.config/todolino-waechter/token`.
+
 ## Checkpoint 6.11.2026 (Nachtrag): Freitext in "Für dich", Namensfeld der Zustimmungsseite
 
 - Auf `main` (`0e975e4` und Merge der Consent-Spec), kein Push, keine Migration. "Für dich" nutzt bei Optionsfragen `QuestionAnswer` (neues Prop `bare`), damit gibt es dort ebenfalls "Oder eigene Antwort schreiben". Selbst geprüft: vitest 320, Build; laut Worker Playwright `for-you` 3/3, `freetext-review` 3/3 (neuer Test bei 320 px). Nicht geprüft: Firefox/WebKit, hell/dunkel, Fehlerpfad "schon anderswo beantwortet", Apple-App. Karte `BBBE29C1` bleibt bei 95 %.
