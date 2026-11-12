@@ -58,7 +58,7 @@ extension WorkflowService {
         "Read the project brief first; its rules override your defaults.",
         "Claim a task before working on it (claim_task) and post progress notes (post_progress) while you work.",
         "Never guess a decision that belongs to the user: ask_question with options and wait for the answer.",
-        "When the work is finished, attach build screenshots if the brief asks for them and call request_review; do not mark your own work done.",
+        "When the work is finished, attach build screenshots if the brief asks for them and call request_review only for a visible result, risk, rollout or decision. Proven finished (merged, tests green, criteria met) with nothing for the person to check: post_progress with the proof, then close it yourself with update_task status=done.",
         "Keep the standard column names so cards move automatically; do not rename or delete columns without being asked.",
         "Use idempotency keys when retrying writes.",
     ]

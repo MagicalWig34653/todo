@@ -19,7 +19,7 @@ Die Steuerzentrale (in der PWA „Überblick“) ist der Ort, an dem Menschen ih
 1. Agent holt per MCP das Handbuch (`get_manual`) und das Projekt-Briefing (Ziele, Randbedingungen, Regeln, Definition of Done).
 2. Er liest das Board (`get_command_center`), übernimmt eine Aufgabe (`claim_task`; eine zweite Übernahme wird ohne ausdrückliches `takeOver` abgewiesen) und meldet Fortschritt (`post_progress`).
 3. Braucht er eine Entscheidung, stellt er eine Frage (`ask_question`, blockierend). Die Karte wandert nach „Frage offen“.
-4. Er hängt Screenshots des Builds an (gleiche Build-ID, Plattform) und fordert ein Review an (`request_review`). Der Agent setzt eigene Arbeit nie selbst auf erledigt.
+4. Er hängt Screenshots des Builds an (gleiche Build-ID, Plattform) und fordert ein Review an (`request_review`). Ist nichts anzusehen oder zu entscheiden, schließt der Agent die Karte nach einem belegten `post_progress` selbst.
 5. Der Mensch entscheidet in der Steuerzentrale. Der Agent liest das Ergebnis am Board.
 
 Karten wandern automatisch in die passende Spalte, wenn das Projekt die Standardspalten für Agenten hat (Backlog, Bereit, In Arbeit, Frage offen, Review, Erledigt). Spalten werden über den Namen erkannt, eigene Boards funktionieren daher auch; fehlt eine Spalte, bleibt die Karte stehen. Die Vorlage lässt sich in der PWA mit einem Klick anlegen.
