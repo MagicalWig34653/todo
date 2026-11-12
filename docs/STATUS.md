@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 13.11.2026: Board wird nach Projektlisten-Refresh nur einmal geladen (Board-Karte `65857554`, Branch `agent/board-einfach-laden`)
+
+- Ursache (belegt): `CommandCenter.svelte` las `projectID` (Getter-Prop `project.id`) direkt in den vier Fetch-Effects und, synchron im Effect, in `params()`/`fetchQuestions`/`fetchReviews`/`fetchUpdates`. Wird die Projektliste ersetzt (Live-Event, Poll, Umbenennen), ist das Projekt ein neues Objekt, die Effects laufen erneut: zweiter Board-Abruf neben dem Live-Refresh. Bei gleichzeitigem Eintreffen fasst die Anfragetabelle in `api.ts` beide zu einer Netzanfrage zusammen (maskiert); kommt die Projektliste später, gehen zwei Anfragen raus.
+- Fix: `let { projectID: projectIDProp } = $props(); const projectID = $derived(projectIDProp);` (Wertvergleich), alles darunter liest das Derived. Keine Verhaltensänderung sonst.
+- Test: neu `web/e2e/board-single-fetch.spec.ts` (Chromium, echtes Backend, SQLite): Projekt umbenennen über REST, `GET /v1/projects` künstlich 1,2 s verzögert, Board-Anfragen (`/v1/command-center?projectID=…`, ohne `limit=1`) zählen, 3 Runden. Vorher rot (2 Anfragen statt 1, Runde 1), nachher grün. Ohne die Verzögerung war der Test auch vorher grün (Zusammenfassung gleichzeitiger GETs), deshalb die Verzögerung.
+- Geprüft: Playwright board-single-fetch 1/1, project-repository 4/4, live-refresh 1/1, menus-and-modes 11/11, ui-nav 6/6 (je frische SQLite, Chromium); vitest 329 grün; `npm run check` 0 Fehler; `npm run build` grün. Eine Spec `board` gibt es nicht. Kein Backend-/Vertragseingriff, kein Push.
+- Offen: andere Komponenten mit Getter-Props in Effects nicht durchsucht (`RepositoryLine` hat den Guard seit `a040846`, Branch `agent/repo-anzeige-stabil`).
+
 ## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
 
 - Neu: `PUT /v1/system-status[?source=]` (Runner-Gerätetoken des Mac-Wächters oder Sitzung) speichert den letzten Lagestand je Konto und Quelle (Tabelle `system_status`, additive Migration `CreateSystemStatus`, vor Serve `App migrate --yes`); `GET /v1/system-status` und MCP `get_system_status` (account:read) lesen. Bekannte Felder werden geprüft (Ampeln gruen|gelb|rot, Zahlen, `codex`-Objekt, `zeit`), Rest bleibt erhalten; max. 16 KB, 10 Quellen. Vertrag `contracts/system-status.yaml`, Handbuch 1.23.0.
