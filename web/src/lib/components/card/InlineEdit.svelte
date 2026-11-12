@@ -93,7 +93,7 @@
 		bind:this={box}
 		bind:value={draft}
 		rows="4"
-		class="field-sizing-content border-input bg-background focus-visible:border-ring min-h-24 w-full resize-y rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+		class="field-sizing-content border-input bg-background focus-visible:border-ring min-h-24 w-full shrink-0 resize-y rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 		placeholder={t('card.description.placeholder')}
 		aria-label={t('card.description.edit')}
 		data-testid="card-description-input"
@@ -105,7 +105,7 @@
 {:else}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
-		class={['hover:bg-muted/50 -mx-2 flex min-h-9 items-start gap-3 rounded-lg px-2 py-1.5', editable && 'cursor-text']}
+		class={['hover:bg-muted/50 -mx-2 flex min-h-9 shrink-0 items-start gap-3 rounded-lg px-2 py-1.5', editable && 'cursor-text']}
 		role={editable ? 'button' : undefined}
 		tabindex={editable ? 0 : undefined}
 		aria-label={editable ? t('card.description.edit') : undefined}

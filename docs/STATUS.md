@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 13.11.2026: Aufgabendetail, Beschreibung überlappt Folgeabschnitte (Karte `CECF3338`, Branch `agent/detail-beschreibung-ueberlappung`)
+
+- Ursache: In `InlineEdit.svelte` hatte der Beschreibungsblock `min-h-9` (und das Bearbeitungsfeld `min-h-24`). Ein explizites `min-height` hebt das automatische Minimum eines Flex-Items auf; `card-main` ist eine Flex-Spalte mit fester Höhe (Grid-Zelle, `overflow-y-auto`), also schrumpfte der Block auf 36 px und der Text lief in "Unteraufgabe hinzufügen", Anhänge usw. hinein (Länge der Beschreibung entscheidet; kurze Texte fielen nicht auf).
+- Fix: `shrink-0` an beiden Elementen. Neue Spec `web/e2e/detail-description-overlap.spec.ts` (Bounding-Boxes; 1280 und 390 px, hell und dunkel; lange Aufzählung plus 240-Zeichen-Wort), rot vor dem Fix (Beschreibungsende 996 statt <= 329), 4/4 grün danach. Screenshots `docs/screenshots/detail-ueberlappung/` (before: nur 1280 dunkel, da serielle Spec nach dem ersten Fehler stoppt; after: alle vier).
+- Geprüft: vitest 329, `npm run check` 0 Fehler, Build grün, `card-detail.spec.ts` Gruppe "layout of the card window" 5/5. Nicht geprüft: Firefox/WebKit; `card-detail` "confirmation" scheitert in dieser Scratch-Umgebung an der OAuth-Zustimmung (`redirect_uri` fehlt, Umgebung/Issuer, nicht mit der Änderung zusammenhängend, nicht auf main gegengeprüft), die übrigen Tests der Datei liefen dadurch nicht komplett.
+- "Hochladen" rot im Screenshot: Akzentfarbe des Nutzer-Themas, kein Defekt.
+
 ## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
 
 - Neu: `PUT /v1/system-status[?source=]` (Runner-Gerätetoken des Mac-Wächters oder Sitzung) speichert den letzten Lagestand je Konto und Quelle (Tabelle `system_status`, additive Migration `CreateSystemStatus`, vor Serve `App migrate --yes`); `GET /v1/system-status` und MCP `get_system_status` (account:read) lesen. Bekannte Felder werden geprüft (Ampeln gruen|gelb|rot, Zahlen, `codex`-Objekt, `zeit`), Rest bleibt erhalten; max. 16 KB, 10 Quellen. Vertrag `contracts/system-status.yaml`, Handbuch 1.23.0.
