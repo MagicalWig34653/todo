@@ -1,10 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
+import { signedInPage } from './support/session';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Needs a fresh backend database. Run on its own:
-//   npx playwright test e2e/repo-line-stability.spec.ts --project=chromium
+//   npx playwright test e2e/repo-line-stability.spec.ts --project=chromium   (also --project=firefox / webkit)
+// The account is created through e2e/support/session.ts (Chromium CDP passkey, cookie handed to Firefox/WebKit).
+// Layout Instability API ('layout-shift') exists in Chromium only. Everywhere the spec additionally counts, independent of
+// the browser: loading-state appearances and remounts of the repository line, and geometric jumps (requestAnimationFrame
+// sampling of the repository line height and of the top of the board below it).
 // Card A9796ED2: the repository line in the project overview must not flip to "Abgleich wird geladen" (and push the page
 // content around) while the board refreshes in the background (live refresh, poll, own writes).
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
@@ -20,23 +25,23 @@ let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
-	page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-	});
-	await page.addInitScript(() => {
-		const w = window as unknown as { __probe: { cls: number; shifts: { value: number; at: number; nodes: string[] }[]; loadingSeen: number; mounts: number; armed: boolean; armedAt: number } };
-		w.__probe = { cls: 0, shifts: [], loadingSeen: 0, mounts: 0, armed: false, armedAt: 0 };
-		new PerformanceObserver((list) => {
-			for (const e of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; startTime: number; sources?: { node?: Node }[] }[]) {
-				if (e.hadRecentInput || !w.__probe.armed || e.startTime < w.__probe.armedAt) continue;
-				w.__probe.cls += e.value;
-				w.__probe.shifts.push({ value: e.value, at: Math.round(e.startTime), nodes: (e.sources ?? []).map((s) => (s.node as Element | undefined)?.nodeName ?? '?') });
-			}
-		}).observe({ type: 'layout-shift', buffered: true });
+	page = await signedInPage(browser, 'Repo Stabil');
+	await page.context().addInitScript(() => {
+		type Probe = { cls: number; lsSupported: boolean; shifts: { value: number; at: number; nodes: string[] }[]; loadingSeen: number; mounts: number; jumps: { what: string; from: number; to: number }[]; armed: boolean; armedAt: number };
+		const w = window as unknown as { __probe: Probe };
+		w.__probe = { cls: 0, lsSupported: false, shifts: [], loadingSeen: 0, mounts: 0, jumps: [], armed: false, armedAt: 0 };
+		try {
+			new PerformanceObserver((list) => {
+				for (const e of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; startTime: number; sources?: { node?: Node }[] }[]) {
+					if (e.hadRecentInput || !w.__probe.armed || e.startTime < w.__probe.armedAt) continue;
+					w.__probe.cls += e.value;
+					w.__probe.shifts.push({ value: e.value, at: Math.round(e.startTime), nodes: (e.sources ?? []).map((s) => (s.node as Element | undefined)?.nodeName ?? '?') });
+				}
+			}).observe({ type: 'layout-shift', buffered: true });
+			w.__probe.lsSupported = (PerformanceObserver.supportedEntryTypes ?? []).includes('layout-shift');
+		} catch {
+			w.__probe.lsSupported = false;
+		}
 		let wasLoading = false;
 		new MutationObserver((records) => {
 			if (!w.__probe.armed) return;
@@ -46,11 +51,24 @@ test.beforeAll(async ({ browser }) => {
 			if (loading && !wasLoading) w.__probe.loadingSeen++;
 			wasLoading = loading;
 		}).observe(document, { childList: true, subtree: true, characterData: true });
+		// Geometric fallback for browsers without the Layout Instability API: sample line height and board top every frame.
+		let last: { line: number; board: number } | null = null;
+		const sample = () => {
+			if (w.__probe.armed) {
+				const line = document.querySelector('[data-testid="repo-line"]');
+				const board = document.querySelector('[data-testid="cc-board"]');
+				if (line && board) {
+					const cur = { line: Math.round(line.getBoundingClientRect().height), board: Math.round(board.getBoundingClientRect().top + window.scrollY) };
+					if (last && cur.line !== last.line) w.__probe.jumps.push({ what: 'repo-line height', from: last.line, to: cur.line });
+					if (last && cur.board !== last.board) w.__probe.jumps.push({ what: 'board top', from: last.board, to: cur.board });
+					last = cur;
+				}
+			}
+			requestAnimationFrame(sample);
+		};
+		requestAnimationFrame(sample);
 	});
-	await page.goto('/setup');
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel('Anzeigename').fill('Repo Stabil');
-	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
+	await page.goto('/');
 	await expect(page.getByTestId('account-menu')).toBeVisible();
 });
 test.afterAll(async () => {
@@ -71,7 +89,7 @@ async function createProject(name: string) {
 	return project;
 }
 
-type Probe = { cls: number; shifts: { value: number; at: number; nodes: string[] }[]; loadingSeen: number; mounts: number };
+type Probe = { cls: number; lsSupported: boolean; shifts: { value: number; at: number; nodes: string[] }[]; loadingSeen: number; mounts: number; jumps: { what: string; from: number; to: number }[] };
 const probe = () => page.evaluate(() => (window as unknown as { __probe: Probe }).__probe);
 
 for (const vp of [
@@ -112,12 +130,15 @@ for (const vp of [
 		// Let the last refresh settle.
 		await page.waitForTimeout(2_500);
 		const p = await probe();
-		console.log(`PROBE ${PHASE} ${vp.name}: ${JSON.stringify({ cls: Number(p.cls.toFixed(4)), shifts: p.shifts.length, loadingSeen: p.loadingSeen, mounts: p.mounts })}`);
+		console.log(`PROBE ${PHASE} ${test.info().project.name} ${vp.name}: ${JSON.stringify({ lsSupported: p.lsSupported, cls: Number(p.cls.toFixed(4)), shifts: p.shifts.length, loadingSeen: p.loadingSeen, mounts: p.mounts, jumps: p.jumps.length })}`);
+		console.log(`JUMPS ${vp.name}: ${JSON.stringify(p.jumps.slice(0, 10))}`);
 		console.log(`SHIFTS ${vp.name}: ${JSON.stringify(p.shifts.slice(0, 10))}`);
 		await page.screenshot({ path: `${SHOTS}/${PHASE}-${vp.name}-end.png`, fullPage: true });
 		await expect(page.getByTestId('repo-row')).toHaveCount(REPOS.length);
 		expect(p.loadingSeen, 'loading state shown again after the first load').toBe(0);
 		expect(p.mounts, 'repo line was remounted').toBe(0);
-		expect(p.cls, 'layout shift while refreshing').toBeLessThan(0.01);
+		expect(p.jumps, 'repository line height or board position changed while refreshing').toEqual([]);
+		// Layout Instability API: Chromium only. Elsewhere loadingSeen, mounts and jumps above are the measurement.
+		if (p.lsSupported) expect(p.cls, 'layout shift while refreshing').toBeLessThan(0.01);
 	});
 }
