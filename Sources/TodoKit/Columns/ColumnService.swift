@@ -271,6 +271,28 @@ struct ColumnService: Sendable {
         if c.isDone { task.status = "done" }
     }
 
+    /// Puts a column-less task (e.g. after a move into another project) into the target project's default column for its
+    /// status: done -> done column, open -> Bereit, in_progress -> In Arbeit, in_review -> Review; missing roles fall back
+    /// to the nearest earlier workflow step, then the first open column. No columns: stays "Ohne Spalte".
+    /// Mutates `task` (the caller saves it); the task is appended to the end of the column.
+    static func placeByStatus(_ task: TodoTask, on db: any Database) async throws {
+        let columns = try await ProjectColumn.query(on: db).filter(\.$projectID == task.projectID).sort(\.$position).sort(\.$id).all()
+        let roles: [ColumnRole]
+        switch task.status {
+        case "done": roles = [.done]
+        case "in_progress": roles = [.working, .ready]
+        case "in_review": roles = [.review, .working, .ready]
+        default: roles = [.ready]
+        }
+        var target: ProjectColumn?
+        for role in roles where target == nil { target = columns.first { ColumnRole.of($0) == role } }
+        if target == nil { target = task.status == "done" ? columns.first(where: \.isDone) : columns.first { !$0.isDone } }
+        guard let target, let tid = target.id else { return }
+        task.columnID = tid
+        task.boardPosition = try await TodoTask.query(on: db).filter(\.$projectID == task.projectID)
+            .filter(\.$columnID == tid).filter(\.$id != task.id!).count()
+    }
+
     /// Keeps column and status aligned after a status change through any route. Mutates `task` (the caller saves it);
     /// other tasks' positions are unaffected because the task is appended to the end of the target column.
     static func reconcile(_ task: TodoTask, on db: any Database) async throws {

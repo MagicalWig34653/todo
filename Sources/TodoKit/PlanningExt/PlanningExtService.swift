@@ -132,12 +132,15 @@ struct PlanningService: Sendable {
                     let taken = try await TaskExternalKey.query(on: db).filter(\.$projectID == project).filter(\.$externalKey == row.externalKey).count() > 0
                     if taken { try await row.delete(on: db) } else { row.projectID = project; try await row.save(on: db) }
                 }
-                // Columns belong to one project; the task lands in "Ohne Spalte" of the target.
+                // Columns belong to one project; cleared here, then placed by status below (stays "Ohne Spalte" if the target has no columns).
                 t.columnID = nil; t.boardPosition = 0
             }
             t.projectID = project
         }
-        if reconcileColumn, t.status != before.status || t.projectID != before.projectID {
+        if reconcileColumn, t.projectID != before.projectID {
+            // Columns belong to one project: pick the target project's default column for the status.
+            try await ColumnService.placeByStatus(t, on: db)
+        } else if reconcileColumn, t.status != before.status {
             try await ColumnService.reconcile(t, on: db)
         }
         t.version += 1

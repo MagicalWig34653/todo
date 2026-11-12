@@ -227,6 +227,33 @@ final class ColumnTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    func testMovingTaskToOtherProjectPlacesItInStatusColumn() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await account(t)
+        let src = try await project(t, a.token, name: "Src")
+        let dst = try await project(t, a.token, name: "Dst")
+        let tpl = try await t.json(.POST, "/v1/projects/\(dst)/columns/template", ["source": "agent_workflow"], token: a.token)
+        XCTAssertEqual(tpl.status, .created)
+        var ids: [String: String] = [:]
+        for c in tpl.list ?? [] { if let n = c["name"] as? String, let i = c["id"] as? String { ids[n] = i } }
+
+        for (status, expected) in [("open", "Bereit"), ("done", "Erledigt"), ("in_progress", "In Arbeit"), ("in_review", "Review")] {
+            let created = try await task(t, a.token, src, status)
+            let id = try XCTUnwrap(created["id"] as? String)
+            var version = 1
+            if status != "open" {
+                let s = try await t.json(.PATCH, "/v1/tasks/\(id)", ["version": 1, "status": status], token: a.token)
+                XCTAssertEqual(s.status, .ok)
+                version = try XCTUnwrap(s.body?["version"] as? Int)
+            }
+            let moved = try await t.json(.PATCH, "/v1/tasks/\(id)", ["version": version, "projectID": dst], token: a.token)
+            XCTAssertEqual(moved.status, .ok)
+            XCTAssertEqual(moved.body?["status"] as? String, status)
+            XCTAssertEqual(moved.body?["columnID"] as? String, ids[expected], "status \(status) -> \(expected)")
+        }
+    }
+
     func testPermissions() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
