@@ -8,12 +8,12 @@ struct DailyBriefItem: Content, Equatable {
     let title: String
     /// Nil only for confirmation requests, which belong to the account and not to a project.
     let projectID: UUID?
-    /// `question` | `review` | `confirmation` | `task` | `project`
+    /// `question` | `review` | `confirmation` | `task` | `project` | `decision`
     let kind: String
 }
 
 struct DailyBriefSection: Content, Equatable {
-    /// `waiting` | `orphaned` | `stale` | `running` | `done`
+    /// `waiting` | `decisions` | `orphaned` | `stale` | `running` | `done`
     let key: String
     let title: String
     /// Total before the item list was shortened.
@@ -34,6 +34,8 @@ struct DailyBriefSummary: Content, Equatable {
     let running: Int
     /// Tasks done since `since`.
     let done: Int
+    /// Journal decisions recorded since `since` that the person has not reviewed yet.
+    var decisionsToReview: Int = 0
 }
 
 struct DailyBriefResponse: Content {
@@ -48,7 +50,7 @@ struct DailyBriefResponse: Content {
     let line: String
     /// `full` only.
     let summary: DailyBriefSummary?
-    /// `full` only; ordered by priority (waiting, orphaned, stale, running, done).
+    /// `full` only; ordered by priority (waiting, decisions, orphaned, stale, running, done).
     let sections: [DailyBriefSection]?
 }
 
@@ -102,6 +104,7 @@ struct DailyBriefService: Sendable {
     static func line(for s: DailyBriefSummary) -> String {
         var attention: [String] = []
         if s.waiting > 0 { attention.append("\(s.waiting) \(s.waiting == 1 ? "wartet" : "warten") auf dich") }
+        if s.decisionsToReview > 0 { attention.append("\(s.decisionsToReview) \(s.decisionsToReview == 1 ? "Entscheidung" : "Entscheidungen") zu prüfen") }
         if s.orphanedClaims > 0 { attention.append("\(s.orphanedClaims) verwaist") }
         if s.staleProjects > 0 { attention.append("\(s.staleProjects) \(s.staleProjects == 1 ? "Projekt" : "Projekte") veraltet") }
         var activity: [String] = []
@@ -178,6 +181,18 @@ struct DailyBriefService: Sendable {
         let waitingRows = (questions.rows + reviews.rows + confirmations.rows).sorted { $0.at < $1.at }.prefix(Self.itemLimit).map(\.item)
         let waiting = questions.count + reviews.count + confirmations.count
 
+        // Journal decisions since `since` that still wait for a verdict, newest first (morning review).
+        let decisions = try await gather(ids, newestFirst: true) { chunk in
+            let base = { TaskDecision.query(on: db).join(TodoTask.self, on: \TaskDecision.$taskID == \TodoTask.$id)
+                .filter(TodoTask.self, \.$projectID ~~ chunk).filter(TaskDecision.self, \.$state == "open")
+                .filter(TaskDecision.self, \.$createdAt >= since) }
+            let rows = try await base().sort(TaskDecision.self, \.$createdAt, .descending).sort(TaskDecision.self, \.$id).limit(Self.itemLimit).all()
+            return Part(count: try await base().count(), rows: try rows.map { d in
+                let task = try d.joined(TodoTask.self)
+                return Row(at: d.createdAt ?? .distantPast, item: DailyBriefItem(id: try d.requireID(), title: Self.clip(d.decision), projectID: task.projectID, kind: "decision"))
+            })
+        }
+
         // Claimed in-progress tasks: orphaned (no sign of life for over 24 hours) or running.
         var claimed: [(task: TodoTask, claimedAt: Date?)] = []
         var index = 0
@@ -226,7 +241,7 @@ struct DailyBriefService: Sendable {
 
         let summary = DailyBriefSummary(waiting: waiting, openQuestions: questions.count, pendingReviews: reviews.count,
             pendingConfirmations: confirmations.count, orphanedClaims: orphaned.count, staleProjects: stale.count,
-            running: running.count, done: done.count)
+            running: running.count, done: done.count, decisionsToReview: decisions.count)
         let line = Self.line(for: summary)
         let scopeName = projectID == nil ? "account" : "project"
         guard format == "full" else {
@@ -238,6 +253,7 @@ struct DailyBriefService: Sendable {
         }
         let sections = [
             section("waiting", "Wartet auf dich", waiting, Array(waitingRows)),
+            section("decisions", "Entscheidungen zu prüfen", decisions.count, decisions.rows.map(\.item)),
             section("orphaned", "Verwaist", orphaned.count, orphaned.map(\.item)),
             section("stale", "Veraltete Projekte", stale.count,
                     stale.map { DailyBriefItem(id: $0.projectID, title: Self.clip($0.name), projectID: $0.projectID, kind: "project") }),

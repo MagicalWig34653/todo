@@ -59,6 +59,29 @@ extension MCPController {
                           "percent": Schema.integer("Optional overall completion estimate 0 to 100.", min: 0, max: 100),
                           "agentName": agentNameField],
              required: ["taskID", "note"]),
+        Tool(name: "record_decision", scope: "tasks:write",
+             description: "Journal a decision you took on your own (especially overnight or without asking): what you decided, why, the criterion it is measured by and where to roll it back (commit hash or branch). The person reviews these in the morning (get_daily_brief section decisions) instead of reading code. Only decisions that are reversible, non-destructive and local; otherwise ask_question.",
+             properties: ["taskID": taskIDField,
+                          "decision": Schema.string("What was decided, 1 to 2000 characters.", maxLength: 2000),
+                          "rationale": Schema.string("Why, 1 to 2000 characters.", maxLength: 2000),
+                          "criterion": Schema.string("Checkable criterion the person can judge it by, 1 to 2000 characters.", maxLength: 2000),
+                          "rollbackRef": Schema.string("Commit hash or branch that undoes or contains the decision (up to 200 characters, no spaces). Omit if nothing changed in code.", maxLength: 200),
+                          "agentName": agentNameField],
+             required: ["taskID", "decision", "rationale", "criterion"]),
+        Tool(name: "list_decisions", scope: "tasks:read",
+             description: "List journal decisions (newest first) of the readable scope: id, task, decision, rationale, criterion, rollbackRef, state (open, ok, rolled_back), reviewNote. Use state=rolled_back with query to find precedents (decisions the person took back, with the reason) before you decide something similar.",
+             properties: ["projectID": Schema.uuid("Optional: only this project and its sub-projects."),
+                          "taskID": Schema.uuid("Optional: only this task."),
+                          "since": Schema.string("ISO 8601 date-time or date (YYYY-MM-DD, UTC).", maxLength: 40),
+                          "state": Schema.string("open, ok, rolled_back or all (default).", values: ["open", "ok", "rolled_back", "all"]),
+                          "query": Schema.string("Case-insensitive text search in decision, rationale, criterion and review note.", maxLength: 200),
+                          "limit": Schema.integer("Maximum entries (default 50).", min: 1, max: 200)]),
+        Tool(name: "review_decision", scope: "tasks:write",
+             description: "Mark a journal decision on behalf of the user steering you: verdict ok, or rollback with a reason (note required; it stays retrievable as precedent). It only marks the decision; undoing the change (git) is separate. Refused for decisions recorded by this same connection (cannot_review_own_decision).",
+             properties: ["decisionID": Schema.uuid("Decision id (from list_decisions)."),
+                          "verdict": Schema.string("ok or rollback.", values: ["ok", "rollback"]),
+                          "note": Schema.string("Reason, required for rollback (up to 4000 characters).", maxLength: 4000)],
+             required: ["decisionID", "verdict"]),
         Tool(name: "set_task_structure", scope: "tasks:write",
              description: "Structure a task: mark it a feature (kind=feature), attach it to a parent feature as a subtask (parentTaskID, same project, depth at most 2; null detaches) or set/clear a blocked reason (null or empty clears). Only the fields you pass change. Features show percent progress rolled up from their subtasks.",
              properties: ["taskID": taskIDField,
@@ -231,6 +254,20 @@ extension MCPController {
         case "post_progress":
             return try .encoded(try await service.postProgress(uuid(a["taskID"]), note: requiredString(a, "note"),
                 percent: intArgument(a["percent"], reason: "invalid_percent"), label: optionalString(a, "agentName"), actor: actor))
+        case "record_decision":
+            let body = RecordDecisionRequest(decision: try requiredString(a, "decision"), rationale: try requiredString(a, "rationale"),
+                criterion: try requiredString(a, "criterion"), rollbackRef: try optionalString(a, "rollbackRef"), agentName: try optionalString(a, "agentName"))
+            return try .encoded(try await service.recordDecision(uuid(a["taskID"]), body, actor: actor))
+        case "list_decisions":
+            let state = try optionalString(a, "state") ?? "all"
+            let limit = try intArgument(a["limit"], reason: "invalid_limit") ?? 50
+            let since = try DailyBriefService.parseSince(optionalString(a, "since"))
+            let list = try await service.decisions(projectID: optionalUUID(a, "projectID"), taskID: optionalUUID(a, "taskID"),
+                since: since, state: state, query: optionalString(a, "query"), limit: limit)
+            return try .encoded(list)
+        case "review_decision":
+            let verdict = DecisionVerdictRequest(verdict: try requiredString(a, "verdict"), note: try optionalString(a, "note"))
+            return try .encoded(try await service.reviewDecision(uuid(a["decisionID"]), verdict, actor: actor))
         case "set_task_structure":
             guard case .object(let fields) = a else { throw Abort(.badRequest, reason: "invalid_arguments") }
             var parent: UUID??

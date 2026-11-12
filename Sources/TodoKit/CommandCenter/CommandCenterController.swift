@@ -27,6 +27,10 @@ struct CommandCenterController: RouteCollection {
         v1.put("tasks", ":id", "structure", use: setStructure)
         v1.get("tasks", ":id", "builds", use: builds)
         v1.post("builds", use: registerBuild)
+        v1.get("tasks", ":id", "decisions", use: taskDecisions)
+        v1.post("tasks", ":id", "decisions", use: recordDecision)
+        v1.get("decisions", use: listDecisions)
+        v1.post("decisions", ":id", "review", use: reviewDecision)
     }
 
     private func id(_ req: Request) throws -> UUID {
@@ -64,6 +68,24 @@ struct CommandCenterController: RouteCollection {
         return try await DailyBriefService(user: user, db: req.db).build(projectID: uuidQuery(req, "projectID"),
             since: DailyBriefService.parseSince(req.query[String.self, at: "since"]),
             format: DailyBriefService.parseFormat(req.query[String.self, at: "format"]))
+    }
+
+    @Sendable func taskDecisions(_ req: Request) async throws -> [DecisionDTO] {
+        try await service(req).decisions(projectID: nil, taskID: id(req), since: nil, state: "all", query: nil, limit: 200)
+    }
+    @Sendable func recordDecision(_ req: Request) async throws -> Response {
+        let dto = try await service(req).recordDecision(id(req), req.content.decode(RecordDecisionRequest.self), actor: actor(req))
+        return try await dto.encodeResponse(status: .created, for: req)
+    }
+    @Sendable func listDecisions(_ req: Request) async throws -> [DecisionDTO] {
+        var limit = 50
+        if let raw = req.query[String.self, at: "limit"] { guard let v = Int(raw) else { throw Abort(.badRequest, reason: "invalid_filter") }; limit = v }
+        return try await service(req).decisions(projectID: uuidQuery(req, "projectID"), taskID: nil,
+            since: DailyBriefService.parseSince(req.query[String.self, at: "since"]),
+            state: req.query[String.self, at: "state"] ?? "all", query: req.query[String.self, at: "q"], limit: limit)
+    }
+    @Sendable func reviewDecision(_ req: Request) async throws -> DecisionDTO {
+        try await service(req).reviewDecision(id(req), req.content.decode(DecisionVerdictRequest.self), actor: actor(req))
     }
 
     @Sendable func structure(_ req: Request) async throws -> ProjectStructureDTO {
@@ -147,4 +169,5 @@ func configureCommandCenter(_ app: Application) {
     app.migrations.add(CreateCommandCenter())
     app.migrations.add(ClearCrossProjectSubtaskLinks())
     app.migrations.add(AddReviewUndo())
+    app.migrations.add(CreateTaskDecisions())
 }

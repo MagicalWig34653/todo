@@ -7,6 +7,12 @@
 - Geprüft: `SystemStatusTests` (9), vitest `systemStatus.test.ts`, Playwright `e2e/system-status.spec.ts` gegen echtes Backend (SQLite). Nicht geprüft: MariaDB-Migration (JSON-Feld), Apple-App (Folgekarte "Apple: Lage-Ampel anzeigen").
 - Wächter (`orchestrator/tools/waechter.py`) meldet nach dem Schreiben von `status.json`; Token aus Schlüsselbund `todolino-waechter` oder `~/.config/todolino-waechter/token`.
 
+## Checkpoint 12.11.2026: Entscheidungsjournal und Morgenansicht (Karte F8597ECB)
+
+- Branch `agent/entscheidungs-journal`: Tabelle `task_decisions` (Migration `CreateTaskDecisions`), MCP `record_decision`/`list_decisions`/`review_decision` (Scopes `tasks:write`/`tasks:read`), REST `POST/GET /v1/tasks/{id}/decisions`, `GET /v1/decisions`, `POST /v1/decisions/{id}/review`; Tagesbericht: Abschnitt `decisions`, `summary.decisionsToReview`, Zeile "N Entscheidungen zu prüfen"; Handbuch 1.24.0, command-center 1.4.0. Rollback bleibt Git; das Journal markiert nur (ok / rollback mit Begründung als Präzedenzfall). Eigene Entscheidungen darf eine Verbindung nicht prüfen.
+- Verwandte Karte 09A07010 "Entscheidungsprotokoll als eigener Typ" war im Code nicht vorhanden; das Journal deckt sie ab.
+- Offen: PWA-Ansicht (Folgekarte), Deploy nur durch Lino (Migration, neue Tools: /mcp-Reconnect).
+
 ## Checkpoint 6.11.2026 (Nachtrag): Freitext in "Für dich", Namensfeld der Zustimmungsseite
 
 - Auf `main` (`0e975e4` und Merge der Consent-Spec), kein Push, keine Migration. "Für dich" nutzt bei Optionsfragen `QuestionAnswer` (neues Prop `bare`), damit gibt es dort ebenfalls "Oder eigene Antwort schreiben". Selbst geprüft: vitest 320, Build; laut Worker Playwright `for-you` 3/3, `freetext-review` 3/3 (neuer Test bei 320 px). Nicht geprüft: Firefox/WebKit, hell/dunkel, Fehlerpfad "schon anderswo beantwortet", Apple-App. Karte `BBBE29C1` bleibt bei 95 %.

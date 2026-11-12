@@ -105,7 +105,7 @@ final class DailyBriefTests: XCTestCase {
             let brief = try await service(f).build()
             XCTAssertEqual(brief.format, "full")
             XCTAssertEqual(brief.scope, "account")
-            XCTAssertEqual(brief.sections?.map(\.key), ["waiting", "orphaned", "stale", "running", "done"])
+            XCTAssertEqual(brief.sections?.map(\.key), ["waiting", "decisions", "orphaned", "stale", "running", "done"])
             let s = sections(brief)
             XCTAssertEqual(s["waiting"]?.count, 3)
             XCTAssertEqual(Set(s["waiting"]?.items.map(\.kind) ?? []), ["question", "review", "confirmation"])
