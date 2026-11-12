@@ -633,6 +633,18 @@ export interface BuildGroup {
 	createdAt?: string | null;
 	items: BuildArtifact[];
 }
+/** Situation lights reported by the watcher on the Mac (contracts/system-status.yaml). Known fields are typed loosely on purpose. */
+export interface SystemStatusItem {
+	source: string;
+	label?: string | null;
+	reportedAt: string;
+	status: Record<string, unknown>;
+}
+export interface SystemStatusResponse {
+	items: SystemStatusItem[];
+	/** Server clock; the age of a report is computed against it. */
+	now: string;
+}
 export interface CommandCenter {
 	generatedAt: string;
 	scope: 'account' | 'project';
@@ -1103,6 +1115,9 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<ProjectSync>('DELETE', `/projects/${projectID}/bindings?repository=${encodeURIComponent(repository)}`),
 		putProjectSync: (projectID: string, body: { repository?: string; staleAfterDays?: number }) =>
 			request<ProjectSync>('PUT', `/projects/${projectID}/sync`, body),
+
+		// Situation lights (contracts/system-status.yaml)
+		systemStatus: () => request<SystemStatusResponse>('GET', '/system-status'),
 
 		// Command center (contracts/command-center.yaml)
 		commandCenter: (p: CommandCenterParams) =>

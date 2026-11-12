@@ -37,6 +37,7 @@
 	import OverviewCard from './overview/OverviewCard.svelte';
 	import QuestionAnswer from './overview/QuestionAnswer.svelte';
 	import SyncChip from './overview/SyncChip.svelte';
+	import SystemStatusBar from './overview/SystemStatusBar.svelte';
 	import RepositoryLine from './overview/RepositoryLine.svelte';
 	import SyncList from './overview/SyncList.svelte';
 	import ReviewDecision from './overview/ReviewDecision.svelte';
@@ -300,6 +301,8 @@
 			{@render controls()}
 		</div>
 	{/if}
+
+	{#if scope === 'account'}<SystemStatusBar />{/if}
 
 	<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
 	<div class="flex flex-wrap items-center gap-x-4 gap-y-2" role="tablist" tabindex="-1" aria-label={t('cc.sections')} onkeydown={tabKey}>
