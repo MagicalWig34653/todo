@@ -1,4 +1,4 @@
-<!-- manual-version: 1.19.0 -->
+<!-- manual-version: 1.20.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -307,6 +307,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.20.0:** note only. New MCP tools that arrive with a plugin or server update (for example `update_project`, `wait_for_events`) appear in a running session only after a `/mcp` reconnect (or a restart of the session). If a tool named here is missing, ask the person to reconnect.
 
 **Changed in 1.19.0:** daily brief. New tool `get_daily_brief` (tasks:read, no new scope) and REST `GET /v1/daily-brief`; push category `daily_brief` (default off) and `dailyBriefHour` in the notification preferences (`get_notification_prefs`, `update_notification_prefs`, REST `/v1/me/push-prefs`). All additive.
 
