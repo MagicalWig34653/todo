@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 13.11.2026: Repository-Anzeige springt nicht mehr (Board-Karte `A9796ED2`, Branch `agent/repo-anzeige-stabil`)
+
+- Ursache (reproduziert, nicht die Vermutung "Remount"): `RepositoryLine` wird nicht neu gemountet, aber ihr Lade-Effect lief bei jedem Hintergrund-Refresh erneut. `projectID` kommt als Getter-Prop (`project.id` aus `workspace.projects.find`); wird die Projektliste neu geladen (Live-Event, Poll), ist `project` ein neues Objekt und der Effect gilt als abhängig, obwohl die ID gleich bleibt. Folge: `phase='loading'`, "Abgleich wird geladen", der Rest der Seite springt. Fix: `const stableID = $derived(projectID)`; der Effect liest nur das Derived (Wertvergleich), lädt also nur beim ersten Laden und bei echtem Projektwechsel. Dazu `min-h-9` am Container.
+- Verworfen: der uncommittete Vorgängerstand (`refreshKey`, stilles Nachladen) im Hauptrepo; im Test lief die Ladezeile damit weiter (12 Wiederholungen, CLS 0,88 Desktop). Nicht übernommen.
+- Messung (Playwright Chromium, echtes Backend SQLite, 3 Bindungen mit langen Namen, 24 s Hintergrundänderungen alle 2 s): vorher Desktop CLS 0,52 / 6 Ladezustände, mobil 390 px CLS 1,10 / 5; nachher Desktop 0 / 0, mobil 0 / 0. Test `web/e2e/repo-line-stability.spec.ts`, Screenshots `docs/screenshots/repo-anzeige/`.
+- Geprüft: vitest 329 grün, `npm run check` 0 Fehler, Build grün, Playwright `project-repository` 4/4, `live-refresh` 1/1. Firefox/WebKit nicht gelaufen. Kein Backend-/Vertragseingriff.
+- Offen: `CommandCenter.svelte` hat dieselbe Getter-Eigenschaft in den Effects (`void projectID`) und holt das Board bei jedem Projektlisten-Refresh doppelt; harmlos (kein Flackern), aber ein `$derived`-Guard wäre sauberer.
+
 ## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
 
 - Neu: `PUT /v1/system-status[?source=]` (Runner-Gerätetoken des Mac-Wächters oder Sitzung) speichert den letzten Lagestand je Konto und Quelle (Tabelle `system_status`, additive Migration `CreateSystemStatus`, vor Serve `App migrate --yes`); `GET /v1/system-status` und MCP `get_system_status` (account:read) lesen. Bekannte Felder werden geprüft (Ampeln gruen|gelb|rot, Zahlen, `codex`-Objekt, `zeit`), Rest bleibt erhalten; max. 16 KB, 10 Quellen. Vertrag `contracts/system-status.yaml`, Handbuch 1.23.0.
