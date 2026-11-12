@@ -3,11 +3,13 @@
 	import { api } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
-	import { ageMinutes, summarize, toneOf, type Ampel, type SystemStatusResponse } from '#lib/systemStatus.js';
+	import { navigate } from '#lib/navigate.js';
+	import { ageMinutes, summarize, toneOf, type Ampel, panelState, type SystemStatusResponse } from '#lib/systemStatus.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 
 	/** Situation lights of the watcher (Claude quota, Codex, disk). Live via the live token, plus a 60 s poll as fallback. */
 	let data = $state<SystemStatusResponse | null>(null);
+	let failed = $state(false);
 	let fetchedAt = $state(Date.now());
 	let tick = $state(Date.now());
 
@@ -15,10 +17,12 @@
 		try {
 			const res = await api.systemStatus();
 			data = res;
+			failed = false;
 			fetchedAt = Date.now();
 			tick = fetchedAt;
 		} catch {
 			// Background widget: a failed load keeps the last answer (it turns grey by age); a lost session is handled by the page.
+			failed = true;
 		}
 	}
 
@@ -37,12 +41,13 @@
 	const rows = $derived(
 		(data?.items ?? []).map((item) => ({ item, s: summarize(item, ageMinutes(item, data!.now, fetchedAt, tick)) }))
 	);
+	const panel = $derived(panelState(data, failed));
 	const ampelText = (a: Ampel | null) => (a ? t(`lage.ampel.${a}` as 'lage.ampel.rot') : '');
 	const ago = (min: number) => (min < 1 ? t('lage.agoNow') : t('lage.ago', { min }));
 	const num = (n: number) => String(Math.round(n * 10) / 10).replace('.', ',');
 </script>
 
-{#if data}
+{#if panel !== 'loading'}
 	<div class="flex flex-col gap-1" role="status" aria-label={t('lage.label')} data-testid="system-status">
 		{#each rows as { item, s } (item.source)}
 			<div class={['flex flex-wrap items-center gap-x-3 gap-y-1 text-xs', s.stale && 'opacity-60']} data-testid="system-status-row" data-stale={s.stale}>
@@ -69,8 +74,14 @@
 				{/if}
 				<span class="text-muted-foreground" data-testid="lage-age">{ago(s.ageMin)}{#if s.stale}<Badge class="ml-1.5" data-testid="lage-stale">{t('lage.stale')}</Badge>{/if}</span>
 			</div>
-		{:else}
-			<p class="text-muted-foreground text-xs" data-testid="system-status-empty">{t('lage.none')}</p>
 		{/each}
+		{#if panel === 'empty'}
+			<p class="text-muted-foreground text-xs" data-testid="system-status-empty">
+				{t('lage.none')} {t('lage.setup')}
+				<button type="button" class="text-ui-accent-ink min-h-9 underline underline-offset-2" data-testid="system-status-setup" onclick={() => navigate({ view: 'agents' })}>{t('lage.setupLink')}</button>
+			</p>
+		{:else if panel === 'error'}
+			<p class="text-muted-foreground text-xs" data-testid="system-status-error">{t('lage.error')}</p>
+		{/if}
 	</div>
 {/if}

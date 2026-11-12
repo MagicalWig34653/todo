@@ -21,9 +21,13 @@ test.afterAll(async () => {
 test('situation lights appear in the overview, update live and show the age', async () => {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/overview');
-	await expect(page.getByTestId('system-status-empty')).toBeVisible();
+	await expect((await page.request.get('/v1/system-status')).json()).resolves.toMatchObject({ items: [] });
+	await expect(page.getByTestId('system-status-empty')).toContainText('noch keine Meldung vom Wächter');
+	await expect(page.getByTestId('system-status-setup')).toBeVisible();
+	if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/lage-ampel-leer.png` });
 
 	expect((await page.request.put('/v1/system-status', { ...json, data: report })).status()).toBe(200);
+	await expect(page.getByTestId('system-status-empty')).toHaveCount(0);
 	await expect(page.getByTestId('lage-claude')).toContainText('rot');
 	await expect(page.getByTestId('lage-claude')).toContainText('4, 7 nutzbar');
 	await expect(page.getByTestId('lage-codex')).toContainText('5 % von 19,2 % erlaubt');

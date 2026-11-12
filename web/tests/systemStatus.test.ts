@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createApi } from '../src/lib/api';
-import { ageMinutes, STALE_AFTER_MIN, summarize, type SystemStatusItem, type SystemStatusResponse } from '../src/lib/systemStatus';
+import { ageMinutes, panelState, STALE_AFTER_MIN, summarize, type SystemStatusItem, type SystemStatusResponse } from '../src/lib/systemStatus';
 
 const item = (status: Record<string, unknown>, reportedAt = '2026-11-12T10:00:00Z'): SystemStatusItem => ({ source: 'default', label: 'Mac', reportedAt, status });
 const full = {
@@ -52,5 +52,15 @@ describe('system status', () => {
 		const r = await api.systemStatus();
 		expect(r.items).toEqual([]);
 		expect(calls).toEqual(['GET /v1/system-status']);
+	});
+
+	it('panel state: loading, empty (no report yet), error (no answer) and rows', () => {
+		const ok: SystemStatusResponse = { items: [item(full)], now: '2026-11-12T10:12:00Z' };
+		expect(panelState(null, false)).toBe('loading');
+		expect(panelState(null, true)).toBe('error');
+		expect(panelState({ items: [], now: ok.now }, false)).toBe('empty');
+		expect(panelState({ items: [], now: ok.now }, true)).toBe('empty');
+		expect(panelState(ok, false)).toBe('rows');
+		expect(panelState(ok, true)).toBe('rows');
 	});
 });

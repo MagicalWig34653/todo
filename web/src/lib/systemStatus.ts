@@ -55,3 +55,11 @@ export function summarize(item: SystemStatusItem, ageMin: number): StatusSummary
 	const disk = diskAmpel || freeGb !== null ? { ampel: diskAmpel, freeGb } : null;
 	return { ageMin, stale: ageMin > STALE_AFTER_MIN, claude, codex, disk };
 }
+
+export type PanelState = 'loading' | 'empty' | 'error' | 'rows';
+
+/** What the bar shows: never nothing once the first load ended (no report yet and an unreachable endpoint both say so). */
+export function panelState(data: SystemStatusResponse | null, failed: boolean): PanelState {
+	if (!data) return failed ? 'error' : 'loading';
+	return data.items.length ? 'rows' : 'empty';
+}
