@@ -68,7 +68,7 @@ func registerLiveMiddleware(_ app: Application) {
     use(AgentJob.self); use(AgentQuestion.self); use(AgentAnswer.self)
     use(ProjectComment.self); use(ProjectActivityEvent.self); use(ProjectUserState.self)
     use(PlanningDependency.self); use(PlanningMilestone.self); use(PlanningMilestoneTask.self)
-    use(UserPreferences.self); use(ActionRequest.self)
+    use(UserPreferences.self); use(ActionRequest.self); use(SystemStatus.self)
     // Sharing: invitations, membership changes, team projects and grants must reach the other account's open views.
     use(Team.self); use(TeamMembership.self); use(ProjectGrant.self)
 }

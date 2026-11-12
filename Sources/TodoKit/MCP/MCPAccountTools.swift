@@ -25,6 +25,8 @@ extension MCPController {
                           "showContent": Schema.boolean("Show task text in push notifications."),
                           "badge": Schema.boolean("Show the badge count."),
                           "dailyBriefHour": Schema.integer("UTC hour 0 to 23 from which the daily brief is pushed (category daily_brief).", min: 0, max: 23)]),
+        Tool(name: "get_system_status", scope: "account:read",
+             description: "Read the latest situation report pushed by the watcher on the owner's Mac (traffic lights for Claude quota, Codex and disk): {items:[{source, label, reportedAt, status:{zeit, claude_ampel, claude_frei_fuer_brain, claude_nutzbare_konten, codex:{verbraucht_pct, erlaubt_bis_jetzt_pct, ziel_pct, reset, freigabe}, platte_frei_gb, platte_ampel, ...}}], now}. Ampel values: gruen, gelb, rot. Compare reportedAt with now: older than 30 minutes means stale. Empty items: no report yet."),
         Tool(name: "get_connection", scope: "",
              description: "Describe this MCP connection: {client, name, scopes, projects:[{id,name}], refreshExpiresAt}. The project list is exactly this connection's grant. No tokens."),
         Tool(name: "list_users", scope: "admin:read",
@@ -71,6 +73,8 @@ extension MCPController {
             let dto = try await PushService(user: user, db: db, settings: settings.apns)
                 .update(UpdatePushPrefsRequest(categories: categories, showContent: show, badge: badge, dailyBriefHour: hour))
             return try .encoded(dto)
+        case "get_system_status":
+            return try .encoded(try await SystemStatusService.read(userID: userID, on: db))
         case "get_connection":
             let client = try await OAuthClient.find(grant.clientID, on: db)?.name
             var projects: [JSONValue] = []

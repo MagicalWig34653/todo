@@ -1,0 +1,38 @@
+openapi: 3.0.3
+info:
+  title: Todolino Lage-Ampel (System-Status)
+  version: 1.0.0
+  description: 'Der Wächter auf dem Mac des Nutzers meldet den letzten Lagestand (Ampeln für Claude-Kontingent, Codex, Platte); PWA und Apple-App
+    lesen ihn. Pro Konto und Quelle (source, Standard "default", höchstens 10) gilt nur die letzte Meldung. Bekannte Felder werden geprüft
+    (claude_ampel und platte_ampel: gruen|gelb|rot; claude_frei_fuer_brain, platte_frei_gb: Zahl; claude_nutzbare_konten: Zahlenliste;
+    codex: {verbraucht_pct, erlaubt_bis_jetzt_pct, ziel_pct: Zahl; reset: ISO-8601; freigabe: bool}; zeit: ISO-8601), alle anderen Felder
+    bleiben erhalten. Höchstens 16 KB. Alter einer Meldung = now - reportedAt (Serveruhr); älter als 30 Minuten gilt als veraltet.
+    Live: jede Meldung ändert das Live-Token (GET /v1/sync/head, /v1/sync/wait); Clients laden dann GET /v1/system-status neu.
+    MCP: Tool get_system_status (Scope account:read).'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/system-status:
+    put:
+      operationId: reportSystemStatus
+      summary: Lagestand melden (Runner-Gerätetoken oder Sitzung)
+      description: 'Query source (optional, [A-Za-z0-9._:-], höchstens 64 Zeichen). Body: das Status-JSON des Wächters. Antwort: {source, label, reportedAt, status}.'
+      parameters:
+      - {name: source, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: 'gespeichert'}
+        '400': {description: 'invalid_status, invalid_<feld>, invalid_source, status_too_large'}
+        '401': {description: kein oder ungültiges Token, Gerät widerrufen, Konto gesperrt}
+        '409': {description: too_many_sources}
+    get:
+      operationId: getSystemStatus
+      summary: Eigene Lagestände lesen (Sitzung)
+      description: 'Antwort {items:[{source, label, reportedAt, status}], now}. items leer = noch keine Meldung.'
+      responses:
+        '200': {description: ok}
+        '401': {description: nicht angemeldet}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}

@@ -103,6 +103,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(AddCommentThreads())
     app.migrations.add(AddCommentAttachment())
     configureActionRequests(app)
+    configureSystemStatus(app)
     app.migrations.add(AddAccountLock())
     app.migrations.add(AddPerformanceIndexes())
     app.migrations.add(AddSignOfLifeIndexes())

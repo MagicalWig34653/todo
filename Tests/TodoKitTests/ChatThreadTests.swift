@@ -102,6 +102,6 @@ final class ChatThreadTests: XCTestCase {
             XCTAssertTrue(AgentManualContent.text.contains("`\(name)`"), name)
         }
         XCTAssertTrue(AgentManualContent.text.contains("reviewID"))
-        XCTAssertEqual(AgentManual.version, "1.22.0")
+        XCTAssertEqual(AgentManual.version, "1.23.0")
     }
 }
