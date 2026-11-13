@@ -13,6 +13,7 @@ async function virtualAuthenticator(page: Page) {
 }
 
 test('invitation link prefills the code, strips it from the URL and registers; reuse shows a German message', async ({ browser }) => {
+	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
 	const adminCtx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'de-DE' });
 	const admin = await adminCtx.newPage();
 	await virtualAuthenticator(admin);
