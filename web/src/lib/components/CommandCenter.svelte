@@ -50,7 +50,11 @@
 	interface Props {
 		projectID?: string;
 	}
-	let { projectID }: Props = $props();
+	let { projectID: projectIDProp }: Props = $props();
+	// The prop is a getter (`project.id` of an object found in the workspace list) that re-evaluates whenever the project list
+	// is replaced, even though the ID is unchanged. Everything below, the fetch effects included, reads this derived instead:
+	// it compares by value, so a refreshed project object no longer re-runs the effects and fetches the board a second time.
+	const projectID = $derived(projectIDProp);
 
 	const PAGE = 50;
 
