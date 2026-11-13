@@ -271,6 +271,19 @@ Nur MCP; REST und PWA unverändert. Neue Parameter, gleiche Schlüssel (rückwä
 - Kompaktschicht (`MCPCompact`) wird nicht gebraucht: die Antwort ist von Natur aus klein (5 Einträge je Abschnitt, Titel auf 120 Zeichen gekürzt, Test: unter 5 KB bei 40 Aufgaben mit sehr langen Titeln); `format=line` ist die kleinste Form.
 - Täglicher Push (optional): neue Kategorie `daily_brief` in den Push-Einstellungen (`categories`, Standard aus; kein Schema-Eingriff) und `dailyBriefHour` (0 bis 23, UTC, Standard 8; additive Spalte `push_prefs.daily_brief_hour`, Migration `AddPushDailyBriefHour`). REST `/v1/me/push-prefs` und MCP `update_notification_prefs`/`get_notification_prefs` (`account:write`/`account:read`, unverändert) tragen das Feld. Der vorhandene `PushWorker` (Outbox, APNs) stellt höchstens eine Zeile je Konto und UTC-Tag ein (Dedupe-Schlüssel `daily_brief:<Tag>`), frühestens ab der gewählten Stunde und nur innerhalb des Nachlauffensters (6 h), nie bei ausgeschalteter Kategorie, nur mit Gerät. Inhalt: nur die Zeile (Zähler, keine Titel), unabhängig von `showContent`; sie wird beim Senden für das eigene Konto berechnet. Handbuch 1.19.0.
 
+## Kanal #brain (T1 Schritt 2, 13.11.2026, Handbuch 1.25.0)
+
+Kontobezogener Kanal (ein Kanal `brain` je Konto, lazy angelegt); gleicher Fachpfad für REST und MCP: `ChannelService` (`Sources/TodoKit/Channels`), Werkzeuge in `MCPChannelTools.swift`, Tests `ChannelTests`. Vertrag `contracts/voice.yaml` 1.0.0.
+
+| Tool | Scope | Klasse | Argumente → Ergebnis |
+|---|---|---|---|
+| `list_channel_messages` | channels:read | A | `limit? (1-100, 50), cursor?, since?` → `{items, nextCursor}`, neueste zuerst; REST `GET /v1/channels/brain/messages` |
+| `post_channel_message` | channels:write | B | `kind? (text, voice_out, status), text?, attachmentID?, clientUUID?` → Nachricht (Autor `agent`); REST `POST` gleicher Pfad schreibt als Person (`text`, `voice_in`) |
+
+- Neue Scopes `channels:read`/`channels:write` (Consent-Gruppe „Brain-Kanal“). Bestehende Verbindungen behalten ihre Scopes; sie sehen die Tools erst nach neuer Zustimmung (kein Zwang zum Re-Consent).
+- Arten je Seite: Person (REST/App) `text`, `voice_in`; Agent (MCP) `text`, `voice_out`, `status`. Ein Agent kann keine `voice_in`-Nachricht fälschen.
+- Kein Projekt-Grant nötig: der Kanal gehört dem Konto. Fremde Anhänge (`attachmentID`) ergeben `not_found`.
+
 ## Sprachanhänge (T1 Schritt 1, 13.11.2026)
 
 Rolle `voice` mit `audio/mp4` und `audio/wav` (Vertrag `contracts/attachments.yaml` 1.1.0) gibt es bewusst nur im REST-Anhangsweg für die App. Die MCP-Werkzeuge `begin_task_upload`/`add_attachment` bieten Rolle und Medientypen weiter nur wie bisher an (Schema-Enum unverändert); Agenten lesen Sprachanhänge später über den Kanal #brain (T1 Schritt 2). Fachregeln (Magic Bytes, 5 MiB, 120 s aus dem Container) liegen in `AttachmentService`, nicht im Controller.

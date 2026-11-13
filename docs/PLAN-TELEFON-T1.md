@@ -12,7 +12,7 @@ Worker: swift. Aufwand: S. Abhängigkeiten: keine.
 - Dauer über 120 s oder Größe über 5 MiB wird mit 413/422 abgelehnt; Test mit Grenzwerten.
 - Download liefert `private, no-store`; fremdes Konto erhält 404; `contracts/attachments.yaml` ist angepasst.
 
-### 2. Kanal #brain: Datenmodell, REST, MCP
+### 2. Kanal #brain: Datenmodell, REST, MCP – umgesetzt 13.11.2026 (Branch `agent/t1-2-kanal-brain`)
 Worker: swift. Aufwand: M. Abhängigkeiten: 1.
 - `channels` und `channel_messages` (text, voice_in, voice_out, status) per additiver Migration; genau ein Kanal `brain` je Konto, nur der Besitzer liest und schreibt (Mandantentest mit zwei Konten).
 - REST `GET/POST /v1/channels/brain/messages` mit Idempotenz über Client-UUID und Pagination; Vertrag in `contracts/voice.yaml`.

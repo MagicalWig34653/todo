@@ -1,6 +1,6 @@
 # ADR 0030 – Telefon T1: Sprachnachrichten an das Brain
 
-Status: Vorschlag (11.11.2026). Schritt 1 (Audio-Anhänge, Rolle `voice`, Limits) umgesetzt am 13.11.2026, der Rest nicht. Umsetzungsschritte: [PLAN-TELEFON-T1.md](../PLAN-TELEFON-T1.md). Nummer 0030, weil 0029 im Hauptstand bereits vergeben ist (dieser Worktree basiert auf einem Stand bis 0028).
+Status: Vorschlag (11.11.2026). Schritt 1 (Audio-Anhänge, Rolle `voice`, Limits) und Schritt 2 (Kanal #brain: Tabellen, REST, MCP, Scopes `channels:read`/`channels:write`) umgesetzt am 13.11.2026, der Rest nicht. Umsetzungsschritte: [PLAN-TELEFON-T1.md](../PLAN-TELEFON-T1.md). Nummer 0030, weil 0029 im Hauptstand bereits vergeben ist (dieser Worktree basiert auf einem Stand bis 0028).
 
 ## Kontext
 

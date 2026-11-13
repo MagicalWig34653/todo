@@ -1,0 +1,83 @@
+openapi: 3.0.3
+info:
+  title: Todolino Kanal #brain (Sprach- und Textnachrichten)
+  version: 1.0.0
+  description: 'Telefon T1 (ADR 0030), Schritt 2. Jedes Konto hat genau einen Kanal brain (beim ersten Gebrauch angelegt). Nur der Besitzer liest und
+    schreibt; kein Teilen, kein Team, kein Projekt- oder Aufgabenbezug. Eine Nachricht hat eine Art (kind: text, voice_in, voice_out, status), einen
+    Autor (author: person, agent), Text bzw. Transkript und optional einen Audio-Anhang (Rolle voice, contracts/attachments.yaml 1.1.0; der Anhang
+    muss dem Konto gehören und fertig hochgeladen sein). Schreiben über REST (Sitzung, App) ist die Person: text und voice_in. Der Agent (MCP) schreibt
+    text, voice_out und status und kann kein voice_in erzeugen. Text höchstens 4000 Zeichen. Idempotenz über clientUUID (je Konto eindeutig): gleicher
+    Schlüssel und gleicher Inhalt liefert die ursprüngliche Nachricht (200 statt 201), anderer Inhalt 409 client_uuid_conflict. Liste neueste zuerst,
+    Cursor-Paginierung. Audio und Transkripte stehen in keinem Log. Aufbewahrung, Export und Anonymisierung: ADR 0030, Schritt 7 (noch nicht umgesetzt);
+    das Löschen des Kontos löscht Kanal und Nachrichten (Kaskade).
+    MCP: list_channel_messages (Scope channels:read) und post_channel_message (Scope channels:write), siehe oauth-mcp.yaml. Neue Scopes; bestehende
+    Verbindungen behalten ihre Scopes und sehen die Tools erst nach neuer Zustimmung.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/channels/brain/messages:
+    get:
+      operationId: listBrainChannelMessages
+      summary: Nachrichten des eigenen Kanals #brain lesen (neueste zuerst)
+      description: 'Ohne Nachricht (Kanal noch nicht angelegt) ist items leer. Der Kanal wird beim Lesen nicht angelegt.'
+      parameters:
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      - {name: cursor, in: query, required: false, description: 'nextCursor der vorigen Seite (nur Nachrichten davor).', schema: {type: string}}
+      - {name: since, in: query, required: false, description: 'ISO 8601: nur Nachrichten danach.', schema: {type: string, format: date-time}}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChannelMessagePage'}
+        '400': {description: 'invalid_limit, invalid_cursor, invalid_since'}
+        '401': {description: nicht angemeldet}
+    post:
+      operationId: postBrainChannelMessage
+      summary: Nachricht als Person in den eigenen Kanal #brain schreiben
+      description: 'kind text (Standard) oder voice_in. text: 1 bis 4000 Zeichen (bei voice_in optional, Transkript). voice_in braucht attachmentID eines
+        fertigen Audio-Anhangs (Rolle voice) des Kontos; text darf keinen Anhang tragen. Antwort 201 bei neuer Nachricht, 200 bei Wiederholung mit
+        gleicher clientUUID.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PostChannelMessage'}
+      responses:
+        '200': {description: 'Wiederholung (gleiche clientUUID, gleicher Inhalt): die ursprüngliche Nachricht', content: {application/json: {schema: {$ref: '#/components/schemas/ChannelMessage'}}}}
+        '201': {description: angelegt, content: {application/json: {schema: {$ref: '#/components/schemas/ChannelMessage'}}}}
+        '400': {description: 'invalid_message, invalid_kind (auch voice_out/status über REST), invalid_text, attachment_required, attachment_not_allowed'}
+        '401': {description: nicht angemeldet}
+        '404': {description: 'Anhang existiert nicht oder gehört einem anderen Konto'}
+        '409': {description: 'client_uuid_conflict: gleiche clientUUID, anderer Inhalt'}
+        '422': {description: 'invalid_attachment: kein fertiger Anhang mit Rolle voice'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    ChannelMessage:
+      type: object
+      required: [id, kind, author, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [text, voice_in, voice_out, status]}
+        author: {type: string, enum: [person, agent]}
+        text: {type: string, nullable: true, maxLength: 4000, description: 'Nachrichtentext bzw. Transkript'}
+        attachmentID: {type: string, format: uuid, nullable: true, description: 'Audio-Anhang (Rolle voice); Download über die Anhangs-Routen'}
+        clientUUID: {type: string, format: uuid, nullable: true}
+        createdAt: {type: string, format: date-time, description: 'Serveruhr, auf Millisekunden gerundet'}
+    ChannelMessagePage:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ChannelMessage'}}
+        nextCursor: {type: string, nullable: true, description: 'als cursor für die nächste ältere Seite; fehlt oder null auf der letzten Seite'}
+    PostChannelMessage:
+      type: object
+      properties:
+        kind: {type: string, enum: [text, voice_in], default: text}
+        text: {type: string, maxLength: 4000}
+        attachmentID: {type: string, format: uuid}
+        clientUUID: {type: string, format: uuid}
