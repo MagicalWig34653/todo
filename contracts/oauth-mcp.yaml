@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -274,4 +274,6 @@ x-mcp-tools:
   start_agent_job: {scope: 'runs:write', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Nur über bestehende Bindung; Pairing nur in der PWA.'}
   stop_agent_job: {scope: 'runs:write', required: [jobID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
   list_runner_devices: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Ohne Tokens.'}
-x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write', 'sharing:read', 'sharing:write', 'teams:read', 'teams:write', 'runs:read', 'runs:write']
+  list_channel_messages: {scope: 'channels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Kanal #brain und contracts/voice.yaml. Kontobezogen, kein Projekt-Grant.'}
+  post_channel_message: {scope: 'channels:write', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Kanal #brain. Arten text, voice_out, status; voice_in nur durch die Person; Idempotenz über clientUUID.'}
+x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write', 'sharing:read', 'sharing:write', 'teams:read', 'teams:write', 'runs:read', 'runs:write', 'channels:read', 'channels:write']

@@ -11,7 +11,7 @@ enum ConsentPage {
     static let groups: [Group] = [
         Group(id: "projects", title: "Projekte & Aufgaben"), Group(id: "comments", title: "Kommentare & Anhänge"),
         Group(id: "labels", title: "Labels & Filter"), Group(id: "sharing", title: "Freigaben & Teams"),
-        Group(id: "runs", title: "Agentenläufe"), Group(id: "account", title: "Konto"), Group(id: "admin", title: "Administration")]
+        Group(id: "runs", title: "Agentenläufe"), Group(id: "channels", title: "Brain-Kanal"), Group(id: "account", title: "Konto"), Group(id: "admin", title: "Administration")]
 
     static let catalog: [Entry] = [
         Entry(scope: "projects:read", group: "projects", label: "Deine Projekte lesen", write: false, critical: false),
@@ -32,6 +32,8 @@ enum ConsentPage {
         Entry(scope: "agents:read", group: "runs", label: "Agentenstatus, Fortschritt und Rückfragen lesen", write: false, critical: false),
         Entry(scope: "runs:read", group: "runs", label: "Lokale Agentenläufe und Mac-Geräte lesen", write: false, critical: false),
         Entry(scope: "runs:write", group: "runs", label: "Agentenläufe auf deinen Macs starten und stoppen", write: true, critical: true),
+        Entry(scope: "channels:read", group: "channels", label: "Den Brain-Kanal (Sprach- und Textnachrichten) lesen", write: false, critical: false),
+        Entry(scope: "channels:write", group: "channels", label: "In den Brain-Kanal schreiben", write: true, critical: false),
         Entry(scope: "account:read", group: "account", label: "Eigene Darstellungs- und Benachrichtigungseinstellungen lesen", write: false, critical: false),
         Entry(scope: "account:write", group: "account", label: "Eigene Darstellungs- und Benachrichtigungseinstellungen ändern", write: true, critical: false),
         Entry(scope: "admin:read", group: "admin", label: "Als Administrator Konten und Einladungen lesen (nur lesend)", write: false, critical: true)]

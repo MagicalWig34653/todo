@@ -104,6 +104,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(AddCommentAttachment())
     configureActionRequests(app)
     configureSystemStatus(app)
+    configureChannels(app)
     app.migrations.add(AddAccountLock())
     app.migrations.add(AddPerformanceIndexes())
     app.migrations.add(AddSignOfLifeIndexes())

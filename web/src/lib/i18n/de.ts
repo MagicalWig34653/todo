@@ -1153,6 +1153,8 @@ export const de = {
 	'scope.admin:read': 'Als Administrator Konten und Einladungen lesen (nur lesend)',
 	'scope.runs:read': 'Lokale Agentenläufe und Mac-Geräte lesen',
 	'scope.runs:write': 'Agentenläufe auf deinen Macs starten und stoppen',
+	'scope.channels:read': 'Den Brain-Kanal (Sprach- und Textnachrichten) lesen',
+	'scope.channels:write': 'In den Brain-Kanal schreiben',
 	'card.breadcrumb': 'Pfad der Karte',
 	'card.prev': 'Vorherige Karte',
 	'card.next': 'Nächste Karte',
