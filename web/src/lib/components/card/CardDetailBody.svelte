@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { can, roleOf } from '#lib/access.js';
 	import { api, ApiError, type Attachment, type Question, type TaskContext } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { galleryOf, projectChain, relativeWhen, type CardRef } from '#lib/cardRef.js';
+	import { buildReport, type CardTab } from '#lib/cardTabs.js';
 	import { percentOf } from '#lib/commandCenter.js';
 	import { describeError } from '#lib/errors.js';
 	import type { ActionRequest, ForYouConfirmation } from '#lib/forYou.js';
@@ -31,6 +32,9 @@
 	import TaskPlanning from '../TaskPlanning.svelte';
 	import CardConversation from './CardConversation.svelte';
 	import CardHeader from './CardHeader.svelte';
+	import CardReport from './CardReport.svelte';
+	import CardTabEmpty from './CardTabEmpty.svelte';
+	import CardTabs from './CardTabs.svelte';
 	import CardSubtasks from './CardSubtasks.svelte';
 	import ImageGallery from './ImageGallery.svelte';
 	import InlineEdit from './InlineEdit.svelte';
@@ -160,6 +164,28 @@
 					: ctx?.progressNotes[0]?.createdAt
 	);
 	const percent = $derived(ctx ? percentOf(ctx.progress) : 0);
+
+	const tab = $derived(cardDetail.tab);
+	const report = $derived(ctx ? buildReport(ctx) : null);
+	let tabArea = $state<HTMLDivElement | null>(null);
+	/** Nearest ancestor that actually scrolls vertically (the main column on desktop, the whole card area on phones). */
+	function scroller(from: HTMLElement | null): HTMLElement | null {
+		for (let el = from?.parentElement ?? null; el; el = el.parentElement) {
+			const overflow = getComputedStyle(el).overflowY;
+			if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+		}
+		return null;
+	}
+	/** Changing the tab never leaves an arbitrary scroll offset: a panel scrolled past its start begins at its top again. */
+	async function selectTab(next: CardTab) {
+		if (next === cardDetail.tab) return;
+		cardDetail.setTab(next);
+		await tick();
+		const box = scroller(tabArea);
+		if (!box || !tabArea) return;
+		const offset = tabArea.getBoundingClientRect().top - box.getBoundingClientRect().top;
+		if (offset < 0) box.scrollTop += offset;
+	}
 	const impact = $derived(request?.impact ?? null);
 	const when = (iso?: string | null) => [relativeWhen(iso), formatWhen(iso)].filter(Boolean).join(' · ');
 
@@ -291,6 +317,17 @@
 				{/if}
 
 				{#if ctx && task}
+					<div class="flex flex-col gap-5" bind:this={tabArea} data-testid="card-tabarea">
+					<CardTabs value={tab} onchange={selectTab} />
+					<div
+						role="tabpanel"
+						id="card-tabpanel"
+						aria-labelledby="card-tab-{tab}"
+						tabindex={tab === 'overview' ? undefined : 0}
+						class="focus-visible:ring-ring/50 flex min-w-0 flex-col gap-5 rounded-lg outline-none focus-visible:ring-2"
+						data-testid="card-tabpanel"
+					>
+					{#if tab === 'overview'}
 					{#if card.type === 'question' && data.question && data.question.state !== 'open'}
 						<section class="bg-muted/40 flex flex-col gap-2 rounded-xl border p-3" data-testid="card-answer">
 							<p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="question-prompt">{data.question.prompt}</p>
@@ -411,6 +448,16 @@
 							<TaskActivity taskID={task.id} refreshKey={rev} />
 						</section>
 					{/if}
+					{:else if tab === 'activity'}
+						<p class="text-muted-foreground text-xs">{t('card.activity.hint')}</p>
+						<TaskActivity taskID={task.id} refreshKey={rev} />
+					{:else if tab === 'report' && report}
+						<CardReport {report} />
+					{:else if tab === 'pipeline' || tab === 'changes' || tab === 'tests'}
+						<CardTabEmpty title={t(`card.tab.${tab}.emptyTitle` as MessageKey)} text={t(`card.tab.${tab}.emptyText` as MessageKey)} />
+					{/if}
+					</div>
+					</div>
 				{/if}
 			</div>
 
