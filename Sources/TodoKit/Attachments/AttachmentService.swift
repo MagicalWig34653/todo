@@ -56,7 +56,7 @@ struct AttachmentService: Sendable {
         if b.starts(with: [255,216,255]) { return "image/jpeg" }
         if b.count >= 12, b.prefix(4) == Array("RIFF".utf8)[...], b[8..<12] == Array("WEBP".utf8)[...] { return "image/webp" }
         if b.starts(with: Array("%PDF-".utf8)) { return "application/pdf" }
-        return nil
+        return AudioContainer.mediaType(b)
     }
 
     /// Reading needs `.read`; creating, uploading, completing and aborting need `.edit`.
@@ -65,9 +65,15 @@ struct AttachmentService: Sendable {
     }
 
     func begin(_ input: BeginAttachment, user: User, db: any Database) async throws -> UploadCapability {
+        // Voice memos (ADR 0030): audio only as role `voice` and only M4A/WAV; the role is not open to other types.
+        if input.mediaType.hasPrefix("audio/") {
+            guard VoiceLimits.mediaTypes.contains(input.mediaType) else { throw Abort(.unsupportedMediaType, reason: "unsupported_audio_type") }
+            guard input.role == "voice" else { throw Abort(.badRequest, reason: "invalid_attachment") }
+            guard input.size <= min(VoiceLimits.maxBytes, maxBytes) else { throw Abort(.payloadTooLarge, reason: "voice_too_large") }
+        }
         guard input.size > 0, input.size <= maxBytes,
-              ["reference", "progress", "result"].contains(input.role),
-              ["image/png", "image/jpeg", "image/webp", "application/pdf"].contains(input.mediaType),
+              ["reference", "progress", "result"].contains(input.role) || (input.role == "voice" && VoiceLimits.mediaTypes.contains(input.mediaType)),
+              ["image/png", "image/jpeg", "image/webp", "application/pdf"].contains(input.mediaType) || VoiceLimits.mediaTypes.contains(input.mediaType),
               input.checksum.count == 64, input.checksum.allSatisfy({ "0123456789abcdef".contains($0) }),
               !input.filename.isEmpty, input.filename.utf8.count <= 200,
               !input.filename.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
@@ -93,6 +99,12 @@ struct AttachmentService: Sendable {
     func validate(_ data: Data, for a: Attachment) throws {
         guard data.count == a.size, data.count <= maxBytes else { throw Abort(.unprocessableEntity, reason: "attachment_size_mismatch") }
         guard Self.mediaType(data) == a.mediaType else { throw Abort(.unsupportedMediaType, reason: "attachment_media_mismatch") }
+        if a.role == "voice" {
+            guard data.count <= VoiceLimits.maxBytes else { throw Abort(.payloadTooLarge, reason: "voice_too_large") }
+            // Duration comes from the container, never from the client.
+            guard let d = try? AudioContainer.duration(data, mediaType: a.mediaType) else { throw Abort(.unprocessableEntity, reason: "voice_unreadable") }
+            guard !d.exceeds(seconds: VoiceLimits.maxSeconds) else { throw Abort(.unprocessableEntity, reason: "voice_too_long") }
+        }
         guard AttachmentChecksum.sha256(data) == a.checksum else { throw Abort(.unprocessableEntity, reason: "attachment_checksum_mismatch") }
     }
 

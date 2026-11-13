@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 13.11.2026: Telefon T1 Schritt 1, Audio-Anhänge (Karte `976175A9`, Branch `agent/t1-1-audio-anhaenge`)
+
+- Neu: Rolle `voice` mit `audio/mp4` (M4A, ftyp-Marken M4A/M4B/mp41/mp42/isom/iso2) und `audio/wav` (RIFF/WAVE), Magic-Byte-Prüfung im bestehenden Anhangsweg (`AttachmentService`, neu `AudioContainer.swift`). Grenzen: höchstens 5 MiB (413 bei `begin`) und 120 s (422 bei PUT/complete; Dauer aus M4A-`mvhd` bzw. WAV-Byterate und Datenlänge, nie vom Client; fragmentiertes M4A, fehlende oder Nulldauer = 422). Andere `audio/*`-Typen 415, Audio mit anderer Rolle oder `voice` mit Nicht-Audio 400. Genau 120 s und genau 5 MiB sind erlaubt. Download unverändert privat (`private, no-store`, nosniff, Range), fremdes Konto 404, keine Vorschau (415).
+- Keine Migration (Rolle und Medientyp sind Text), Rollen/Typen/Limits der bisherigen Anhänge unverändert, MCP-Schemas unverändert (siehe `docs/MCP-PARITAET.md`). Vertrag `contracts/attachments.yaml` 1.1.0.
+- Geprüft: `VoiceAttachmentTests` (6, vorher rot belegt), E2E `scripts/voice-attachments-e2e.sh` gegen natives Backend mit Scratch-SQLite und echten afconvert-M4A/WAV (29 Prüfungen ok). Gesamtlauf `swift test`: 511 Tests, 20 übersprungen, 0 Fehlschläge, Exit 0 (345 s).
+- Grenzen: Dauer aus Container-Metadaten (ein M4A mit gefälschtem `mvhd` kann länger sein, bleibt aber durch 5 MiB begrenzt); MariaDB nicht nötig (kein SQL geändert), nicht gelaufen; keine PWA-/App-Änderung. Nächster Schritt: T1 Schritt 2 (Kanal #brain).
+
 ## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
 
 - Neu: `PUT /v1/system-status[?source=]` (Runner-Gerätetoken des Mac-Wächters oder Sitzung) speichert den letzten Lagestand je Konto und Quelle (Tabelle `system_status`, additive Migration `CreateSystemStatus`, vor Serve `App migrate --yes`); `GET /v1/system-status` und MCP `get_system_status` (account:read) lesen. Bekannte Felder werden geprüft (Ampeln gruen|gelb|rot, Zahlen, `codex`-Objekt, `zeit`), Rest bleibt erhalten; max. 16 KB, 10 Quellen. Vertrag `contracts/system-status.yaml`, Handbuch 1.23.0.
