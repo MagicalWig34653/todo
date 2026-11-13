@@ -63,6 +63,12 @@ struct RunnerDeviceDTO: Content {
     let bindings: [BindingDTO]
     /// Runs without `endedAt` (also expired-lease runs that were not yet reconciled).
     let activeRunCount: Int
+    /// Capabilities the runner reported (for example `sprache`, ADR 0030); empty until its first voice heartbeat.
+    let capabilities: [String]
+    /// Capabilities the owner switched off; the server ignores them when assigning work.
+    let disabledCapabilities: [String]
+    /// Last voice heartbeat of the runner (server clock).
+    let lastSeenAt: Date?
 }
 
 struct AgentJobListItem: Content {
@@ -131,7 +137,8 @@ struct AgentController: RouteCollection {
             if let allowed { bindings = bindings.filter { allowed.contains($0.projectID) } }
             let active = try await AgentRun.query(on: db).filter(\.$deviceID == id).filter(\.$endedAt == nil).count()
             result.append(RunnerDeviceDTO(id: id, label: device.label, paired: device.tokenHash != nil,
-                revokedAt: device.revokedAt, bindings: try bindings.map(BindingDTO.init), activeRunCount: active))
+                revokedAt: device.revokedAt, bindings: try bindings.map(BindingDTO.init), activeRunCount: active,
+                capabilities: device.reportedCapabilities, disabledCapabilities: device.disabledCapabilityList, lastSeenAt: device.lastSeenAt))
         }
         return result
     }

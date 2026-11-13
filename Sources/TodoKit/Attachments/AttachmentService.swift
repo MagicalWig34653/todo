@@ -2,7 +2,8 @@ import Fluent
 import Vapor
 
 struct BeginAttachment: Content {
-    let taskID: UUID
+    /// Optional only for role `voice` (channel #brain memo, no task); every other role needs a task.
+    let taskID: UUID?
     let filename: String
     let role: String
     let mediaType: String
@@ -61,6 +62,11 @@ struct AttachmentService: Sendable {
 
     /// Reading needs `.read`; creating, uploading, completing and aborting need `.edit`.
     static func authorize(_ a: Attachment, user: User, db: any Database, role: ProjectRole = .read) async throws {
+        // Task-less voice memos belong to the account alone: no project, team or sharing rule applies.
+        if !a.hasTask {
+            guard a.ownerID == user.id else { throw Abort(.notFound) }
+            return
+        }
         _ = try await ProjectAccess(user: user, db: db).task(a.taskID, role: role)
     }
 
@@ -71,6 +77,7 @@ struct AttachmentService: Sendable {
             guard input.role == "voice" else { throw Abort(.badRequest, reason: "invalid_attachment") }
             guard input.size <= min(VoiceLimits.maxBytes, maxBytes) else { throw Abort(.payloadTooLarge, reason: "voice_too_large") }
         }
+        guard input.taskID != nil || input.role == "voice" else { throw Abort(.badRequest, reason: "invalid_attachment") }
         guard input.size > 0, input.size <= maxBytes,
               ["reference", "progress", "result"].contains(input.role) || (input.role == "voice" && VoiceLimits.mediaTypes.contains(input.mediaType)),
               ["image/png", "image/jpeg", "image/webp", "application/pdf"].contains(input.mediaType) || VoiceLimits.mediaTypes.contains(input.mediaType),
@@ -81,7 +88,7 @@ struct AttachmentService: Sendable {
         else { throw Abort(.badRequest, reason: "invalid_attachment") }
         _ = try store(writeKind)  // 503 attachment_storage_unconfigured before any row exists
         let a = Attachment()
-        a.id = UUID(); a.storage = writeKind.rawValue; a.taskID = input.taskID; a.ownerID = try user.requireID()
+        a.id = UUID(); a.storage = writeKind.rawValue; a.taskID = input.taskID ?? Attachment.noTask; a.ownerID = try user.requireID()
         a.filename = input.filename; a.role = input.role; a.mediaType = input.mediaType
         a.size = input.size; a.checksum = input.checksum; a.status = "pending"
         a.objectKey = "attachments/\(try a.requireID().uuidString.lowercased())"
@@ -180,9 +187,11 @@ struct AttachmentService: Sendable {
                     try await lockRow(table: Attachment.schema, id: id, on: db)
                     guard let current = try await Attachment.find(id, on: db) else { return false }
                     let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first()
-                    let task = try await TodoTask.find(current.taskID, on: db)
+                    // Task-less voice memos are never orphaned by a task; their life cycle is the voice job's.
+                    let task = current.hasTask ? try await TodoTask.find(current.taskID, on: db) : nil
+                    let orphaned = current.hasTask && task == nil
                     // "deleted" = removed through a confirmed delete_attachment request (no storage settings there).
-                    guard task == nil || current.status == "deleted" || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
+                    guard orphaned || current.status == "deleted" || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
                     try await store(for: current).delete(key: current.objectKey, db: db)
                     try await current.delete(on: db)
                     return true

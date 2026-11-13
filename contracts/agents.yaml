@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Todolino Agentenaufträge und Runner-API
-  version: 1.0.0
-  description: Serververtrag gemäß ADR 0008. Menschliche Sitzungen und Geräte-Token
+  version: 1.1.0
+  description: Serververtrag gemäß ADR 0008 (1.1.0 - capabilities, disabledCapabilities, lastSeenAt am Gerät, ADR 0030). Menschliche Sitzungen und Geräte-Token
     sind getrennt. Keine automatischen Wiederholungen lokaler Coding-Läufe. Listen
     sind zunächst vollständig ohne Cursor; Skalierung und Aufbewahrung sind Folgearbeit.
 paths:
@@ -988,6 +988,15 @@ components:
         paired: {type: boolean}
         revokedAt: {type: string, format: date-time}
         activeRunCount: {type: integer}
+        capabilities:
+          type: array
+          items: {type: string}
+          description: Vom Runner gemeldete Fähigkeiten (zum Beispiel sprache, ADR 0030); leer bis zum ersten Sprach-Heartbeat.
+        disabledCapabilities:
+          type: array
+          items: {type: string}
+          description: Vom Besitzer abgeschaltet (PUT /v1/agents/devices/{id}/capabilities, contracts/voice.yaml); der Server vergibt dafür keine Arbeit.
+        lastSeenAt: {type: string, format: date-time, nullable: true, description: Letzter Sprach-Heartbeat (Serveruhr)}
         bindings:
           type: array
           items:

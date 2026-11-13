@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Todolino Kanal #brain (Sprach- und Textnachrichten)
-  version: 1.0.0
-  description: 'Telefon T1 (ADR 0030), Schritt 2. Jedes Konto hat genau einen Kanal brain (beim ersten Gebrauch angelegt). Nur der Besitzer liest und
+  title: Todolino Kanal #brain (Sprach- und Textnachrichten) und Sprachaufträge
+  version: 1.1.0
+  description: 'Telefon T1 (ADR 0030), Schritte 2 und 3 (1.1.0: Sprachaufträge, Runner-Fähigkeit sprache). Jedes Konto hat genau einen Kanal brain (beim ersten Gebrauch angelegt). Nur der Besitzer liest und
     schreibt; kein Teilen, kein Team, kein Projekt- oder Aufgabenbezug. Eine Nachricht hat eine Art (kind: text, voice_in, voice_out, status), einen
     Autor (author: person, agent), Text bzw. Transkript und optional einen Audio-Anhang (Rolle voice, contracts/attachments.yaml 1.1.0; der Anhang
     muss dem Konto gehören und fertig hochgeladen sein). Schreiben über REST (Sitzung, App) ist die Person: text und voice_in. Der Agent (MCP) schreibt
@@ -10,6 +10,20 @@ info:
     Schlüssel und gleicher Inhalt liefert die ursprüngliche Nachricht (200 statt 201), anderer Inhalt 409 client_uuid_conflict. Liste neueste zuerst,
     Cursor-Paginierung. Audio und Transkripte stehen in keinem Log. Aufbewahrung, Export und Anonymisierung: ADR 0030, Schritt 7 (noch nicht umgesetzt);
     das Löschen des Kontos löscht Kanal und Nachrichten (Kaskade).
+    Sprachaufträge (1.1.0): Eine voice_in-Nachricht erzeugt einen Sprachauftrag (voice_job: queued, claimed, done, failed, expired), wenn ein Gerät
+    des Kontos die Fähigkeit sprache meldet (nicht vom Besitzer abgeschaltet, nicht widerrufen) und sein letzter Sprach-Heartbeat höchstens 90 s alt
+    ist. Sonst entsteht sofort eine status-Nachricht des Brain (Autor agent) „Brain gerade nur per Text erreichbar.“ und kein Auftrag. Ein Mac-Runner
+    bearbeitet den Auftrag über /v1/runner/voice/* mit seinem Geräte-Token (nicht mit einer Sitzung, nicht per MCP): Claim (Lease 60 s, Generation),
+    Heartbeat, Audio laden, Antwortaudio hochladen, Ergebnis. Ergebnis erzeugt Kanalnachrichten: das Transkript füllt den Text der voice_in-Nachricht,
+    die Antwort kommt als voice_out (mit Antwortaudio) oder text (ohne). Ein Auftrag verfällt 10 Minuten nach dem Anlegen (expired): die Aufnahme wird
+    gelöscht, der Kanal erhält „Die Sprachnachricht ist abgelaufen.“. Fehler des Runners (errorCode) ergeben failed, gelöschte Aufnahme und die
+    Nachricht „Die Sprachnachricht konnte nicht verarbeitet werden.“. Ablauf prüft ein Dienst alle 30 s und jeder Lese-/Runner-Zugriff des Kontos.
+    Fencing wie ADR 0008: jeder Aufruf trägt die Generation; 409 stale_generation (veraltet, auch für frühere Halter), 410 lease_lost / job_ended,
+    404 für fremde Konten und für ein anderes Gerät mit gültiger Generation. Ein zweiter Runner übernimmt einen Auftrag erst nach Ablauf der Lease
+    (dann Generation + 1). Höchstens ein laufender (geclaimter) Auftrag je Konto (409 voice_job_running).
+    Limits je Konto: 10 voice_in je Minute und 200 je Tag (429 voice_rate_limited, zählt auch Nachrichten ohne erreichbares Gerät), höchstens 5 offene
+    Aufträge (429 too_many_open_voice_jobs), Transkript und Antworttext je höchstens 4000 Zeichen, Antwortaudio höchstens 5 MiB und 120 s (M4A/WAV,
+    Container geprüft). Eine Aufnahme gehört zu genau einer voice_in-Nachricht (409 attachment_in_use). Audio und Texte stehen in keinem Log.
     MCP: list_channel_messages (Scope channels:read) und post_channel_message (Scope channels:write), siehe oauth-mcp.yaml. Neue Scopes; bestehende
     Verbindungen behalten ihre Scopes und sehen die Tools erst nach neuer Zustimmung.'
 security:
@@ -50,11 +64,177 @@ paths:
         '400': {description: 'invalid_message, invalid_kind (auch voice_out/status über REST), invalid_text, attachment_required, attachment_not_allowed'}
         '401': {description: nicht angemeldet}
         '404': {description: 'Anhang existiert nicht oder gehört einem anderen Konto'}
-        '409': {description: 'client_uuid_conflict: gleiche clientUUID, anderer Inhalt'}
+        '409': {description: 'client_uuid_conflict: gleiche clientUUID, anderer Inhalt; attachment_in_use: die Aufnahme gehört schon zu einer voice_in-Nachricht'}
         '422': {description: 'invalid_attachment: kein fertiger Anhang mit Rolle voice'}
+        '429': {description: 'voice_rate_limited (10 je Minute, 200 je Tag) oder too_many_open_voice_jobs (5); nur bei voice_in, es wird keine Nachricht angelegt'}
+  /v1/agents/devices/{id}/capabilities:
+    put:
+      operationId: setRunnerDeviceCapabilities
+      summary: Fähigkeiten eines eigenen Runner-Geräts abschalten (Besitzer, Sitzung)
+      description: 'Ersetzt die Liste disabled. Der Runner meldet weiter, der Server vergibt für abgeschaltete Fähigkeiten keine Arbeit (ein voice_in findet dann
+        kein erreichbares Gerät). Nur eigene, nicht widerrufene Geräte; sonst 404.'
+      security:
+      - sessionCookie: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [disabled], properties: {disabled: {type: array, maxItems: 10, items: {type: string, pattern: '^[a-z][a-z0-9_-]{0,19}$'}}}}
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/DeviceCapabilities'}}}}
+        '400': {description: invalid_capabilities}
+        '401': {description: nicht angemeldet}
+        '404': {description: kein eigenes Gerät}
+  /v1/runner/voice/heartbeat:
+    post:
+      operationId: runnerVoiceHeartbeat
+      summary: Fähigkeiten und Lebenszeichen melden (Geräte-Token)
+      description: 'Der Runner meldet alle 30 s, was er kann (capabilities, höchstens 10, je ^[a-z][a-z0-9_-]{0,19}$). Er meldet sprache nur, wenn Spracherkennung und
+        Sprachausgabe lokal auf Loopback bereitstehen. Antwort: wirksame Fähigkeiten (gemeldet ohne die abgeschalteten).'
+      security:
+      - runnerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [capabilities], properties: {capabilities: {type: array, maxItems: 10, items: {type: string}}}}
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/VoiceHeartbeat'}}}}
+        '400': {description: invalid_capabilities}
+        '401': {description: Gerät unbekannt, nicht gekoppelt, widerrufen oder Konto gesperrt}
+  /v1/runner/voice/jobs:
+    get:
+      operationId: listRunnerVoiceJobs
+      summary: Wartende Sprachaufträge des eigenen Kontos
+      security:
+      - runnerToken: []
+      responses:
+        '200': {description: 'queued, älteste zuerst; leer ohne wirksame Fähigkeit sprache', content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/VoiceJob'}}}}}
+        '401': {description: Geräte-Token ungültig}
+  /v1/runner/voice/claim:
+    post:
+      operationId: claimNextRunnerVoiceJob
+      summary: Den ältesten übernehmbaren Auftrag übernehmen
+      description: 'Übernehmbar: queued oder geclaimt mit abgelaufener Lease (Generation + 1), nicht abgelaufen, nur wenn das Konto keinen laufenden Auftrag hat.
+        Lease 60 s. 204 wenn nichts zu tun ist.'
+      security:
+      - runnerToken: []
+      responses:
+        '200': {description: 'übernommen; audio nennt Medientyp, Größe und SHA-256 der Aufnahme', content: {application/json: {schema: {$ref: '#/components/schemas/VoiceJob'}}}}
+        '204': {description: kein übernehmbarer Auftrag}
+        '401': {description: Geräte-Token ungültig}
+  /v1/runner/voice/jobs/{id}/claim:
+    post:
+      operationId: claimRunnerVoiceJob
+      summary: Einen bestimmten Auftrag übernehmen
+      security:
+      - runnerToken: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: übernommen, content: {application/json: {schema: {$ref: '#/components/schemas/VoiceJob'}}}}
+        '401': {description: Geräte-Token ungültig}
+        '403': {description: 'capability_missing: das Gerät hat keine wirksame Fähigkeit sprache'}
+        '404': {description: Auftrag fremden Kontos oder unbekannt}
+        '409': {description: 'job_not_queued (geclaimt mit gültiger Lease, auch von einem zweiten Runner) oder voice_job_running (das Konto hat schon einen laufenden Auftrag)'}
+        '410': {description: 'job_ended: done, failed oder expired'}
+  /v1/runner/voice/jobs/{id}/heartbeat:
+    post:
+      operationId: heartbeatRunnerVoiceJob
+      summary: Lease um 60 s verlängern
+      security:
+      - runnerToken: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [generation], properties: {generation: {type: integer, minimum: 0}}}
+      responses:
+        '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/VoiceJob'}}}}
+        '401': {description: Geräte-Token ungültig}
+        '404': {description: fremdes Konto oder nicht der Halter}
+        '409': {description: stale_generation}
+        '410': {description: 'job_ended oder lease_lost (Lease abgelaufen: neu claimen, nicht weiterarbeiten)'}
+  /v1/runner/voice/jobs/{id}/audio:
+    get:
+      operationId: downloadRunnerVoiceAudio
+      summary: Aufnahme laden (nur der Halter, nur bei gültiger Lease)
+      description: 'Größe, Typ und SHA-256 werden vor der Auslieferung geprüft; der Runner prüft den SHA-256 aus dem Claim erneut. Nie im Cache (no-store).'
+      security:
+      - runnerToken: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: generation, in: query, required: true, schema: {type: integer, minimum: 0}}
+      responses:
+        '200': {description: 'audio/mp4 oder audio/wav', content: {audio/mp4: {schema: {type: string, format: binary}}, audio/wav: {schema: {type: string, format: binary}}}}
+        '400': {description: invalid_generation}
+        '401': {description: Geräte-Token ungültig}
+        '404': {description: fremdes Konto oder nicht der Halter}
+        '409': {description: stale_generation}
+        '410': {description: job_ended oder lease_lost}
+  /v1/runner/voice/jobs/{id}/reply-audio:
+    put:
+      operationId: uploadRunnerVoiceReply
+      summary: Antwortaudio hochladen (vor dem Ergebnis)
+      description: 'Rohbytes (audio/mp4 oder audio/wav, Magic-Bytes und Container geprüft, höchstens 5 MiB und 120 s). Ein erneuter Upload ersetzt den früheren.
+        Der Anhang hat Rolle voice und keine Aufgabe; das Ergebnis hängt ihn als voice_out an.'
+      security:
+      - runnerToken: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: generation, in: query, required: true, schema: {type: integer, minimum: 0}}
+      requestBody:
+        required: true
+        content:
+          audio/mp4: {schema: {type: string, format: binary}}
+          audio/wav: {schema: {type: string, format: binary}}
+      responses:
+        '200': {description: gespeichert, content: {application/json: {schema: {type: object, required: [attachmentID], properties: {attachmentID: {type: string, format: uuid}}}}}}
+        '401': {description: Geräte-Token ungültig}
+        '404': {description: fremdes Konto oder nicht der Halter}
+        '409': {description: stale_generation}
+        '410': {description: job_ended oder lease_lost}
+        '413': {description: voice_too_large}
+        '415': {description: unsupported_audio_type}
+        '422': {description: 'voice_too_long (über 120 s) oder voice_unreadable'}
+  /v1/runner/voice/jobs/{id}/result:
+    post:
+      operationId: resultRunnerVoiceJob
+      summary: Ergebnis melden (Antwort oder Fehler)
+      description: 'Erfolg: replyText (oder zuvor hochgeladenes Antwortaudio) und optional transcript; Zustand done; das Transkript füllt den Text der
+        voice_in-Nachricht, die Antwort wird voice_out (mit Audio) oder text. Fehler: errorCode (^[a-z0-9_]{1,40}$); Zustand failed, Aufnahme gelöscht, Statusnachricht.
+        Eine Wiederholung mit gleichem Inhalt nach Erfolg liefert 200 mit demselben Auftrag und schreibt nichts doppelt; anderer Inhalt: 410.'
+      security:
+      - runnerToken: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [generation]
+              properties:
+                generation: {type: integer, minimum: 0}
+                transcript: {type: string, maxLength: 4000}
+                replyText: {type: string, maxLength: 4000}
+                errorCode: {type: string, pattern: '^[a-z0-9_]{1,40}$'}
+      responses:
+        '200': {description: angenommen, content: {application/json: {schema: {$ref: '#/components/schemas/VoiceJob'}}}}
+        '400': {description: 'invalid_text, invalid_error_code, result_required (weder Antwort noch Fehler)'}
+        '401': {description: Geräte-Token ungültig}
+        '404': {description: fremdes Konto oder nicht der Halter}
+        '409': {description: stale_generation}
+        '410': {description: job_ended oder lease_lost}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
+    runnerToken: {type: http, scheme: bearer, description: 'Gekoppeltes Runner-Gerät (contracts/agents.yaml), keine Sitzung und kein MCP-Token'}
     sessionCookie: {type: apiKey, in: cookie, name: todo_session}
   schemas:
     ChannelMessage:
@@ -81,3 +261,39 @@ components:
         text: {type: string, maxLength: 4000}
         attachmentID: {type: string, format: uuid}
         clientUUID: {type: string, format: uuid}
+    DeviceCapabilities:
+      type: object
+      required: [capabilities, disabledCapabilities]
+      properties:
+        capabilities: {type: array, items: {type: string}}
+        disabledCapabilities: {type: array, items: {type: string}}
+        lastSeenAt: {type: string, format: date-time, nullable: true}
+    VoiceHeartbeat:
+      type: object
+      required: [capabilities, disabledCapabilities, serverTime]
+      properties:
+        capabilities: {type: array, items: {type: string}, description: 'wirksam: gemeldet ohne abgeschaltet'}
+        disabledCapabilities: {type: array, items: {type: string}}
+        serverTime: {type: string, format: date-time}
+    VoiceJob:
+      type: object
+      required: [id, state, generation, messageID, attachmentID, requiredCapability, expiresAt, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        state: {type: string, enum: [queued, claimed, done, failed, expired]}
+        generation: {type: integer, description: 'steigt mit jedem Claim; 0 solange queued'}
+        messageID: {type: string, format: uuid, description: 'die voice_in-Nachricht'}
+        attachmentID: {type: string, format: uuid, description: 'die Aufnahme (Rolle voice, ohne Aufgabe)'}
+        requiredCapability: {type: string, enum: [sprache]}
+        leaseUntil: {type: string, format: date-time, nullable: true}
+        expiresAt: {type: string, format: date-time, description: 'Anlegen + 10 Minuten'}
+        createdAt: {type: string, format: date-time}
+        errorCode: {type: string, nullable: true}
+        audio:
+          type: object
+          description: nur in der Claim-Antwort
+          required: [mediaType, size, checksum]
+          properties:
+            mediaType: {type: string, enum: [audio/mp4, audio/wav]}
+            size: {type: integer}
+            checksum: {type: string, description: 'SHA-256 hex'}

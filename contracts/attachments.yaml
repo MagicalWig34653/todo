@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino attachment REST API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Backend upload capability, valid for 15 minutes and one successful PUT.
     Maximum file size is 10485760 bytes by default (server setting ATTACHMENT_MAX_BYTES, 1024 to 134217728).
@@ -186,9 +186,15 @@ components:
   schemas:
     BeginAttachment:
       type: object
-      required: [taskID, filename, role, mediaType, size, checksum]
+      required: [filename, role, mediaType, size, checksum]
       properties:
-        taskID: { type: string, format: uuid }
+        taskID:
+          type: string
+          format: uuid
+          description: |
+            Required for every role except voice. A voice memo for channel #brain (ADR 0030) has no task; the
+            attachment then belongs to the account alone (only the owner reads it) and reports no taskID. Without taskID
+            and with another role the request fails with 400 invalid_attachment.
         filename:
           type: string
           description: 1 to 200 UTF-8 bytes, no control characters or path separators

@@ -8,6 +8,12 @@ final class RunnerDevice: Model, @unchecked Sendable {
     @Field(key: "label") var label: String
     @OptionalField(key: "token_hash") var tokenHash: String?
     @OptionalField(key: "revoked_at") var revokedAt: Date?
+    /// Capabilities reported by the runner (ADR 0030), comma separated; see `reportedCapabilities`.
+    @OptionalField(key: "capabilities") var capabilitiesRaw: String?
+    /// Capabilities the owner switched off; they win over `capabilities`.
+    @OptionalField(key: "disabled_capabilities") var disabledCapabilitiesRaw: String?
+    /// Last capability heartbeat (server clock).
+    @OptionalField(key: "last_seen_at") var lastSeenAt: Date?
     init() {}
     init(ownerID: UUID, label: String, tokenHash: String?, revokedAt: Date?) {
         self.ownerID = ownerID

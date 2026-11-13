@@ -74,6 +74,24 @@ struct ChannelService {
     }
 
     static func date(milliseconds ms: Int64) -> Date { Date(timeIntervalSince1970: Double(ms) / 1000) }
+    static func now() -> Date { date(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded())) }
+
+    // MARK: System-side messages
+
+    /// Brain-side message written by the server itself (voice job outcomes). `notBefore` keeps the message after the one
+    /// it answers even when both fall into the same millisecond (the list order is created_at, then id).
+    @discardableResult
+    func appendBrainMessage(kind: String, text: String?, attachmentID: UUID? = nil, notBefore: Date? = nil) async throws -> ChannelMessage {
+        let channel = try await channel()
+        let m = ChannelMessage()
+        m.channelID = try channel.requireID(); m.ownerID = try user.requireID(); m.kind = kind; m.author = Author.agent.rawValue
+        m.text = text; m.attachmentID = attachmentID
+        var at = Self.now()
+        if let notBefore, at <= notBefore { at = notBefore.addingTimeInterval(0.001) }
+        m.createdAt = Self.date(milliseconds: Int64((at.timeIntervalSince1970 * 1000).rounded()))
+        try await m.save(on: db)
+        return m
+    }
 
     // MARK: List
 
@@ -81,6 +99,8 @@ struct ChannelService {
         let limit = limit ?? Self.defaultLimit
         guard (1...Self.maxLimit).contains(limit) else { throw Abort(.badRequest, reason: "invalid_limit") }
         let parsed = try cursor.map(Self.parseCursor)
+        // Jobs that ran out of time answer with a status message; whoever reads the channel notices first.
+        try await VoiceService.expireDue(owner: try user.requireID(), db: db)
         // Nothing to read until the first message created the channel.
         guard let channel = try await existingChannel() else { return ChannelMessagePage(items: [], nextCursor: nil) }
         let channelID = try channel.requireID(), userID = try user.requireID()
@@ -128,19 +148,34 @@ struct ChannelService {
         func replay() async throws -> ChannelMessageDTO? {
             guard let key = body.clientUUID,
                   let existing = try await ChannelMessage.query(on: db).filter(\.$channelID == channelID).filter(\.$clientUUID == key).first() else { return nil }
-            guard existing.kind == kind, existing.author == author.rawValue, existing.text == text, existing.attachmentID == body.attachmentID else {
+            // A transcript may have filled the text of a voice_in message since; a retry without text is still the same post.
+            let sameText = existing.text == text || (kind == "voice_in" && text == nil)
+            guard existing.kind == kind, existing.author == author.rawValue, sameText, existing.attachmentID == body.attachmentID else {
                 throw Abort(.conflict, reason: "client_uuid_conflict")
             }
             return try ChannelMessageDTO(existing)
         }
         if let existing = try await replay() { return (existing, false) }
 
+        let startsJob = kind == "voice_in"
+        if startsJob, let id = body.attachmentID {
+            try await VoiceService.expireDue(owner: userID, db: db)
+            try await VoiceService.checkLimits(owner: userID, db: db)
+            // One recording, one message: a failed or expired job deletes its recording.
+            guard try await ChannelMessage.query(on: db).filter(\.$ownerID == userID).filter(\.$kind == "voice_in")
+                .filter(\.$attachmentID == id).count() == 0 else { throw Abort(.conflict, reason: "attachment_in_use") }
+        }
+
         let m = ChannelMessage()
         m.channelID = channelID; m.ownerID = userID; m.kind = kind; m.author = author.rawValue
         m.text = text; m.attachmentID = body.attachmentID; m.clientUUID = body.clientUUID
-        m.createdAt = Self.date(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
-        do { try await m.save(on: db) }
-        catch {
+        m.createdAt = Self.now()
+        do {
+            try await db.transaction { tx in
+                try await m.save(on: tx)
+                if startsJob { try await VoiceService.enqueue(message: m, user: user, db: tx) }
+            }
+        } catch {
             // A parallel post with the same client UUID won the unique key: answer with that one.
             if let existing = try await replay() { return (existing, false) }
             throw error
