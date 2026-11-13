@@ -250,6 +250,8 @@ struct ReviewDTO: Content {
     let version: Int
     /// End of the undo window for a fresh person decision; nil when not undoable by time or kind.
     let undoUntil: Date?
+    /// Derived, only set by review lists: a comment of the agent labelled "brain" hangs on this review (see `ReviewBrain`).
+    var brainRecommended: Bool? = nil
     init(_ r: TaskReview) throws {
         id = try r.requireID(); taskID = r.taskID; state = r.state; requestedByType = r.requestedByType
         requestedByID = r.requestedByID; requestedByLabel = r.requestedByLabel; reviewerID = r.reviewerID
@@ -356,6 +358,12 @@ struct AskQuestionRequest: Content {
 struct AnswerQuestionRequest: Content { let answer: String; let freeText: Bool? }
 struct RequestReviewRequest: Content { let summary: String; let reviewerID: UUID?; let agentName: String? }
 struct ReviewDecisionRequest: Content { let decision: String; let note: String? }
+struct ReviewBatchRequest: Content {
+    struct Item: Content { let reviewID: String }
+    let decisions: [Item]
+    let decision: String
+    let note: String?
+}
 struct StructureRequest: Content {
     let kind: String?
     /// `null` removes the parent; absent leaves it unchanged.

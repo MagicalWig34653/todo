@@ -1,5 +1,6 @@
 import type { AuthenticationPayload, CreationOptionsJSON, RegistrationPayload, RequestOptionsJSON } from './webauthn.js';
 import type { ActionRequest, ForYouPage } from './forYou.js';
+import type { BatchResponse } from './reviewBulk.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -709,6 +710,8 @@ export interface Review {
 	version: number;
 	/** End of the undo window after a person's decision; absent when not undoable. */
 	undoUntil?: string | null;
+	/** Derived by the server in lists: a comment of the agent "brain" hangs on this review. */
+	brainRecommended?: boolean;
 }
 export interface AgentBrief {
 	projectID: string;
@@ -1146,8 +1149,11 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			),
 		question: (id: string) => request<Question>('GET', `/questions/${id}`),
 		answerQuestion: (id: string, answer: string, freeText?: boolean) => request<Question>('POST', `/questions/${id}/answer`, freeText ? { answer, freeText: true } : { answer }),
-		listReviews: (p: { projectID?: string; state?: Review['state'] | 'all'; limit?: number } = {}) =>
-			request<Review[]>('GET', `/reviews${query({ projectID: p.projectID, state: p.state ?? 'pending', limit: p.limit })}`),
+		listReviews: (p: { projectID?: string; state?: Review['state'] | 'all'; limit?: number; brainRecommended?: boolean } = {}) =>
+			request<Review[]>('GET', `/reviews${query({ projectID: p.projectID, state: p.state ?? 'pending', limit: p.limit, brainRecommended: p.brainRecommended === undefined ? undefined : String(p.brainRecommended) })}`),
+		/** Bulk decision (contracts/command-center.yaml 1.5.0): one result per review, no overall rollback. */
+		decideReviewsBatch: (reviewIDs: string[], decision: 'accept' | 'changes_requested', note?: string) =>
+			request<BatchResponse>('POST', '/reviews/decisions', { decisions: reviewIDs.map((reviewID) => ({ reviewID })), decision, note: note || undefined }),
 		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string) =>
 			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined }),
 		undoReviewDecision: (taskID: string) => request<Review>('POST', `/tasks/${taskID}/review/undo`),

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
-  version: 1.4.0
+  version: 1.5.0
   description: 'ADR 0014. Alle Pfade außer /v1/manual verlangen Sitzung oder Bearer. Unsichtbare/fremde Objekte: 404, zu geringe Rolle: 403,
     Konflikte: 409. Zuordnung der Lanes (feste Reihenfolge): done > question > review > blocked > running > ready; Backlog-Spalten nur im Zähler.
     Fortschritt: done=100 (status), sonst Unteraufgaben, sonst Kriterien, sonst letzter Notiz-Prozentwert (agent), sonst 0 (none).
@@ -11,7 +11,8 @@ info:
     list_open_questions, get_question, answer_question, request_review, list_pending_reviews, decide_review, apply_agent_workflow_columns,
     add_attachment, begin_attachment, complete_attachment, list_builds, wait_for_events (Long-Poll bis 25 s, nur Hinweise
     {changed, token, hints[{kind,taskID,projectID}]} auf Projekte des Grants, die das Konto sieht; Quelle live_events, ADR 0022) (Details: docs/agent-manual.md, tools/list). Neues Werkzeug update_project (projects:write). Neuer Scope attachments:write. Aktuelles Projekt (Handbuch 1.16.0, nur MCP, REST unverändert): get_command_center, list_open_questions, list_pending_reviews nehmen projectID und scope=project|account; Antworten tragen currentProject {id,name}, hint und foreignProject; die beiden Listen antworten {currentProject, hint?, items}.
-    Spaltenvorlage: POST /v1/projects/{id}/columns/template {"source":"agent_workflow"} (project-columns.yaml). Kein Sync-Feed.'
+    Spaltenvorlage: POST /v1/projects/{id}/columns/template {"source":"agent_workflow"} (project-columns.yaml). Kein Sync-Feed.
+    1.5.0 (Reviews, Sammelfreigabe): POST /v1/reviews/decisions entscheidet bis zu 50 Reviews in einem Aufruf (nur REST/PWA, bewusst kein MCP-Tool); ReviewDTO in Listen trägt das abgeleitete Feld brainRecommended, GET /v1/reviews filtert mit ?brainRecommended=true|false.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -105,8 +106,15 @@ paths:
   /v1/reviews:
     get:
       operationId: listReviews
-      summary: '?projectID&state=pending|accepted|changes_requested|withdrawn|all&limit'
+      summary: '?projectID&state=pending|accepted|changes_requested|withdrawn|all&limit&brainRecommended=true|false'
+      description: 'ReviewDTO[] mit abgeleitetem Feld brainRecommended (Bool; nur in Listen). Es ist true, wenn im Chat der Review ein Kommentar mit authorKind=agent und authorLabel "brain" (ohne Beachtung von Groß-/Kleinschreibung und Leerraum) hängt; Personen können es nicht setzen. Der Filter ?brainRecommended=true|false wirkt vor dem limit; anderer Wert: 400 invalid_brainRecommended.'
       responses: {'200': {description: 'ReviewDTO[]'}}
+  /v1/reviews/decisions:
+    post:
+      operationId: decideReviewsBatch
+      summary: 'Sammelentscheidung {decisions: [{reviewID}] (1 bis 50), decision: accept|changes_requested, note?}'
+      description: 'Nur Sitzung/Person (REST/PWA); es gibt dafür kein MCP-Werkzeug. Jede Review läuft nacheinander durch denselben Fachpfad wie POST /v1/tasks/{id}/review/decision (gleiche Rechte, gleiche Notiz, gleiche Aktivität review.accepted|review.changes_requested je Review); kein Gesamt-Rollback. Antwort 200 {decision, results: [{reviewID, result, reason?, review?}], summary: {ok, forbidden, notFound, alreadyDecided, invalid}}, results in Eingabereihenfolge, doppelte IDs nur einmal. result: ok (review = ReviewDTO), forbidden (zu geringe Rolle oder not_the_reviewer / cannot_decide_own_review in reason), not_found (unbekannt oder nicht sichtbar, nicht unterscheidbar), already_decided (nicht mehr pending; Wiederholung ist gefahrlos, keine zweite Aktivität), invalid (reviewID kein UUID oder anderer 4xx der Einzelentscheidung, reason). request_changes wird als Alias für changes_requested angenommen. Gemeinsame Notiz höchstens 4000 Zeichen. Gesamtfehler: 400 no_reviews, too_many_reviews, invalid_decision, invalid_note; 429 review_batch_rate_limited (20 Aufrufe je Konto und 10 Minuten, Retry-After); ein unerwarteter Serverfehler (5xx) bricht den Rest ab, bereits entschiedene bleiben entschieden, Wiederholen ist gefahrlos.'
+      responses: {'200': {description: 'ReviewBatchResponse'}, '400': {description: 'no_reviews, too_many_reviews, invalid_decision, invalid_note'}, '429': {description: review_batch_rate_limited}}
   /v1/tasks/{id}/context:
     get:
       operationId: getTaskContext

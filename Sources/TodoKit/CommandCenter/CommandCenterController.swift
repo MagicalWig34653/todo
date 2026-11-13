@@ -14,6 +14,7 @@ struct CommandCenterController: RouteCollection {
         v1.get("questions", ":id", use: getQuestion)
         v1.post("questions", ":id", "answer", use: answerQuestion)
         v1.get("reviews", use: listReviews)
+        v1.post("reviews", "decisions", use: decideBatch)
         v1.get("tasks", ":id", "context", use: context)
         v1.post("tasks", ":id", "claim", use: claim)
         v1.delete("tasks", ":id", "claim", use: release)
@@ -117,7 +118,20 @@ struct CommandCenterController: RouteCollection {
     }
     @Sendable func listReviews(_ req: Request) async throws -> [ReviewDTO] {
         try await service(req).reviews(projectID: uuidQuery(req, "projectID"), state: req.query[String.self, at: "state"] ?? "pending",
-            includeSubprojects: try boolQuery(req, "includeSubprojects") ?? true, limit: req.query[Int.self, at: "limit"] ?? 100)
+            includeSubprojects: try boolQuery(req, "includeSubprojects") ?? true, limit: req.query[Int.self, at: "limit"] ?? 100,
+            brainRecommended: try boolQuery(req, "brainRecommended"))
+    }
+    @Sendable func decideBatch(_ req: Request) async throws -> ReviewBatchResponse {
+        let user = try await req.requireUser()
+        // Counts every attempt, also rejected ones; the ceiling per request is checked by the service.
+        guard try await IdentityRateLimit.take(scope: "review-batch", subject: "user:\(user.requireID())",
+            limit: WorkflowLimits.reviewBatchRequestsPerWindow, window: WorkflowLimits.reviewBatchWindowSeconds, on: req.db) else {
+            var headers = HTTPHeaders()
+            headers.add(name: "Retry-After", value: String(WorkflowLimits.reviewBatchWindowSeconds))
+            throw Abort(.tooManyRequests, headers: headers, reason: "review_batch_rate_limited")
+        }
+        let body = try req.content.decode(ReviewBatchRequest.self)
+        return try await service(req).decideReviews(body.decisions.map(\.reviewID), decision: body.decision, note: body.note, actor: actor(req))
     }
     @Sendable func context(_ req: Request) async throws -> TaskContextDTO { try await service(req).context(id(req)) }
     @Sendable func claim(_ req: Request) async throws -> TaskContextDTO {

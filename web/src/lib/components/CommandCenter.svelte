@@ -40,7 +40,7 @@
 	import SystemStatusBar from './overview/SystemStatusBar.svelte';
 	import RepositoryLine from './overview/RepositoryLine.svelte';
 	import SyncList from './overview/SyncList.svelte';
-	import ReviewDecision from './overview/ReviewDecision.svelte';
+	import ReviewList from './overview/ReviewList.svelte';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
 	import List from '@lucide/svelte/icons/list';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -475,23 +475,7 @@
 			{/each}
 		</ul>
 	{:else if section === 'reviews'}
-		{#if visibleReviews.length === 0}
-			<EmptyState title={t('cc.review.empty')} icon={Gauge}><p>{t('cc.review.emptyHint')}</p></EmptyState>
-		{/if}
-		<ul class="flex max-w-3xl flex-col gap-3" data-testid="cc-reviews">
-			{#each visibleReviews as r (r.id)}
-				<li class="flex flex-col gap-1">
-					<ReviewDecision
-						taskID={r.taskID}
-						summary={r.summary}
-						requestedBy={r.requestedByLabel}
-						context={t('cc.question.in', { task: r.taskTitle ?? '', project: r.projectName ?? '' })}
-						onopen={() => openTask(r.taskID, r.taskTitle ?? '')}
-						ondecided={refresh}
-					/>
-				</li>
-			{/each}
-		</ul>
+		<ReviewList reviews={visibleReviews} onopen={openTask} onrefresh={refresh} />
 	{:else if section === 'updates'}
 		{#if updates.length === 0}
 			<EmptyState title={t('cc.updates.empty')} icon={Gauge}><p>{t('cc.updates.emptyHint')}</p></EmptyState>
