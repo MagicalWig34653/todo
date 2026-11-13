@@ -1,0 +1,85 @@
+diff --git a/web/src/lib/components/CommandCenter.svelte b/web/src/lib/components/CommandCenter.svelte
+index d4aa2d9..e03b4a4 100644
+--- a/web/src/lib/components/CommandCenter.svelte
++++ b/web/src/lib/components/CommandCenter.svelte
+@@ -373,7 +373,7 @@
+ 					{showSync ? t('sync.hideDetails') : t('sync.details')}
+ 				</button>
+ 			</div>
+-			<RepositoryLine {projectID} showDetails={showSync} onchanged={refresh} />
++			<RepositoryLine {projectID} showDetails={showSync} onchanged={refresh} refreshKey={JSON.stringify(ownSync.sync)} />
+ 		</div>
+ 	{:else if scope === 'account' && section === 'board' && syncEntries.length > 0}
+ 		<SyncList entries={syncEntries} onchanged={refresh} />
+diff --git a/web/src/lib/components/overview/RepositoryLine.svelte b/web/src/lib/components/overview/RepositoryLine.svelte
+index 5253901..643e13c 100644
+--- a/web/src/lib/components/overview/RepositoryLine.svelte
++++ b/web/src/lib/components/overview/RepositoryLine.svelte
+@@ -1,4 +1,5 @@
+ <script lang="ts">
++	import { untrack } from 'svelte';
+ 	import { api, type ProjectSync, type Role } from '#lib/api.js';
+ 	import { t } from '#lib/i18n/index.js';
+ 	import { attempt } from '#lib/notice.svelte.js';
+@@ -13,7 +14,12 @@
+ 	 * Repository bindings of one project (GET /v1/projects/{id}/sync, ADR 0018): one row per binding with link and sync state,
+ 	 * unbind (with confirmation) and add for editors, empty and error state. Also feeds the detail panel, so one request serves both.
+ 	 */
+-	let { projectID, showDetails = false, onchanged }: { projectID: string; showDetails?: boolean; onchanged?: () => unknown } = $props();
++	let {
++		projectID,
++		showDetails = false,
++		onchanged,
++		refreshKey = ''
++	}: { projectID: string; showDetails?: boolean; onchanged?: () => unknown; /** Changes whenever the surrounding board data changed; triggers a quiet reload. */ refreshKey?: string } = $props();
+ 
+ 	let phase = $state<'loading' | 'ready' | 'error'>('loading');
+ 	let sync = $state<ProjectSync | null>(null);
+@@ -24,6 +30,7 @@
+ 	let formError = $state<string | null>(null);
+ 	let status = $state('');
+ 
++	// Project switch: reset and load with the loading state.
+ 	$effect(() => {
+ 		const id = projectID;
+ 		phase = 'loading';
+@@ -46,6 +53,30 @@
+ 		return () => (current = false);
+ 	});
+ 
++	// Board data changed (live refresh, poll): reload quietly. No loading state, no reset of open forms, errors keep the shown data.
++	let firstToken = true;
++	$effect(() => {
++		const id = projectID;
++		void refreshKey;
++		if (firstToken) {
++			firstToken = false;
++			return;
++		}
++		if (untrack(() => phase) !== 'ready') return;
++		let current = true;
++		api.getProjectSync(id).then(
++			(s) => {
++				if (current && !sameBindings(untrack(() => sync), s)) sync = s;
++			},
++			() => undefined
++		);
++		return () => (current = false);
++	});
++
++	function sameBindings(a: ProjectSync | null, b: ProjectSync): boolean {
++		return JSON.stringify(a) === JSON.stringify(b);
++	}
++
+ 	const bindings = $derived(bindingList(sync));
+ 	const editable = $derived(canEditSync(role));
+ 
+@@ -101,7 +132,7 @@
+ 	}
+ </script>
+ 
+-<div class="flex flex-col gap-2" data-testid="repo-line" aria-live="polite">
++<div class="flex min-h-9 flex-col gap-2" data-testid="repo-line" aria-live="polite">
+ 	{#if phase === 'loading'}
+ 		<p class="text-muted-foreground text-xs">{t('sync.loading')}</p>
+ 	{:else if phase === 'error'}
