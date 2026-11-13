@@ -20,6 +20,8 @@ final class Attachment: Model, @unchecked Sendable {
     @Field(key: "object_key") var objectKey: String
     /// `AttachmentStorageKind` raw value; legacy rows (created before the column existed) are `s3`.
     @Field(key: "storage") var storage: String
+    /// Set for attachments created since ADR 0030 step 3 (nil on older rows); used to age out unreferenced voice memos.
+    @OptionalField(key: "created_at") var createdAt: Date?
     init() { storage = AttachmentStorageKind.database.rawValue }
 }
 

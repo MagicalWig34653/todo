@@ -24,7 +24,7 @@ final class ChannelTests: XCTestCase {
         let task = TodoTask(ownerID: try owner.requireID(), projectID: try f.project.requireID(), title: "Memo", details: "")
         try await task.save(on: f.test.app.db)
         let a = Attachment()
-        a.taskID = try task.requireID(); a.ownerID = try owner.requireID(); a.filename = "memo.m4a"; a.role = role
+        _ = task; a.taskID = Attachment.noTask; a.ownerID = try owner.requireID(); a.filename = "memo.m4a"; a.role = role
         a.mediaType = "audio/mp4"; a.size = 10; a.checksum = "x"; a.status = status; a.objectKey = UUID().uuidString
         try await a.save(on: f.test.app.db)
         return try a.requireID()

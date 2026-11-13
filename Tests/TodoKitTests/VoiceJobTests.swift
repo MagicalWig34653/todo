@@ -564,6 +564,141 @@ final class VoiceJobTests: XCTestCase {
         }
     }
 
+    // MARK: Review follow-ups
+
+    func testJobWithMissingRecordingFailsForRealAndDoesNotBlockTheQueue() async throws {
+        let s = try await make()
+        try await run(s) {
+            _ = try await heartbeat(s, s.runner1)
+            let memoA = try await uploadMemo(s)
+            _ = try await speak(s, memo: memoA)
+            _ = try await speak(s)
+            _ = try await speak(s)
+            let all = try await VoiceJob.query(on: s.t.app.db).sort(\.$createdAt).all()
+            let jobA = try XCTUnwrap(all.first?.id?.uuidString)
+            let lost = try await unwrap(try await Attachment.find(UUID(uuidString: memoA), on: s.t.app.db))
+            try await lost.delete(on: s.t.app.db)
+
+            let first = try await claim(s, s.runner1, job: jobA)
+            XCTAssertEqual(first.status, .gone)
+            // The failure is committed, not rolled back with the refusal.
+            try await eq(try await jobRow(s, jobA).state, "failed")
+            try await eq(try await jobRow(s, jobA).errorCode, "audio_missing")
+            let kinds = try await messages(s).map { $0["kind"] as? String }
+            XCTAssertEqual(kinds.filter { $0 == "status" }.count, 1)
+            let again = try await claim(s, s.runner1, job: jobA)
+            XCTAssertEqual(again.status, .gone)
+            let next = try await claim(s, s.runner1)
+            XCTAssertEqual(next.status, .ok, "the next job is claimable")
+            XCTAssertNotEqual(next.body?["id"] as? String, jobA.lowercased())
+        }
+    }
+
+    func testClaimNextSkipsBrokenHeadOfQueue() async throws {
+        let s = try await make()
+        try await run(s) {
+            _ = try await heartbeat(s, s.runner1)
+            let memoA = try await uploadMemo(s)
+            _ = try await speak(s, memo: memoA)
+            _ = try await speak(s)
+            let lost = try await unwrap(try await Attachment.find(UUID(uuidString: memoA), on: s.t.app.db))
+            try await lost.delete(on: s.t.app.db)
+            let next = try await claim(s, s.runner1)
+            XCTAssertEqual(next.status, .ok, "\(next.body ?? [:])")
+            try await eq(try await VoiceJob.query(on: s.t.app.db).filter(\.$state == "failed").count(), 1)
+            try await eq(try await messages(s).filter { $0["kind"] as? String == "status" }.count, 1)
+        }
+    }
+
+    func testUnreferencedTasklessVoiceAttachmentsAreCleanedAfterADay() async throws {
+        let s = try await make()
+        try await run(s) {
+            let loose = try await uploadMemo(s)          // never posted
+            let posted = try await uploadMemo(s)
+            _ = try await speak(s, memo: posted)          // referenced by a message and a (no device: none) job
+            let service = AttachmentService()
+            try await eq(try await service.cleanup(db: s.t.app.db), 0, "younger than a day stays")
+            for id in [loose, posted] {
+                let a = try await unwrap(try await Attachment.find(UUID(uuidString: id), on: s.t.app.db))
+                a.createdAt = Date().addingTimeInterval(-25 * 3600)
+                try await a.save(on: s.t.app.db)
+            }
+            try await eq(try await service.cleanup(db: s.t.app.db), 1, "only the unreferenced one goes")
+            try await isNil(try await Attachment.find(UUID(uuidString: loose), on: s.t.app.db))
+            _ = try await unwrap(try await Attachment.find(UUID(uuidString: posted), on: s.t.app.db))
+            // A reply audio referenced only by a job is kept as well.
+            _ = try await heartbeat(s, s.runner1)
+            _ = try await speak(s)
+            let job = try await unwrap(try await claim(s, s.runner1).body?["id"] as? String)
+            let reply = try await unwrap(try await putReply(s, s.runner1, job, generation: 1, data: AudioFixtures.m4a(duration: 1000)).body?["attachmentID"] as? String)
+            let r = try await unwrap(try await Attachment.find(UUID(uuidString: reply), on: s.t.app.db))
+            r.createdAt = Date().addingTimeInterval(-25 * 3600)
+            try await r.save(on: s.t.app.db)
+            try await eq(try await service.cleanup(db: s.t.app.db), 0)
+        }
+    }
+
+    func testOpenUnreferencedVoiceAttachmentsAreLimitedPerAccount() async throws {
+        let s = try await make()
+        try await run(s) {
+            for _ in 0..<10 { _ = try await uploadMemo(s) }
+            let data = audio
+            let r = try await s.t.json(.POST, "/v1/attachments/begin", ["filename": "memo.m4a", "role": "voice", "mediaType": "audio/mp4",
+                "size": data.count, "checksum": AttachmentChecksum.sha256(data)], token: s.human)
+            XCTAssertEqual(r.status, .tooManyRequests)
+            XCTAssertEqual(r.body?["reason"] as? String, "too_many_voice_attachments")
+            // Posting one frees a slot; another account is unaffected.
+            let any = try await unwrap(try await Attachment.query(on: s.t.app.db).filter(\.$role == "voice").first())
+            _ = try await speak(s, memo: try any.requireID().uuidString)
+            let again = try await s.t.json(.POST, "/v1/attachments/begin", ["filename": "memo.m4a", "role": "voice", "mediaType": "audio/mp4",
+                "size": data.count, "checksum": AttachmentChecksum.sha256(data)], token: s.human)
+            XCTAssertEqual(again.status, .ok)
+            let other = try await stranger(s)
+            _ = try await uploadMemo(s, token: other.session)
+        }
+    }
+
+    func testSameRecordingPostedTwiceInParallelCreatesOneJob() async throws {
+        let s = try await make()
+        try await run(s) {
+            _ = try await heartbeat(s, s.runner1)
+            let memo = try await uploadMemo(s)
+            let app = s.t, token = s.human
+            async let a = Self.rawPost(app, token, memo)
+            async let b = Self.rawPost(app, token, memo)
+            let results = try await [a, b]
+            XCTAssertLessThanOrEqual(results.filter { $0 == .created }.count, 1, "\(results)")
+            XCTAssertEqual(results.filter { $0 == .created }.count + results.filter { $0 == .conflict }.count
+                           + results.filter { $0 == .internalServerError }.count, 2)
+            try await eq(try await VoiceJob.query(on: s.t.app.db).count(), 1)
+            try await eq(try await messages(s).filter { $0["kind"] as? String == "voice_in" }.count, 1)
+        }
+    }
+
+    func testVoiceInRefusesTaskBoundAttachment() async throws {
+        let s = try await make()
+        try await run(s) {
+            let data = audio
+            let b = try await s.t.json(.POST, "/v1/attachments/begin", ["taskID": s.f.taskID, "filename": "memo.m4a", "role": "voice",
+                "mediaType": "audio/mp4", "size": data.count, "checksum": AttachmentChecksum.sha256(data)], token: s.human)
+            let body = try XCTUnwrap(b.body)
+            let id = try XCTUnwrap(body["attachmentID"] as? String)
+            try await s.t.app.test(.PUT, try XCTUnwrap(body["uploadURL"] as? String), beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: body["token"] as! String)
+                req.body = ByteBuffer(data: data)
+            }, afterResponse: { res async in XCTAssertEqual(res.status, .noContent) })
+            let done = try await s.t.json(.POST, "/v1/attachments/\(id)/complete", token: s.human)
+            XCTAssertEqual(done.status, .ok)
+            let r = try await speak(s, memo: id)
+            XCTAssertEqual(r.status, .unprocessableEntity)
+            XCTAssertEqual(r.body?["reason"] as? String, "invalid_attachment")
+        }
+    }
+
+    private static func rawPost(_ t: TestApp, _ token: String, _ memo: String) async throws -> HTTPStatus {
+        try await t.json(.POST, "/v1/channels/brain/messages", ["kind": "voice_in", "attachmentID": memo, "clientUUID": UUID().uuidString], token: token).status
+    }
+
     // MARK: Schema
 
     func testMigrationIsAdditiveAndRepeatable() async throws {
