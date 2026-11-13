@@ -140,7 +140,8 @@ struct ChannelService {
         if let id = body.attachmentID {
             // Another account's attachment is indistinguishable from a missing one.
             guard let a = try await Attachment.find(id, on: db), a.ownerID == userID else { throw Abort(.notFound) }
-            guard a.role == "voice", a.status == "complete" else { throw Abort(.unprocessableEntity, reason: "invalid_attachment") }
+            // A voice_in recording belongs to the account, not to a task.
+            guard a.role == "voice", a.status == "complete", kind != "voice_in" || !a.hasTask else { throw Abort(.unprocessableEntity, reason: "invalid_attachment") }
         }
         let channel = try await channel()
         let channelID = try channel.requireID()
@@ -158,13 +159,7 @@ struct ChannelService {
         if let existing = try await replay() { return (existing, false) }
 
         let startsJob = kind == "voice_in"
-        if startsJob, let id = body.attachmentID {
-            try await VoiceService.expireDue(owner: userID, db: db)
-            try await VoiceService.checkLimits(owner: userID, db: db)
-            // One recording, one message: a failed or expired job deletes its recording.
-            guard try await ChannelMessage.query(on: db).filter(\.$ownerID == userID).filter(\.$kind == "voice_in")
-                .filter(\.$attachmentID == id).count() == 0 else { throw Abort(.conflict, reason: "attachment_in_use") }
-        }
+        if startsJob { try await VoiceService.expireDue(owner: userID, db: db) }
 
         let m = ChannelMessage()
         m.channelID = channelID; m.ownerID = userID; m.kind = kind; m.author = author.rawValue
@@ -172,6 +167,15 @@ struct ChannelService {
         m.createdAt = Self.now()
         do {
             try await db.transaction { tx in
+                if startsJob, let id = body.attachmentID {
+                    // Same lock as the claim: checks and insert of one account run one after the other, so two parallel posts
+                    // cannot both pass the limits or take the same recording.
+                    try await lockRow(table: User.schema, id: userID, on: tx)
+                    try await VoiceService.checkLimits(owner: userID, db: tx)
+                    // One recording, one message: a failed or expired job deletes its recording.
+                    guard try await ChannelMessage.query(on: tx).filter(\.$ownerID == userID).filter(\.$kind == "voice_in")
+                        .filter(\.$attachmentID == id).count() == 0 else { throw Abort(.conflict, reason: "attachment_in_use") }
+                }
                 try await m.save(on: tx)
                 if startsJob { try await VoiceService.enqueue(message: m, user: user, db: tx) }
             }

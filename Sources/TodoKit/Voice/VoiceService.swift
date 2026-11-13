@@ -176,16 +176,30 @@ enum VoiceService {
     /// `jobID` nil: the oldest claimable job of the device's account, nil when there is none.
     /// A job is claimable when it is queued or its lease ran out (take-over: generation + 1). One live job per account.
     static func claim(device: RunnerDevice, jobID: UUID?, db: any Database) async throws -> VoiceJobDTO? {
+        try await expireDue(owner: device.ownerID, db: db)
+        // A job whose recording is gone is failed (committed) and skipped; only a claim by id reports it as 410, after the commit.
+        for _ in 0..<maxOpenJobs + 1 {
+            switch try await claimOnce(device: device, jobID: jobID, db: db) {
+            case .claimed(let dto): return dto
+            case .none: return nil
+            case .brokenJob: if jobID != nil { throw Abort(.gone, reason: "job_ended") }
+            }
+        }
+        return nil
+    }
+
+    enum ClaimOutcome { case claimed(VoiceJobDTO), none, brokenJob }
+
+    private static func claimOnce(device: RunnerDevice, jobID: UUID?, db: any Database) async throws -> ClaimOutcome {
         let owner = device.ownerID
-        try await expireDue(owner: owner, db: db)
-        return try await db.transaction { tx -> VoiceJobDTO? in
+        return try await db.transaction { tx -> ClaimOutcome in
             // The account row serializes every claim of the account (two Macs, same queue).
             try await lockRow(table: User.schema, id: owner, on: tx)
             let now = Date()
             guard let current = try await RunnerDevice.find(device.requireID(), on: tx), current.revokedAt == nil,
                   let user = try await User.find(owner, on: tx), !user.isLocked else { throw Abort(.unauthorized) }
             guard current.effectiveCapabilities.contains(VoiceCapabilities.voice) else {
-                if jobID == nil { return nil }
+                if jobID == nil { return .none }
                 throw Abort(.forbidden, reason: "capability_missing")
             }
             current.lastSeenAt = now
@@ -204,22 +218,22 @@ enum VoiceService {
                 guard live.isEmpty else { throw Abort(.conflict, reason: "voice_job_running") }
                 candidate = found
             } else {
-                guard live.isEmpty else { return nil }
+                guard live.isEmpty else { return .none }
                 let open = try await VoiceJob.query(on: tx).filter(\.$ownerID == owner).filter(\.$state ~~ ["queued", "claimed"])
                     .sort(\.$createdAt).sort(\.$id).all()
-                guard let next = open.first(where: claimable) else { return nil }
+                guard let next = open.first(where: claimable) else { return .none }
                 candidate = next
             }
             try await lockRow(table: VoiceJob.schema, id: candidate.requireID(), on: tx)
             guard let job = try await VoiceJob.find(candidate.requireID(), on: tx), claimable(job) else { throw Abort(.conflict, reason: "job_not_queued") }
             guard let a = try await Attachment.find(job.attachmentID, on: tx), a.status == "complete", a.ownerID == owner else {
                 try await end(job, state: "failed", errorCode: "audio_missing", statusText: failedMessage, db: tx)
-                throw Abort(.gone, reason: "job_ended")
+                return .brokenJob
             }
             job.state = "claimed"; job.deviceID = try current.requireID(); job.generation += 1
             job.leaseUntil = now.addingTimeInterval(lease)
             try await job.save(on: tx)
-            return try VoiceJobDTO(job, audio: VoiceAudioInfo(mediaType: a.mediaType, size: a.size, checksum: a.checksum))
+            return .claimed(try VoiceJobDTO(job, audio: VoiceAudioInfo(mediaType: a.mediaType, size: a.size, checksum: a.checksum)))
         }
     }
 

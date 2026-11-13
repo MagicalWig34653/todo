@@ -87,10 +87,11 @@ struct AttachmentService: Sendable {
               !input.filename.contains("/"), !input.filename.contains("\\")
         else { throw Abort(.badRequest, reason: "invalid_attachment") }
         _ = try store(writeKind)  // 503 attachment_storage_unconfigured before any row exists
+        if input.taskID == nil { try await Self.checkLooseVoiceLimit(owner: try user.requireID(), db: db) }
         let a = Attachment()
         a.id = UUID(); a.storage = writeKind.rawValue; a.taskID = input.taskID ?? Attachment.noTask; a.ownerID = try user.requireID()
         a.filename = input.filename; a.role = input.role; a.mediaType = input.mediaType
-        a.size = input.size; a.checksum = input.checksum; a.status = "pending"
+        a.size = input.size; a.checksum = input.checksum; a.status = "pending"; a.createdAt = Date()
         a.objectKey = "attachments/\(try a.requireID().uuidString.lowercased())"
         let token = AuthSupport.randomToken()
         let session = UploadSession()
@@ -101,6 +102,33 @@ struct AttachmentService: Sendable {
             try await a.create(on: db); try await session.create(on: db)
         }
         return UploadCapability(attachmentID: try a.requireID(), uploadURL: "/v1/attachments/\(try a.requireID())/upload", token: token, expiresAt: session.expiresAt)
+    }
+
+    /// Task-less voice attachments nobody references yet (not in a channel message, not a job's recording or reply).
+    static let maxLooseVoice = 10
+    /// Unreferenced task-less voice attachments older than this are removed by `cleanup` (full retention: ADR 0030 step 7).
+    static let looseVoiceLifetime: TimeInterval = 24 * 3600
+
+    static func looseVoiceAttachments(owner: UUID, db: any Database) async throws -> [Attachment] {
+        let candidates = try await Attachment.query(on: db).filter(\.$ownerID == owner).filter(\.$taskID == Attachment.noTask)
+            .filter(\.$role == "voice").filter(\.$status ~~ ["pending", "complete"]).all()
+        return try await unreferenced(candidates, db: db)
+    }
+
+    static func unreferenced(_ candidates: [Attachment], db: any Database) async throws -> [Attachment] {
+        guard !candidates.isEmpty else { return [] }
+        let ids = try candidates.map { try $0.requireID() }
+        var used = Set<UUID>()
+        for m in try await ChannelMessage.query(on: db).filter(\.$attachmentID ~~ ids).all() { if let id = m.attachmentID { used.insert(id) } }
+        for j in try await VoiceJob.query(on: db).group(.or, { $0.filter(\.$attachmentID ~~ ids).filter(\.$replyAttachmentID ~~ ids) }).all() {
+            used.insert(j.attachmentID); if let r = j.replyAttachmentID { used.insert(r) }
+        }
+        return try candidates.filter { !used.contains(try $0.requireID()) }
+    }
+
+    static func checkLooseVoiceLimit(owner: UUID, db: any Database) async throws {
+        guard try await looseVoiceAttachments(owner: owner, db: db).count >= maxLooseVoice else { return }
+        throw Abort(.tooManyRequests, reason: "too_many_voice_attachments")
     }
 
     func validate(_ data: Data, for a: Attachment) throws {
@@ -189,7 +217,12 @@ struct AttachmentService: Sendable {
                     let session = try await UploadSession.query(on: db).filter(\.$attachmentID == id).first()
                     // Task-less voice memos are never orphaned by a task; their life cycle is the voice job's.
                     let task = current.hasTask ? try await TodoTask.find(current.taskID, on: db) : nil
-                    let orphaned = current.hasTask && task == nil
+                    var orphaned = current.hasTask && task == nil
+                    // Complete task-less voice memos that no message or job references and that are a day old.
+                    if !current.hasTask, current.role == "voice", current.status == "complete", let at = current.createdAt,
+                       at < now.addingTimeInterval(-Self.looseVoiceLifetime), try await Self.unreferenced([current], db: db).count == 1 {
+                        orphaned = true
+                    }
                     // "deleted" = removed through a confirmed delete_attachment request (no storage settings there).
                     guard orphaned || current.status == "deleted" || (current.status == "pending" && (session == nil || session!.expiresAt <= now)) else { return false }
                     try await store(for: current).delete(key: current.objectKey, db: db)

@@ -23,7 +23,7 @@ info:
     (dann Generation + 1). Höchstens ein laufender (geclaimter) Auftrag je Konto (409 voice_job_running).
     Limits je Konto: 10 voice_in je Minute und 200 je Tag (429 voice_rate_limited, zählt auch Nachrichten ohne erreichbares Gerät), höchstens 5 offene
     Aufträge (429 too_many_open_voice_jobs), Transkript und Antworttext je höchstens 4000 Zeichen, Antwortaudio höchstens 5 MiB und 120 s (M4A/WAV,
-    Container geprüft). Eine Aufnahme gehört zu genau einer voice_in-Nachricht (409 attachment_in_use). Audio und Texte stehen in keinem Log.
+    Container geprüft). Limit und Doppelprüfung der Aufnahme laufen unter der Kontosperre (parallele Posts erzeugen höchstens einen Auftrag). Fehlt die Aufnahme beim Claim, wird der Auftrag festgeschrieben als failed (errorCode audio_missing) mit Statusnachricht; der Claim ohne ID überspringt ihn, der Claim per ID meldet 410 job_ended. Eine Aufnahme gehört zu genau einer voice_in-Nachricht (409 attachment_in_use). Audio und Texte stehen in keinem Log.
     MCP: list_channel_messages (Scope channels:read) und post_channel_message (Scope channels:write), siehe oauth-mcp.yaml. Neue Scopes; bestehende
     Verbindungen behalten ihre Scopes und sehen die Tools erst nach neuer Zustimmung.'
 security:
@@ -65,7 +65,7 @@ paths:
         '401': {description: nicht angemeldet}
         '404': {description: 'Anhang existiert nicht oder gehört einem anderen Konto'}
         '409': {description: 'client_uuid_conflict: gleiche clientUUID, anderer Inhalt; attachment_in_use: die Aufnahme gehört schon zu einer voice_in-Nachricht'}
-        '422': {description: 'invalid_attachment: kein fertiger Anhang mit Rolle voice'}
+        '422': {description: 'invalid_attachment: kein fertiger Anhang mit Rolle voice; bei voice_in zusätzlich: der Anhang darf keiner Aufgabe gehören'}
         '429': {description: 'voice_rate_limited (10 je Minute, 200 je Tag) oder too_many_open_voice_jobs (5); nur bei voice_in, es wird keine Nachricht angelegt'}
   /v1/agents/devices/{id}/capabilities:
     put:

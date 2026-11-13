@@ -107,7 +107,18 @@ struct AddVoiceJobs: AsyncMigration {
     }
 }
 
+/// Additive: when an attachment was created (nullable, legacy rows stay nil).
+struct AddAttachmentCreatedAt: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(Attachment.schema).field("created_at", .datetime).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(Attachment.schema).deleteField("created_at").update()
+    }
+}
+
 func configureVoice(_ app: Application) {
     app.migrations.add(AddVoiceJobs())
+    app.migrations.add(AddAttachmentCreatedAt())
     app.lifecycle.use(VoiceExpiryWorker(app: app))
 }
