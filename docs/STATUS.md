@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 13.11.2026: Playwright 1.65.0 und volle Browser-Matrix neu (Branch `agent/playwright-165`)
+
+- Entscheidung Lino: `@playwright/test` auf 1.65.0 anheben (Firefox `firefox-1555` aus 1.64.1 startet auf diesem Mac nicht, `firefox-1572` läuft). Umgesetzt: `web/package.json` exakt `1.65.0`, Lockdatei nur `@playwright/test`, `playwright`, `playwright-core` (je 1.64.1 auf 1.65.0, 13 Zeilen), keine anderen Upgrades. CI führt kein Playwright aus und kodiert keine Version, nichts angepasst.
+- Matrix (frische SQLite je Spec-Datei, echtes natives Backend aus `main`, je Projekt nacheinander): chromium 156 grün/0 rot/11 übersprungen (mail, server-settings ohne Senke), firefox 48/0/119, webkit 48/0/119, mobile-safari 48/0/119. Neue Specs laufen mit (card-tabs, repo-line-stability, board-single-fetch); Firefox ist damit erstmals belegt, auch `repo-line-stability` und `card-tabs` dort grün. Keine roten Specs, keine Produktfehler. Tabelle: `docs/BROWSER-MATRIX.md`.
+- Geprüft: vitest 337 grün, `npm run check` 0 Fehler, `npm run build` Exit 0.
+- Offen: `mobile-chrome` nicht gelaufen; Passkey-Ablauf in Firefox/WebKit nicht geprüft (kein virtueller Authenticator); mail/server-settings ohne SMTP-Senke; 119 Tests bleiben Chromium-only. Kein Push, kein Merge.
+
 ## Checkpoint 13.11.2026: Karten-Detail mit Tabs, Stufe 1 (Karte `378554C5`, Branch `agent/karten-detail-tabs`)
 - Neu (nur PWA, keine Backend-/Vertragsänderung): Tableiste im Karten-Fenster (Übersicht, Aktivität, Bericht, Pipeline, Änderungen, Tests) für Aufgaben-, Fragen- und Review-Karten; Bestätigungskarten haben keine Tabs. Übersicht = bisheriger Inhalt unverändert (Titel bleibt über den Tabs, Seitenleiste in jedem Tab). Aktivität = `TaskActivity` (für alle Projektmodi; fehlende deutsche Ereignisnamen ergänzt). Bericht = Fertigstellungs-Zusammenfassung (nur bei angenommenem Review), Fortschrittsnotizen chronologisch, Fragen mit Antworten, Review-Entscheidung, alles aus `taskContext`. Pipeline/Änderungen/Tests = ehrlicher Leerzustand, kein Fake-Inhalt.
 - Tab im URL: `?card=task:<id>&tab=<overview|activity|report|pipeline|changes|tests>` (`Route.cardTab`, `cardDetail.tab/setTab`); Tabwechsel per `replaceState` (Zurück schließt weiter das Fenster, ein History-Eintrag je Karte); Standard-Tab steht nicht in der URL; unbekannter Tab = Übersicht. ARIA tablist/tab/tabpanel, Roving-Tabindex, Pfeile/Pos1/Ende aktivieren, Tableiste sticky und auf 390 px seitlich scrollbar (gewählter Tab wird sichtbar gescrollt), Tabwechsel setzt einen weggescrollten Panel-Anfang zurück.

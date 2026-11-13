@@ -1,15 +1,15 @@
 # Browser-Matrix der E2E-Specs
 
-Stand 13.11.2026, Branch `agent/browser-matrix` (Basis `085a8ee`). Echtes Backend (`.build/debug/App`, SQLite), PWA über Vite, Playwright 1.65.0 (Chromium 158, Firefox 159-basiert `firefox-1572`, WebKit 27.2 `webkit-2388`), headless, macOS arm64.
+Stand 13.11.2026, Branch `agent/playwright-165` (Basis `main@f34e0dc`, Backend-Binary aus `main` Stand 45a8891). Echtes Backend (`.build/debug/App`, SQLite), PWA über Vite, `@playwright/test` jetzt fest auf 1.65.0 in `web/package.json` und Lockdatei (Chromium 158, Firefox `firefox-1572`, WebKit `webkit-2388`), headless, macOS arm64. Vollständiger Neulauf aller 4 Projekte mit der Lockdatei-Version, 167 Tests je Projekt.
 
 ## Ergebnis (grün / rot / übersprungen)
 
 | Projekt | grün | rot | übersprungen | Bemerkung |
 | --- | --- | --- | --- | --- |
-| chromium | 142 | 0 | 11 | übersprungen: `mail` (3), `server-settings` (8), brauchen `MAIL_SINK_FILE` und eine SMTP-Senke |
-| firefox | 35 | 0 | 118 | alle Specs mit `signedInPage` laufen; der Rest braucht Chromium (CDP-Passkey) |
-| webkit | 35 | 0 | 118 | wie Firefox |
-| mobile-safari (iPhone 14, WebKit) | 35 | 0 | 118 | wie Firefox, mit Touch/schmalem Viewport |
+| chromium | 156 | 0 | 11 | übersprungen: `mail` (3), `server-settings` (8), brauchen `MAIL_SINK_FILE` und eine SMTP-Senke |
+| firefox | 48 | 0 | 119 | alle Specs mit `signedInPage` laufen; der Rest braucht Chromium (CDP-Passkey); Firefox startet jetzt |
+| webkit | 48 | 0 | 119 | wie Firefox |
+| mobile-safari (iPhone 14, WebKit) | 48 | 0 | 119 | wie Firefox, mit Touch/schmalem Viewport |
 
 Nicht gelaufen: `mobile-chrome`.
 
@@ -20,7 +20,9 @@ Nicht gelaufen: `mobile-chrome`.
 | account-lock | 6 grün | 6 übersprungen | 6 übersprungen | 6 übersprungen |
 | action-requests | 2 grün | 2 übersprungen | 2 übersprungen | 2 übersprungen |
 | attachment-upload | 9 grün | 9 grün | 9 grün | 9 grün |
+| board-single-fetch | 1 grün | 1 übersprungen | 1 übersprungen | 1 übersprungen |
 | card-detail | 15 grün | 15 übersprungen | 15 übersprungen | 15 übersprungen |
+| card-tabs | 11 grün | 11 grün | 11 grün | 11 grün |
 | connections | 5 grün | 5 übersprungen | 5 übersprungen | 5 übersprungen |
 | for-you | 3 grün | 3 grün | 3 grün | 3 grün |
 | freetext-review | 5 grün | 5 grün | 5 grün | 5 grün |
@@ -34,6 +36,7 @@ Nicht gelaufen: `mobile-chrome`.
 | permissions | 8 grün | 8 übersprungen | 8 übersprungen | 8 übersprungen |
 | project-repository | 4 grün | 4 übersprungen | 4 übersprungen | 4 übersprungen |
 | question-overflow | 7 grün | 7 übersprungen | 7 übersprungen | 7 übersprungen |
+| repo-line-stability | 2 grün | 2 grün | 2 grün | 2 grün |
 | review-undo | 2 grün | 2 übersprungen | 2 übersprungen | 2 übersprungen |
 | server-settings | 8 übersprungen | 8 übersprungen | 8 übersprungen | 8 übersprungen |
 | settings-hub | 11 grün | 11 übersprungen | 11 übersprungen | 11 übersprungen |
@@ -43,13 +46,13 @@ Nicht gelaufen: `mobile-chrome`.
 | ui-lists | 4 grün | 4 übersprungen | 4 übersprungen | 4 übersprungen |
 | ui-nav | 6 grün | 6 übersprungen | 6 übersprungen | 6 übersprungen |
 
-Der Passkey-Ablauf selbst (virtueller Authenticator) wird nur in Chromium geprüft; in Firefox/WebKit wird die Sitzung aus einem Hilfs-Chromium übernommen (`e2e/support/session.ts`). 118 von 153 Tests laufen dort bewusst nicht: die Specs sind weiterhin Chromium-only.
+Der Passkey-Ablauf selbst (virtueller Authenticator) wird nur in Chromium geprüft; in Firefox/WebKit wird die Sitzung aus einem Hilfs-Chromium übernommen (`e2e/support/session.ts`). 119 von 167 Tests laufen dort bewusst nicht: die Specs sind weiterhin Chromium-only.
 
-## Ursache Firefox (belegt)
+## Firefox (gelöst)
 
-Playwright 1.64.1 liefert Firefox `firefox-1555` (157.0, Nightly-Bundle). Auf diesem Mac endet jeder Start, auch direkt aus dem Terminal ohne Playwright und mit frischem Profil in beliebigem Ordner (`/tmp`, `~/Library/Caches`, leeres `HOME`), mit `Could not find profile folder.` (Exit 1); das Profil bleibt leer. Es liegt weder an Rechten, Quarantäne (nur `com.apple.provenance`), Architektur (arm64 nativ, kein Rosetta) noch an einem Konflikt mit dem installierten Firefox 159 (anderes `HOME` änderte nichts). Dieselbe Binärdatei-Familie in der Revision `firefox-1572` (Playwright 1.65.0) startet dagegen, mit Playwright und direkt. Die Ursache liegt also im Build `1555`/157 selbst (Profil-Auswahl beim Start); den genauen Codepfad habe ich nicht weiter verfolgt.
+Playwright 1.64.1 lieferte Firefox `firefox-1555` (157.0, Nightly-Bundle). Auf diesem Mac endete jeder Start, auch direkt aus dem Terminal ohne Playwright und mit frischem Profil, mit `Could not find profile folder.` (Exit 1). Rechte, Quarantäne, Architektur und ein installierter Firefox 159 waren es nicht; die Ursache liegt im Build `1555` selbst. Mit `@playwright/test` 1.65.0 (`firefox-1572`) startet Firefox; alle 48 laufenden Tests sind grün, die Zahlen entsprechen WebKit und mobile-safari. Die Anhebung ist umgesetzt (Version exakt gepinnt, keine weiteren Änderungen an der Lockdatei als `@playwright/test`, `playwright`, `playwright-core`). Die CI-Pipeline (`.github/workflows/ci.yml`) führt kein Playwright aus und kodiert keine Version.
 
-Fix: Playwright auf 1.65.0 anheben (`@playwright/test` in `web/package.json` und Lockdatei). Das ist hier bewusst nicht geschehen (keine Abhängigkeitsänderung ohne Freigabe); die Läufe unten nutzten `npm install --no-save @playwright/test@1.65.0` in einer Kopie von `node_modules` und `PLAYWRIGHT_BROWSERS_PATH` auf einen Scratch-Ordner, `npx playwright install chromium firefox webkit`.
+Browser für lokale Läufe: `PLAYWRIGHT_BROWSERS_PATH=<Ordner> npx playwright install chromium firefox webkit` (Firefox-Revision hängt an der Playwright-Version).
 
 ## Befunde und Einordnung
 
