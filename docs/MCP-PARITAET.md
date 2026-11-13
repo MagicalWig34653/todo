@@ -290,6 +290,22 @@ Kontobezogener Kanal (ein Kanal `brain` je Konto, lazy angelegt); gleicher Fachp
 - Arten je Seite: Person (REST/App) `text`, `voice_in`; Agent (MCP) `text`, `voice_out`, `status`. Ein Agent kann keine `voice_in`-Nachricht fälschen.
 - Kein Projekt-Grant nötig: der Kanal gehört dem Konto. Fremde Anhänge (`attachmentID`) ergeben `not_found`.
 
+## Live-Ansicht je Karte (13.11.2026, Handbuch 1.28.0, ADR 0031)
+
+Gleicher Fachpfad für REST (Lesen) und MCP (Melden, Lesen): `LiveSessionService` (`Sources/TodoKit/LiveSession`), Werkzeuge in `MCPLiveSessionTools.swift`, Secrets-Filter `SecretFilter`, Tests `LiveSessionTests`, `SecretFilterTests`. Vertrag `contracts/live-session.yaml` 1.0.0, `contracts/oauth-mcp.yaml` 1.3.0. Keine neuen Scopes.
+
+| Tool | Scope | Klasse | Argumente → Ergebnis |
+|---|---|---|---|
+| `report_session_step` | tasks:write | B | `taskID, step? (1-280), session? (80, main), model?, ended?, agentName?` → LiveSession; Rolle edit, Grant-Projekt nötig |
+| `report_session_event` | tasks:write | B | `taskID, kind (tool, note, question, progress), text (1-280), session?, clientUUID?` → LiveEvent; idempotent über `clientUUID` |
+| `get_task_live` | tasks:read | A | `taskID, limit? (1-200, 50), cursor?, since?` → `{taskID, serverTime, sessions, items, nextCursor}`; REST `GET /v1/tasks/{id}/live` |
+
+- Bewusst kein REST-Schreibweg und kein Runner-Weg: gemeldet wird nur vom Agenten per MCP. Kein Transkript, keine Befehlsausgabe (Entscheidung Lino, Frage 5190C437).
+- Rechte wie `post_progress` (edit) beim Melden und `get_task_context` (read) beim Lesen; Fremde/ohne Recht/außerhalb des Grants: 404.
+- Filter beim Schreiben (Text, Session-Name, Modell, Label); Limits 60/min je Session, 120/min je Karte, 500 Ereignisse je Karte, 10 Sessions je Karte.
+- Aufbewahrung: Cleanup löscht 3 Tage nach `done` (`tasks.updated_at`); Kaskaden auf Karte und Konto.
+- `wait_for_events` zeigt die Live-Meldungen nicht als Hinweis (sonst weckt sich der meldende Agent selbst); das Live-Token (ADR 0022) ändert sich trotzdem, damit PWA/App neu laden.
+
 ## Sprachanhänge (T1 Schritt 1, 13.11.2026)
 
 Rolle `voice` mit `audio/mp4` und `audio/wav` (Vertrag `contracts/attachments.yaml` 1.1.0) gibt es bewusst nur im REST-Anhangsweg für die App. Die MCP-Werkzeuge `begin_task_upload`/`add_attachment` bieten Rolle und Medientypen weiter nur wie bisher an (Schema-Enum unverändert); Agenten lesen Sprachanhänge später über den Kanal #brain (T1 Schritt 2). Fachregeln (Magic Bytes, 5 MiB, 120 s aus dem Container) liegen in `AttachmentService`, nicht im Controller.

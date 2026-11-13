@@ -1,4 +1,4 @@
-<!-- manual-version: 1.27.0 -->
+<!-- manual-version: 1.28.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -120,6 +120,18 @@ Each account has exactly one channel `brain` (created on first use): the person 
 - Voice jobs (server side, no tool): a `voice_in` message makes the server create a voice job for a Mac runner that reports the capability `sprache`; the runner transcribes (the transcript fills `text` of the `voice_in` message) and answers with a `voice_out` (audio) or `text` message, all written by the server, not by you. Without such a runner the server itself writes a `status` message "Brain gerade nur per Text erreichbar." and there is no job; a job that nobody finishes within 10 minutes ends with the `status` message "Die Sprachnachricht ist abgelaufen.". So a `voice_in` without `text` yet is not an unanswered request for you: it is waiting for the runner. Read `status` messages as system notes, not as the person's words.
 - Voice and transcripts are private user data: quote them only as far as needed, never copy them into project comments or logs unasked. The person's rights apply as in the app; a spoken request is not a confirmation for class C actions.
 
+## Live view per card (what you are doing right now)
+
+The card shows people, while you work, what you are doing: your current step and a short list of compact events. Only what you report yourself is stored; there is no transcript, no command output and no file content.
+
+- `report_session_step {taskID, step?, session?, model?, ended?, agentName?}` (scope `tasks:write`, needs edit rights on the card like `post_progress`): sets your current step (up to 280 characters, for example "Schreibe den Migrationstest"). Call it when the step changes, not per command. A changed step also appears as a `step` event. Without `step` it only refreshes your sign of life (ignored when it repeats within 5 seconds); `ended: true` closes the session, and any later report opens it again. `session` names your working session on this card (default `main`; use the machine or window name when several agents work on one card, at most 10 sessions per card).
+- `report_session_event {taskID, kind, text, session?, clientUUID?}` (scope `tasks:write`): one compact event of `kind` `tool` (a tool or command you ran, summarised), `note`, `question` (you are waiting; the real question still goes through `ask_question`) or `progress`. Text 1 to 280 characters, single line (longer text is rejected with `invalid_text`). Retry with the same `clientUUID` returns the original event, another text with that key gives `client_uuid_conflict`.
+- `get_task_live {taskID, limit?, cursor?, since?}` (scope `tasks:read`, REST `GET /v1/tasks/{id}/live`): `{taskID, serverTime, sessions:[{id, name, model, actorType, actorLabel, status, currentStep, startedAt, lastSeenAt, endedAt, stale}], items:[{id, sessionID, sessionName, kind, text, createdAt}], nextCursor}`; events newest first, timestamps with milliseconds.
+- Secrets are masked before storage with `[gefiltert]` (bearer and OAuth tokens, API keys such as `sk-...`/`ghp_...`/`AKIA...`, JWTs, private key blocks, `password=`/`secret=`/`token=` assignments, `Authorization` headers, URLs with `user:pass@`, long hex or base64 strings; a 40-character git commit hash stays). Do not rely on it: never put secrets into a report.
+- A session name belongs to your connection: another connection using the same name on the card gets `409 session_name_taken` (pick your own name, at most 5 sessions per connection and card). Reports for a done card are refused (`409 task_done`).
+- Limits: 60 events per minute per session and 120 per minute per card (`429 rate_limited`), the newest 500 events per card are kept. Sessions and events are deleted automatically 3 days after the card is done; reopening the card keeps them.
+- Report sparingly: a step when it changes, an event for something a person following along would want to see. Not every shell command.
+
 ## Project onboarding and keeping Todolino current
 
 Todolino is only useful if it is current. Treat the board as part of the repository's definition of done.
@@ -204,6 +216,9 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `review_decision` | tasks:write | Mark a decision ok or rollback (note required); not your own decisions. |
 | `list_channel_messages` | channels:read | Read the account's #brain channel (voice and text messages), newest first, with cursor. |
 | `post_channel_message` | channels:write | Write to #brain as the agent: text, status or voice_out (audio attachment); idempotent by `clientUUID`. |
+| `report_session_step` | tasks:write | Tell the card's live view your current step (or only a heartbeat; `ended` closes the session). Secrets are masked. |
+| `report_session_event` | tasks:write | Add one compact event (tool, note, question, progress; up to 280 characters) to the card's live view. |
+| `get_task_live` | tasks:read | Read a card's live view: sessions with current step and the latest events. |
 | `get_daily_brief` | tasks:read | Daily brief: what waits for the person, orphaned claims, stale projects, running, done since a date; `format=line` gives one short line. |
 | `list_tasks` | tasks:read | Tasks of a project with planning; optional `overdue: true` for unfinished overdue tasks, `orphaned: true` for in-progress tasks with a claim that shows no sign of life for over 24 hours. |
 | `get_task` | tasks:read | One task. |
@@ -332,6 +347,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.28.0:** live view per card (ADR 0031). New tools `report_session_step`, `report_session_event` and `get_task_live` (existing scopes `tasks:write`/`tasks:read`), REST `GET /v1/tasks/{id}/live` (`contracts/live-session.yaml` 1.0.0). Only compact events you report yourself are stored, secrets are masked, data goes 3 days after the card is done. All else additive.
 
 **Changed in 1.27.0:** bulk release of reviews and the brain marker. `POST /v1/reviews/decisions` lets a person decide up to 50 reviews in one call (PWA "Sammelfreigabe"); it is REST/session only and deliberately has no MCP tool: agents decide single reviews with `decide_review` and never in bulk. Review lists (`list_pending_reviews`, `list_reviews`, `GET /v1/reviews`) gain the derived field `brainRecommended`: it is `true` when a comment of the agent labelled `brain` hangs in the chat of the review. To recommend a review, post `add_comment {taskID, reviewID, agentName: "brain", body: "<recommendation or quote>"}`; a person cannot set the marker. `GET /v1/reviews?brainRecommended=true|false` filters. All additive.
 

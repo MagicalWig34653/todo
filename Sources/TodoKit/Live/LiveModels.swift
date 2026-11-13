@@ -69,6 +69,7 @@ func registerLiveMiddleware(_ app: Application) {
     use(ProjectComment.self); use(ProjectActivityEvent.self); use(ProjectUserState.self)
     use(PlanningDependency.self); use(PlanningMilestone.self); use(PlanningMilestoneTask.self)
     use(UserPreferences.self); use(ActionRequest.self); use(SystemStatus.self)
+    use(TaskLiveSession.self); use(TaskLiveEvent.self)
     // Sharing: invitations, membership changes, team projects and grants must reach the other account's open views.
     use(Team.self); use(TeamMembership.self); use(ProjectGrant.self)
 }
@@ -102,7 +103,7 @@ enum LiveToken {
     /// Task-scoped hint rows newer than `afterID` (oldest first, bounded). Kind and task id only.
     static func taskHints(after afterID: Int, limit: Int = 200, on db: any Database) async throws -> [TaskHint] {
         guard let sql = db as? any SQLDatabase else { return [] }
-        let rows = try await sql.raw("SELECT kind, task_id FROM live_events WHERE id > \(bind: afterID) AND task_id IS NOT NULL ORDER BY id DESC LIMIT \(literal: limit)").all()
+        let rows = try await sql.raw("SELECT kind, task_id FROM live_events WHERE id > \(bind: afterID) AND task_id IS NOT NULL AND kind NOT IN ('task_live_events', 'task_live_sessions') ORDER BY id DESC LIMIT \(literal: limit)").all()
         return try rows.reversed().compactMap { row in
             guard let task = try row.decode(column: "task_id", as: UUID?.self) else { return nil }
             return TaskHint(kind: try row.decode(column: "kind", as: String.self), taskID: task)

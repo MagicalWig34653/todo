@@ -112,7 +112,7 @@ final class CleanupScheduler: LifecycleHandler, @unchecked Sendable {
     }
 
     static func summary(_ r: ExpiredCleanup.Report) -> String {
-        "removed \(r.total) rows (expired \(r.total - r.syncTotal), sync log \(r.syncTotal))"
+        "removed \(r.total) rows (expired \(r.total - r.syncTotal - r.liveSessions), live sessions \(r.liveSessions), sync log \(r.syncTotal))"
     }
 
     private func databaseNow(_ sql: any SQLDatabase) async throws -> Int64 {

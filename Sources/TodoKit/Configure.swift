@@ -106,6 +106,7 @@ public func configureMigrations(_ app: Application) {
     configureSystemStatus(app)
     configureChannels(app)
     configureVoice(app)
+    configureLiveSessions(app)
     app.migrations.add(AddAccountLock())
     app.migrations.add(AddPerformanceIndexes())
     app.migrations.add(AddSignOfLifeIndexes())

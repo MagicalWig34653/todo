@@ -1,0 +1,92 @@
+openapi: 3.0.3
+info:
+  title: Todolino Live-Ansicht je Karte (kompakte Agentenereignisse)
+  version: 1.0.1
+  description: 'ADR 0031. Der arbeitende Agent meldet selbst per MCP kompakte Ereignisse zu einer Karte; Personen lesen sie an der Karte. Es gibt
+    KEIN Transkript auf dem Server: nur Session (Name, optional Modell, Akteur, aktueller Schritt, letztes Lebenszeichen, Status active/ended) und
+    Ereignisse (Art step, tool, note, question, progress; Text höchstens 280 Zeichen, einzeilig). Jeder Text läuft vor dem Speichern durch einen
+    Secrets-Filter (Bearer-/OAuth-Tokens, API-Keys sk-/ghp_/github_pat_/AKIA/xox/AIza, JWTs, Private-Key-Blöcke, password=/secret=/token=-Zuweisungen,
+    Authorization-Header, URLs mit user:pass@, lange Hex- und Base64-Zeichenfolgen) und wird durch [gefiltert] ersetzt; ein Git-Commit-Hash
+    (40 Hex-Zeichen) bleibt lesbar. Schreiben nur über MCP (report_session_step, report_session_event, Scope tasks:write, Rolle edit wie post_progress,
+    Projekt muss im Grant stehen); Lesen über REST (Sitzung/Bearer, Rolle read) und MCP get_task_live (Scope tasks:read). Fremde oder unsichtbare Karten: 404.
+    Zeitstempel in ISO 8601 mit Millisekunden (.SSSZ). Limits: je Session 60 Ereignisse/Minute, je Karte 120/Minute (429 rate_limited, Retry-After),
+    höchstens 10 Sessions je Karte (429 too_many_sessions), höchstens die neuesten 500 Ereignisse je Karte. Aufbewahrung: Sessions und Ereignisse
+    werden 3 Tage nach dem Erledigen der Karte (Status done, Zeitpunkt = updatedAt der Karte) vom Cleanup gelöscht; wird die Karte wieder geöffnet,
+    bleibt alles erhalten, und ein erneutes Erledigen startet die Frist neu. Karten-, Projekt- und Kontolöschung löschen mit (Kaskade). 1.0.1: Texte werden zusätzlich in UTF-8-Bytes begrenzt; eine Session gehört der Verbindung, die sie angelegt hat (andere Verbindung: 409 session_name_taken; höchstens 5 Sessions je Verbindung und Karte); Meldungen für erledigte Karten: 409 task_done; 600 Ereignisse/Minute je Konto (429 rate_limited); Filter erweitert (NFKC, deutsche Begriffe, CLI-Flags, Cookies, URL-kodiert), weiterhin heuristisch.
+    Live-Refresh (ADR 0022): jedes Ereignis und jeder Schrittwechsel ändert das Live-Token (GET /v1/sync/head|wait); Clients laden dann
+    GET /v1/tasks/{id}/live neu. Es gibt keinen eigenen Stream.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/tasks/{id}/live:
+    get:
+      operationId: getTaskLive
+      summary: Live-Ansicht einer Karte lesen (Sessions und letzte Ereignisse, neueste zuerst)
+      description: 'Sessions immer vollständig (zuletzt aktive zuerst), Ereignisse seitenweise. stale = Session aktiv, aber seit mehr als 15 Minuten ohne Lebenszeichen.'
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      - {name: cursor, in: query, required: false, description: 'nextCursor der vorigen Seite (nur Ereignisse davor), Format <ms>:<uuid>.', schema: {type: string}}
+      - {name: since, in: query, required: false, description: 'ISO 8601: nur Ereignisse danach.', schema: {type: string, format: date-time}}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LiveTask'}
+              example:
+                taskID: 9B2E0B5C-0C3A-4D8E-8E55-5C1F2A7D1E10
+                serverTime: '2026-11-13T12:00:05.120Z'
+                sessions:
+                - {id: 5A1D3C7E-1111-4222-8333-944455566677, name: Mac Studio, model: claude-opus, actorType: integration, actorLabel: Claude Code, status: active, currentStep: Schreibe den Migrationstest, startedAt: '2026-11-13T11:50:00.000Z', lastSeenAt: '2026-11-13T12:00:01.500Z', stale: false}
+                items:
+                - {id: 0F6E8D2A-2222-4333-8444-A55566677788, sessionID: 5A1D3C7E-1111-4222-8333-944455566677, sessionName: Mac Studio, kind: tool, text: 'swift test --filter LiveSessionTests', createdAt: '2026-11-13T12:00:01.500Z'}
+                nextCursor: null
+        '400': {description: 'invalid_limit, invalid_cursor, invalid_since'}
+        '401': {description: nicht angemeldet}
+        '404': {description: Karte unbekannt, fremdes Konto oder ohne Leserecht}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    LiveSession:
+      type: object
+      required: [id, name, actorType, status, startedAt, lastSeenAt, stale]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, maxLength: 80, description: 'Name der Arbeitssitzung (Standard main), je Karte eindeutig.'}
+        model: {type: string, nullable: true}
+        actorType: {type: string, enum: [person, integration, run]}
+        actorLabel: {type: string, nullable: true, description: 'agentName oder Name des OAuth-Clients.'}
+        status: {type: string, enum: [active, ended]}
+        currentStep: {type: string, nullable: true, maxLength: 280}
+        startedAt: {type: string, format: date-time}
+        lastSeenAt: {type: string, format: date-time, description: Lebenszeichen}
+        endedAt: {type: string, format: date-time, nullable: true}
+        stale: {type: boolean}
+    LiveEvent:
+      type: object
+      required: [id, sessionID, kind, text, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        sessionID: {type: string, format: uuid}
+        sessionName: {type: string, nullable: true}
+        kind: {type: string, enum: [step, tool, note, question, progress]}
+        text: {type: string, maxLength: 280, description: 'Gefilterter Text; Geheimnisse stehen als [gefiltert].'}
+        clientUUID: {type: string, format: uuid, nullable: true}
+        createdAt: {type: string, format: date-time, description: 'Millisekunden, .SSSZ'}
+    LiveTask:
+      type: object
+      required: [taskID, serverTime, sessions, items]
+      properties:
+        taskID: {type: string, format: uuid}
+        serverTime: {type: string, format: date-time}
+        sessions: {type: array, items: {$ref: '#/components/schemas/LiveSession'}}
+        items: {type: array, description: 'Neueste zuerst.', items: {$ref: '#/components/schemas/LiveEvent'}}
+        nextCursor: {type: string, nullable: true}
+x-mcp-tools:
+  report_session_step: {scope: 'tasks:write', required: [taskID], arguments: {taskID: UUID, step: 'string 1-280 (fehlt: nur Lebenszeichen)', session: 'string bis 80, Standard main', model: 'string bis 80', ended: boolean, agentName: 'string bis 100'}, result: LiveSession, errors: 'invalid_step, invalid_session, session_name_taken (409), task_done (409), not_found, rate_limited (429), too_many_sessions (429)'}
+  report_session_event: {scope: 'tasks:write', required: [taskID, kind, text], arguments: {taskID: UUID, kind: 'tool|note|question|progress', text: 'string 1-280', session: 'string bis 80', clientUUID: UUID}, result: LiveEvent, errors: 'invalid_kind, invalid_text, client_uuid_conflict (409), session_name_taken (409), task_done (409), not_found, rate_limited, too_many_sessions'}
+  get_task_live: {scope: 'tasks:read', required: [taskID], arguments: {taskID: UUID, limit: 'integer 1-200', cursor: string, since: date-time}, result: LiveTask}

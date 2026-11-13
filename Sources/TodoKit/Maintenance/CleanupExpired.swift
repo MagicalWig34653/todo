@@ -14,6 +14,8 @@ struct ExpiredCleanup: Sendable {
     /// nil keeps the sync log untouched.
     var syncRetention: TimeInterval?
     /// Dynamically registered OAuth clients without any grant are removed after this age (default 7 days, env OAUTH_UNUSED_CLIENT_DAYS; nil keeps them).
+    /// Live-view sessions and events are deleted this long after their card is done (ADR 0031).
+    var liveSessionRetention: TimeInterval = 3 * 86_400
     var unusedClientRetention: TimeInterval? = ExpiredCleanup.defaultClientRetention()
 
     static func defaultClientRetention() -> TimeInterval? {
@@ -30,8 +32,10 @@ struct ExpiredCleanup: Sendable {
         var actionRequests = 0
         /// Connection access notices deleted (ADR 0028).
         var accessNotices = 0
+        /// Live-view sessions deleted (ADR 0031); their events go with them.
+        var liveSessions = 0
         var syncTotal: Int { syncTombstones + syncSuperseded + syncMutations }
-        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + actionRequests + accessNotices + syncTotal }
+        var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + actionRequests + accessNotices + liveSessions + syncTotal }
     }
 
     private func purge<M: Model>(_ type: M.Type, on db: any Database, _ condition: (QueryBuilder<M>) -> QueryBuilder<M>) async throws -> Int
@@ -65,6 +69,7 @@ struct ExpiredCleanup: Sendable {
         // Notices: decided ones after 7 days, open ones that were not repeated for 30 days.
         r.accessNotices = try await purge(ConnectionAccessRequest.self, on: db) { $0.filter(\.$state != "open").filter(\.$lastAt < now.addingTimeInterval(-7 * 86_400)) }
         r.accessNotices += try await purge(ConnectionAccessRequest.self, on: db) { $0.filter(\.$lastAt < now.addingTimeInterval(-30 * 86_400)) }
+        r.liveSessions = try await purgeLiveSessions(on: db, now: now)
         if let age = unusedClientRetention { r.oauthClients = try await purgeUnusedClients(on: db, olderThan: now.addingTimeInterval(-age)) }
         if let retention = syncRetention {
             let sync = try await SyncRetention(batchSize: batchSize).run(on: db, olderThan: now.addingTimeInterval(-retention))
