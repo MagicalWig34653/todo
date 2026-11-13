@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Kanal #brain (Sprach- und Textnachrichten) und Sprachaufträge
-  version: 1.1.0
+  version: 1.1.1
   description: 'Telefon T1 (ADR 0030), Schritte 2 und 3 (1.1.0: Sprachaufträge, Runner-Fähigkeit sprache). Jedes Konto hat genau einen Kanal brain (beim ersten Gebrauch angelegt). Nur der Besitzer liest und
     schreibt; kein Teilen, kein Team, kein Projekt- oder Aufgabenbezug. Eine Nachricht hat eine Art (kind: text, voice_in, voice_out, status), einen
     Autor (author: person, agent), Text bzw. Transkript und optional einen Audio-Anhang (Rolle voice, contracts/attachments.yaml 1.1.0; der Anhang
@@ -247,7 +247,7 @@ components:
         text: {type: string, nullable: true, maxLength: 4000, description: 'Nachrichtentext bzw. Transkript'}
         attachmentID: {type: string, format: uuid, nullable: true, description: 'Audio-Anhang (Rolle voice); Download über die Anhangs-Routen'}
         clientUUID: {type: string, format: uuid, nullable: true}
-        createdAt: {type: string, format: date-time, description: 'Serveruhr, auf Millisekunden gerundet'}
+        createdAt: {type: string, format: date-time, example: '2026-11-13T09:27:50.123Z', description: 'Serveruhr, auf Millisekunden gerundet; immer mit drei Nachkommastellen (yyyy-MM-ddTHH:mm:ss.SSSZ), in REST und MCP. Clients sortieren innerhalb einer Sekunde nach createdAt und dann id, wie der Cursor <ms>:<uuid>. 1.1.1: vorher fälschlich nur volle Sekunden.'}
     ChannelMessagePage:
       type: object
       required: [items]
