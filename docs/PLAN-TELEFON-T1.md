@@ -18,7 +18,7 @@ Worker: swift. Aufwand: M. Abhängigkeiten: 1.
 - REST `GET/POST /v1/channels/brain/messages` mit Idempotenz über Client-UUID und Pagination; Vertrag in `contracts/voice.yaml`.
 - MCP-Werkzeuge `list_channel_messages` und `post_channel_message` mit neuen Scopes `channels:read`/`channels:write`; `docs/agent-manual.md` und `docs/MCP-PARITAET.md` aktualisiert.
 
-### 3. Sprachaufträge und Runner-Fähigkeit „sprache“ (Server)
+### 3. Sprachaufträge und Runner-Fähigkeit „sprache“ (Server) – umgesetzt 13.11.2026 (Branch `agent/t1-3-sprachauftraege`)
 Worker: swift. Aufwand: L. Abhängigkeiten: 2.
 - `runner_devices.capabilities` (vom Runner gemeldet, in der PWA abschaltbar) und `voice_jobs` mit Zuständen queued, claimed, done, failed, expired.
 - Runner-API `/v1/runner/voice/*` (Claim, Heartbeat, Audio-Download, Ergebnis) mit Geräte-Token, Lease 60 s und Generation (falsche Generation 409, abgelaufen 410); Test: ein zweiter Runner kann denselben Auftrag nicht übernehmen.

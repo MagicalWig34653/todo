@@ -32,7 +32,7 @@ extension AttachmentService {
                     try await lockRow(table: Attachment.schema, id: id, on: db)
                     guard let a = try await Attachment.find(id, on: db), a.storage == from.rawValue, a.status == "complete" else { return nil }
                     // Rows of deleted tasks are left to `cleanup-uploads`; copying them would only resurrect data.
-                    guard try await TodoTask.find(a.taskID, on: db) != nil else { return nil }
+                    if a.hasTask, try await TodoTask.find(a.taskID, on: db) == nil { return nil }
                     let data = try await source.get(key: a.objectKey, db: db)
                     try validate(data, for: a)
                     try await target.put(key: a.objectKey, data: data, db: db)

@@ -5,7 +5,11 @@ final class Attachment: Model, @unchecked Sendable {
     static let schema = "attachments"
     @ID(key: .id) var id: UUID?
     // Deliberately retained after task deletion so cleanup can still delete the object.
+    // Voice memos of channel #brain have no task (ADR 0030): they carry `Attachment.noTask`, an all-zero UUID that no
+    // task can have. The column stays NOT NULL (SQLite cannot relax it without rebuilding the table) and has no foreign key.
     @Field(key: "task_id") var taskID: UUID
+    static let noTask = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    var hasTask: Bool { taskID != Self.noTask }
     @Field(key: "owner_id") var ownerID: UUID
     @Field(key: "filename") var filename: String
     @Field(key: "role") var role: String
@@ -42,7 +46,8 @@ final class UploadSession: Model, @unchecked Sendable {
 
 struct AttachmentDTO: Content {
     let id: UUID
-    let taskID: UUID
+    /// Absent for voice memos of channel #brain (no task).
+    let taskID: UUID?
     let filename: String
     let role: String
     let mediaType: String
@@ -50,7 +55,7 @@ struct AttachmentDTO: Content {
     let checksum: String
     let status: String
     init(_ a: Attachment) throws {
-        id = try a.requireID(); taskID = a.taskID; filename = a.filename
+        id = try a.requireID(); taskID = a.hasTask ? a.taskID : nil; filename = a.filename
         role = a.role; mediaType = a.mediaType; size = a.size
         checksum = a.checksum; status = a.status
     }

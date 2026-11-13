@@ -213,7 +213,7 @@ Sechs Tools in `MCPRunTools.swift`, Tests `MCPRunToolsTests` (12). Fachpfad wie 
 | `list_reviews` | tasks:read | A | `projectID?, status? (pending, accepted, changes_requested, withdrawn, all; Standard all), limit? (1-200, 50)`; ReviewDTO inkl. entschiedener, nur Projekte im Grant |
 | `list_progress_notes` | tasks:read | A | `taskID, limit? (1-100, 50)`; neueste zuerst |
 | `list_agent_jobs` | runs:read | A | `projectID?, status?, limit? (1-100)`; `{items, nextCursor}`, nur eigene Projekte im Grant |
-| `list_runner_devices` | runs:read | A | keine; eigene Geräte (label, paired, revokedAt, activeRunCount), Bindungen nur zu Projekten im Grant, keine Tokens/Codes |
+| `list_runner_devices` | runs:read | A | keine; eigene Geräte (label, paired, revokedAt, activeRunCount, capabilities, disabledCapabilities, lastSeenAt), Bindungen nur zu Projekten im Grant, keine Tokens/Codes |
 | `start_agent_job` | runs:write | B | `taskID, deviceID?, mode? (clarify, implement), scope?, version?`; legt über eine bestehende Bindung einen queued-Job an |
 | `stop_agent_job` | runs:write | A | `jobID`; Zustand wird cancelled (Slot bleibt bis zur Bestätigung des Runners belegt) |
 
@@ -280,6 +280,7 @@ Kontobezogener Kanal (ein Kanal `brain` je Konto, lazy angelegt); gleicher Fachp
 | `list_channel_messages` | channels:read | A | `limit? (1-100, 50), cursor?, since?` → `{items, nextCursor}`, neueste zuerst; REST `GET /v1/channels/brain/messages` |
 | `post_channel_message` | channels:write | B | `kind? (text, voice_out, status), text?, attachmentID?, clientUUID?` → Nachricht (Autor `agent`); REST `POST` gleicher Pfad schreibt als Person (`text`, `voice_in`) |
 
+- Sprachaufträge (ADR 0030, Schritt 3): bewusst ohne MCP-Werkzeug. Der Auftrag entsteht serverseitig aus der `voice_in`-Nachricht (`ChannelService.post` -> `VoiceService.enqueue`) und wird nur über die Runner-API `/v1/runner/voice/*` (Geräte-Token, `contracts/voice.yaml` 1.1.0) bearbeitet; die Besitzer-Umschaltung der Fähigkeiten (`PUT /v1/agents/devices/{id}/capabilities`) ist REST/PWA und Besitzersache (Sitzung), nicht MCP. Agenten sehen nur das Ergebnis im Kanal.
 - Neue Scopes `channels:read`/`channels:write` (Consent-Gruppe „Brain-Kanal“). Bestehende Verbindungen behalten ihre Scopes; sie sehen die Tools erst nach neuer Zustimmung (kein Zwang zum Re-Consent).
 - Arten je Seite: Person (REST/App) `text`, `voice_in`; Agent (MCP) `text`, `voice_out`, `status`. Ein Agent kann keine `voice_in`-Nachricht fälschen.
 - Kein Projekt-Grant nötig: der Kanal gehört dem Konto. Fremde Anhänge (`attachmentID`) ergeben `not_found`.

@@ -71,11 +71,12 @@ struct AttachmentController: RouteCollection {
         // A foreign or unknown thread is refused before the upload is completed.
         if let a = try await Attachment.find(id(req), on: req.db) {
             try await AttachmentService.authorize(a, user: user, db: req.db, role: .edit)
-            try await CommentService.validate(thread, taskID: a.taskID, on: req.db)
+            // A task-less memo has no chat to be recorded in.
+            if a.hasTask { try await CommentService.validate(thread, taskID: a.taskID, on: req.db) }
         }
         let dto = try await service(req).complete(id(req), user: user, db: req.db)
         // A person's upload becomes a chat entry so agents reading the chat learn about the file.
-        if let a = try await Attachment.find(dto.id, on: req.db) {
+        if let a = try await Attachment.find(dto.id, on: req.db), a.hasTask {
             try await AttachmentChat.record(a, user: user, target: thread, on: req.db)
         }
         return dto
