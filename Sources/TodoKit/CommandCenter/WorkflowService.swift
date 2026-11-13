@@ -50,6 +50,11 @@ enum WorkflowLimits {
     static let inlineAttachmentBytes = 5 * 1024 * 1024
     /// A person may take back a review decision for this long (server-enforced, ADR 0020).
     static let reviewUndoWindow: TimeInterval = 5 * 60
+    /// Batch decision (`POST /v1/reviews/decisions`): at most this many review IDs per request ...
+    static let reviewBatchMaxItems = 50
+    /// ... and at most this many batch requests per account in one rate-limit window.
+    static let reviewBatchRequestsPerWindow = 20
+    static let reviewBatchWindowSeconds = 600
 }
 
 /// Business rules for questions, progress, reviews, builds, briefs and claims. REST and MCP use the same
@@ -490,7 +495,8 @@ struct WorkflowService: Sendable {
         }
     }
 
-    func reviews(projectID: UUID?, state: String, includeSubprojects: Bool = true, limit: Int = 100) async throws -> [ReviewDTO] {
+    func reviews(projectID: UUID?, state: String, includeSubprojects: Bool = true, limit: Int = 100,
+                 brainRecommended: Bool? = nil) async throws -> [ReviewDTO] {
         guard ["pending", "all"].contains(state) || ["accepted", "changes_requested", "withdrawn"].contains(state),
               (1...200).contains(limit) else { throw Abort(.badRequest, reason: "invalid_filter") }
         let scope = try await CommandCenterScope.resolve(user: user, db: db, projectID: projectID, includeSubprojects: includeSubprojects, allowed: allowedProjects)
@@ -499,11 +505,22 @@ struct WorkflowService: Sendable {
         let byTask = Dictionary(uniqueKeysWithValues: try tasks.map { (try $0.requireID(), $0) })
         var q = TaskReview.query(on: db).filter(\.$taskID ~~ Array(byTask.keys))
         if state != "all" { q = q.filter(\.$state == state) }
-        return try await q.sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(limit).all().map { row in
+        // Derived flag (no column): see ReviewBrain. With the filter it must narrow the query before the limit applies.
+        var brainIDs = Set<UUID>()
+        if let brainRecommended {
+            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(byTask.keys), on: db)
+            q = brainRecommended ? q.filter(\.$id ~~ Array(brainIDs)) : (brainIDs.isEmpty ? q : q.filter(\.$id !~ Array(brainIDs)))
+        }
+        let rows = try await q.sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(limit).all()
+        if brainRecommended == nil {
+            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(Set(rows.map(\.taskID))), on: db)
+        }
+        return try rows.map { row in
             var dto = try ReviewDTO(row)
             let task = byTask[row.taskID]
             dto.taskTitle = task?.title; dto.projectID = task?.projectID
             dto.projectName = task.flatMap { scope.projects[$0.projectID]?.name }
+            dto.brainRecommended = brainIDs.contains(dto.id)
             return dto
         }
     }

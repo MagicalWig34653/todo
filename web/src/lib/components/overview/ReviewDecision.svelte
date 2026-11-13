@@ -4,6 +4,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { reviewUndo } from '#lib/reviewUndo.svelte.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import ChatField from '../card/ChatField.svelte';
 	import Markdown from '../card/Markdown.svelte';
@@ -16,13 +17,15 @@
 		summary: string;
 		requestedBy?: string | null;
 		context?: string;
+		/** The brain recommended this review (derived by the server). */
+		brainRecommended?: boolean;
 		/** Render the summary's bullet points and emphasis (card detail) instead of plain text. */
 		markdown?: boolean;
 		/** Opens the card detail; renders a button inside the card. */
 		onopen?: () => void;
 		ondecided: () => void | Promise<void>;
 	}
-	let { taskID, summary, requestedBy, context, markdown = false, onopen, ondecided }: Props = $props();
+	let { taskID, summary, requestedBy, context, brainRecommended = false, markdown = false, onopen, ondecided }: Props = $props();
 
 	let note = $state('');
 	let busy = $state(false);
@@ -56,6 +59,7 @@
 		<div class="min-w-0 flex-1">
 			{#if context}<p class="text-muted-foreground mb-0.5 text-xs">{context}</p>{/if}
 			{#if requestedBy}<p class="text-muted-foreground text-xs">{t('cc.review.title', { who: requestedBy })}</p>{/if}
+			{#if brainRecommended}<Badge variant="accent" class="my-1" data-testid="review-brain-badge">{t('cc.review.brain')}</Badge>{/if}
 			{#if markdown}
 				<div data-testid="review-summary"><Markdown text={summary} /></div>
 			{:else}
