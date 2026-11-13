@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino attachment REST API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Backend upload capability, valid for 15 minutes and one successful PUT.
     Maximum file size is 10485760 bytes by default (server setting ATTACHMENT_MAX_BYTES, 1024 to 134217728).
@@ -9,6 +9,12 @@ info:
     and the permission rules are identical for both stores. Attachments remain invisible until complete.
     All session routes apply current task and project authorization; foreign objects return 404.
     Downloads are private and must not be cached. Preview returns the original image, not a thumbnail.
+    Voice memos (ADR 0030): role `voice` accepts only audio/mp4 (M4A, ftyp brands M4A/M4B/mp41/mp42/isom/iso2) and audio/wav
+    (RIFF/WAVE) and audio types are accepted only with that role. Limits: at most 5 MiB (5242880 bytes) and at most 120 seconds.
+    The duration is read by the server from the container (M4A mvhd, WAV fmt byte rate and data size), never from the client;
+    fragmented M4A, missing or zero duration are rejected. Exactly 120 s and exactly 5 MiB are accepted. Other audio/* types
+    answer 415 at begin; more than 5 MiB answers 413 at begin; more than 120 s answers 422 on PUT and complete. Audio has no inline
+    preview (415). Download uses the same permission rules, Cache-Control private, no-store, and supports Range.
 servers:
   - url: /
 security:
@@ -30,7 +36,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UploadCapability'
-        '400': { description: Invalid filename, role, size, checksum or media type }
+        '400': { description: Invalid filename, role, size, checksum or media type (including audio with a role other than voice, or role voice with a non-audio type) }
+        '413': { description: Role voice and size above 5 MiB }
+        '415': { description: Audio type other than audio/mp4 or audio/wav }
         '401': { description: Session required }
         '404': { description: Missing or inaccessible task or project }
         '503': { description: Storage configuration unavailable (only possible with ATTACHMENT_STORAGE=s3 and missing S3_* settings) }
@@ -55,7 +63,7 @@ paths:
         '404': { description: Invalid, expired or already used capability, or revoked access }
         '413': { description: Request body exceeds the configured limit (ATTACHMENT_MAX_BYTES) }
         '415': { description: Magic bytes do not match declared media type }
-        '422': { description: Size or checksum mismatch }
+        '422': { description: Size or checksum mismatch; for role voice also a duration above 120 s or an unreadable container }
         '502': { description: Storage failed; upload can be retried }
   /v1/attachments/{id}/complete:
     parameters:
@@ -184,8 +192,8 @@ components:
         filename:
           type: string
           description: 1 to 200 UTF-8 bytes, no control characters or path separators
-        role: { type: string, enum: [reference, progress, result] }
-        mediaType: { type: string, enum: [image/png, image/jpeg, image/webp, application/pdf] }
+        role: { type: string, enum: [reference, progress, result, voice] }
+        mediaType: { type: string, enum: [image/png, image/jpeg, image/webp, application/pdf, audio/mp4, audio/wav] }
         size: { type: integer, minimum: 1, maximum: 10485760 }
         checksum: { type: string, pattern: '^[0-9a-f]{64}$', description: Lowercase SHA-256 hex }
     UploadCapability:

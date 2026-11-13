@@ -6,7 +6,7 @@ Vorbedingung: ADR 0030 angenommen, offene Fragen 1 bis 4 beantwortet.
 
 ## Schritte
 
-### 1. Audio-Anhänge und Voice-Limits (Backend)
+### 1. Audio-Anhänge und Voice-Limits (Backend) – umgesetzt 13.11.2026 (Branch `agent/t1-1-audio-anhaenge`)
 Worker: swift. Aufwand: S. Abhängigkeiten: keine.
 - `audio/mp4` (M4A) und `audio/wav` werden mit Magic-Byte-Prüfung als Anhang mit Rolle `voice` angenommen; andere Audio-Typen ergeben 415.
 - Dauer über 120 s oder Größe über 5 MiB wird mit 413/422 abgelehnt; Test mit Grenzwerten.
