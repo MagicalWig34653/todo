@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 13.11.2026: Browser-Matrix Firefox/WebKit (Board-Karte `32C95F81`, Branch `agent/browser-matrix`)
+
+- Ergebnis und Tabelle je Spec: `docs/BROWSER-MATRIX.md`. Chromium 142 grün/0 rot/11 übersprungen (mail, server-settings ohne Mail-Senke); Firefox, WebKit, mobile-safari je 35 grün/0 rot/118 übersprungen (Specs ohne `signedInPage` sind Chromium-only). Echtes Backend (SQLite), je Spec-Datei frische DB, Playwright 1.65.0.
+- Firefox-Ursache: Playwright 1.64.1 (`firefox-1555`, 157) startet auf diesem Mac nie (`Could not find profile folder`, auch direkt im Terminal); `firefox-1572` aus Playwright 1.65.0 läuft. Fix wäre das Anheben von `@playwright/test` auf 1.65.0; nicht umgesetzt (keine Abhängigkeitsänderung ohne Freigabe).
+- Änderungen: `web/vite.config.ts` Dev-Proxy um `/mcp` und `/.well-known/` ergänzt (vier Specs riefen MCP/Resource-Metadaten über die Vite-Origin auf); `invite-link.spec.ts` mit Chromium-Skip-Guard. Keine Produktfehler gefunden.
+- Offen: `mobile-chrome` nicht gelaufen; Passkey-Ablauf in Firefox/WebKit weiterhin nicht geprüft (kein virtueller Authenticator); `mail`/`server-settings` ohne Senke nicht gelaufen; Playwright-Anhebung auf 1.65.0 durch Lino.
+
 ## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
 
 - Neu: `PUT /v1/system-status[?source=]` (Runner-Gerätetoken des Mac-Wächters oder Sitzung) speichert den letzten Lagestand je Konto und Quelle (Tabelle `system_status`, additive Migration `CreateSystemStatus`, vor Serve `App migrate --yes`); `GET /v1/system-status` und MCP `get_system_status` (account:read) lesen. Bekannte Felder werden geprüft (Ampeln gruen|gelb|rot, Zahlen, `codex`-Objekt, `zeit`), Rest bleibt erhalten; max. 16 KB, 10 Quellen. Vertrag `contracts/system-status.yaml`, Handbuch 1.23.0.
@@ -490,7 +497,7 @@ Marktvergleich (Todoist-Funktionen, Lücken, Top-10-Roadmap, Stand 31.10.2026): 
 | Lücke | Auswirkung |
 | --- | --- |
 | Docker-VM voll: Playwright-Läufe und MariaDB-Läufe der jüngsten Änderungen nicht ausgeführt (`SyncRetentionTests` auf MariaDB, neue E2E „sync freshness chips, threshold edit, agent revoke/stop UI“ und überarbeiteter „activity page: infinite list“) | Neue PWA-Flows und Retention auf MariaDB ungeprüft; Flake-Fix im Aktivitätstest unbestätigt |
-| Firefox/WebKit-Playwright-Projekte konfiguriert, nie gelaufen | Safari/Firefox-Verhalten unbekannt |
+| Firefox/WebKit: 35 Specs-Tests laufen grün (`docs/BROWSER-MATRIX.md`), Firefox nur mit Playwright 1.65.0; 118 Tests sind Chromium-only | Passkey-Ablauf und Chromium-only-Specs in Firefox/Safari ungeprüft |
 | Plugin nie in echter Claude-Code-Sitzung (Hooks im Lauf, interaktiver OAuth-Flow der CLI); Verhalten bei Account-Wechsel nur Annahme | Durchsetzung/Alltag unbelegt |
 | `scripts/onboarding-e2e.sh` nur im Modus `sqlite`; `compose`/`devdb` ungeprüft | MariaDB-Pfad des Onboardings ungeprüft |
 | Mehrknoten-Swarm, Rollout/Rollback, Lastverteilung, Server-Klon des `deploy`-Branches, echter Server-Restore, TLS/Reverse Proxy | Produktionsreife unbelegt |
