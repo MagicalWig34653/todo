@@ -67,6 +67,12 @@
 - Firefox-Ursache: Playwright 1.64.1 (`firefox-1555`, 157) startet auf diesem Mac nie (`Could not find profile folder`, auch direkt im Terminal); `firefox-1572` aus Playwright 1.65.0 läuft. Fix wäre das Anheben von `@playwright/test` auf 1.65.0; nicht umgesetzt (keine Abhängigkeitsänderung ohne Freigabe).
 - Änderungen: `web/vite.config.ts` Dev-Proxy um `/mcp` und `/.well-known/` ergänzt (vier Specs riefen MCP/Resource-Metadaten über die Vite-Origin auf); `invite-link.spec.ts` mit Chromium-Skip-Guard. Keine Produktfehler gefunden.
 - Offen: `mobile-chrome` nicht gelaufen; Passkey-Ablauf in Firefox/WebKit weiterhin nicht geprüft (kein virtueller Authenticator); `mail`/`server-settings` ohne Senke nicht gelaufen; Playwright-Anhebung auf 1.65.0 durch Lino.
+## Checkpoint 13.11.2026: Aufgabendetail, Beschreibung überlappt Folgeabschnitte (Karte `CECF3338`, Branch `agent/detail-beschreibung-ueberlappung`)
+
+- Ursache: In `InlineEdit.svelte` hatte der Beschreibungsblock `min-h-9` (und das Bearbeitungsfeld `min-h-24`). Ein explizites `min-height` hebt das automatische Minimum eines Flex-Items auf; `card-main` ist eine Flex-Spalte mit fester Höhe (Grid-Zelle, `overflow-y-auto`), also schrumpfte der Block auf 36 px und der Text lief in "Unteraufgabe hinzufügen", Anhänge usw. hinein (Länge der Beschreibung entscheidet; kurze Texte fielen nicht auf).
+- Fix: `shrink-0` an beiden Elementen. Neue Spec `web/e2e/detail-description-overlap.spec.ts` (Bounding-Boxes; 1280 und 390 px, hell und dunkel; lange Aufzählung plus 240-Zeichen-Wort), rot vor dem Fix (Beschreibungsende 996 statt <= 329), 4/4 grün danach. Screenshots `docs/screenshots/detail-ueberlappung/` (before: nur 1280 dunkel, da serielle Spec nach dem ersten Fehler stoppt; after: alle vier).
+- Geprüft: vitest 329, `npm run check` 0 Fehler, Build grün, `card-detail.spec.ts` Gruppe "layout of the card window" 5/5. Nicht geprüft: Firefox/WebKit; `card-detail` "confirmation" scheitert in dieser Scratch-Umgebung an der OAuth-Zustimmung (`redirect_uri` fehlt, Umgebung/Issuer, nicht mit der Änderung zusammenhängend, nicht auf main gegengeprüft), die übrigen Tests der Datei liefen dadurch nicht komplett.
+- "Hochladen" rot im Screenshot: Akzentfarbe des Nutzer-Themas, kein Defekt.
 
 ## Checkpoint 12.11.2026: Lage-Ampel (Board-Karte Vibecoding `629F1CB5`, Branch `agent/lage-ampel`)
 
