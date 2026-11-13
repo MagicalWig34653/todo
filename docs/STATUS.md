@@ -1,5 +1,11 @@
 # Status
 
+## Checkpoint 13.11.2026: Kanalnachrichten createdAt mit Millisekunden (Karte `6114FC5A`, Branch `agent/kanal-createdat-ms`)
+- Ursache: globaler Encoder `ContentConfiguration` (`Configure.swift`, `.iso8601`) schreibt nur volle Sekunden; die DB-Werte und der Cursor waren schon ms-genau. Folge: Nachrichten derselben Sekunde hatten identischen `createdAt`.
+- Fix nur für `ChannelMessageDTO` (eigenes encode/decode, ISO 8601 mit `.SSSZ`, Dekodierung akzeptiert auch Sekunden); wirkt in REST und MCP (`JSONValue.encoded` nutzt dasselbe DTO). Globale Strategie unverändert. `contracts/voice.yaml` 1.1.1 (nur Beschreibung/Beispiel).
+- Test: `ChannelTests.testCreatedAtCarriesMillisecondsAndOrdersMessagesWithinOneSecond` (vorher rot, jetzt grün).
+- Offen: andere Zeitstempel (Voice-Job-DTOs, übrige APIs) bleiben bewusst bei Sekunden.
+
 ## Checkpoint 13.11.2026: Telefon T1 Schritt 3, Sprachaufträge und Runner-Fähigkeit "sprache" (Karte `639D606A`, Branch `agent/t1-3-sprachauftraege`)
 
 - Neu: additive Migration `AddVoiceJobs`: `runner_devices.capabilities` / `disabled_capabilities` / `last_seen_at` (nullable, kommagetrennt, passt in VARCHAR(255)) und Tabelle `voice_jobs` (queued, claimed, done, failed, expired; `message_id` unique, Besitzer, Aufnahme, Lease, Generation, Antwortaudio, Fehlercode, Ergebnis-Digest, `expires_at` = Anlegen + 10 min). Code: `Sources/TodoKit/Voice` (`VoiceService` als einziger Fachpfad, `VoiceController`, `VoiceExpiryWorker`), kleine Eingriffe in `ChannelService` (voice_in erzeugt in derselben Transaktion den Auftrag oder sofort die Statusnachricht "Brain gerade nur per Text erreichbar.", Limits vor dem Speichern, Ablaufprüfung beim Lesen) und `AgentController` (Geräteliste mit `capabilities`, `disabledCapabilities`, `lastSeenAt`, damit auch MCP `list_runner_devices`).

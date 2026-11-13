@@ -199,6 +199,45 @@ final class ChannelTests: XCTestCase {
         }
     }
 
+    /// Contract (voice.yaml): createdAt carries milliseconds, so messages posted within one second stay ordered for
+    /// clients, and the order matches the `<ms>:<uuid>` cursor. The global encoder only writes whole seconds.
+    func testCreatedAtCarriesMillisecondsAndOrdersMessagesWithinOneSecond() async throws {
+        let f = try await OAuthFixture.make()
+        try await run(f) {
+            let millis = try NSRegularExpression(pattern: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"#)
+            func isMillis(_ s: String) -> Bool { millis.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
+
+            var ids: [String] = []
+            for i in 0..<6 {
+                let r = try await post(f, ["kind": "text", "text": "fast \(i)"])
+                XCTAssertTrue(isMillis(try XCTUnwrap(r.body?["createdAt"] as? String)), "POST createdAt: \(String(describing: r.body?["createdAt"]))")
+                ids.append(try XCTUnwrap(r.body?["id"] as? String))
+            }
+            let tok = try await f.tokens(scope: scopes)
+            let mcp = try await call(f, "list_channel_messages", ["limit": 100], tok.access)
+            let mcpItems = try XCTUnwrap((mcp.json as? [String: Any])?["items"] as? [[String: Any]])
+            let rest = try await f.test.json(.GET, "/v1/channels/brain/messages?limit=100", token: f.session)
+            let restItems = try XCTUnwrap(rest.body?["items"] as? [[String: Any]])
+
+            for items in [restItems, mcpItems] {
+                let stamps = items.compactMap { $0["createdAt"] as? String }
+                XCTAssertEqual(stamps.count, 6)
+                XCTAssertTrue(stamps.allSatisfy(isMillis), "\(stamps)")
+                XCTAssertEqual(items.compactMap { $0["id"] as? String }, ids.reversed(), "newest first")
+                XCTAssertEqual(stamps, stamps.sorted(by: >), "createdAt non-increasing")
+            }
+
+            // The cursor milliseconds equal the createdAt milliseconds of the last item of the page.
+            let page = try await f.test.json(.GET, "/v1/channels/brain/messages?limit=3", token: f.session)
+            let last = try XCTUnwrap((page.body?["items"] as? [[String: Any]])?.last)
+            let cursor = try XCTUnwrap(page.body?["nextCursor"] as? String)
+            let parsed = ISO8601DateFormatter()
+            parsed.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let date = try XCTUnwrap(parsed.date(from: try XCTUnwrap(last["createdAt"] as? String)))
+            XCTAssertEqual(cursor.split(separator: ":").first.map(String.init), String(Int64((date.timeIntervalSince1970 * 1000).rounded())))
+        }
+    }
+
     func testMCPToolsNeedTheNewScopesAndShareTheRestRules() async throws {
         let f = try await OAuthFixture.make()
         try await run(f) {

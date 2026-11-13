@@ -64,11 +64,10 @@ for label, payload, want in (
     st, _ = post(payload)
     check(label, st == want, st)
 
-# Real voice attachment (the attachment route needs a task)
-st, b, _ = http("POST", "/v1/projects", {"name": "Brain E2E"}, sess_a); project = j(b)["id"]
-st, b, _ = http("POST", "/v1/tasks", {"projectID": project, "title": "Memo"}, sess_a); task = j(b)["id"]
+st, b, _ = http("POST", "/v1/projects", {"name": "Brain E2E"}, sess_a); project = j(b)["id"]  # the OAuth grant below needs a project
+# Real voice attachment without a task (since T1-3 a voice_in attachment must not belong to a task)
 data = open(m4a_path, "rb").read()
-st, b, _ = http("POST", "/v1/attachments/begin", {"taskID": task, "filename": "memo.m4a", "role": "voice", "mediaType": "audio/mp4",
+st, b, _ = http("POST", "/v1/attachments/begin", {"filename": "memo.m4a", "role": "voice", "mediaType": "audio/mp4",
     "size": len(data), "checksum": hashlib.sha256(data).hexdigest()}, sess_a)
 cap = j(b)
 check("voice attachment begin 200", st == 200, (st, b))
@@ -92,8 +91,12 @@ check("same client UUID in another account is a new message", st == 201 and thei
 st, body = listing(tok=sess_a)
 check("account A never sees B's message", all(m["text"] != "mine" for m in body["items"]), body)
 
-# Pagination: 3 messages so far in A (text, voice_in) plus 6 more
-ids = [first["id"], vin["id"]]
+# Pagination: 3 messages so far in A (text, voice_in, status) plus 6 more
+# Since T1-3 a voice_in without a Mac runner also yields an automatic status message.
+_, body = listing("?limit=100")
+auto = [m["id"] for m in body["items"] if m["kind"] == "status"]
+check("voice_in without runner adds one automatic status message", len(auto) == 1, body)
+ids = [first["id"], vin["id"]] + auto
 for i in range(6):
     st, m = post({"kind": "text", "text": f"p{i}"}); ids.append(m["id"])
 seen, cursor, pages = [], None, 0
@@ -101,13 +104,13 @@ while True:
     st, body = listing("?limit=3" + (f"&cursor={urllib.parse.quote(cursor)}" if cursor else ""))
     seen += [m["id"] for m in body["items"]]; cursor = body.get("nextCursor"); pages += 1
     if not cursor or pages > 10: break
-check("pagination: 8 messages over 3 pages, no gaps, no duplicates", pages == 3 and len(seen) == 8 and set(seen) == set(ids), (pages, len(seen)))
+check("pagination: 9 messages over 3 pages, no gaps, no duplicates", pages == 3 and len(seen) == 9 and set(seen) == set(ids), (pages, len(seen)))
 check("pagination: newest first", seen[0] == ids[-1] and seen[-1] == ids[0], seen)
 for bad in ("limit=0", "limit=101", "cursor=garbage", "since=yesterday"):
     st, _ = listing("?" + bad)
     check(f"bad query {bad} 400", st == 400, st)
 st, body = listing("?since=2000-01-01T00:00:00Z&limit=100")
-check("since filter returns everything after the date", st == 200 and len(body["items"]) == 8, body)
+check("since filter returns everything after the date", st == 200 and len(body["items"]) == 9, body)
 
 # MCP with a real OAuth token
 def oauth_token(scope):
@@ -167,6 +170,19 @@ st, body = listing("?limit=100")
 check("REST shows the agent's messages too", any(m["author"] == "agent" for m in body["items"]), body)
 st, body = listing(tok=sess_b)
 check("account B still sees only its own message", [m["text"] for m in body["items"]] == ["mine"], body)
+
+# createdAt carries milliseconds; two messages in the same second keep their order (REST and MCP)
+import re
+ms = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+_, m1 = post({"kind": "text", "text": "ms one"})
+_, m2 = post({"kind": "text", "text": "ms two"})
+check("POST createdAt has milliseconds", ms.match(m1["createdAt"]) and ms.match(m2["createdAt"]), (m1["createdAt"], m2["createdAt"]))
+check("two quick messages: second createdAt not before first", m2["createdAt"] >= m1["createdAt"], (m1["createdAt"], m2["createdAt"]))
+print("info same second:", m1["createdAt"][:19] == m2["createdAt"][:19], m1["createdAt"], m2["createdAt"])
+st, body = listing("?limit=2")
+check("REST list: newest first with ms createdAt", [m["id"] for m in body["items"]] == [m2["id"], m1["id"]] and all(ms.match(m["createdAt"]) for m in body["items"]), body)
+err, text, page = tool(full, "list_channel_messages", {"limit": 2})
+check("MCP list: newest first with ms createdAt", not err and [m["id"] for m in page["items"]] == [m2["id"], m1["id"]] and all(ms.match(m["createdAt"]) for m in page["items"]), text)
 
 print(f"\n{len(failures)} failure(s)" if failures else "\nall ok")
 sys.exit(1 if failures else 0)

@@ -13,6 +13,31 @@ struct ChannelMessageDTO: Content, Equatable {
         id = try m.requireID(); kind = m.kind; author = m.author; text = m.text
         attachmentID = m.attachmentID; clientUUID = m.clientUUID; createdAt = m.createdAt
     }
+
+    // The global encoder (`.iso8601`) drops fractions; the channel contract needs milliseconds so that messages within
+    // one second keep their order and match the `<ms>:<uuid>` cursor. Only this DTO is affected (REST and MCP).
+    private enum CodingKeys: String, CodingKey { case id, kind, author, text, attachmentID, clientUUID, createdAt }
+    private static func formatter() -> ISO8601DateFormatter {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id); kind = try c.decode(String.self, forKey: .kind)
+        author = try c.decode(String.self, forKey: .author); text = try c.decodeIfPresent(String.self, forKey: .text)
+        attachmentID = try c.decodeIfPresent(UUID.self, forKey: .attachmentID); clientUUID = try c.decodeIfPresent(UUID.self, forKey: .clientUUID)
+        let raw = try c.decode(String.self, forKey: .createdAt)
+        guard let date = Self.formatter().date(from: raw) ?? ISO8601DateFormatter().date(from: raw) else {
+            throw DecodingError.dataCorruptedError(forKey: .createdAt, in: c, debugDescription: "invalid ISO 8601 date")
+        }
+        createdAt = date
+    }
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id); try c.encode(kind, forKey: .kind); try c.encode(author, forKey: .author)
+        try c.encodeIfPresent(text, forKey: .text); try c.encodeIfPresent(attachmentID, forKey: .attachmentID)
+        try c.encodeIfPresent(clientUUID, forKey: .clientUUID)
+        try c.encode(Self.formatter().string(from: createdAt), forKey: .createdAt)
+    }
 }
 
 struct ChannelMessagePage: Content {
