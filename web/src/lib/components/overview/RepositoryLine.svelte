@@ -24,8 +24,12 @@
 	let formError = $state<string | null>(null);
 	let status = $state('');
 
+	// The prop is a getter that may re-evaluate (a refreshed project object) without a new value. Reading it through a
+	// derived keeps the effect below from re-running, which would flip the line back to "loading" on every refresh.
+	const stableID = $derived(projectID);
+
 	$effect(() => {
-		const id = projectID;
+		const id = stableID;
 		phase = 'loading';
 		sync = null;
 		confirming = null;
@@ -101,7 +105,7 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2" data-testid="repo-line" aria-live="polite">
+<div class="flex min-h-9 flex-col gap-2" data-testid="repo-line" aria-live="polite">
 	{#if phase === 'loading'}
 		<p class="text-muted-foreground text-xs">{t('sync.loading')}</p>
 	{:else if phase === 'error'}
