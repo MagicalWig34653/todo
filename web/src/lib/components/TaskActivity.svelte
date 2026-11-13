@@ -14,11 +14,14 @@
 
 	let items = $state<Activity[]>([]);
 	let next = $state<string | null>(null);
+	/** The first page arrived: until then no "no events" text (it would flash on every open). */
+	let loaded = $state(false);
 
 	async function load(more = false) {
 		const page = await api.activity(taskID, more ? next : null);
 		items = more ? [...items, ...page.items] : page.items;
 		next = page.nextCursor ?? null;
+		loaded = true;
 	}
 	/** Silent refetch of the newest page; new entries are put in front, loaded older pages stay in place. */
 	async function refresh() {
@@ -32,6 +35,7 @@
 	onMount(() => startLiveRefresh(refresh));
 	$effect(() => {
 		void taskID;
+		loaded = false;
 		void refreshKey;
 		untrack(() => attempt(() => load()));
 	});
@@ -42,7 +46,7 @@
 	}
 </script>
 
-{#if items.length === 0}
+{#if loaded && items.length === 0}
 	<p class="text-muted-foreground text-xs">{t('activity.empty')}</p>
 {/if}
 <ol class="flex flex-col gap-1 text-xs">

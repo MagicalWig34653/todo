@@ -68,7 +68,7 @@
 		routeSub = r.sub;
 		routeTask = r.taskID;
 		routeArea = r.area;
-		cardDetail.apply(r.card, r.cardInvalid);
+		cardDetail.apply(r.card, r.cardInvalid, r.cardTab);
 		if (r.view === 'search') {
 			searchInitial = { labelID: r.labelID, filterID: r.filterID };
 			searchKey++;
@@ -81,6 +81,7 @@
 		sub: view === 'project' ? routeSub : undefined,
 		taskID: routeTask,
 		card: cardDetail.ref ?? undefined,
+		cardTab: cardDetail.ref ? cardDetail.tab : undefined,
 		area: view === 'account' || view === 'help' ? routeArea : undefined,
 		labelID: view === 'search' ? searchInitial.labelID : undefined,
 		filterID: view === 'search' ? searchInitial.filterID : undefined

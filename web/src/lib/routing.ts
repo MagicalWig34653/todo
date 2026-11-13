@@ -2,6 +2,7 @@
 import { normalizeHelpArea, helpPath } from './helpNav.js';
 import { normalizeArea, settingsPath } from './settingsNav.js';
 import { buildCardParam, parseCardParam, type CardRef } from './cardRef.js';
+import { DEFAULT_TAB, parseCardTab, type CardTab } from './cardTabs.js';
 
 export type RouteView =
 	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account' | 'help';
@@ -17,6 +18,8 @@ export interface Route {
 	card?: CardRef;
 	/** `?card=` was present but is not a valid reference. */
 	cardInvalid?: boolean;
+	/** `?tab=<name>` next to a valid `?card=` (card detail tab); absent = overview. */
+	cardTab?: CardTab;
 	labelID?: string;
 	filterID?: string;
 	/** `/settings/<slug>` (account) or `/help/<slug>` (help); holds the internal id. */
@@ -48,7 +51,9 @@ export function parseRoute(pathname: string, search = ''): Route {
 	if (seg.includes('\0')) return { view: 'notfound' };
 	const cardParam = q.get('card');
 	const card = parseCardParam(cardParam);
-	const withCard = (r: Route): Route => (cardParam === null ? r : card ? { ...r, card } : { ...r, cardInvalid: true });
+	const cardTab = parseCardTab(q.get('tab'));
+	const withCard = (r: Route): Route =>
+		cardParam === null ? r : card ? { ...r, card, ...(cardTab ? { cardTab } : {}) } : { ...r, cardInvalid: true };
 	return withCard(parseSegments(seg, taskID));
 }
 
@@ -79,7 +84,7 @@ export function buildPath(r: Route): string {
 	else if (r.view === 'account') path = settingsPath(r.area);
 	else if (r.view === 'help') path = helpPath(r.area);
 	else path = PATH_OF[r.view as RouteView] ?? '/today';
-	const params = [r.taskID ? `task=${encodeURIComponent(r.taskID)}` : '', r.card ? `card=${buildCardParam(r.card)}` : ''].filter(Boolean);
+	const params = [r.taskID ? `task=${encodeURIComponent(r.taskID)}` : '', r.card ? `card=${buildCardParam(r.card)}` : '', r.card && r.cardTab && r.cardTab !== DEFAULT_TAB ? `tab=${r.cardTab}` : ''].filter(Boolean);
 	return params.length ? `${path}?${params.join('&')}` : path;
 }
 
