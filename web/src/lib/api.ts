@@ -344,6 +344,38 @@ export interface Activity {
 	createdAt?: string | null;
 }
 
+/** Live view of a card (contracts/live-session.yaml, ADR 0031): compact events reported by the working agent. */
+export interface LiveSession {
+	id: string;
+	name: string;
+	model?: string | null;
+	actorType: 'person' | 'integration' | 'run';
+	actorLabel?: string | null;
+	status: 'active' | 'ended';
+	currentStep?: string | null;
+	startedAt: string;
+	lastSeenAt: string;
+	endedAt?: string | null;
+	/** Active but silent for more than 15 minutes (display hint only). */
+	stale: boolean;
+}
+export interface LiveEvent {
+	id: string;
+	sessionID: string;
+	sessionName?: string | null;
+	kind: 'step' | 'tool' | 'note' | 'question' | 'progress' | (string & {});
+	text: string;
+	clientUUID?: string | null;
+	createdAt: string;
+}
+export interface LiveTask {
+	taskID: string;
+	serverTime: string;
+	sessions: LiveSession[];
+	items: LiveEvent[];
+	nextCursor?: string | null;
+}
+
 export type AttachmentRole = 'reference' | 'progress' | 'result';
 export interface Attachment {
 	id: string;
@@ -1062,6 +1094,10 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<void>('DELETE', `/tasks/${c.taskID}/acceptance-criteria/${c.id}`, { version: c.version }),
 		activity: (taskID: string, cursor?: string | null) =>
 			request<Page<Activity>>('GET', `/tasks/${taskID}/activity${query({ cursor, limit: 100 })}`),
+
+		/** Live view of a card: sessions (all) and the newest events; `cursor` = nextCursor of the previous page. */
+		taskLive: (taskID: string, cursor?: string | null, limit = 50) =>
+			request<LiveTask>('GET', `/tasks/${taskID}/live${query({ cursor, limit })}`),
 
 		// Sharing (contracts/sharing.yaml)
 		/** Restricted directory: only people with an existing relation; `q` needs at least two characters. */

@@ -1,6 +1,6 @@
 # ADR 0031 – Live-Ansicht je Karte: nur kompakte, vom Agenten gemeldete Ereignisse
 
-Status: Backend umgesetzt (13.11.2026, Karte `CCCFFB78`, Stufe 1). PWA/App-Anzeige folgt (Stufe 2).
+Status: Backend umgesetzt (13.11.2026, Karte `CCCFFB78`, Stufe 1). PWA-Anzeige umgesetzt (14.11.2026, Stufe 2, Tab "Aktivität" im Karten-Detail); App-Anzeige folgt.
 
 ## Kontext
 
