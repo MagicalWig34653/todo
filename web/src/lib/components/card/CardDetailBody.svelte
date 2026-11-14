@@ -25,6 +25,7 @@
 	import ReviewDecision from '../overview/ReviewDecision.svelte';
 	import ReviewUndoBar from '../overview/ReviewUndoBar.svelte';
 	import TaskActivity from '../TaskActivity.svelte';
+	import TaskLive from './TaskLive.svelte';
 	import TaskAttachments from '../TaskAttachments.svelte';
 	import TaskCriteria from '../TaskCriteria.svelte';
 	import TaskDependencies from '../TaskDependencies.svelte';
@@ -449,8 +450,12 @@
 						</section>
 					{/if}
 					{:else if tab === 'activity'}
-						<p class="text-muted-foreground text-xs">{t('card.activity.hint')}</p>
-						<TaskActivity taskID={task.id} refreshKey={rev} />
+						<TaskLive taskID={task.id} />
+						<section class="flex flex-col gap-1.5 border-t pt-4" aria-label={t('card.activity.all')} data-testid="card-activity-all">
+							<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('card.activity.all')}</h3>
+							<p class="text-muted-foreground text-xs">{t('card.activity.hint')}</p>
+							<TaskActivity taskID={task.id} refreshKey={rev} />
+						</section>
 					{:else if tab === 'report' && report}
 						<CardReport {report} />
 					{:else if tab === 'pipeline' || tab === 'changes' || tab === 'tests'}
