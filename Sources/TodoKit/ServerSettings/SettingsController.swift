@@ -512,16 +512,23 @@ struct RotateSettingsKeyCommand: AsyncCommand {
         context.console.print("re-encrypted \(n) secret(s)")
     }
 
-    static func rotate(ring: SettingsKeyRing, on db: any Database) async throws -> Int {
+    static func rotate(ring: SettingsKeyRing, on db: any Database, afterListing: (@Sendable () async throws -> Void)? = nil) async throws -> Int {
         guard let current = ring.current else { throw Abort(.badRequest, reason: "SETTINGS_ENCRYPTION_KEY is not set") }
         var count = 0
-        for row in try await ServerSetting.query(on: db).filter(\.$secret == true).all() {
-            guard let blob = row.value, row.keyID != current.id else { continue }
-            let plain = try ring.open(blob, keyID: row.keyID, settingKey: row.settingKey)
-            let sealed = try ring.seal(plain, settingKey: row.settingKey)
-            row.value = sealed.blob; row.keyID = sealed.keyID; row.fingerprint = sealed.fingerprint
-            try await row.save(on: db)
-            count += 1
+        let ids = try await ServerSetting.query(on: db).filter(\.$secret == true).all().compactMap(\.id)
+        try await afterListing?()
+        for id in ids {
+            // Same row lock as set/reset; the value is read only under the lock so a concurrent change is never overwritten.
+            let rotated: Bool = try await db.transaction { tx in
+                try await lockRow(table: ServerSetting.schema, id: id, on: tx)
+                guard let row = try await ServerSetting.find(id, on: tx), row.secret, let blob = row.value, row.keyID != current.id else { return false }
+                let plain = try ring.open(blob, keyID: row.keyID, settingKey: row.settingKey)
+                let sealed = try ring.seal(plain, settingKey: row.settingKey)
+                row.value = sealed.blob; row.keyID = sealed.keyID; row.fingerprint = sealed.fingerprint
+                try await row.save(on: tx)
+                return true
+            }
+            if rotated { count += 1 }
         }
         return count
     }
