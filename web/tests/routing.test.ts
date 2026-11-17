@@ -4,7 +4,7 @@ import { buildPath, loginRedirectTarget, parseRoute, safeRedirect } from '../src
 const id = '0DCBB03D-997B-4C08-80CB-9FBD69226644';
 describe('routing', () => {
 	it('maps simple views both ways', () => {
-		for (const p of ['/today', '/inbox', '/upcoming', '/up-next', '/calendar', '/search', '/overview', '/activity', '/agents', '/teams', '/filter', '/settings', '/help']) {
+		for (const p of ['/today', '/inbox', '/upcoming', '/up-next', '/calendar', '/search', '/overview', '/now', '/activity', '/agents', '/teams', '/filter', '/settings', '/help']) {
 			expect(buildPath(parseRoute(p))).toBe(p);
 		}
 		expect(parseRoute('/')).toEqual({ view: 'forYou' });

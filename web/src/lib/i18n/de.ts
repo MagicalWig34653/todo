@@ -3,12 +3,14 @@ import { deNotify } from './de-notify.js';
 import { deSettings } from './de-settings.js';
 import { deAdminSettings } from './de-admin-settings.js';
 import { deAutoStart } from './de-autostart.js';
+import { deNow } from './de-now.js';
 
 export const de = {
 	...deNotify,
 	...deSettings,
 	...deAdminSettings,
 	...deAutoStart,
+	...deNow,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',
@@ -745,6 +747,7 @@ export const de = {
 	'common.toggleSection': '{name} ein- oder ausklappen',
 	'nav.openDrawer': 'Seitenleiste öffnen',
 	'nav.overview': 'Überblick',
+	'nav.now': 'Jetzt',
 	'cc.title': 'Überblick',
 	'cc.projectTitle': 'Überblick: {name}',
 	'cc.hint': 'Laufende Features, Rückfragen, Reviews und Updates deiner Agenten an einem Ort.',

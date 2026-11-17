@@ -851,6 +851,35 @@ export function query(params: Record<string, string | number | null | undefined>
 	return parts.length ? `?${parts.join('&')}` : '';
 }
 
+/** contracts/session-status.yaml: `GET /v1/overview/now`, what is happening now per readable project. */
+export interface OverviewRunningTask {
+	taskID: string;
+	title: string;
+	worker?: string | null;
+	lastProgress?: { note: string; at: string } | null;
+	ageSeconds: number;
+	/** Not part of the contract today; shown as a progress bar only when the server sends it. */
+	percent?: number | null;
+}
+export interface OverviewSession { sessionName: string; activity: string; updatedAt: string; ageSeconds: number; orphaned: boolean }
+export interface OverviewJob { jobID: string; taskID: string; state: string; mode: string; progress: string }
+export interface OverviewBuild { taskID: string; buildID: string; label?: string | null; platform?: string | null; createdAt: string }
+export interface OverviewOpenItem { id: string; taskID: string; taskTitle: string; text: string; createdAt: string }
+export interface OverviewEvent { taskID: string; taskTitle: string; kind: string; actorType: string; createdAt: string }
+export interface OverviewProject {
+	projectID: string;
+	projectName: string;
+	lastActivityAt: string;
+	runningTasks: OverviewRunningTask[];
+	sessions: OverviewSession[];
+	agentJobs: OverviewJob[];
+	builds: OverviewBuild[];
+	openQuestions: OverviewOpenItem[];
+	pendingReviews: OverviewOpenItem[];
+	recentActivity: OverviewEvent[];
+}
+export interface OverviewNow { serverTime: string; projects: OverviewProject[] }
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** How long a prefetched answer waits for its first reader. */
@@ -1021,6 +1050,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		confirmActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/confirm`),
 		rejectActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/reject`),
 		performAction: (method: string, path: string, body: unknown) => request<unknown>(method, path, body),
+		overviewNow: () => request<OverviewNow>('GET', '/overview/now'),
 		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<FeedPage>('GET', `/activity${query({ projectID: params.projectID, before: params.before, limit: params.limit })}`),
 

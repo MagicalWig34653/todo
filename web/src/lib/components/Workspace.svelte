@@ -368,6 +368,8 @@
 						{#await import('./CalendarView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'overview'}
 						<CommandCenter />
+					{:else if view === 'now'}
+						{#await import('./NowView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'inbox'}
 						<InboxView onopen={openProject} />
 					{:else if view === 'search'}
