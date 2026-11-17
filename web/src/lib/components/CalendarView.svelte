@@ -7,6 +7,7 @@
 		formatDayHeading, formatTime, keyPlan, layoutDay, monthTitle, sameDay, scheduleErrorKey, shiftAnchor, unscheduledEntry, visibleRange,
 		type CalendarView, type CivilDay, type DropTarget, type ScheduleEntry, type SchedulePatch, type UndoStep, monthGrid, berlinParts
 	} from '#lib/calendar.js';
+	import { autoStartMarks, revokedTitles } from '#lib/autoStart.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
@@ -74,6 +75,8 @@
 		try {
 			const [sched, open] = await Promise.all([api.schedule(r.from.toISOString(), r.to.toISOString()), api.unscheduled()]);
 			if (mine !== seq) return;
+			const lost = revokedTitles(entries, sched.items);
+			if (lost.length) status = t('autostart.revoked', { titles: lost.join(', ') });
 			entries = sched.items;
 			truncated = sched.truncated;
 			openTasks = open;
@@ -245,6 +248,11 @@
 	{#if e.conflicts.length}
 		<span class="text-warning flex items-center gap-1 font-medium" data-testid="calendar-conflict"><TriangleAlert class="size-3 shrink-0" aria-hidden="true" /><span class="truncate">{conflictLabels(e).join(', ')}</span></span>
 	{/if}
+	{@const auto = autoStartMarks(e, new Date())}
+	{#if auto.badge}
+		<span class="block truncate font-medium" data-testid="calendar-autostart">{t('autostart.mark')}{#if auto.overdue}<span data-testid="calendar-autostart-overdue">, {t('autostart.mark.overdue')}</span>{/if}</span>
+	{/if}
+	{#if auto.startedAt}<span class="text-muted-foreground block truncate" data-testid="calendar-autostarted">{t('autostart.mark.started', { time: formatTime(auto.startedAt) })}</span>{/if}
 	{#if e.blocked}<span class="text-muted-foreground block truncate">{t('calendar.blocked')}</span>{/if}
 	{#if !e.canEdit}<span class="text-muted-foreground block truncate">{t('calendar.readOnly')}</span>{/if}
 {/snippet}
@@ -329,7 +337,7 @@
 									<div class="border-destructive text-destructive pointer-events-none absolute inset-x-0 z-[1] border-t border-dashed text-[10px] leading-none" style="top: {((m.h * 60 + m.min) / 60) * HOUR_H}px" data-testid="calendar-due" title={formatTimestamp(e.dueAt)}>{t('calendar.dueMark', { title: e.title })}</div>
 								{/each}
 								{#each col.placed as p (p.entry.taskID)}
-									{@render card(p.entry, 'absolute overflow-hidden rounded px-1 py-0.5 shadow-sm z-[2]', `top: ${(p.startMin / 60) * HOUR_H}px; height: ${Math.max(p.entry.conflicts.length || !p.entry.canEdit ? MIN_H_MARKED : MIN_H, ((p.endMin - p.startMin) / 60) * HOUR_H - 1)}px; left: ${(p.col / p.cols) * 100}%; width: calc(${100 / p.cols}% - 2px)`)}
+									{@render card(p.entry, 'absolute overflow-hidden rounded px-1 py-0.5 shadow-sm z-[2]', `top: ${(p.startMin / 60) * HOUR_H}px; height: ${Math.max(p.entry.conflicts.length || !p.entry.canEdit || p.entry.autoStart || p.entry.autoStartedAt ? MIN_H_MARKED : MIN_H, ((p.endMin - p.startMin) / 60) * HOUR_H - 1)}px; left: ${(p.col / p.cols) * 100}%; width: calc(${100 / p.cols}% - 2px)`)}
 								{/each}
 							</div>
 						{/each}
@@ -403,6 +411,7 @@
 		entry={dialogEntry}
 		onsave={(patch) => dialogEntry && apply(dialogEntry, patch)}
 		onopencard={() => dialogEntry && openCard(dialogEntry)}
+		onautostart={() => load()}
 		onclose={() => (dialogEntry = null)}
 	/>
 {/if}

@@ -178,6 +178,10 @@ export interface JobListItem {
 	projectName: string;
 	createdAt?: string | null;
 }
+export interface JobDetail {
+	job: AgentJob;
+	events: { id?: string; kind: string; detail: string; createdAt?: string | null }[];
+}
 export interface JobPage {
 	items: JobListItem[];
 	nextCursor?: string | null;
@@ -281,6 +285,9 @@ export interface PlanningTask extends PlanningData {
 	/** contracts/planning-ext.yaml 1.1.0 */
 	plannedMinutes?: number | null;
 	plannedAllDay?: boolean;
+	/** contracts/planning-ext.yaml 1.2.0: one-time permission for the guard; set via `PUT /tasks/{id}/auto-start` only. */
+	autoStart?: boolean;
+	autoStartedAt?: string | null;
 }
 /** `PATCH /v1/tasks/{id}/schedule`: only sent keys change, null clears (planning-ext 1.1.0). */
 export interface ScheduleUpdate {
@@ -714,6 +721,8 @@ export interface SystemStatusResponse {
 	items: SystemStatusItem[];
 	/** Server clock; the age of a report is computed against it. */
 	now: string;
+	/** Account switch "Automatische Starts erlauben" (default false). */
+	autoStartAllowed?: boolean;
 }
 export interface CommandCenter {
 	generatedAt: string;
@@ -1046,6 +1055,7 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<RunnerBinding>('POST', '/agents/bindings', b),
 		releaseJob: (j: { id: string; taskID: string; bindingID: string; taskRevision: number; mode: 'clarify' | 'implement'; scope: string }) =>
 			request<AgentJob>('POST', '/agents/jobs', j),
+		jobDetail: (id: string) => request<JobDetail>('GET', `/agents/jobs/${id}`),
 		stopJob: (id: string) => request<AgentJob>('POST', `/agents/jobs/${id}/stop`, {}),
 		listJobs: (params: { state?: JobState | ''; projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<JobPage>(
@@ -1068,6 +1078,10 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<ScheduleResponse>('GET', `/planning/schedule${query({ from, to, projectID })}`),
 		unscheduled: (projectID?: string) => request<PlanningTask[]>('GET', `/planning/unscheduled${query({ projectID })}`),
 		scheduleTask: (taskID: string, body: ScheduleUpdate) => request<PlanningTask>('PATCH', `/tasks/${taskID}/schedule`, body),
+		setAutoStart: (taskID: string, body: { version: number; enabled: boolean; deviceID?: string }) =>
+			request<PlanningTask>('PUT', `/tasks/${taskID}/auto-start`, body),
+		autoStartSetting: () => request<{ allowed: boolean; updatedAt?: string | null }>('GET', '/settings/auto-start'),
+		setAutoStartSetting: (allowed: boolean) => request<{ allowed: boolean; updatedAt?: string | null }>('PUT', '/settings/auto-start', { allowed }),
 		dependencies: (taskID: string) => request<Task[]>('GET', `/planning/tasks/${taskID}/dependencies`),
 		addDependency: (taskID: string, prerequisiteID: string) =>
 			request<void>('PUT', `/planning/tasks/${taskID}/dependencies`, { prerequisiteID }),

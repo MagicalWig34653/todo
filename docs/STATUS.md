@@ -1264,3 +1264,13 @@ Stand (Worktree-Branch `worktree-agent-a6db9eb2e1eaabd30`, nicht gemergt): Backe
 - Prüfungen: `AutoStartTests` (17 Tests); Volllauf siehe Commit-Bericht. MariaDB nicht gelaufen.
 - Offen: Wächter selbst (Orchestrator-Repo, `leistung_ampel` berechnen), PWA/Apple-Oberfläche für Schalter und Karten-Erlaubnis, Job-Detail-Anzeige "automatisch gestartet", Schritt D (E2E). Ob Titeländerung durch den Eigentümer widerruft, ist wie im Auftrag umgesetzt (ja); bei Bedarf lockern.
 
+## Nachtrag 17.11.2026: Kalender Stufe C, PWA-Teil, Karte 8CECAD24
+
+Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backend-Stand von main):
+- Einstellungen > Runner-Geräte: Schalter "Automatische Starts erlauben" (`GET/PUT /v1/settings/auto-start`, Standard aus) mit Erklärung, `role=switch`, Statuszeile per `aria-live`.
+- `AutoStartToggle.svelte` im Kalender-Dialog "Start und Dauer" und in der Karten-Seitenleiste (`TaskPlanning` side): `PUT /v1/tasks/{id}/auto-start`; nur Eigentümer aktiv (sonst Hinweis), deaktiviert mit Begründung bei fehlendem Start, ganztägig, erledigt, keiner Bindung (Bindungen aus `listDevices`); Geräteauswahl bei Bindungen auf mehreren Geräten; Fehlertexte für alle Codes; Hinweis bei ausgeschaltetem Kontoschalter.
+- Kalender: Marke "Auto-Start" (Text), "überfällig, wartet auf freie Ampeln", "automatisch gestartet um ...", auch im aria-label; Widerruf nach fremder Änderung wird beim Neuladen erkannt und angesagt.
+- Job-Liste (Agenten): `JobOriginNote` liest `GET /v1/agents/jobs/{id}` und zeigt aus dem `released`-Ereignis "automatisch gestartet durch Wächter, geplant für ..." bzw. "automatisch nachgeholt ... N Minuten".
+- Logik in `web/src/lib/autoStart.ts`, Texte `i18n/de-autostart.ts`, Tests `web/tests/autoStart.test.ts` (25 Fälle). `vitest run` und `npm run build` grün; `npm run check` und Playwright nicht gelaufen.
+- Grenzen: die ältere Formularvariante von `TaskPlanning` (ohne `side`, `TaskDetail`) hat den Schalter nicht; Job-Hinweis lädt je Listenzeile ein Detail (bis 20 Anfragen je Seite).
+

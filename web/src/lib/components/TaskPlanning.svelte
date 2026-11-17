@@ -21,6 +21,7 @@
 	import Flag from '@lucide/svelte/icons/flag';
 	import X from '@lucide/svelte/icons/x';
 	import SideSection from './card/SideSection.svelte';
+	import AutoStartToggle from './AutoStartToggle.svelte';
 	import { priorityTag, priorityTone } from '#lib/planning.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { mergePlanning, planningForm, type PlanningField, type PlanningForm } from '#lib/planning-merge.js';
@@ -360,6 +361,20 @@
 				</div>
 			{/if}
 		</SideSection>
+		{#if current}
+			<div class="border-t pt-3" data-testid="side-autostart">
+				<AutoStartToggle
+					{taskID}
+					projectID={current.task.projectID}
+					version={current.task.version}
+					status={current.task.status}
+					plannedAt={current.plannedAt}
+					plannedAllDay={current.plannedAllDay ?? false}
+					autoStart={current.autoStart ?? false}
+					onchanged={(pt) => { current = pt; void onsaved(); }}
+				/>
+			</div>
+		{/if}
 		{#if conflictText}
 			<p class="text-warning pt-2 text-xs" role="status" data-testid="planning-conflict">{conflictText}</p>
 		{/if}
