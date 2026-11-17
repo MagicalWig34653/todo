@@ -155,7 +155,7 @@ Zwölf Tools in `MCPActivityTools.swift`, keine neuen Scopes, keine Migration. F
 | `delete_project_comment` | comments:write | C | `projectID, commentID, version?`; Bestätigungsanfrage |
 | `list_activity` | tasks:read | A | `projectID?, limit?` (1..100, Standard 50), `before?` (nextCursor); Aufgaben- und Projektereignisse, nur Grant-Projekte, die das Konto lesen darf |
 | `read_attachment` | attachments:read | A | `id, preview?`; `{attachment, build?, preview?: {mediaType, dataBase64}, previewOmitted?}`; Vorschau nur winzige Bilder bis 45000 Byte (`not_an_image`, `preview_unavailable` mit `hint`; siehe Abschnitt Anhänge für Agenten) |
-| `register_build` | attachments:write | A | `attachmentID, buildID, label?, platform?`; macht einen fertigen Anhang zum Build-Screenshot, idempotent, `build.added` einmal |
+| `register_build` | attachments:write | A | `attachmentID, buildID, label?, platform?, status?, commit?`; macht einen fertigen Anhang zum Build-Screenshot, idempotent, `build.added` einmal; neuer `status` aktualisiert und erzeugt `build.status_changed` (Migration `AddBuildStatusCommit`, additiv) |
 | `begin_task_upload` | attachments:write | A | `taskID, filename, role (reference\|progress\|result), mediaType, size, checksum`; wie `begin_attachment`, aber mit wählbarer Rolle, ohne Build-Eintrag |
 | `complete_task_upload` | attachments:write | A | `attachmentID`; nur eigene Uploads auf erlaubter Aufgabe |
 | `delete_attachment` | attachments:write | C | `attachmentID`; Bestätigungsanfrage; Bestätigen blendet die Datei und ihren Build-Eintrag aus (Status `deleted`, Aktivität `attachment.deleted`), `cleanup-uploads` entfernt die Bytes |

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.5.0
+  version: 1.6.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -253,7 +253,7 @@ x-mcp-tools:
   delete_project_comment: {scope: 'comments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID, commentID, version?; Löschungen nur als Bestätigungsanfrage.'}
   list_activity: {scope: 'tasks:read', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: projectID?, limit?, before?; Löschungen nur als Bestätigungsanfrage.'}
   read_attachment: {scope: 'attachments:read', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: id, preview?; Vorschau nur bis 45000 Byte, sonst previewOmitted=preview_unavailable mit hint; Löschungen nur als Bestätigungsanfrage.'}
-  register_build: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID, buildID, label?, platform?; Löschungen nur als Bestätigungsanfrage.'}
+  register_build: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID, buildID, label?, platform?, status? (building|succeeded|failed, sonst 400 invalid_status), commit? (7-40 Hex-Kleinbuchstaben, sonst 400 invalid_commit; seit 1.6.0, additiv); erneuter Aufruf mit anderem status aktualisiert ihn (Aktivität build.status_changed), ohne status bleibt er; Ergebnis BuildArtifactDTO mit status?/commit?; Löschungen nur als Bestätigungsanfrage.'}
   begin_task_upload: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: taskID, filename, role, mediaType, size, checksum; Löschungen nur als Bestätigungsanfrage.'}
   complete_task_upload: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID; Löschungen nur als Bestätigungsanfrage.'}
   delete_attachment: {scope: 'attachments:write', notes: 'Siehe docs/MCP-PARITAET.md, Stapel 4; Argumente: attachmentID; Löschungen nur als Bestätigungsanfrage.'}

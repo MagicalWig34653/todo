@@ -105,6 +105,7 @@ public func configureMigrations(_ app: Application) {
     configureLive(app)
     app.migrations.add(AddCommentThreads())
     app.migrations.add(AddCommentAttachment())
+    app.migrations.add(AddBuildStatusCommit())
     configureActionRequests(app)
     configureSystemStatus(app)
     configureChannels(app)

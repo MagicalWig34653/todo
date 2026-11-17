@@ -18,6 +18,10 @@ Die Live-Ansicht (ADR 0031) hängt an einer Karte. Arbeitet ein Agent ohne Karte
 
 Additiv und optional: `runningTasks[].percent` (Prozent der letzten Fortschrittsnotiz der Karte, die einen Prozentwert trug) und `builds[].commit` (buildID, wenn sie wie ein Commit-Hash aussieht: 7 bis 40 Hex-Kleinbuchstaben). Bewusst kein Build-/CI-Status und keine Migration; im Datenmodell gibt es dafür keine Quelle (`build_artifacts` kennt nur buildID, Label, Plattform).
 
+## Nachtrag 18.11.2026: Build-Status und expliziter Commit (Vertrag 1.2.0, Handbuch 1.34.0)
+
+Entscheidung des Orchestrators: `register_build` (und REST `POST /v1/builds`, derselbe `WorkflowService.registerBuild`) bekommt optional `status` (building | succeeded | failed) und `commit`. Additive Migration `AddBuildStatusCommit` (zwei nullable Spalten in `build_artifacts`, je ein ALTER). Idempotenz bleibt: derselbe Aufruf mit anderem Status aktualisiert ihn und schreibt die Aktivität `build.status_changed` (Live-Hinweis über die bestehende Live-Middleware); ohne `status` bleibt ein vorhandener Status unverändert. `OverviewNow.Build` zeigt `status` (fehlt, wenn nie gemeldet) und `commit` (explizit, sonst wie bisher aus der buildID). Der Satz "bewusst kein Build-/CI-Status" oben gilt damit nur für 1.1.0. Grenzen: Der Status kommt nur von register_build; der Upload-Weg begin/complete_attachment kennt ihn nicht (danach register_build mit status aufrufen). Der Feed (`FeedService`) zeigt `build.status_changed` nicht.
+
 ## Folgen und Grenzen
 
 - Aufbewahrung: Zeilen werden nicht aktiv gelöscht; nach 24 h sind sie in der Übersicht unsichtbar, Projekt-/Kontolöschung löscht per Kaskade. Ein Aufräumschritt im `ExpiredCleanup` ist nicht Teil von Stufe 1.

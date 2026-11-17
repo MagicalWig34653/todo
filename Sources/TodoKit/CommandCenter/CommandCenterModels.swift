@@ -116,7 +116,23 @@ final class BuildArtifact: Model, @unchecked Sendable {
     @Field(key: "created_by_type") var createdByType: ActivityActorType
     @Field(key: "created_by_id") var createdByID: UUID
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
+    /// building | succeeded | failed; nil = never reported.
+    @OptionalField(key: "status") var status: String?
+    /// Explicit commit hash (7-40 lowercase hex); nil = derive from buildID where it looks like one.
+    @OptionalField(key: "commit") var commit: String?
     init() {}
+}
+
+/// Additive: optional build status and commit. One ALTER per column (SQLite cannot add several at once).
+struct AddBuildStatusCommit: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(BuildArtifact.schema).field("status", .string).update()
+        try await db.schema(BuildArtifact.schema).field("commit", .string).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(BuildArtifact.schema).deleteField("commit").update()
+        try await db.schema(BuildArtifact.schema).deleteField("status").update()
+    }
 }
 
 /// Removes subtask links that cross a project boundary (children moved to another project before moves unlinked them).
@@ -292,6 +308,10 @@ struct BuildArtifactDTO: Content {
     /// Authenticated image endpoint (session cookie / bearer), valid for images only.
     let previewURL: String
     let createdAt: Date?
+    /// building | succeeded | failed; absent when never reported.
+    let status: String?
+    /// Explicit commit, else the buildID when it looks like a commit hash; absent otherwise.
+    let commit: String?
 }
 
 struct AgentBriefDTO: Content {
@@ -387,4 +407,10 @@ struct RegisterBuildRequest: Content {
     let buildID: String
     let label: String?
     let platform: String?
+    let status: String?
+    let commit: String?
+    init(attachmentID: UUID, buildID: String, label: String? = nil, platform: String? = nil, status: String? = nil, commit: String? = nil) {
+        self.attachmentID = attachmentID; self.buildID = buildID; self.label = label; self.platform = platform
+        self.status = status; self.commit = commit
+    }
 }

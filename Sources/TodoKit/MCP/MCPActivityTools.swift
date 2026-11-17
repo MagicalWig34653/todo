@@ -55,11 +55,13 @@ extension MCPController {
              description: "Get a short-lived (5 minutes) signed download URL for ONE completed attachment (any size up to the instance limit). The URL needs no login and works only for this file, only with GET and only until expiresAt. Never post it on the board. Download it with the plugin script (claude-plugin/scripts/fetch-attachment.sh <url> [dir]) and Read the local file to look at a screenshot.",
              properties: ["id": Schema.uuid("Attachment id.")], required: ["id"]),
         Tool(name: "register_build", scope: "attachments:write",
-             description: "Register an already completed attachment (for example uploaded with begin_task_upload) as a build screenshot with buildID, label and platform. Idempotent per attachment.",
+             description: "Register an already completed attachment (for example uploaded with begin_task_upload) as a build screenshot with buildID, label and platform. Idempotent per attachment (a call with a new status updates it).",
              properties: ["attachmentID": Schema.uuid("Completed attachment id."),
                           "buildID": Schema.string("Identifier of the build, 1 to 100 characters.", maxLength: 100),
                           "label": Schema.string("Optional caption.", maxLength: 200),
-                          "platform": Schema.string("Optional platform such as ios, macos, web.", maxLength: 50)],
+                          "platform": Schema.string("Optional platform such as ios, macos, web.", maxLength: 50),
+                          "status": Schema.string("Optional build status: building, succeeded or failed. Calling again with another status updates it; calling without status keeps it.", values: ["building", "succeeded", "failed"]),
+                          "commit": Schema.string("Optional commit hash, 7 to 40 lowercase hex characters.", maxLength: 40)],
              required: ["attachmentID", "buildID"]),
         Tool(name: "begin_task_upload", scope: "attachments:write",
              description: "Start an upload with an explicit role: reference (material for the work), progress (intermediate result) or result (final result). Same flow as begin_attachment (PUT the bytes to uploadURL with the bearer token), then call complete_task_upload. For build screenshots use begin_attachment or register_build afterwards.",
@@ -177,7 +179,8 @@ extension MCPController {
                             "url": .string(settings.oauthIssuer + link.path), "expiresAt": try .encoded(link.expiresAt)])
         case "register_build":
             let body = RegisterBuildRequest(attachmentID: try uuid(a["attachmentID"]), buildID: try requiredString(a, "buildID"),
-                label: try optionalString(a, "label"), platform: try optionalString(a, "platform"))
+                label: try optionalString(a, "label"), platform: try optionalString(a, "platform"),
+                status: try optionalString(a, "status"), commit: try optionalString(a, "commit"))
             return try .encoded(await workflowService(user: user, grant: grant, db: db, settings: settings)
                 .registerBuild(body, actor: await self.actor(grant: grant, db: db)))
         case "begin_task_upload":

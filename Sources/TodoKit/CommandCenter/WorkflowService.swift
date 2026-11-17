@@ -565,6 +565,21 @@ struct WorkflowService: Sendable {
         return (id, try optionalLabel(label, max: 200, reason: "invalid_label"), try optionalLabel(platform, max: 50, reason: "invalid_platform"))
     }
 
+    static let buildStatuses: Set<String> = ["building", "succeeded", "failed"]
+
+    static func cleanBuildStatus(_ raw: String?) throws -> String? {
+        guard let raw = try optionalLabel(raw, max: 20, reason: "invalid_status") else { return nil }
+        guard buildStatuses.contains(raw) else { throw Abort(.badRequest, reason: "invalid_status") }
+        return raw
+    }
+
+    /// 7-40 lowercase hex characters, else 400 invalid_commit.
+    static func cleanCommit(_ raw: String?) throws -> String? {
+        guard let raw = try optionalLabel(raw, max: 40, reason: "invalid_commit") else { return nil }
+        guard raw.utf8.count >= 7, raw.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }) else { throw Abort(.badRequest, reason: "invalid_commit") }
+        return raw
+    }
+
     private func attachmentService() throws -> AttachmentService {
         guard let attachments else { throw Abort(.serviceUnavailable, reason: "attachments_unavailable") }
         return try attachments()
@@ -598,20 +613,39 @@ struct WorkflowService: Sendable {
     /// Registers an already completed attachment as a build artifact (human uploads through the normal flow).
     func registerBuild(_ body: RegisterBuildRequest, actor: WorkflowActor) async throws -> BuildArtifactDTO {
         let (build, label, platform) = try Self.cleanBuild(buildID: body.buildID, label: body.label, platform: body.platform)
+        let status = try Self.cleanBuildStatus(body.status), commit = try Self.cleanCommit(body.commit)
         guard let attachment = try await Attachment.find(body.attachmentID, on: db), attachment.status == "complete" else { throw Abort(.notFound) }
         _ = try await readableTask(attachment.taskID, role: .edit)
         if let existing = try await BuildArtifact.query(on: db).filter(\.$attachmentID == body.attachmentID).first() {
-            return Self.buildDTO(existing, attachment: try AttachmentDTO(attachment))
+            return try await updateBuild(existing, status: status, commit: commit, attachment: try AttachmentDTO(attachment), actor: actor)
         }
         let artifact = BuildArtifact()
+        artifact.status = status; artifact.commit = commit
         artifact.attachmentID = body.attachmentID; artifact.taskID = attachment.taskID; artifact.buildID = build
         artifact.label = label; artifact.platform = platform; artifact.createdByType = actor.type; artifact.createdByID = actor.id
         do { try await artifact.save(on: db) }
         catch let error as any DatabaseError where error.isConstraintFailure {
             guard let existing = try await BuildArtifact.query(on: db).filter(\.$attachmentID == body.attachmentID).first() else { throw Abort(.conflict, reason: "build_register_conflict") }
-            return Self.buildDTO(existing, attachment: try AttachmentDTO(attachment))
+            return try await updateBuild(existing, status: status, commit: commit, attachment: try AttachmentDTO(attachment), actor: actor)
         }
         return try await announceBuild(artifact, attachment: try AttachmentDTO(attachment), actor: actor)
+    }
+
+    /// Idempotent re-registration: only fields that were sent change; a changed status is announced on the card.
+    private func updateBuild(_ artifact: BuildArtifact, status: String?, commit: String?, attachment: AttachmentDTO, actor: WorkflowActor) async throws -> BuildArtifactDTO {
+        let statusChanged = status != nil && status != artifact.status
+        if statusChanged || (commit != nil && commit != artifact.commit) {
+            if let status { artifact.status = status }
+            if let commit { artifact.commit = commit }
+            try await artifact.save(on: db)
+        }
+        if statusChanged {
+            let artifactID = try artifact.requireID()
+            try await mutate(artifact.taskID, role: .edit) { task, tx in
+                try await appendActivity(taskID: try task.requireID(), actorType: actor.type, actorID: actor.id, kind: "build.status_changed", subjectID: artifactID, on: tx)
+            }
+        }
+        return Self.buildDTO(artifact, attachment: attachment)
     }
 
     private func announceBuild(_ artifact: BuildArtifact, attachment: AttachmentDTO, actor: WorkflowActor) async throws -> BuildArtifactDTO {
@@ -630,7 +664,8 @@ struct WorkflowService: Sendable {
     static func buildDTO(_ a: BuildArtifact, attachment: AttachmentDTO) -> BuildArtifactDTO {
         BuildArtifactDTO(id: a.id!, attachmentID: a.attachmentID, taskID: a.taskID, buildID: a.buildID, label: a.label,
             platform: a.platform, filename: attachment.filename, mediaType: attachment.mediaType, size: attachment.size,
-            previewURL: "/v1/attachments/\(a.attachmentID.uuidString)/preview", createdAt: a.createdAt)
+            previewURL: "/v1/attachments/\(a.attachmentID.uuidString)/preview", createdAt: a.createdAt,
+            status: a.status, commit: a.commit ?? OverviewNowService.commit(from: a.buildID))
     }
 
 

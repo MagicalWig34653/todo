@@ -186,6 +186,24 @@ final class MCPActivityToolsTests: XCTestCase {
             let announced = try await ActivityEvent.query(on: f.test.app.db).filter(\.$kind == "build.added").count(); XCTAssertEqual(announced, 1)
             let withBuild = try await call(f, "read_attachment", ["id": aid], access)
             XCTAssertEqual((withBuild.object?["build"] as? [String: Any])?["buildID"] as? String, "b1")
+            // Optional status/commit: a call without status keeps it, a call with status updates it and announces the change.
+            let building = try await call(f, "register_build", ["attachmentID": aid, "buildID": "b1", "status": "building", "commit": "abc1234"], access)
+            XCTAssertFalse(building.isError, building.text)
+            XCTAssertEqual(building.object?["status"] as? String, "building"); XCTAssertEqual(building.object?["commit"] as? String, "abc1234")
+            let keep = try await call(f, "register_build", ["attachmentID": aid, "buildID": "b1"], access)
+            XCTAssertEqual(keep.object?["status"] as? String, "building"); XCTAssertEqual(keep.object?["commit"] as? String, "abc1234")
+            let done2 = try await call(f, "register_build", ["attachmentID": aid, "buildID": "b1", "status": "succeeded"], access)
+            XCTAssertEqual(done2.object?["status"] as? String, "succeeded")
+            let changed = try await ActivityEvent.query(on: f.test.app.db).filter(\.$kind == "build.status_changed").count(); XCTAssertEqual(changed, 2)
+            let same = try await call(f, "register_build", ["attachmentID": aid, "buildID": "b1", "status": "succeeded"], access)
+            XCTAssertEqual(same.object?["status"] as? String, "succeeded")
+            let changed2 = try await ActivityEvent.query(on: f.test.app.db).filter(\.$kind == "build.status_changed").count(); XCTAssertEqual(changed2, 2)
+            let listedBuilds = try await call(f, "list_builds", ["taskID": tid], access)
+            XCTAssertEqual((listedBuilds.json as? [[String: Any]])?.first?["status"] as? String, "succeeded")
+            for bad: [String: Any] in [["status": "done"], ["commit": "ABC1234"], ["commit": "abc12"], ["commit": String(repeating: "a", count: 41)]] {
+                let r = try await call(f, "register_build", bad.merging(["attachmentID": aid, "buildID": "b1"]) { $1 }, access)
+                XCTAssertEqual(r.text, bad["status"] != nil ? "invalid_status" : "invalid_commit", "\(bad)")
+            }
             // Delete is a request; confirming hides the file and its build.
             let del = try await call(f, "delete_attachment", ["attachmentID": aid], access)
             let rid = try XCTUnwrap(del.object?["actionRequestID"] as? String)

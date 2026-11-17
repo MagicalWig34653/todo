@@ -26,6 +26,8 @@ struct OverviewNow: Content {
     struct Build: Content { let taskID: UUID; let buildID: String; let label: String?; let platform: String?; let createdAt: String
         /// The build ID when it looks like a commit hash (7-40 lowercase hex characters), else nil. Not a CI status.
         let commit: String?
+        /// building | succeeded | failed; absent when the agent never reported one.
+        let status: String?
     }
     struct Open: Content { let id: UUID; let taskID: UUID; let taskTitle: String; let text: String; let createdAt: String }
     struct Event: Content { let taskID: UUID; let taskTitle: String; let kind: String; let actorType: String; let createdAt: String }
@@ -147,7 +149,7 @@ struct OverviewNowService: Sendable {
             entries.append((last, OverviewNow.Entry(
                 projectID: pid, projectName: project.name, lastActivityAt: iso(last == .distantPast ? clock : last),
                 runningTasks: runningTasks, sessions: sessions, agentJobs: jobs,
-                builds: try builds.map { OverviewNow.Build(taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock), commit: Self.commit(from: $0.buildID)) },
+                builds: try builds.map { OverviewNow.Build(taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock), commit: $0.commit ?? Self.commit(from: $0.buildID), status: $0.status) },
                 openQuestions: questions, pendingReviews: reviews,
                 recentActivity: try events.map { e in
                     OverviewNow.Event(taskID: e.taskID, taskTitle: try e.joined(TodoTask.self).title, kind: e.kind, actorType: "\(e.actorType)", createdAt: iso(e.createdAt ?? clock))
