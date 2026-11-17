@@ -3,7 +3,7 @@
 	import { can, roleOf } from '#lib/access.js';
 	import { api, ApiError, type Attachment, type Question, type TaskContext } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
-	import { galleryOf, projectChain, relativeWhen, type CardRef } from '#lib/cardRef.js';
+	import { galleryOf, projectChain, type CardRef } from '#lib/cardRef.js';
 	import { buildReport, type CardTab } from '#lib/cardTabs.js';
 	import { percentOf } from '#lib/commandCenter.js';
 	import { describeError } from '#lib/errors.js';
@@ -11,6 +11,7 @@
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { attempt } from '#lib/notice.svelte.js';
+	import Timestamp from '../Timestamp.svelte';
 	import { formatWhen } from '#lib/planning.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -162,7 +163,7 @@
 				? review?.createdAt
 				: card.type === 'confirmation'
 					? request?.createdAt
-					: ctx?.progressNotes[0]?.createdAt
+					: task?.createdAt
 	);
 	const percent = $derived(ctx ? percentOf(ctx.progress) : 0);
 
@@ -188,7 +189,6 @@
 		if (offset < 0) box.scrollTop += offset;
 	}
 	const impact = $derived(request?.impact ?? null);
-	const when = (iso?: string | null) => [relativeWhen(iso), formatWhen(iso)].filter(Boolean).join(' · ');
 
 	let statusBusy = $state(false);
 	async function toggleDone() {
@@ -331,9 +331,10 @@
 					{#if tab === 'overview'}
 					{#if card.type === 'question' && data.question && data.question.state !== 'open'}
 						<section class="bg-muted/40 flex flex-col gap-2 rounded-xl border p-3" data-testid="card-answer">
+							<p class="text-muted-foreground text-xs"><Timestamp value={data.question.createdAt} label="time.asked" /></p>
 							<p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="question-prompt">{data.question.prompt}</p>
 							{#if data.question.state === 'answered'}
-								<p class="text-muted-foreground text-xs">{t('card.answered', { when: when(data.question.answeredAt) })}</p>
+								<p class="text-muted-foreground text-xs"><Timestamp value={data.question.answeredAt} label="time.answered" /></p>
 								<p class="[overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="question-answered">{data.question.answer}</p>
 							{:else}
 								<p class="text-muted-foreground">{t('card.withdrawn')}</p>
@@ -345,11 +346,11 @@
 					{#if openQuestions.length > 0 || (review && review.state === 'pending')}
 						<section class="flex flex-col gap-3" data-testid="card-decide">
 							{#each openQuestions as q (q.id)}
-								<QuestionAnswer id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel} size="default" onanswered={changed} />
+								<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel} size="default" onanswered={changed} />
 								<CardConversation taskID={task.id} thread={{ questionID: q.id }} title={t('card.chat.question')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/each}
 							{#if review && review.state === 'pending'}
-								<ReviewDecision taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} markdown ondecided={changed} />
+								<ReviewDecision createdAt={review.createdAt} decidedAt={review.decidedAt} taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} markdown ondecided={changed} />
 								<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/if}
 						</section>
@@ -358,7 +359,7 @@
 					{#if review && review.state !== 'pending'}
 						<section class="flex flex-col gap-2 rounded-xl border p-3" data-testid="card-review-result">
 							<h3 class="font-semibold">{t(review.state === 'accepted' ? 'card.review.accepted' : review.state === 'changes_requested' ? 'card.review.changes' : 'card.review.withdrawn')}</h3>
-							<p class="text-muted-foreground text-xs">{[review.requestedByLabel, when(review.decidedAt ?? review.createdAt)].filter(Boolean).join(' · ')}</p>
+							<p class="text-muted-foreground text-xs">{review.requestedByLabel ?? ''} · <Timestamp value={review.createdAt} label="time.requested" />{#if review.decidedAt} · <Timestamp value={review.decidedAt} label="time.decided" />{/if}</p>
 							{#if review.undoUntil}<ReviewUndoBar taskID={task.id} until={review.undoUntil} onundone={changed} />{/if}
 							<Markdown text={review.summary} />
 							{#if review.decisionNote}<p class="border-l-2 pl-2 [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="review-note-shown">{review.decisionNote}</p>{/if}
@@ -420,7 +421,7 @@
 								{#each ctx.progressNotes as n (n.id)}
 									<li class="relative">
 										<span class="bg-ui-accent absolute top-1.5 -left-[1.28rem] size-2 rounded-full" aria-hidden="true"></span>
-										<p class="text-muted-foreground text-xs" data-tabular>{n.actorLabel || t('cc.update.anonymous')} · {when(n.createdAt)}{n.percent != null ? ` · ${n.percent} %` : ''}</p>
+										<p class="text-muted-foreground text-xs" data-tabular>{n.actorLabel || t('cc.update.anonymous')} · <Timestamp value={n.createdAt} />{n.percent != null ? ` · ${n.percent} %` : ''}</p>
 										<p class="[overflow-wrap:anywhere] whitespace-pre-wrap">{n.note}</p>
 									</li>
 								{/each}
@@ -433,7 +434,7 @@
 							<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('cc.detail.questions')}</h3>
 							<ul class="flex flex-col gap-2">
 								{#each answeredQuestions as q (q.id)}
-									<li class="border-l-2 pl-2"><p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap">{q.prompt}</p><p class="text-muted-foreground [overflow-wrap:anywhere] whitespace-pre-wrap">{q.answer}</p></li>
+									<li class="border-l-2 pl-2"><p class="text-muted-foreground text-xs"><Timestamp value={q.createdAt} label="time.asked" />{#if q.answeredAt} · <Timestamp value={q.answeredAt} label="time.answered" />{/if}</p><p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap">{q.prompt}</p><p class="text-muted-foreground [overflow-wrap:anywhere] whitespace-pre-wrap">{q.answer}</p></li>
 								{/each}
 							</ul>
 						</section>
@@ -507,8 +508,16 @@
 							<dd class="[overflow-wrap:anywhere]" data-testid="card-who">{who}</dd>
 						{/if}
 						{#if at}
-							<dt class="text-muted-foreground">{t('card.side.time')}</dt>
-							<dd data-tabular data-testid="card-time">{when(at)}</dd>
+							<dt class="text-muted-foreground">{t(card.type === 'question' ? 'time.asked' : card.type === 'review' ? 'time.requested' : 'time.created')}</dt>
+							<dd data-tabular data-testid="card-time"><Timestamp value={at} /></dd>
+						{/if}
+						{#if task?.createdAt && !isTask}
+							<dt class="text-muted-foreground">{t('time.created')}</dt>
+							<dd data-tabular data-testid="card-created"><Timestamp value={task.createdAt} /></dd>
+						{/if}
+						{#if task?.updatedAt}
+							<dt class="text-muted-foreground">{t('time.updated')}</dt>
+							<dd data-tabular data-testid="card-updated"><Timestamp value={task.updatedAt} /></dd>
 						{/if}
 					</dl>
 					{#if ctx}

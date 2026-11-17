@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { api, type Comment, type CommentThread } from '#lib/api.js';
-	import { relativeWhen } from '#lib/cardRef.js';
-	import { formatWhen } from '#lib/planning.js';
+	import Timestamp from './Timestamp.svelte';
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -166,7 +165,7 @@
 				<div class="text-muted-foreground flex items-center gap-1.5 text-xs">
 					{#if agent}<Bot class="size-3.5" aria-hidden="true" />{/if}
 					<span data-testid="comment-author">{authorOf(c)}</span>
-					{#if c.createdAt}<time datetime={c.createdAt} title={formatWhen(c.createdAt)} data-testid="comment-time">{relativeWhen(c.createdAt)}</time>{/if}
+					{#if c.createdAt}<Timestamp value={c.createdAt} testid="comment-time" />{/if}
 				</div>
 				{#if editingID === c.id}
 					<div class="w-full min-w-64">
@@ -227,7 +226,7 @@
 			{@const mine = c.authorID === auth.user?.id}
 			<li class="bg-muted/40 rounded-md p-2 text-sm" data-testid="comment">
 				<div class="text-muted-foreground mb-1 flex items-center justify-between text-xs">
-					<span data-testid="comment-author">{mine ? t('comments.mine') : personName(c.authorName, t('comments.other'))}</span>
+					<span><span data-testid="comment-author">{mine ? t('comments.mine') : personName(c.authorName, t('comments.other'))}</span> · <Timestamp value={c.createdAt} testid="comment-time" /></span>
 					{#if mine && editingID !== c.id}
 						<span class="flex gap-1">
 							<Button size="xs" variant="ghost" onclick={() => ((editingID = c.id), (draft = c.body))}>{t('comments.edit')}</Button>

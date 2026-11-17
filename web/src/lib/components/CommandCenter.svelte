@@ -8,6 +8,7 @@
 </script>
 
 <script lang="ts">
+	import Timestamp from './Timestamp.svelte';
 	import { onMount } from 'svelte';
 	import { api, ApiError, type CommandCard, type CommandCenter, type CommandCenterParams, type LaneKey, type Question, type Review } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
@@ -462,6 +463,8 @@
 			{#each visibleQuestions as q (q.id)}
 				<li class="flex flex-col gap-1">
 					<QuestionAnswer
+						createdAt={q.createdAt}
+						answeredAt={q.answeredAt}
 						id={q.id}
 						prompt={q.prompt}
 						options={q.options}
@@ -484,7 +487,7 @@
 			{#each updates as u (u.id)}
 				<li class="flex flex-col gap-0.5 p-3 text-sm" data-testid="cc-update" data-kind={u.kind}>
 					<p class="text-muted-foreground text-xs">
-						{t(`cc.update.${updateKind(u.kind)}` as MessageKey, { who: who(u.actorName) })} · {formatWhen(u.createdAt)}
+						{t(`cc.update.${updateKind(u.kind)}` as MessageKey, { who: who(u.actorName) })} · <Timestamp value={u.createdAt} />
 					</p>
 					<button type="button" class="text-left font-medium hover:underline" onclick={() => openTask(u.taskID, u.taskTitle)}>{u.taskTitle}</button>
 					<p class="text-muted-foreground text-xs">{u.projectName}</p>

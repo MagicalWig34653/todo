@@ -6,7 +6,7 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { personName } from '#lib/people.js';
 	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
-	import { formatWhen } from '#lib/planning.js';
+	import Timestamp from './Timestamp.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
@@ -83,7 +83,7 @@
 				<div class="text-muted-foreground mb-1 flex flex-wrap items-center justify-between gap-1 text-xs">
 					<span>
 						<span class="text-foreground font-medium" data-testid="comment-author">{mine ? t('comments.mine') : personName(c.authorName, t('comments.other'))}</span>
-						{#if c.createdAt}<span> · {formatWhen(c.createdAt)}</span>{/if}
+						{#if c.createdAt}<span> · <Timestamp value={c.createdAt} /></span>{/if}
 					</span>
 					{#if editingID !== c.id && (mine || canManage)}
 						<span class="flex gap-1">

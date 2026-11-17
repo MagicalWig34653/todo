@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Timestamp from './Timestamp.svelte';
 	import { api, type PlanningTask, type Project, type TaskStatus } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -49,6 +50,7 @@
 				{#each cols[status] as pt (pt.task.id)}
 					<li class="bg-card rounded-lg border p-2.5 text-sm shadow-card" data-testid="board-card">
 						<p>{pt.task.title}</p>
+						<p class="text-muted-foreground h-4 min-w-0 truncate text-xs" data-tabular><Timestamp value={pt.task.createdAt} label="time.created" /></p>
 						<div class="mt-1.5 flex flex-wrap gap-1"><TaskChips {pt} status={pt.task.status} /></div>
 						<div class="mt-1 flex flex-wrap items-center gap-1">
 							<Button size="xs" variant="outline" aria-label={t('board.moveUp')} onclick={() => move(status, pt.task.id, -1)}><ArrowUp aria-hidden="true" /></Button>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Timestamp from './Timestamp.svelte';
 	import { api, type BoardResponse, type ProjectColumn, type Project, type Task, type TaskStatus } from '#lib/api.js';
 	import { applyMove, PROJECT_COLORS, reorderKeys, snippet, toLanes, type Lane } from '#lib/boardLogic.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
@@ -358,6 +359,7 @@
 				{/if}
 			{/snippet}
 		</Popover>
+		<p class="text-muted-foreground h-4 min-w-0 truncate text-xs" data-tabular><Timestamp value={task.createdAt} label="time.created" /></p>
 	</article>
 {/snippet}
 

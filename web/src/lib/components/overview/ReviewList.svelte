@@ -209,6 +209,8 @@
 				</label>
 				<div class="min-w-0 flex-1">
 					<ReviewDecision
+						createdAt={r.createdAt}
+						decidedAt={r.decidedAt}
 						taskID={r.taskID}
 						summary={r.summary}
 						requestedBy={r.requestedByLabel}
