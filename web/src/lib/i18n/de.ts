@@ -2,11 +2,13 @@
 import { deNotify } from './de-notify.js';
 import { deSettings } from './de-settings.js';
 import { deAdminSettings } from './de-admin-settings.js';
+import { deAutoStart } from './de-autostart.js';
 
 export const de = {
 	...deNotify,
 	...deSettings,
 	...deAdminSettings,
+	...deAutoStart,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',

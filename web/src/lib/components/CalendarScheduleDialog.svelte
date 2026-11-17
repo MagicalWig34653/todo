@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
 	import { berlinParts, entryMinutes, formPatch, toBerlinInput, type ScheduleEntry, type SchedulePatch } from '#lib/calendar.js';
+	import type { PlanningTask } from '#lib/api.js';
 	import Dialog from './app/Dialog.svelte';
+	import AutoStartToggle from './AutoStartToggle.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	/** "Start und Dauer": keyboard and screen reader alternative to dragging (ADR 0033). Times are Berlin wall clock. */
@@ -9,8 +11,15 @@
 		entry,
 		onsave,
 		onopencard,
-		onclose
-	}: { entry: ScheduleEntry; onsave: (patch: SchedulePatch) => void; onopencard: () => void; onclose: () => void } = $props();
+		onclose,
+		onautostart
+	}: {
+		entry: ScheduleEntry;
+		onsave: (patch: SchedulePatch) => void;
+		onopencard: () => void;
+		onclose: () => void;
+		onautostart?: (pt: PlanningTask) => unknown;
+	} = $props();
 
 	function defaultStart(): string {
 		const p = berlinParts(new Date());
@@ -59,6 +68,16 @@
 				<input id="cal-minutes" type="number" min="5" max="1440" step="5" class={field} bind:value={minutes} />
 			</label>
 		{/if}
+		<AutoStartToggle
+			taskID={entry.taskID}
+			projectID={entry.projectID}
+			version={entry.version}
+			status={entry.status}
+			plannedAt={entry.plannedAt}
+			plannedAllDay={entry.plannedAllDay}
+			autoStart={entry.autoStart}
+			onchanged={onautostart}
+		/>
 		{#if invalid}<p class="text-destructive text-sm" role="alert">{t('calendar.dialog.invalid')}</p>{/if}
 		<div class="flex flex-wrap items-center gap-2">
 			<Button type="submit" data-testid="calendar-dialog-save">{t('calendar.dialog.save')}</Button>

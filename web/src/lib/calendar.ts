@@ -4,6 +4,7 @@
  */
 import { ApiError, type PlanningTask, type ScheduleConflict, type ScheduleEntry, type ScheduleUpdate } from './api.js';
 import { t, type MessageKey } from './i18n/index.js';
+import { autoStartMarks } from './autoStart.js';
 
 export type { ScheduleEntry, ScheduleUpdate };
 export type CalendarView = 'week' | 'month';
@@ -329,6 +330,9 @@ export function describeEntry(e: ScheduleEntry): string {
 	if (s) parts.push(e.plannedAllDay ? `${formatDay(s)}, ${t('calendar.allDay')}` : `${formatDay(s)}, ${formatTime(s)} bis ${formatTime(entryEnd(e))}`);
 	if (e.status === 'done') parts.push(t('calendar.doneMark'));
 	if (!e.canEdit) parts.push(t('calendar.readOnly'));
+	const auto = autoStartMarks(e, new Date());
+	if (auto.badge) parts.push(auto.overdue ? `${t('autostart.mark')}, ${t('autostart.mark.overdue')}` : t('autostart.mark'));
+	if (auto.startedAt) parts.push(t('autostart.mark.started', { time: formatTime(auto.startedAt) }));
 	parts.push(...conflictLabels(e));
 	return parts.join('. ');
 }
