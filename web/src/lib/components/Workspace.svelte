@@ -359,11 +359,13 @@
 					</EmptyState>
 				</div>
 			{:else}
-				<div class={['mx-auto', view === 'overview' ? 'max-w-none' : 'max-w-4xl']}>
+				<div class={['mx-auto', view === 'overview' || view === 'calendar' ? 'max-w-none' : 'max-w-4xl']}>
 					{#if view === 'forYou'}
 						<ForYouView />
 					{:else if view === 'today' || view === 'upcoming' || view === 'upNext'}
 						<PlanningView mode={view} />
+					{:else if view === 'calendar'}
+						{#await import('./CalendarView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'overview'}
 						<CommandCenter />
 					{:else if view === 'inbox'}
