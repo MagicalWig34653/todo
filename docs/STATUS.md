@@ -2,8 +2,8 @@
 
 ## Checkpoint 17.11.2026: ADR 0033 Kalender und Wächter-Start (Karten `8CECAD24`, `6C19C1C1`; nur Doku, nichts gebaut oder getestet)
 
-- `docs/adr/0033-kalender-geplanter-start-und-waechter.md` (Entwurf): `plannedAt` wird der geplante Start (kein neues Datumsfeld), `dueAt` bleibt die Frist; additive Spalten `planned_minutes`, `planned_all_day`, `auto_start`, `auto_started_at`; `PATCH /v1/tasks/{id}/schedule`, `GET /v1/planning/schedule`, MCP `list_schedule`; Wächter startet nur Karten mit Ein-Mal-Erlaubnis (nur per Sitzung) über `start_agent_job` mit deterministischer `releaseID`, lokale Sperren Kontingent/Leistung/Platte, fail-closed. Umsetzung in 6 Stufen (ca. 13 Tage), noch nicht begonnen.
-- Offen (Fragen an Lino im ADR): Anmeldung des Wächters (eigene OAuth-Verbindung empfohlen), Erlaubnis je Karte statt je Projekt, Umgang mit verpassten Starts.
+- `docs/adr/0033-kalender-geplanter-start-und-waechter.md` (Entwurf): `plannedAt` wird der geplante Start (kein neues Datumsfeld), `dueAt` bleibt die Frist; additive Spalten `planned_minutes`, `planned_all_day`, `auto_start`, `auto_started_at`; `PATCH /v1/tasks/{id}/schedule`, `GET /v1/planning/schedule`, MCP `list_schedule`; Wächter startet nur Karten mit Ein-Mal-Erlaubnis (nur per Sitzung) über `start_agent_job` mit deterministischer `releaseID`, lokale Sperren Kontingent/Leistung/Platte, fail-closed. Entscheidungen getroffen (Wächter-OAuth-Verbindung, Erlaubnis je Karte plus Kontoschalter, verpasste Starts werden nachgeholt). Plan: Worker A-D parallel, unter 2 Tage; Apple danach.
+- Offen: nur Ablaufgrenze fürs Nachholen (Empfehlung 24 h).
 
 ## Checkpoint 14.11.2026: Live-Ansicht je Karte, Stufe 2 PWA (Karte `CCCFFB78`, Branch `agent/live-ansicht-pwa`)
 
