@@ -31,6 +31,9 @@ struct PlanningExtController: RouteCollection {
         r.get("today", use: today)
         r.get("upcoming", use: upcoming)
         r.get("up-next", use: upNext)
+        r.get("schedule", use: schedule)
+        r.get("unscheduled", use: unscheduled)
+        routes.patch("v1", "tasks", ":id", "schedule", use: patchSchedule)
         r.get("board", use: board)
         r.put("board", "reorder", use: reorder)
         r.get("tasks", ":id", "dependencies", use: dependencies)
@@ -60,6 +63,27 @@ struct PlanningExtController: RouteCollection {
     }
     private func list(_ req: Request, mode: String) async throws -> [PlanningTaskDTO] {
         try await service(req).plannedTasks(mode: mode, timeZone: req.query.get(String?.self, at: "timeZone") ?? "UTC")
+    }
+    @Sendable func schedule(_ req: Request) async throws -> ScheduleResponse {
+        let s = try await service(req)
+        guard let from = Self.isoDate(try? req.query.get(String.self, at: "from")), let to = Self.isoDate(try? req.query.get(String.self, at: "to")) else {
+            throw Abort(.badRequest, reason: "invalid_window")
+        }
+        return try await s.scheduleWindow(from: from, to: to, projectID: req.query.get(UUID?.self, at: "projectID"), limit: req.query.get(Int?.self, at: "limit"))
+    }
+    static func isoDate(_ text: String?) -> Date? {
+        guard let text else { return nil }
+        let f = ISO8601DateFormatter()
+        if let d = f.date(from: text) { return d }
+        f.formatOptions.insert(.withFractionalSeconds)
+        return f.date(from: text)
+    }
+    @Sendable func unscheduled(_ req: Request) async throws -> [PlanningTaskDTO] {
+        try await service(req).unscheduled(projectID: req.query.get(UUID?.self, at: "projectID"), limit: req.query.get(Int?.self, at: "limit") ?? 200)
+    }
+    @Sendable func patchSchedule(_ req: Request) async throws -> PlanningTaskDTO {
+        let s = try await service(req), id = try param(req), body = try req.content.decode(ScheduleUpdate.self)
+        return try await req.db.transaction { db in try await PlanningService(user: s.user, db: db).schedule(id, update: body) }
     }
     @Sendable func today(_ req: Request) async throws -> [PlanningTaskDTO] { try await list(req, mode: "today") }
     @Sendable func upcoming(_ req: Request) async throws -> [PlanningTaskDTO] { try await list(req, mode: "upcoming") }

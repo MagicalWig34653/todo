@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: Todolino – Planungserweiterung
-  version: 1.0.0
+  version: 1.1.0
   description: 'Erweiterung des bestehenden Vertrags. ISO-8601-Zeitpunkte; Priorität 0 (keine) bis 3 (hoch). PUT
     ersetzt alle Planungsdaten. Wiederholungen benötigen dueAt oder plannedAt und erzeugen höchstens eine Folgeinstanz
     je Ursprungsaufgabe, auch nach Wiederöffnung. Datum und Erinnerungen werden je Kalenderintervall verschoben;
     until ist inklusive. Keine Pushzustellung. Beim Projektwechsel werden Abhängigkeiten und Meilensteinzuordnungen
-    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md.'
+    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md. Ab 1.1.0 (ADR 0033): plannedAt ist der geplante Start (Anzeigename Geplanter Start), dazu plannedMinutes (5 bis 1440) und plannedAllDay; PATCH /v1/tasks/{id}/schedule ist der einzige Teilschreibweg für Kalender-Drag&Drop, GET /v1/planning/schedule liefert das Kalenderfenster. PUT übernimmt plannedMinutes/plannedAllDay nur, wenn der Schlüssel im Body steht (fehlt er, bleibt der Wert; null löscht).'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -467,6 +467,76 @@ paths:
                   format: uuid
               required:
               - version
+  /v1/tasks/{id}/schedule:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    patch:
+      summary: Geplanten Start, Dauer und Ganztägig ändern (Kalender-Drag&Drop); nur diese Felder, Rolle edit
+      description: >-
+        Nur mitgesendete Schlüssel werden geändert; null löscht. Priorität, Wiederholung, Erinnerungen, dueAt bleiben unberührt.
+        Prüft version (409 version_conflict) und erhöht sie, schreibt Aktivität task.scheduled, erzeugt einen Sync-Upsert.
+        plannedMinutes 5 bis 1440 (sonst 400 invalid_planned_minutes). plannedAllDay=true braucht plannedAt (400 all_day_requires_planned_at);
+        plannedAt=null setzt plannedAllDay auf false und löscht plannedMinutes. Löschen von plannedAt bei Wiederholung ohne dueAt: 400 recurrence_requires_date.
+        Erledigte Aufgaben: 409 task_done. Fremde oder verdeckte Aufgabe: 404, nur Leserechte: 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleUpdate'}
+      responses:
+        '200':
+          description: Aktualisierte Planung mit neuer Aufgabenversion
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlanningTask'}
+        '400': {description: Ungültige Eingabe}
+        '401': {description: Sitzung erforderlich}
+        '403': {description: Nur Leserechte}
+        '404': {description: Fehlendes oder fremdes Objekt}
+        '409': {description: version_conflict oder task_done}
+  /v1/planning/schedule:
+    get:
+      summary: Kalenderfenster, Karten mit Start, Frist oder ganztägiger Zuordnung im Fenster (nur sichtbare Projekte)
+      description: >-
+        Rolle read, ProjectAccess wie alle Planungsansichten (fremde Karten erscheinen nie; über OAuth/MCP nur Projekte im Grant).
+        Eintrag, wenn plannedAt (Start bis Start+Dauer, Standard 30 Minuten) das Fenster [from, to) schneidet oder dueAt in [from, to) liegt.
+        Ganztägige Karten gelten als Eintrag, wenn plannedAt in [from, to) liegt. Erledigte Karten sind enthalten (status done).
+        Sortierung: plannedAt, dann dueAt, dann id. Fenster höchstens 62 Tage (sonst 400 window_too_large), to muss nach from liegen
+        (400 invalid_window), limit 1 bis 500 (Standard 500).
+      parameters:
+      - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+      - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+      - {name: projectID, in: query, required: false, schema: {type: string, format: uuid}, description: Optional einschränken (inklusive Unterprojekte)}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 500}}
+      responses:
+        '200':
+          description: Kalendereinträge
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScheduleResponse'}
+        '400': {description: invalid_window, window_too_large oder ungültige Parameter}
+        '401': {description: Sitzung erforderlich}
+        '404': {description: Fehlendes oder fremdes Projekt}
+  /v1/planning/unscheduled:
+    get:
+      summary: Ungeplante Karten für die Kalender-Seitenleiste (nicht erledigt, ohne plannedAt)
+      description: PlanningTask-Liste mit ProjectAccess wie die übrigen Planungsansichten. Sortierung Priorität absteigend, dann Fälligkeit, dann id; limit 1 bis 500 (Standard 200).
+      parameters:
+      - {name: projectID, in: query, required: false, schema: {type: string, format: uuid}}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 200}}
+      responses:
+        '200':
+          description: Erfolgreich
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PlanningTask'}
+        '401': {description: Sitzung erforderlich}
+        '404': {description: Fehlendes oder fremdes Projekt}
   /v1/planning/today:
     get:
       summary: 'Heute: Fälligkeit im aktuellen Kalendertag'
@@ -578,6 +648,18 @@ components:
           - string
           - 'null'
           format: date-time
+          description: Geplanter Start (UTC-Zeitpunkt; Clients rendern in ihrer Zeitzone). Bei plannedAllDay der Tagesbeginn in der Zeitzone des setzenden Clients.
+        plannedMinutes:
+          type:
+          - integer
+          - 'null'
+          minimum: 5
+          maximum: 1440
+          description: Dauer in Minuten; null = keine Dauer (Anzeige 30 Minuten). Additiv ab 1.1.0.
+        plannedAllDay:
+          type: boolean
+          default: false
+          description: Ganztägig, ohne Uhrzeit. Additiv ab 1.1.0; Antworten enthalten das Feld immer.
         priority:
           type: integer
           minimum: 0
@@ -595,6 +677,50 @@ components:
       required:
       - priority
       - reminders
+    ScheduleUpdate:
+      type: object
+      description: Teilschreibweise. Nicht mitgesendete Schlüssel bleiben unverändert, null löscht.
+      properties:
+        version: {type: integer, description: Erwartete Aufgabenversion}
+        plannedAt: {type: [string, 'null'], format: date-time}
+        plannedMinutes: {type: [integer, 'null'], minimum: 5, maximum: 1440}
+        plannedAllDay: {type: boolean}
+      required: [version]
+    ScheduleEntry:
+      type: object
+      properties:
+        taskID: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        title: {type: string}
+        status: {type: string, enum: [open, in_progress, in_review, done]}
+        version: {type: integer, description: Aufgabenversion für das nächste PATCH}
+        plannedAt: {type: [string, 'null'], format: date-time}
+        plannedMinutes: {type: [integer, 'null']}
+        plannedAllDay: {type: boolean}
+        dueAt: {type: [string, 'null'], format: date-time}
+        blocked: {type: boolean, description: Offene Voraussetzung vorhanden}
+        canEdit: {type: boolean, description: Rolle edit; sonst nur lesen (nicht ziehbar)}
+        autoStart: {type: boolean, description: Stufe C; bis dahin immer false}
+        autoStartedAt: {type: [string, 'null'], format: date-time, description: Stufe C; bis dahin immer null}
+        jobState: {type: [string, 'null'], description: Zustand des neuesten Agent-Jobs der Karte, sonst null}
+        repositoryKey: {type: [string, 'null'], description: Bindung des neuesten Agent-Jobs, sonst null}
+        conflicts:
+          type: array
+          description: Serverseitig berechnete Hinweise, nie verhindernd. Clients dürfen zusätzlich selbst rendern.
+          items:
+            type: string
+            enum: [after_due, prerequisite_later, prerequisite_open, repository_overlap]
+      required: [taskID, projectID, title, status, version, plannedAllDay, blocked, canEdit, autoStart, conflicts]
+    ScheduleResponse:
+      type: object
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        truncated: {type: boolean, description: true, wenn limit erreicht wurde}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ScheduleEntry'}
+      required: [from, to, truncated, items]
     RecurrenceRule:
       type: object
       properties:

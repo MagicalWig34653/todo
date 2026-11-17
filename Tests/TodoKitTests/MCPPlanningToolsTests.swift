@@ -3,7 +3,7 @@ import XCTVapor
 @testable import TodoKit
 
 final class MCPPlanningToolsTests: XCTestCase {
-    let names = ["get_task_planning", "update_task_planning", "list_planned_tasks", "set_dependencies", "list_dependencies", "remove_dependency", "list_milestones", "create_milestone", "assign_milestone", "unassign_milestone", "delete_milestone"]
+    let names = ["get_task_planning", "update_task_planning", "list_planned_tasks", "list_schedule", "set_dependencies", "list_dependencies", "remove_dependency", "list_milestones", "create_milestone", "assign_milestone", "unassign_milestone", "delete_milestone"]
 
     func testToolsRegistered() {
         for name in names { XCTAssertTrue(MCPController.tools.contains { $0.name == name }, name) }
@@ -36,6 +36,49 @@ final class MCPPlanningToolsTests: XCTestCase {
         } catch { await f.test.shutdown(); throw error }
         await f.test.shutdown()
     }
+    func testScheduleFieldsAndListScheduleRespectGrant() async throws {
+        let f = try await OAuthFixture.make()
+        do {
+            let token = try await f.tokens().access, db = f.test.app.db
+            let owner = try f.user.requireID()
+            let inside = TodoTask(ownerID: owner, projectID: try f.project.requireID(), title: "Inside", details: "")
+            let outside = TodoTask(ownerID: owner, projectID: try f.other.requireID(), title: "Outside", details: "")
+            try await inside.save(on: db); try await outside.save(on: db)
+            let id = try inside.requireID().uuidString, oid = try outside.requireID().uuidString
+            let start = "2027-01-15T09:00:00Z"
+            let set = try await call(f, "update_task_planning", ["taskID": id, "plannedAt": start, "plannedMinutes": 45, "plannedAllDay": false], token)
+            XCTAssertFalse(set.0, set.1)
+            XCTAssertEqual((set.2 as? [String: Any])?["plannedMinutes"] as? Int, 45)
+            let read = try await call(f, "get_task_planning", ["taskID": id], token)
+            XCTAssertEqual((read.2 as? [String: Any])?["plannedMinutes"] as? Int, 45)
+            // Same planning on a card outside the grant exists but must not show up.
+            let p = TaskPlanning(taskID: try outside.requireID()); p.plannedAt = ISO8601DateFormatter().date(from: start)
+            try await p.save(on: db)
+            let window: [String: Any] = ["from": "2027-01-15T00:00:00Z", "to": "2027-01-16T00:00:00Z"]
+            let list = try await call(f, "list_schedule", window, token)
+            XCTAssertFalse(list.0, list.1)
+            let items = try XCTUnwrap((list.2 as? [String: Any])?["items"] as? [[String: Any]])
+            XCTAssertEqual(items.compactMap { $0["taskID"] as? String }, [id])
+            let denied = try await call(f, "list_schedule", window.merging(["projectID": try f.other.requireID().uuidString]) { $1 }, token)
+            XCTAssertTrue(denied.0); XCTAssertEqual(denied.1, "not_found")
+            let wide = try await call(f, "list_schedule", ["from": "2027-01-01T00:00:00Z", "to": "2027-04-01T00:00:00Z"], token)
+            XCTAssertTrue(wide.0); XCTAssertEqual(wide.1, "window_too_large")
+            // Agents cannot grant the watcher permission; invalid durations fail like REST.
+            for bad: [String: Any] in [["autoStart": true], ["plannedMinutes": 3], ["plannedMinutes": 2000], ["plannedAllDay": "yes"]] {
+                let r = try await call(f, "update_task_planning", bad.merging(["taskID": id]) { $1 }, token)
+                XCTAssertTrue(r.0, r.1)
+            }
+            let all = try await call(f, "update_task_planning", ["taskID": id, "plannedAllDay": true], token)
+            XCTAssertFalse(all.0, all.1)
+            let cleared = try await call(f, "update_task_planning", ["taskID": id, "plannedAt": NSNull()], token)
+            XCTAssertFalse(cleared.0, cleared.1)
+            XCTAssertEqual((cleared.2 as? [String: Any])?["plannedAllDay"] as? Bool, false)
+            XCTAssertNil((cleared.2 as? [String: Any])?["plannedMinutes"])
+            _ = oid
+        } catch { await f.test.shutdown(); throw error }
+        await f.test.shutdown()
+    }
+
     func testDependencyReplacementCycleRemovalAndGrant() async throws {
         let f = try await OAuthFixture.make()
         do {
@@ -124,6 +167,7 @@ final class MCPPlanningToolsTests: XCTestCase {
                 let mid = try (outside ? hm : m).requireID().uuidString
                 switch name {
                 case "list_planned_tasks": return ["view": "today", "projectID": pid]
+                case "list_schedule": return ["from": "2027-01-01T00:00:00Z", "to": "2027-01-02T00:00:00Z", "projectID": pid]
                 case "list_milestones": return ["projectID": pid]
                 case "create_milestone": return ["projectID": pid, "title": "New"]
                 case "delete_milestone": return ["milestoneID": mid]

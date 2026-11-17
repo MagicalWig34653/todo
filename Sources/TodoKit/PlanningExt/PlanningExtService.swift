@@ -4,9 +4,43 @@ import Vapor
 struct PlanningData: Content {
     var dueAt: Date?
     var plannedAt: Date?
+    /// Duration in minutes (5...1440). Optional on the wire: an absent key keeps the stored value, `null` clears it.
+    var plannedMinutes: Int?
+    var plannedAllDay: Bool?
     var priority: Int
     var recurrence: RecurrenceRule?
     var reminders: [Date]
+    /// Set by decoding when `plannedMinutes` was sent as explicit `null`.
+    var clearsPlannedMinutes = false
+
+    init(dueAt: Date? = nil, plannedAt: Date? = nil, plannedMinutes: Int? = nil, plannedAllDay: Bool? = nil, priority: Int,
+         recurrence: RecurrenceRule? = nil, reminders: [Date], clearsPlannedMinutes: Bool = false) {
+        self.dueAt = dueAt; self.plannedAt = plannedAt; self.plannedMinutes = plannedMinutes; self.plannedAllDay = plannedAllDay
+        self.priority = priority; self.recurrence = recurrence; self.reminders = reminders
+        self.clearsPlannedMinutes = clearsPlannedMinutes
+    }
+
+    private enum CodingKeys: String, CodingKey { case dueAt, plannedAt, plannedMinutes, plannedAllDay, priority, recurrence, reminders }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dueAt = try c.decodeIfPresent(Date.self, forKey: .dueAt)
+        plannedAt = try c.decodeIfPresent(Date.self, forKey: .plannedAt)
+        plannedMinutes = try c.decodeIfPresent(Int.self, forKey: .plannedMinutes)
+        clearsPlannedMinutes = c.contains(.plannedMinutes) && plannedMinutes == nil
+        plannedAllDay = try c.decodeIfPresent(Bool.self, forKey: .plannedAllDay)
+        priority = try c.decode(Int.self, forKey: .priority)
+        recurrence = try c.decodeIfPresent(RecurrenceRule.self, forKey: .recurrence)
+        reminders = try c.decode([Date].self, forKey: .reminders)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(dueAt, forKey: .dueAt); try c.encodeIfPresent(plannedAt, forKey: .plannedAt)
+        try c.encodeIfPresent(plannedMinutes, forKey: .plannedMinutes); try c.encodeIfPresent(plannedAllDay, forKey: .plannedAllDay)
+        try c.encode(priority, forKey: .priority); try c.encodeIfPresent(recurrence, forKey: .recurrence)
+        try c.encode(reminders, forKey: .reminders)
+    }
 
     func validate() throws {
         guard (0...3).contains(priority), reminders.count <= 100 else { throw Abort(.badRequest) }
@@ -14,6 +48,18 @@ struct PlanningData: Content {
         if recurrence != nil && dueAt == nil && plannedAt == nil {
             throw Abort(.badRequest, reason: "recurrence_requires_date")
         }
+        try ScheduleRules.validateMinutes(plannedMinutes)
+        if plannedAllDay == true && plannedAt == nil { throw Abort(.badRequest, reason: "all_day_requires_planned_at") }
+    }
+}
+
+enum ScheduleRules {
+    static let defaultMinutes = 30
+    static let maxWindowDays = 62
+    static let maxItems = 500
+
+    static func validateMinutes(_ minutes: Int?) throws {
+        if let minutes, !(5...1440).contains(minutes) { throw Abort(.badRequest, reason: "invalid_planned_minutes") }
     }
 }
 
@@ -21,6 +67,8 @@ struct PlanningTaskDTO: Content {
     var task: TaskDTO
     var dueAt: Date?
     var plannedAt: Date?
+    var plannedMinutes: Int?
+    var plannedAllDay: Bool
     var priority: Int
     var position: Int
     var recurrence: RecurrenceRule?
@@ -28,6 +76,7 @@ struct PlanningTaskDTO: Content {
     init(_ task: TodoTask, _ planning: TaskPlanning?) throws {
         self.task = try TaskDTO(task)
         dueAt = planning?.dueAt; plannedAt = planning?.plannedAt
+        plannedMinutes = planning?.plannedMinutes; plannedAllDay = planning?.plannedAllDay ?? false
         priority = planning?.priority ?? 0; position = planning?.position ?? 0
         recurrence = planning?.recurrence; reminders = planning?.reminders ?? []
     }
@@ -57,6 +106,12 @@ struct PlanningService: Sendable {
         if let expectedVersion, t.version != expectedVersion { throw Abort(.conflict, reason: "version_conflict") }
         let p = try await TaskPlanning.find(id, on: db) ?? TaskPlanning(taskID: id)
         p.dueAt = data.dueAt; p.plannedAt = data.plannedAt; p.priority = data.priority
+        // Duration and all-day: absent keys keep the stored value (older clients), a cleared start clears both.
+        if data.plannedAt == nil { p.plannedMinutes = nil; p.plannedAllDay = false }
+        else {
+            if let minutes = data.plannedMinutes { p.plannedMinutes = minutes } else if data.clearsPlannedMinutes { p.plannedMinutes = nil }
+            if let allDay = data.plannedAllDay { p.plannedAllDay = allDay }
+        }
         p.recurrence = data.recurrence; p.reminders = data.reminders
         try await p.save(on: db)
         // Planning is part of the synced task state: always emit a task upsert (a version bump saves the row).
@@ -187,6 +242,7 @@ struct PlanningService: Sendable {
         try await appendActivity(taskID: next.requireID(), actorType: .person, actorID: source.ownerID, kind: "task.created", subjectID: id, on: db)
         let p = TaskPlanning(taskID: try next.requireID())
         p.dueAt = due; p.plannedAt = planned; p.priority = planning.priority; p.recurrence = rule
+        p.plannedMinutes = planning.plannedMinutes; p.plannedAllDay = planning.plannedAllDay
         p.reminders = try planning.reminders.map(rule.next)
         try await p.save(on: db)
         try await PlanningOccurrence(source: id, next: next.requireID()).save(on: db)

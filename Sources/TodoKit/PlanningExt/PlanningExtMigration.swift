@@ -27,3 +27,16 @@ struct CreatePlanningExtension: AsyncMigration {
                       PlanningDependency.schema, TaskPlanning.schema] { try await db.schema(table).delete() }
     }
 }
+
+/// ADR 0033: duration and all-day flag for the calendar. Additive; existing rows keep their values (no duration, not all-day).
+struct AddScheduleToTaskPlanning: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        // One ALTER per column: SQLite cannot add several columns in one statement.
+        try await db.schema(TaskPlanning.schema).field("planned_minutes", .int).update()
+        try await db.schema(TaskPlanning.schema).field("planned_all_day", .bool, .required, .sql(.default(false))).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(TaskPlanning.schema).deleteField("planned_minutes").update()
+        try await db.schema(TaskPlanning.schema).deleteField("planned_all_day").update()
+    }
+}

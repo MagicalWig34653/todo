@@ -78,6 +78,7 @@ public func configureMigrations(_ app: Application) {
     configureIdentity(app)
     configurePreferences(app)
     app.migrations.add(CreatePlanningExtension())
+    app.migrations.add(AddScheduleToTaskPlanning())
 
     app.migrations.add(CreateDiscoverySchema())
     // Before label backfills: the model now selects the optional color field.

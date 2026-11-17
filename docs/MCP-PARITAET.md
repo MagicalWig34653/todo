@@ -80,7 +80,8 @@ Planung nutzt `tasks:read` zum Lesen, `tasks:write` zum Schreiben (keine neuen S
 | Tool | Scope | Klasse | Parameter und Ergebnis |
 | --- | --- | --- | --- |
 | `get_task_planning` | tasks:read | A | `taskID`; REST PlanningTaskDTO mit task, dueAt, plannedAt, priority, position, recurrence, reminders |
-| `update_task_planning` | tasks:write | A | `taskID, version?, dueDate?, dueTime?, dueAt?, plannedAt?, priority?, recurrence?, reminders?`; PlanningTaskDTO |
+| `update_task_planning` | tasks:write | A | `taskID, version?, dueDate?, dueTime?, dueAt?, plannedAt?, plannedMinutes?, plannedAllDay?, priority?, recurrence?, reminders?`; PlanningTaskDTO; `autoStart` wird abgelehnt (`invalid_arguments`, Entscheidung ADR 0033) |
+| `list_schedule` | tasks:read | A | `from, to, projectID?, limit?`; wie REST `GET /v1/planning/schedule`: Fenster höchstens 62 Tage, Limit 500, nur Projekte im Grant, `ScheduleResponse` |
 | `list_planned_tasks` | tasks:read | A | `view: today|upcoming|up_next, projectID?, limit?`; REST-Sortierung/Filter, UTC-Tagesgrenze |
 | `set_dependencies` | tasks:write | B | `taskID, blockedBy: UUID[]` (max. 100, keine Duplikate); ersetzt atomar, leere Liste entfernt alle, Zyklenschutz |
 | `list_dependencies` | tasks:read | A | `taskID, limit?`; TaskDTO-Liste, nur sichtbare Blocker im Grant |
@@ -315,3 +316,7 @@ Rolle `voice` mit `audio/mp4` und `audio/wav` (Vertrag `contracts/attachments.ya
 - Mandat verwalten gibt es bewusst nur als REST mit Personen-Sitzung (`GET/PUT/DELETE /v1/settings/brain-mandate`, `GET .../audit`, Vertrag `contracts/connections.yaml` 1.1.0), kein MCP-Schreibwerkzeug und kein neuer Scope: Ein Agent darf sich keine Vollmacht geben. MCP kennt nur das lesende `get_connection.brainMandate`.
 - `decide_review` und `answer_question` bekommen den Parameter `quote` (Pflicht) und verlangen das Mandat der aufrufenden Verbindung. Fachregeln liegen zentral in `WorkflowService` (`BrainAuthority.swift`), REST-Personen sind nicht betroffen. Neue Fehler: `brain_mandate_required`, `outside_brain_mandate`, `quote_required`, `invalid_quote`.
 - Verhaltensänderung: Verbindungen ohne Mandat entscheiden fremde Reviews/Fragen nicht mehr.
+
+## Kalender (17.11.2026, Handbuch 1.30.0, ADR 0033)
+
+`list_schedule` (tasks:read, Klasse A) liest das Kalenderfenster wie REST `GET /v1/planning/schedule`; `update_task_planning` und `get_task_planning` tragen `plannedMinutes` und `plannedAllDay`. Bewusst ohne MCP-Entsprechung: `PATCH /v1/tasks/{id}/schedule` (Drag&Drop, Teilschreibweg; Agenten nutzen `update_task_planning`) und das spätere `PUT /v1/tasks/{id}/auto-start` (nur Sitzung). `autoStart` in `update_task_planning` ergibt `invalid_arguments`.
