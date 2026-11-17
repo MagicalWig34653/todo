@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Steuerzentrale, Agentenhandbuch, Fragen, Reviews, Fortschritt, Build-Screenshots
-  version: 1.5.0
+  version: 1.6.0
   description: 'ADR 0014. Alle Pfade außer /v1/manual verlangen Sitzung oder Bearer. Unsichtbare/fremde Objekte: 404, zu geringe Rolle: 403,
     Konflikte: 409. Zuordnung der Lanes (feste Reihenfolge): done > question > review > blocked > running > ready; Backlog-Spalten nur im Zähler.
     Fortschritt: done=100 (status), sonst Unteraufgaben, sonst Kriterien, sonst letzter Notiz-Prozentwert (agent), sonst 0 (none).
@@ -12,7 +12,8 @@ info:
     add_attachment, begin_attachment, complete_attachment, list_builds, wait_for_events (Long-Poll bis 25 s, nur Hinweise
     {changed, token, hints[{kind,taskID,projectID}]} auf Projekte des Grants, die das Konto sieht; Quelle live_events, ADR 0022) (Details: docs/agent-manual.md, tools/list). Neues Werkzeug update_project (projects:write). Neuer Scope attachments:write. Aktuelles Projekt (Handbuch 1.16.0, nur MCP, REST unverändert): get_command_center, list_open_questions, list_pending_reviews nehmen projectID und scope=project|account; Antworten tragen currentProject {id,name}, hint und foreignProject; die beiden Listen antworten {currentProject, hint?, items}.
     Spaltenvorlage: POST /v1/projects/{id}/columns/template {"source":"agent_workflow"} (project-columns.yaml). Kein Sync-Feed.
-    1.5.0 (Reviews, Sammelfreigabe): POST /v1/reviews/decisions entscheidet bis zu 50 Reviews in einem Aufruf (nur REST/PWA, bewusst kein MCP-Tool); ReviewDTO in Listen trägt das abgeleitete Feld brainRecommended, GET /v1/reviews filtert mit ?brainRecommended=true|false.'
+    1.5.0 (Reviews, Sammelfreigabe): POST /v1/reviews/decisions entscheidet bis zu 50 Reviews in einem Aufruf (nur REST/PWA, bewusst kein MCP-Tool); ReviewDTO in Listen trägt das abgeleitete Feld brainRecommended, GET /v1/reviews filtert mit ?brainRecommended=true|false.
+    1.6.0 (Brain-Vollmacht, ADR 0032): die MCP-Werkzeuge decide_review und answer_question verlangen ein aktives Brain-Mandat der Verbindung (403 brain_mandate_required, 403 outside_brain_mandate) und den neuen Parameter quote (Pflicht, höchstens 2000 Zeichen; 400 quote_required, invalid_quote); eigene Anfragen bleiben 403 cannot_decide_own_review/cannot_answer_own_question. Jede Mandatsentscheidung schreibt eine Protokollzeile und einen Kommentar Brain im Auftrag von <Name> in den Chat. REST-Entscheidungen von Personen bleiben unverändert (quote wird dort ignoriert). brainRecommended ist true nur bei einem Kommentar der Verbindung mit aktivem Mandat für das Projekt der Karte (das Label brain allein genügt nicht). Mandat verwalten: connections.yaml 1.1.0.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -107,7 +108,7 @@ paths:
     get:
       operationId: listReviews
       summary: '?projectID&state=pending|accepted|changes_requested|withdrawn|all&limit&brainRecommended=true|false'
-      description: 'ReviewDTO[] mit abgeleitetem Feld brainRecommended (Bool; nur in Listen). Es ist true, wenn im Chat der Review ein Kommentar mit authorKind=agent und authorLabel "brain" (ohne Beachtung von Groß-/Kleinschreibung und Leerraum) hängt; Personen können es nicht setzen. Der Filter ?brainRecommended=true|false wirkt vor dem limit; anderer Wert: 400 invalid_brainRecommended.'
+      description: 'ReviewDTO[] mit abgeleitetem Feld brainRecommended (Bool; nur in Listen). Es ist true, wenn im Chat der Review ein Kommentar hängt, der von der Verbindung mit aktivem Brain-Mandat für das Projekt der Karte geschrieben wurde (ADR 0032; das Label brain allein genügt nicht); Personen können es nicht setzen. Der Filter ?brainRecommended=true|false wirkt vor dem limit; anderer Wert: 400 invalid_brainRecommended.'
       responses: {'200': {description: 'ReviewDTO[]'}}
   /v1/reviews/decisions:
     post:

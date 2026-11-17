@@ -1,4 +1,4 @@
-<!-- manual-version: 1.28.0 -->
+<!-- manual-version: 1.29.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -64,7 +64,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 - Write questions so that a person can decide in seconds: state the situation in one or two sentences, offer concrete options and name your recommendation first.
 - States: `open`, `answered`, `withdrawn` (the runner job ended). Only one answer is accepted; a second different answer fails with `question_already_answered`.
 - `list_open_questions {projectID, scope?, taskID?}` answers `{currentProject, hint?, items}`: open questions of the current project and its sub-projects (`scope: "account"`: all granted projects, foreign entries have `foreignProject: true`; no `projectID`: all projects plus `hint`); pass `includeAnswered: true` to also see answers. Answers are compact by default (`compact: false` for every field); narrow with `status` (`open|answered|all`), `limit` and `fields`.
-- Humans answer in the app. `answer_question` exists for a person who steers you through the chat ("answer yes"); it refuses questions asked by your own connection (`cannot_answer_own_question`).
+- Humans answer in the app. `answer_question` exists for a person who steers you through the chat ("answer yes"); it refuses questions asked by your own connection (`cannot_answer_own_question`). Since 1.29.0 it also needs the brain mandate (see the 1.29.0 note): without it `brain_mandate_required`, outside the mandated projects `outside_brain_mandate`, and a `quote` with the person's own words is required (`quote_required`).
 - Questions asked by a local runner job use the same list; they are answered by the project owner.
 
 ## Progress and features
@@ -77,7 +77,7 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 
 - `request_review {taskID, summary, reviewerID?}` is for something the person has to look at or decide: a visible result to try, a risk, a rollout or merge decision. Pure update information (commit hash, tests green, internal change, numbers) is NOT a review: put it into `post_progress` and keep the task where it is. Write the summary as one sentence of result plus at most four bullets: what is new, how it was checked (with numbers), what to look at, what is open. No commit hashes or file lists as the main content. Optionally name the person who must review (`reviewerID`, a user id from the brief or the task context).
 - `list_pending_reviews {projectID, scope?}` answers `{currentProject, hint?, items}` with the pending reviews of the current project (same `scope`/`foreignProject`/`hint` rules as `list_open_questions`).
-- A person accepts (task becomes `done`) or requests changes (task returns to `in_progress`). `decide_review` exists for a person steering you via chat; it refuses reviews requested by your own connection (`cannot_decide_own_review`).
+- A person accepts (task becomes `done`) or requests changes (task returns to `in_progress`). `decide_review` exists for a person steering you via chat; it refuses reviews requested by your own connection (`cannot_decide_own_review`). Since 1.29.0 it also needs the brain mandate: without it `brain_mandate_required`, outside the mandated projects `outside_brain_mandate`, and a `quote` with the person's own words is required (`quote_required`, `invalid_quote` above 2000 characters).
 - One pending review per task: requesting again updates the summary.
 
 ## Build screenshots
@@ -235,10 +235,10 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `list_open_questions` | tasks:read | Questions of the current project (`projectID`), `scope=account` for all; answer `{currentProject, hint?, items}`. |
 | `get_question` | tasks:read | One question with its answer. |
 | `wait_for_events` | tasks:read | Wait up to 25 s for board changes; returns hints only (no content). Use a few rounds after a blocking question or a confirmation request, then `get_question` / `get_action_request`. |
-| `answer_question` | tasks:write | Answer a question on behalf of the user (not your own). |
+| `answer_question` | tasks:write | Answer a question on behalf of the user (not your own). Needs the brain mandate and `quote`. |
 | `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
 | `list_pending_reviews` | tasks:read | Pending reviews of the current project (`projectID`), `scope=account` for all; answer `{currentProject, hint?, items}`. |
-| `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). |
+| `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). Needs the brain mandate and `quote`. |
 | `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. Uploads by people appear as entries with `kind: "attachment"` and `attachments: [{id, filename, mediaType, size}]`; files without a chat entry add one trailing `attachments_note`. |
 | `add_comment` | comments:write | Write a message into the chat of a task, question (`questionID`) or review (`reviewID`); optional `agentName`. |
 | `list_columns` | projects:read | Board with tasks per column. |
@@ -330,7 +330,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `get_notification_prefs` | account:read | Your push notification preferences. |
 | `update_notification_prefs` | account:write | Change your push notification preferences. |
 | `get_system_status` | account:read | Latest situation report of the Mac watcher: traffic lights for Claude quota, Codex and disk, per source with `reportedAt` and the server time `now` (older than 30 minutes = stale). |
-| `get_connection` | (none) | Describe this connection: client, name (chosen by the person), scopes, grant projects, expiry. No tokens. |
+| `get_connection` | (none) | Describe this connection: client, name (chosen by the person), scopes, grant projects, `brainMandate {active, projectIDs}` (read-only: does this connection hold the person's brain mandate), expiry. No tokens. |
 | `list_users` | admin:read | Administrators only: accounts, read-only. |
 | `list_invitations` | admin:read | Administrators only: invitations without codes. |
 | `list_reviews` | tasks:read | Reviews including decided ones, filter by project and status. |
@@ -347,6 +347,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.29.0:** brain mandate (ADR 0032). `decide_review` and `answer_question` now work only for a connection to which the person has given a brain mandate (settings, REST `PUT /v1/settings/brain-mandate`, session only; there is no MCP way to grant it). Without a mandate they fail with `brain_mandate_required` (this is a behaviour change: connections that used to decide other agents' reviews must now hold the mandate), for a project outside the mandate with `outside_brain_mandate`. Both tools take the new parameter `quote` (required, up to 2000 characters): the person's own words behind the decision; missing is `quote_required`, too long `invalid_quote`. Your own requests stay refused (`cannot_decide_own_review`, `cannot_answer_own_question`), mandate or not. A decision under a mandate writes an audit row and a comment "Brain im Auftrag von <name>" with "Entscheidung von <name> (Zitat): ..." into the chat of the review or question. The mandate does not widen rights: the person's project roles and your grant's project list still apply. `get_connection` reports `brainMandate {active, projectIDs}` read-only. `brainRecommended` is now `true` only for a comment written by the connection with an active mandate for the card's project; the label `brain` alone no longer counts (this replaces the 1.27.0 rule). All else additive.
 
 **Changed in 1.28.0:** live view per card (ADR 0031). New tools `report_session_step`, `report_session_event` and `get_task_live` (existing scopes `tasks:write`/`tasks:read`), REST `GET /v1/tasks/{id}/live` (`contracts/live-session.yaml` 1.0.0). Only compact events you report yourself are stored, secrets are masked, data goes 3 days after the card is done. All else additive.
 

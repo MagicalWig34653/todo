@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 17.11.2026: Brain-Vollmacht (Karte `11DA4A38`, ADR 0032, Branch `agent/brain-vollmacht`, nicht gepusht)
+
+- Neu: Tabellen `brain_mandates` (eine je Person, Grant, Projektliste, `revoked_at`) und `brain_decision_audits` (ohne Fremdschluessel auf Karte/Grant); REST `GET/PUT/DELETE /v1/settings/brain-mandate`, `GET .../audit` nur mit Personen-Sitzung (OAuth-Token 401); `get_connection.brainMandate` lesend.
+- `WorkflowService.answer/decideReview` (Datei `Connections/BrainAuthority.swift`): eigene Anfrage 403, kein Mandat `brain_mandate_required`, Projekt ausserhalb `outside_brain_mandate`, `quote` Pflicht (`quote_required`/`invalid_quote`); Mandat wird unter Zeilensperre neu gelesen; Runner-Pfade pruefen vor der Delegation. MCP `decide_review`/`answer_question` haben `quote`. Verhaltensaenderung: Verbindungen ohne Mandat entscheiden nicht mehr.
+- Audit-Zeile und Kommentar "Brain im Auftrag von <Name>" (Zitat) in derselben Transaktion; `brainRecommended` nur von der Verbindung mit aktivem Mandat fuer das Projekt der Karte (Urheber aus Aktivitaet `comment.created`); Label allein genuegt nicht (ReviewBatchTests angepasst).
+- Doku: Handbuch 1.29.0, `contracts/command-center.yaml` 1.6.0, `contracts/connections.yaml` 1.1.0, `docs/MCP-PARITAET.md`, Kurzanleitung `docs/BRAIN-VERBINDUNG.md`.
+- Offen: PWA-Einstellungsseite "Brain-Vollmacht" fehlt (bis dahin REST); Step-up per Passkey beim Erteilen nicht Teil (ADR); Rollout: das Brain braucht eine eigene Verbindung und Mandat, sonst `brain_mandate_required`; MariaDB-Lauf nicht gemacht.
+
 ## Checkpoint 14.11.2026: Live-Ansicht je Karte, Stufe 2 PWA (Karte `CCCFFB78`, Branch `agent/live-ansicht-pwa`)
 
 - Neu im Karten-Detail, Tab "Aktivität" (`web/src/lib/components/card/TaskLive.svelte`): oben laufende Sitzungen (Name, Akteur-Label, Modell, Startzeit, aktueller Schritt als `aria-live="polite"`, Hinweis "Still seit N Min." bei stale, lokal auch ohne Refresh nach 15 Minuten), beendete Sitzungen eingeklappt (`<details>`), darunter der kompakte Verlauf (neueste zuerst, Art als Icon und Label, relativ und absolut, "Mehr laden" per `nextCursor`); Leerzustand, Fehlerzustand mit "Erneut versuchen" (`role="alert"`), danach die bisherige Aktivitätsliste unter "Ereignisse der Karte". Texte nur als Text (kein `{@html}`), Geheimnisse kommen vom Server schon als `[gefiltert]`.
