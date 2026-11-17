@@ -118,6 +118,13 @@ struct AgentService {
         _ = try await ProjectAccess(user: user, db: db).startAgent(in: binding.projectID)
     }
 
+    /// Non-throwing variant for runner lists: bindings of projects the device owner may no longer start agents in
+    /// (for example after an ownership transfer) are left out instead of failing the whole list.
+    static func isAuthorized(_ binding: ProjectRunnerBinding, device: RunnerDevice, on db: any Database) async throws -> Bool {
+        do { try await authorized(binding, device: device, on: db); return true }
+        catch let e as Abort where e.status == .notFound || e.status == .forbidden { return false }
+    }
+
     /// The device row serializes claims across bindings referring to the same local repository.
     /// An expired run keeps its slot until a runner explicitly confirms that the process stopped.
     static func claim(jobID: UUID, deviceID: UUID, on database: any Database) async throws -> AgentRunDTO {
@@ -154,7 +161,13 @@ struct AgentService {
                   let run = try await AgentRun.find(runID, on: db), run.deviceID == deviceID,
                   let job = try await AgentJob.find(run.jobID, on: db),
                   let binding = try await ProjectRunnerBinding.find(run.bindingID, on: db) else { throw Abort(.notFound) }
-            try await authorized(binding, device: device, on: db)
+            if action == "reconcile", body.observation == "stopped" {
+                // Confirming that the process ended needs no project right: after an ownership transfer the former owner's
+                // device must still be able to free the repository slot. Only the device's own run is touched.
+                guard binding.deviceID == device.id else { throw Abort(.notFound) }
+            } else {
+                try await authorized(binding, device: device, on: db)
+            }
             guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID else { throw Abort(.notFound) }
             guard run.generation == body.generation else { throw Abort(.conflict, reason: "stale_generation") }
             guard run.endedAt == nil else { throw Abort(.gone, reason: "run_ended") }
