@@ -1,6 +1,6 @@
 # ADR 0033 – Kalender: geplanter Start getrennt von Fälligkeit, Planung per MCP; Wächter startet fällige Karten
 
-Status: Entscheidungen getroffen (17.11.2026, Lino über das Brain), noch nicht umgesetzt. Karten `8CECAD24` (Kalender) und `6C19C1C1` (Wächter startet fällige Karten, blockiert durch die Kalenderkarte).
+Status: Entscheidungen getroffen (17.11.2026, Lino über das Brain); Kalender Stufen A und B umgesetzt, Stufe C Backend (auto_start, Kontoschalter, Widerruf, releaseID/origin) umgesetzt, Wächter und Oberflächen dafür offen. Karten `8CECAD24` (Kalender) und `6C19C1C1` (Wächter startet fällige Karten, blockiert durch die Kalenderkarte).
 
 ## Kontext
 

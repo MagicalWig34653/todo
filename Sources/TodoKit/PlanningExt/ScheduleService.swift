@@ -47,7 +47,7 @@ struct ScheduleEntryDTO: Content {
     var dueAt: Date?
     var blocked: Bool
     var canEdit: Bool
-    /// Stage C (guard auto start); always false until then.
+    /// Stage C: owner allowed the guard to start this card at `plannedAt` (one time); `autoStartedAt` is the hand-over time.
     var autoStart: Bool
     var autoStartedAt: Date?
     var jobState: String?
@@ -92,7 +92,9 @@ extension PlanningService {
             if update.hasPlannedAllDay && update.plannedAllDay == true { throw Abort(.badRequest, reason: "all_day_requires_planned_at") }
             minutes = nil; allDay = false
         }
+        let before = (start: p.plannedAt, minutes: p.plannedMinutes, allDay: p.plannedAllDay)
         p.plannedAt = start; p.plannedMinutes = minutes; p.plannedAllDay = allDay
+        try await AutoStartService.scheduleChanged(p, taskID: id, projectID: t.projectID, before: before, user: user, integrationGrant: nil, on: db)
         try await p.save(on: db)
         // The version bump saves the task row and thereby emits the sync upsert.
         t.version += 1
@@ -221,7 +223,7 @@ extension PlanningService {
             result.append(ScheduleEntryDTO(
                 taskID: id, projectID: t.projectID, title: t.title, status: t.status, version: t.version,
                 plannedAt: p.plannedAt, plannedMinutes: p.plannedMinutes, plannedAllDay: p.plannedAllDay, dueAt: p.dueAt,
-                blocked: blocked, canEdit: try scope.canEdit(t.projectID), autoStart: false, autoStartedAt: nil,
+                blocked: blocked, canEdit: try scope.canEdit(t.projectID), autoStart: p.autoStart, autoStartedAt: p.autoStartedAt,
                 jobState: job?.state, repositoryKey: job.flatMap { bindings[$0.bindingID]?.repositoryKey }, conflicts: conflicts))
         }
         // Two cards with an active agent job on the same repository that overlap in time: the runner serializes them.

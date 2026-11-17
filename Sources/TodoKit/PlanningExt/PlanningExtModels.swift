@@ -31,12 +31,16 @@ final class TaskPlanning: Model, @unchecked Sendable {
     @OptionalField(key: "planned_at") var plannedAt: Date?
     @OptionalField(key: "planned_minutes") var plannedMinutes: Int?
     @Field(key: "planned_all_day") var plannedAllDay: Bool
+    /// ADR 0033: the owner allowed the guard to hand this card to a runner at `plannedAt` (one time).
+    @Field(key: "auto_start") var autoStart: Bool
+    /// Server clock of the automatic hand-over; set only for the scheduler origin.
+    @OptionalField(key: "auto_started_at") var autoStartedAt: Date?
     @Field(key: "priority") var priority: Int
     @Field(key: "position") var position: Int
     @OptionalField(key: "recurrence") var recurrence: RecurrenceRule?
     @Field(key: "reminders") var reminders: [Date]
     init() {}
-    init(taskID: UUID) { id = taskID; priority = 0; position = 0; reminders = []; plannedAllDay = false }
+    init(taskID: UUID) { id = taskID; priority = 0; position = 0; reminders = []; plannedAllDay = false; autoStart = false }
 }
 
 final class PlanningDependency: Model, @unchecked Sendable {

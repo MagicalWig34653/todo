@@ -56,7 +56,7 @@ extension MCPController {
                 _ = try await grantedTask(id, on: tx, role: .edit)
                 let p = try await TaskPlanning.find(id, on: tx)
                 let data = try planningPatch(a, current: p)
-                return try .encoded(await s.put(id, data: data, expectedVersion: version))
+                return try .encoded(await s.put(id, data: data, expectedVersion: version, integrationGrant: grant.requireID()))
             }
         case "list_schedule":
             guard let from = try planningDate(a["from"]), let to = try planningDate(a["to"]) else { throw Abort(.badRequest, reason: "invalid_window") }

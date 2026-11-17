@@ -73,12 +73,16 @@ struct PlanningTaskDTO: Content {
     var position: Int
     var recurrence: RecurrenceRule?
     var reminders: [Date]
+    /// ADR 0033 stage C. Written only through `PUT /v1/tasks/{id}/auto-start`.
+    var autoStart: Bool
+    var autoStartedAt: Date?
     init(_ task: TodoTask, _ planning: TaskPlanning?) throws {
         self.task = try TaskDTO(task)
         dueAt = planning?.dueAt; plannedAt = planning?.plannedAt
         plannedMinutes = planning?.plannedMinutes; plannedAllDay = planning?.plannedAllDay ?? false
         priority = planning?.priority ?? 0; position = planning?.position ?? 0
         recurrence = planning?.recurrence; reminders = planning?.reminders ?? []
+        autoStart = planning?.autoStart ?? false; autoStartedAt = planning?.autoStartedAt
     }
 }
 
@@ -98,13 +102,14 @@ struct PlanningService: Sendable {
     /// `expectedVersion` is set by the sync path (`task.planning`): the task version must match and is bumped, so a
     /// stale `task.update` or `task.planning` conflicts like any other edit. The REST route passes nil and keeps its
     /// established semantics (no version check, version untouched).
-    func put(_ id: UUID, data: PlanningData, expectedVersion: Int? = nil) async throws -> PlanningTaskDTO {
+    func put(_ id: UUID, data: PlanningData, expectedVersion: Int? = nil, integrationGrant: UUID? = nil) async throws -> PlanningTaskDTO {
         try data.validate()
         try await lock()
         try await lockRow(table: TodoTask.schema, id: id, on: db)
         let t = try await task(id, role: .edit)
         if let expectedVersion, t.version != expectedVersion { throw Abort(.conflict, reason: "version_conflict") }
         let p = try await TaskPlanning.find(id, on: db) ?? TaskPlanning(taskID: id)
+        let before = (start: p.plannedAt, minutes: p.plannedMinutes, allDay: p.plannedAllDay)
         p.dueAt = data.dueAt; p.plannedAt = data.plannedAt; p.priority = data.priority
         // Duration and all-day: absent keys keep the stored value (older clients), a cleared start clears both.
         if data.plannedAt == nil { p.plannedMinutes = nil; p.plannedAllDay = false }
@@ -113,6 +118,7 @@ struct PlanningService: Sendable {
             if let allDay = data.plannedAllDay { p.plannedAllDay = allDay }
         }
         p.recurrence = data.recurrence; p.reminders = data.reminders
+        try await AutoStartService.scheduleChanged(p, taskID: id, projectID: t.projectID, before: before, user: user, integrationGrant: integrationGrant, on: db)
         try await p.save(on: db)
         // Planning is part of the synced task state: always emit a task upsert (a version bump saves the row).
         if expectedVersion != nil {
@@ -215,6 +221,10 @@ struct PlanningService: Sendable {
             try await ColumnService.placeByStatus(t, on: db)
         } else if reconcileColumn, t.status != before.status {
             try await ColumnService.reconcile(t, on: db)
+        }
+        // A changed text or project voids the one-time start permission (ADR 0033, attack surface: data triggers code).
+        if t.title != before.title || t.details != before.details || t.projectID != before.projectID {
+            try await AutoStartService.contentChanged(taskID: id, actorType: actorType, actorID: actorID, on: db)
         }
         t.version += 1
         try await t.save(on: db)

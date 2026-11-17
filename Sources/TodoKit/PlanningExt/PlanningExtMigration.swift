@@ -40,3 +40,26 @@ struct AddScheduleToTaskPlanning: AsyncMigration {
         try await db.schema(TaskPlanning.schema).deleteField("planned_all_day").update()
     }
 }
+
+/// ADR 0033 stage C: per-card permission for the guard to start the card automatically. Additive, default off.
+struct AddAutoStartToTaskPlanning: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(TaskPlanning.schema).field("auto_start", .bool, .required, .sql(.default(false))).update()
+        try await db.schema(TaskPlanning.schema).field("auto_started_at", .datetime).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(TaskPlanning.schema).deleteField("auto_start").update()
+        try await db.schema(TaskPlanning.schema).deleteField("auto_started_at").update()
+    }
+}
+
+/// ADR 0033: account switch "allow automatic starts" (default off). One row per person.
+struct CreateAutoStartAccount: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(AutoStartAccount.schema)
+            .field("id", .uuid, .identifier(auto: false), .references("users", "id", onDelete: .cascade))
+            .field("allowed", .bool, .required, .sql(.default(false)))
+            .field("updated_at", .datetime, .required).create()
+    }
+    func revert(on db: any Database) async throws { try await db.schema(AutoStartAccount.schema).delete() }
+}

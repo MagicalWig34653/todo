@@ -267,8 +267,13 @@ extension AgentService {
         return job
     }
 
-    static func release(_ body: ReleaseJobRequest, user: User, on database: any Database) async throws -> AgentJobDTO {
+    /// `origin == .scheduler` is the guard (ADR 0033): it needs the connection (`integrationGrant`), the account switch,
+    /// the card's one-time permission, a card that is not done and not blocked. A retry with the same `body.id` returns
+    /// the existing job before any of that is evaluated (the permission is consumed by the first start).
+    static func release(_ body: ReleaseJobRequest, user: User, origin: ReleaseOrigin = .manual, integrationGrant: UUID? = nil,
+                        on database: any Database) async throws -> AgentJobDTO {
         guard ["clarify", "implement"].contains(body.mode) else { throw Abort(.badRequest) }
+        guard origin == .manual || integrationGrant != nil else { throw Abort(.forbidden, reason: "scheduler_requires_connection") }
         guard let initialBinding = try await ProjectRunnerBinding.find(body.bindingID, on: database) else { throw Abort(.notFound) }
         return try await database.transaction { db in
             try await lockRow(table: RunnerDevice.schema, id: initialBinding.deviceID, on: db)
@@ -293,6 +298,19 @@ extension AgentService {
                 }
             }
             guard task.version == body.taskRevision else { throw Abort(.conflict, reason: "task_revision_changed") }
+            // Serialize with revocation and enabling of the card permission (device lock is always taken first).
+            try await lockRow(table: TodoTask.schema, id: body.taskID, on: db)
+            let planning = try await TaskPlanning.find(body.taskID, on: db)
+            if origin == .scheduler {
+                guard try await AutoStartService.accountAllowed(userID: user.requireID(), on: db) else {
+                    throw Abort(.forbidden, reason: "auto_start_disabled_for_account")
+                }
+                guard let planning, planning.autoStart, planning.plannedAt != nil, !planning.plannedAllDay else {
+                    throw Abort(.conflict, reason: "auto_start_not_enabled")
+                }
+                guard task.status != "done" else { throw Abort(.conflict, reason: "task_done") }
+                guard try await !PlanningService(user: user, db: db).blocked(body.taskID) else { throw Abort(.conflict, reason: "task_blocked") }
+            }
             let job = try AgentJob(taskID: body.taskID, projectID: binding.projectID, bindingID: body.bindingID,
                 requestedBy: user.requireID(), previousJobID: body.previousJobID, taskRevision: body.taskRevision, mode: body.mode,
                 scope: AgentService.text(body.scope), state: "queued", progress: "", result: nil)
@@ -302,8 +320,24 @@ extension AgentService {
             } catch let error as any DatabaseError where error.isConstraintFailure {
                 throw Abort(.conflict, reason: "release_id_conflict")
             }
-            try await AgentService.event(job, kind: "released", on: db)
-            try await appendLockedActivity(taskID: job.taskID, actorType: .person, actorID: user.requireID(), kind: "agent.released", subjectID: job.id, on: db)
+            let now = Date()
+            var detail = ""
+            if origin == .scheduler, let plannedAt = planning?.plannedAt {
+                let delay = max(0, Int(now.timeIntervalSince(plannedAt) / 60))
+                let catchup = now.timeIntervalSince(plannedAt) > AutoStartService.catchupSeconds
+                let object: [String: Any] = ["origin": origin.rawValue, "catchup": catchup, "delayMinutes": delay,
+                                             "plannedAt": ISO8601DateFormatter().string(from: plannedAt)]
+                detail = String(decoding: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), as: UTF8.self)
+            }
+            try await AgentService.event(job, kind: "released", detail: detail, on: db)
+            // Hand-over consumes the one-time permission, whoever started. Only the guard sets the automatic start time.
+            if let planning, planning.autoStart {
+                planning.autoStart = false
+                if origin == .scheduler { planning.autoStartedAt = now }
+                try await planning.save(on: db)
+            }
+            try await appendLockedActivity(taskID: job.taskID, actorType: integrationGrant == nil ? .person : .integration,
+                actorID: integrationGrant ?? user.requireID(), kind: "agent.released", subjectID: job.id, on: db)
             return try AgentJobDTO(job)
         }
     }
