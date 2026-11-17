@@ -30,7 +30,9 @@ extension MCPController {
                           "deviceID": Schema.uuid("Runner device id (see list_runner_devices); required when several devices are bound to the project."),
                           "mode": Schema.string("clarify (only ask questions) or implement (default).", values: ["clarify", "implement"]),
                           "scope": Schema.string("Optional work scope for the runner, up to 4000 characters (default: the task title).", maxLength: 4000),
-                          "version": Schema.integer("Optional current task version; a stale value fails with version_conflict.", min: 0)],
+                          "version": Schema.integer("Optional current task version; a stale value fails with version_conflict.", min: 0),
+                          "releaseID": Schema.uuid("Optional idempotency key (UUID). The same call with the same releaseID returns the existing job instead of a second one; different data under the same releaseID fails with release_id_conflict."),
+                          "origin": Schema.string("manual (default) or scheduler. scheduler is the guard (watcher on the Mac): it only works if the person allowed automatic starts in the account settings and on this card (one-time permission set in the app, never by an agent), the card is not done and not blocked; otherwise auto_start_disabled_for_account, auto_start_not_enabled, task_done or task_blocked. A start more than 5 minutes after plannedAt is audited as catch-up.", values: ["manual", "scheduler"])],
              required: ["taskID"]),
         Tool(name: "stop_agent_job", scope: "runs:write",
              description: "Stop a queued, claimed, running or waiting local runner job (state becomes cancelled; the runner confirms termination later). Owner rights required.",
@@ -75,20 +77,18 @@ extension MCPController {
             let version = try intArgument(a["version"], reason: "invalid_version")
             if let version { guard version >= 0 else { throw Abort(.badRequest, reason: "invalid_version") } }
             let scope = try optionalString(a, "scope") ?? task.title
+            let releaseID: UUID
+            if a["releaseID"].isNull { releaseID = UUID() }
+            else { guard let raw = a["releaseID"].string, let parsed = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_release_id") }; releaseID = parsed }
+            let origin = try optionalString(a, "origin") ?? "manual"
+            guard let releaseOrigin = ReleaseOrigin(rawValue: origin) else { throw Abort(.badRequest, reason: "invalid_origin") }
             _ = try await ProjectAccess(user: user, db: db).startAgent(in: task.projectID)
             if let version, version != task.version { throw Abort(.conflict, reason: "version_conflict") }
             // Existing bindings only: of this user's live devices, for this project.
-            var candidates: [ProjectRunnerBinding] = []
-            for binding in try await ProjectRunnerBinding.query(on: db).filter(\.$projectID == task.projectID).sort(\.$id).all() {
-                if let deviceID, binding.deviceID != deviceID { continue }
-                guard let device = try await RunnerDevice.find(binding.deviceID, on: db), device.ownerID == user.id,
-                      device.revokedAt == nil, device.tokenHash != nil else { continue }
-                candidates.append(binding)
-            }
-            guard !candidates.isEmpty else { throw Abort(.conflict, reason: "no_binding") }
-            guard candidates.count == 1, let binding = candidates.first else { throw Abort(.conflict, reason: "device_required") }
-            let job = try await AgentService.release(ReleaseJobRequest(id: UUID(), taskID: task.requireID(), bindingID: binding.requireID(),
-                previousJobID: nil, taskRevision: task.version, mode: mode, scope: scope), user: user, on: db)
+            let binding = try await AutoStartService.usableBinding(projectID: task.projectID, deviceID: deviceID, user: user, on: db)
+            let job = try await AgentService.release(ReleaseJobRequest(id: releaseID, taskID: task.requireID(), bindingID: binding.requireID(),
+                previousJobID: nil, taskRevision: task.version, mode: mode, scope: scope), user: user, origin: releaseOrigin,
+                integrationGrant: releaseOrigin == .scheduler ? try grant.requireID() : nil, on: db)
             return try .encoded(job)
         case "stop_agent_job":
             let jobID = try uuid(a["jobID"])

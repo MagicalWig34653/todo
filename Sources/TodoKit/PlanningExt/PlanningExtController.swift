@@ -34,6 +34,9 @@ struct PlanningExtController: RouteCollection {
         r.get("schedule", use: schedule)
         r.get("unscheduled", use: unscheduled)
         routes.patch("v1", "tasks", ":id", "schedule", use: patchSchedule)
+        routes.put("v1", "tasks", ":id", "auto-start", use: putAutoStart)
+        routes.get("v1", "settings", "auto-start", use: getAutoStartAccount)
+        routes.put("v1", "settings", "auto-start", use: putAutoStartAccount)
         r.get("board", use: board)
         r.put("board", "reorder", use: reorder)
         r.get("tasks", ":id", "dependencies", use: dependencies)
@@ -84,6 +87,19 @@ struct PlanningExtController: RouteCollection {
     @Sendable func patchSchedule(_ req: Request) async throws -> PlanningTaskDTO {
         let s = try await service(req), id = try param(req), body = try req.content.decode(ScheduleUpdate.self)
         return try await req.db.transaction { db in try await PlanningService(user: s.user, db: db).schedule(id, update: body) }
+    }
+    /// ADR 0033: person session only (OAuth and runner tokens get 403), project owner only.
+    @Sendable func putAutoStart(_ req: Request) async throws -> PlanningTaskDTO {
+        let user = try await req.requirePersonSession(), id = try param(req)
+        return try await AutoStartService.set(taskID: id, request: req.content.decode(AutoStartRequest.self), user: user, on: req.db)
+    }
+    @Sendable func getAutoStartAccount(_ req: Request) async throws -> AutoStartAccountResponse {
+        try await AutoStartService.account(userID: req.requirePersonSession().requireID(), on: req.db)
+    }
+    @Sendable func putAutoStartAccount(_ req: Request) async throws -> AutoStartAccountResponse {
+        let user = try await req.requirePersonSession()
+        let body = try req.content.decode(AutoStartAccountRequest.self)
+        return try await AutoStartService.setAccount(userID: user.requireID(), allowed: body.allowed, on: req.db)
     }
     @Sendable func today(_ req: Request) async throws -> [PlanningTaskDTO] { try await list(req, mode: "today") }
     @Sendable func upcoming(_ req: Request) async throws -> [PlanningTaskDTO] { try await list(req, mode: "upcoming") }

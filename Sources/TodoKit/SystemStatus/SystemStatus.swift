@@ -46,6 +46,8 @@ struct SystemStatusResponse: Content {
     let items: [SystemStatusItem]
     /// Server clock: clients compute the age of a report against it (no trust in the device clock).
     let now: Date
+    /// ADR 0033: account switch "Automatische Starts erlauben" (default off), shown next to the traffic lights.
+    let autoStartAllowed: Bool
 }
 
 enum SystemStatusService {
@@ -69,6 +71,8 @@ enum SystemStatusService {
         func isDate(_ v: JSONValue) -> Bool { if case .string(let s) = v { return parseDate(s) != nil }; return false }
         try optional("claude_ampel", isAmpel)
         try optional("platte_ampel", isAmpel)
+        try optional("leistung_ampel", isAmpel)
+        try optional("leistung_last_pct") { number($0) }
         try optional("zeit", isDate)
         try optional("claude_frei_fuer_brain") { number($0) }
         try optional("platte_frei_gb") { number($0) }
@@ -112,7 +116,8 @@ enum SystemStatusService {
 
     static func read(userID: UUID, on db: any Database) async throws -> SystemStatusResponse {
         let rows = try await SystemStatus.query(on: db).filter(\.$userID == userID).sort(\.$source).all()
-        return SystemStatusResponse(items: rows.map { SystemStatusItem(source: $0.source, label: $0.label, reportedAt: $0.reportedAt, status: .object($0.payload)) }, now: Date())
+        return SystemStatusResponse(items: rows.map { SystemStatusItem(source: $0.source, label: $0.label, reportedAt: $0.reportedAt, status: .object($0.payload)) }, now: Date(),
+            autoStartAllowed: try await AutoStartService.accountAllowed(userID: userID, on: db))
     }
 }
 

@@ -175,6 +175,9 @@ extension ProjectSyncService {
                 if entry.status == "done", existing.status != "done" {
                     try await WorkflowService.applyStatus(existing, "done", actor: actor, on: tx); changes.append("status"); dirty = true
                 }
+                if changes.contains("title") || changes.contains("description") {
+                    try await AutoStartService.contentChanged(taskID: existing.requireID(), actorType: actor.type, actorID: actor.id, on: tx)
+                }
                 if dirty { existing.version += 1; try await existing.save(on: tx) }
             } else {
                 task = TodoTask(ownerID: try user.requireID(), projectID: projectID, title: entry.title, details: entry.description ?? "")

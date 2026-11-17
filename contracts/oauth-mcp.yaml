@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.4.0
+  version: 1.5.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -11,6 +11,11 @@ info:
     Rolle des Benutzers wie die REST-Routen.
     1.4.0 (ADR 0033, additiv): list_schedule (Kalenderfenster wie GET /v1/planning/schedule); get/update_task_planning tragen plannedMinutes
     und plannedAllDay (update: plannedMinutes 5 bis 1440 oder null, plannedAllDay braucht plannedAt; autoStart wird abgelehnt, invalid_arguments).
+    1.5.0 (ADR 0033 Stufe C, additiv): start_agent_job nimmt releaseID (UUID, Idempotenz, release_id_conflict, invalid_release_id) und origin
+    (manual|scheduler, invalid_origin); origin scheduler verlangt Kontoschalter und Karten-Erlaubnis (auto_start_disabled_for_account,
+    auto_start_not_enabled, task_done, task_blocked). get_task_planning und list_schedule liefern autoStart/autoStartedAt mit echten Werten;
+    Schreibzugriffe über update_task, update_task_planning und Sync widerrufen autoStart (Aktivität agent.auto_start_revoked).
+    get_system_status liefert autoStartAllowed.
 servers:
   - url: http://localhost:28080
 paths:
@@ -274,7 +279,7 @@ x-mcp-tools:
   list_reviews: {scope: 'tasks:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
   list_progress_notes: {scope: 'tasks:read', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
   list_agent_jobs: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Nur Projekte des Eigentümers.'}
-  start_agent_job: {scope: 'runs:write', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Nur über bestehende Bindung; Pairing nur in der PWA.'}
+  start_agent_job: {scope: 'runs:write', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7 und Wächter-Start. Nur über bestehende Bindung; Pairing nur in der PWA. Optional releaseID (UUID) und origin (manual|scheduler).'}
   stop_agent_job: {scope: 'runs:write', required: [jobID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
   list_runner_devices: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Ohne Tokens.'}
   list_channel_messages: {scope: 'channels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Kanal #brain und contracts/voice.yaml. Kontobezogen, kein Projekt-Grant.'}

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Todolino Agentenaufträge und Runner-API
-  version: 1.1.0
-  description: Serververtrag gemäß ADR 0008 (1.1.0 - capabilities, disabledCapabilities, lastSeenAt am Gerät, ADR 0030). Menschliche Sitzungen und Geräte-Token
+  version: 1.2.0
+  description: Serververtrag gemäß ADR 0008 (1.1.0 - capabilities, disabledCapabilities, lastSeenAt am Gerät, ADR 0030; 1.2.0 - ADR 0033 Stufe C: Freigabe über MCP start_agent_job mit releaseID und origin manual|scheduler, Job-Ereignis released trägt bei origin scheduler detail {origin, catchup, delayMinutes, plannedAt}; die Freigabe löscht autoStart der Karte und setzt bei scheduler autoStartedAt; die REST-Freigabe bleibt unverändert und kennt nur origin manual). Menschliche Sitzungen und Geräte-Token
     sind getrennt. Keine automatischen Wiederholungen lokaler Coding-Läufe. Listen
     sind zunächst vollständig ohne Cursor; Skalierung und Aufbewahrung sind Folgearbeit.
 paths:

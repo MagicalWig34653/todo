@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: Todolino – Planungserweiterung
-  version: 1.1.0
+  version: 1.2.0
   description: 'Erweiterung des bestehenden Vertrags. ISO-8601-Zeitpunkte; Priorität 0 (keine) bis 3 (hoch). PUT
     ersetzt alle Planungsdaten. Wiederholungen benötigen dueAt oder plannedAt und erzeugen höchstens eine Folgeinstanz
     je Ursprungsaufgabe, auch nach Wiederöffnung. Datum und Erinnerungen werden je Kalenderintervall verschoben;
     until ist inklusive. Keine Pushzustellung. Beim Projektwechsel werden Abhängigkeiten und Meilensteinzuordnungen
-    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md. Ab 1.1.0 (ADR 0033): plannedAt ist der geplante Start (Anzeigename Geplanter Start), dazu plannedMinutes (5 bis 1440) und plannedAllDay; PATCH /v1/tasks/{id}/schedule ist der einzige Teilschreibweg für Kalender-Drag&Drop, GET /v1/planning/schedule liefert das Kalenderfenster. PUT übernimmt plannedMinutes/plannedAllDay nur, wenn der Schlüssel im Body steht (fehlt er, bleibt der Wert; null löscht).'
+    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md. Ab 1.1.0 (ADR 0033): plannedAt ist der geplante Start (Anzeigename Geplanter Start), dazu plannedMinutes (5 bis 1440) und plannedAllDay; PATCH /v1/tasks/{id}/schedule ist der einzige Teilschreibweg für Kalender-Drag&Drop, GET /v1/planning/schedule liefert das Kalenderfenster. PUT übernimmt plannedMinutes/plannedAllDay nur, wenn der Schlüssel im Body steht (fehlt er, bleibt der Wert; null löscht). Ab 1.2.0 (ADR 0033 Stufe C): autoStart/autoStartedAt in Planungsantworten und ScheduleEntry mit echten Werten; PUT /v1/tasks/{id}/auto-start (nur Sitzung, Projekteigentümer) und GET/PUT /v1/settings/auto-start (Kontoschalter, Standard aus). Änderungen an Titel, Beschreibung, Projekt oder plannedAt löschen autoStart (Aktivität agent.auto_start_revoked), plannedMinutes nur bei Änderung durch jemand anderen als den Eigentümer in Person.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -497,6 +497,65 @@ paths:
         '403': {description: Nur Leserechte}
         '404': {description: Fehlendes oder fremdes Objekt}
         '409': {description: version_conflict oder task_done}
+  /v1/tasks/{id}/auto-start:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    put:
+      summary: Wächter darf diese Karte zum geplanten Start automatisch starten (Ein-Mal-Erlaubnis)
+      description: >-
+        Nur Personen-Sitzung (OAuth-Zugriffstoken und Runner-Gerätetoken erhalten 403 session_required) und nur der Projekteigentümer (wie startAgent, sonst 403).
+        Prüft version (409 version_conflict) und erhöht sie bei einer Änderung. enabled=true verlangt: Karte nicht done (409 task_done), plannedAt gesetzt
+        (409 planned_start_required), nicht ganztägig (409 all_day_not_allowed), genau eine nutzbare Bindung eines eigenen Geräts oder das gewählte deviceID
+        (409 no_binding, 409 device_required). Aktivität agent.auto_start_enabled bzw. agent.auto_start_disabled (nur bei Änderung); enabled=false ist idempotent.
+        Die Erlaubnis erlischt nach der Übergabe an den Runner (autoStart=false, autoStartedAt gesetzt) und bei Änderung von Titel, Beschreibung, Projekt oder plannedAt
+        (sowie plannedMinutes durch Dritte, Agenten oder Sync): Aktivität agent.auto_start_revoked. Kein MCP-Weg.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: {type: integer}
+                enabled: {type: boolean}
+                deviceID: {type: string, format: uuid, description: Optional, wählt das Runner-Gerät bei mehreren Bindungen}
+              required: [version, enabled]
+      responses:
+        '200': {description: PlanningTask mit autoStart/autoStartedAt}
+        '401': {description: Sitzung erforderlich}
+        '403': {description: Kein Eigentümer oder kein Personen-Sitzungstoken (session_required)}
+        '404': {description: Fehlendes oder fremdes Objekt}
+        '409': {description: version_conflict, task_done, planned_start_required, all_day_not_allowed, no_binding oder device_required}
+  /v1/settings/auto-start:
+    get:
+      summary: Kontoschalter "Automatische Starts erlauben" lesen (nur Sitzung)
+      responses:
+        '200':
+          description: '{allowed, updatedAt}; allowed ist ohne Eintrag false'
+        '401': {description: Sitzung erforderlich}
+        '403': {description: OAuth- oder Runner-Token (session_required)}
+    put:
+      summary: Kontoschalter setzen (nur Sitzung, Standard aus)
+      description: >-
+        Ist der Schalter aus, startet der Wächter nichts, egal was an den Karten steht: start_agent_job mit origin scheduler antwortet 403 auto_start_disabled_for_account.
+        Der Stand erscheint auch in GET /v1/system-status (autoStartAllowed).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowed: {type: boolean}
+              required: [allowed]
+      responses:
+        '200': {description: '{allowed, updatedAt}'}
+        '400': {description: Ungültiger Body}
+        '401': {description: Sitzung erforderlich}
+        '403': {description: OAuth- oder Runner-Token (session_required)}
   /v1/planning/schedule:
     get:
       summary: Kalenderfenster, Karten mit Start, Frist oder ganztägiger Zuordnung im Fenster (nur sichtbare Projekte)
@@ -700,8 +759,8 @@ components:
         dueAt: {type: [string, 'null'], format: date-time}
         blocked: {type: boolean, description: Offene Voraussetzung vorhanden}
         canEdit: {type: boolean, description: Rolle edit; sonst nur lesen (nicht ziehbar)}
-        autoStart: {type: boolean, description: Stufe C; bis dahin immer false}
-        autoStartedAt: {type: [string, 'null'], format: date-time, description: Stufe C; bis dahin immer null}
+        autoStart: {type: boolean, description: Owner hat dem Wächter erlaubt, die Karte zum Start automatisch zu übergeben (Ein-Mal-Erlaubnis)}
+        autoStartedAt: {type: [string, 'null'], format: date-time, description: Zeitpunkt der automatischen Übergabe (Serveruhr), sonst null}
         jobState: {type: [string, 'null'], description: Zustand des neuesten Agent-Jobs der Karte, sonst null}
         repositoryKey: {type: [string, 'null'], description: Bindung des neuesten Agent-Jobs, sonst null}
         conflicts:
@@ -784,9 +843,16 @@ components:
             $ref: '#/components/schemas/Task'
           position:
             type: integer
+          autoStart:
+            type: boolean
+            description: Ein-Mal-Erlaubnis für den Wächter (ADR 0033); nur über PUT /v1/tasks/{id}/auto-start schreibbar
+          autoStartedAt:
+            type: [string, 'null']
+            format: date-time
         required:
         - task
         - position
+        - autoStart
     Reorder:
       type: object
       properties:

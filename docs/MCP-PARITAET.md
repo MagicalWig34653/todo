@@ -220,7 +220,7 @@ Sechs Tools in `MCPRunTools.swift`, Tests `MCPRunToolsTests` (12). Fachpfad wie 
 | `list_progress_notes` | tasks:read | A | `taskID, limit? (1-100, 50)`; neueste zuerst |
 | `list_agent_jobs` | runs:read | A | `projectID?, status?, limit? (1-100)`; `{items, nextCursor}`, nur eigene Projekte im Grant |
 | `list_runner_devices` | runs:read | A | keine; eigene Geräte (label, paired, revokedAt, activeRunCount, capabilities, disabledCapabilities, lastSeenAt), Bindungen nur zu Projekten im Grant, keine Tokens/Codes |
-| `start_agent_job` | runs:write | B | `taskID, deviceID?, mode? (clarify, implement), scope?, version?`; legt über eine bestehende Bindung einen queued-Job an |
+| `start_agent_job` | runs:write | B | `taskID, deviceID?, mode? (clarify, implement), scope?, version?, releaseID? (UUID, Idempotenz, `release_id_conflict`), origin? (manual, scheduler)`; legt über eine bestehende Bindung einen queued-Job an. `origin: scheduler` nur mit Kontoschalter und Karten-Erlaubnis (Handbuch 1.32.0) |
 | `stop_agent_job` | runs:write | A | `jobID`; Zustand wird cancelled (Slot bleibt bis zur Bestätigung des Runners belegt) |
 
 Beispiele: `list_reviews {"status":"accepted","limit":10}`, `start_agent_job {"taskID":"…","deviceID":"…","version":3}`, `stop_agent_job {"jobID":"…"}`.
@@ -321,4 +321,8 @@ Rolle `voice` mit `audio/mp4` und `audio/wav` (Vertrag `contracts/attachments.ya
 
 ## Kalender (17.11.2026, Handbuch 1.30.0, ADR 0033)
 
-`list_schedule` (tasks:read, Klasse A) liest das Kalenderfenster wie REST `GET /v1/planning/schedule`; `update_task_planning` und `get_task_planning` tragen `plannedMinutes` und `plannedAllDay`. Bewusst ohne MCP-Entsprechung: `PATCH /v1/tasks/{id}/schedule` (Drag&Drop, Teilschreibweg; Agenten nutzen `update_task_planning`) und das spätere `PUT /v1/tasks/{id}/auto-start` (nur Sitzung). `autoStart` in `update_task_planning` ergibt `invalid_arguments`.
+`list_schedule` (tasks:read, Klasse A) liest das Kalenderfenster wie REST `GET /v1/planning/schedule`; `update_task_planning` und `get_task_planning` tragen `plannedMinutes` und `plannedAllDay`. Bewusst ohne MCP-Entsprechung: `PATCH /v1/tasks/{id}/schedule` (Drag&Drop, Teilschreibweg; Agenten nutzen `update_task_planning`), `PUT /v1/tasks/{id}/auto-start` und `GET/PUT /v1/settings/auto-start` (Kontoschalter; nur Sitzung, OAuth/MCP-Token erhalten 403 `session_required`). `autoStart` in `update_task_planning` ergibt `invalid_arguments`.
+
+## Wächter-Start (17.11.2026, Handbuch 1.32.0, ADR 0033 Stufe C)
+
+`start_agent_job` erhält `releaseID` (UUID; gleicher Aufruf liefert den vorhandenen Job, abweichende Daten `release_id_conflict`) und `origin` (`manual` | `scheduler`). `origin: scheduler` ist der Wächter-Zugang (eigene Verbindung mit `tasks:read` und `runs:write`) und startet nur, wenn Kontoschalter "Automatische Starts erlauben" (Standard aus, REST `GET/PUT /v1/settings/auto-start`, nur Sitzung) und Karten-Erlaubnis `autoStart` (REST `PUT /v1/tasks/{id}/auto-start`, nur Sitzung und Projekteigentümer) gesetzt sind, die Karte nicht `done` und nicht blockiert ist (`auto_start_disabled_for_account`, `auto_start_not_enabled`, `task_done`, `task_blocked`). Der Server setzt nach der Übergabe `autoStartedAt` und löscht `autoStart` (Ein-Mal-Erlaubnis). Änderungen an Titel, Beschreibung, Projekt oder `plannedAt` löschen `autoStart`, ebenso eine Änderung von `plannedMinutes` durch jemand anderen als den Eigentümer in Person (auch MCP `update_task`/`update_task_planning`, Sync); Aktivität `agent.auto_start_revoked`. Es gibt keinen MCP-Weg, `autoStart` zu setzen. `get_system_status` liefert zusätzlich `autoStartAllowed`.
