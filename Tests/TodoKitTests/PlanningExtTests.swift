@@ -95,6 +95,18 @@ final class PlanningExtTests: XCTestCase {
         XCTAssertEqual(removed.status, .noContent)
     }
 
+    /// A prerequisite the account lost read access to still blocks the task, so the edge must stay removable.
+    func testDependencyOnUnreadablePrerequisiteCanBeRemoved() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        let task = UUID(uuidString: f.tasks[0])!, foreign = UUID(uuidString: f.foreignTask)!
+        try await PlanningDependency(task, foreign).save(on: db)
+        let removed = try await f.t.json(.DELETE, "/v1/planning/tasks/\(task)/dependencies/\(foreign)", token: f.token)
+        XCTAssertEqual(removed.status, .noContent)
+        let left = try await PlanningDependency.query(on: db).filter(\.$taskID == task).count()
+        XCTAssertEqual(left, 0)
+    }
+
     func testBoardReorderAndMilestonesAcrossDescendants() async throws {
         let f = try await fixture(); defer { Task { await f.t.shutdown() } }
         let order = Array(f.tasks.reversed())
