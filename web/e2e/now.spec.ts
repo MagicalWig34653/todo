@@ -11,7 +11,7 @@ const SHOTS = process.env.NOW_SHOTS ?? '../docs/screenshots/jetzt';
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
-const ids = { alpha: '', quiet: '', running: '', question: '', review: '', quietReview: '' };
+const ids = { alpha: '', quiet: '', running: '', question: '', review: '', oldReview: '', old: '' };
 let rewrite = true;
 
 async function api<T>(method: 'post' | 'patch' | 'put' | 'get', path: string, data?: unknown): Promise<T> {
@@ -40,16 +40,19 @@ test.beforeAll(async ({ browser }) => {
 	const quiet = await api<{ id: string }>('post', '/v1/projects', { name: 'Formular Ruhig' });
 	ids.alpha = alpha.id;
 	ids.quiet = quiet.id;
+	const oldP = await api<{ id: string }>('post', '/v1/projects', { name: 'Altes Review' });
+	ids.old = oldP.id;
 	const mk = async (projectID: string, title: string) => (await api<{ id: string }>('post', '/v1/tasks', { projectID, title })).id;
 	ids.running = await mk(alpha.id, 'Passkey-Anmeldung absichern');
 	ids.question = await mk(alpha.id, 'Runner-Bindings');
 	ids.review = await mk(alpha.id, 'Kalender Schedule-API');
-	ids.quietReview = await mk(quiet.id, 'Rate-Limit je Mandant');
+	ids.oldReview = await mk(oldP.id, 'Rate-Limit je Mandant');
+	await mk(quiet.id, 'Aufgeräumt');
 	await api('post', `/v1/tasks/${ids.running}/claim`, { agentName: 'Claude Sonnet' });
 	await api('post', `/v1/tasks/${ids.running}/progress-notes`, { note: 'Fallback geschrieben, Tests laufen', percent: 60 });
 	await api('post', `/v1/tasks/${ids.question}/questions`, { prompt: 'Soll der Runner pausieren?', blocking: false });
 	await api('post', `/v1/tasks/${ids.review}/review`, { summary: 'Kalender Stufe A fertig' });
-	await api('post', `/v1/tasks/${ids.quietReview}/review`, { summary: 'Rate-Limit fertig' });
+	await api('post', `/v1/tasks/${ids.oldReview}/review`, { summary: 'Rate-Limit fertig' });
 	await api('put', `/v1/projects/${alpha.id}/session-status`, { sessionName: 'web-passkey', activity: 'Führt vitest aus' });
 	await api('put', `/v1/projects/${alpha.id}/session-status`, { sessionName: 'backend-oauth', activity: 'Migration prüfen' });
 
@@ -58,7 +61,7 @@ test.beforeAll(async ({ browser }) => {
 		if (!rewrite || res.status() !== 200) return route.fulfill({ response: res });
 		const body = await res.json();
 		for (const p of body.projects) {
-			if (p.projectID === ids.quiet) p.lastActivityAt = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
+			if (p.projectID === ids.quiet || p.projectID === ids.old) p.lastActivityAt = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
 			for (const s of p.sessions) if (s.sessionName === 'backend-oauth') Object.assign(s, { orphaned: true, ageSeconds: 47 * 60, updatedAt: new Date(Date.now() - 47 * 60000).toISOString() });
 		}
 		await route.fulfill({ response: res, json: body });
@@ -114,7 +117,7 @@ test('quiet projects are grouped, collapsed, and the expand state survives a rel
 	await summaryOf('Formular Ruhig').focus();
 	await page.keyboard.press('Enter');
 	await expect(quiet).toHaveJSProperty('open', true);
-	await expect(quiet.getByTestId('now-waiting-item')).toContainText('Rate-Limit fertig');
+	await expect(quiet).toContainText('nichts offen');
 	await summaryOf('Todolino Jetzt').click();
 	await expect(project('Todolino Jetzt')).toHaveJSProperty('open', false);
 	await page.reload();
@@ -126,6 +129,16 @@ test('quiet projects are grouped, collapsed, and the expand state survives a rel
 	await summaryOf('Formular Ruhig').click();
 	await expect(project('Todolino Jetzt')).toHaveJSProperty('open', true);
 	await expect(project('Formular Ruhig')).toHaveJSProperty('open', false);
+});
+
+test('an old project with an open review is not quiet: it stands on top, expanded', async () => {
+	const names = page.getByTestId('now-active').getByTestId('now-project-name');
+	await expect(names).toHaveText(['Todolino Jetzt', 'Altes Review']);
+	const old = project('Altes Review');
+	await expect(old).toHaveAttribute('data-quiet', 'false');
+	await expect(old).toHaveJSProperty('open', true);
+	await expect(old.getByTestId('now-waiting-item')).toContainText('Rate-Limit fertig');
+	await expect(page.getByTestId('now-quiet').getByText('Altes Review')).toHaveCount(0);
 });
 
 test('updates live when an agent reports something new', async () => {

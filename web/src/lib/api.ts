@@ -858,12 +858,12 @@ export interface OverviewRunningTask {
 	worker?: string | null;
 	lastProgress?: { note: string; at: string } | null;
 	ageSeconds: number;
-	/** Not part of the contract today; shown as a progress bar only when the server sends it. */
+	/** Optional, additive; shown as a progress bar only when the server sends it. */
 	percent?: number | null;
 }
 export interface OverviewSession { sessionName: string; activity: string; updatedAt: string; ageSeconds: number; orphaned: boolean }
 export interface OverviewJob { jobID: string; taskID: string; state: string; mode: string; progress: string }
-export interface OverviewBuild { taskID: string; buildID: string; label?: string | null; platform?: string | null; createdAt: string }
+export interface OverviewBuild { taskID: string; buildID: string; label?: string | null; platform?: string | null; commit?: string | null; createdAt: string }
 export interface OverviewOpenItem { id: string; taskID: string; taskTitle: string; text: string; createdAt: string }
 export interface OverviewEvent { taskID: string; taskTitle: string; kind: string; actorType: string; createdAt: string }
 export interface OverviewProject {
