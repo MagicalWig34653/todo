@@ -7,6 +7,7 @@ export type View =
 	| 'today'
 	| 'upcoming'
 	| 'upNext'
+	| 'calendar'
 	| 'search'
 	| 'filters'
 	| 'teams'
@@ -33,6 +34,7 @@ export type View =
 	import ProjectItem from './ProjectItem.svelte';
 	import Bell from '@lucide/svelte/icons/bell';
 	import CalendarCheck from '@lucide/svelte/icons/calendar-check';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import CirclePlus from '@lucide/svelte/icons/circle-plus';
@@ -236,6 +238,7 @@ export type View =
 			{@render navRow('inbox', Inbox, t('nav.inbox'), workspace.inboxCount)}
 			{@render navRow('today', CalendarCheck, t('nav.today'), workspace.todayCount)}
 			{@render navRow('upcoming', CalendarClock, t('nav.upcoming'))}
+			{@render navRow('calendar', CalendarDays, t('nav.calendar'))}
 			{@render navRow('filters', LayoutGrid, t('nav.filters'))}
 			{@render navRow('teams', Users, t('sidebar.teamsEntry'), workspace.invitations.length, '', true)}
 			<li>

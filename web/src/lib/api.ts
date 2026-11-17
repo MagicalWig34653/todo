@@ -278,6 +278,41 @@ export interface PlanningData {
 export interface PlanningTask extends PlanningData {
 	task: Task;
 	position: number;
+	/** contracts/planning-ext.yaml 1.1.0 */
+	plannedMinutes?: number | null;
+	plannedAllDay?: boolean;
+}
+/** `PATCH /v1/tasks/{id}/schedule`: only sent keys change, null clears (planning-ext 1.1.0). */
+export interface ScheduleUpdate {
+	version: number;
+	plannedAt?: string | null;
+	plannedMinutes?: number | null;
+	plannedAllDay?: boolean;
+}
+export type ScheduleConflict = 'after_due' | 'prerequisite_later' | 'prerequisite_open' | 'repository_overlap';
+export interface ScheduleEntry {
+	taskID: string;
+	projectID: string;
+	title: string;
+	status: TaskStatus;
+	version: number;
+	plannedAt?: string | null;
+	plannedMinutes?: number | null;
+	plannedAllDay: boolean;
+	dueAt?: string | null;
+	blocked: boolean;
+	canEdit: boolean;
+	autoStart: boolean;
+	autoStartedAt?: string | null;
+	jobState?: string | null;
+	repositoryKey?: string | null;
+	conflicts: ScheduleConflict[];
+}
+export interface ScheduleResponse {
+	from: string;
+	to: string;
+	truncated: boolean;
+	items: ScheduleEntry[];
 }
 
 export interface Label {
@@ -1029,6 +1064,10 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		today: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/today${query({ timeZone })}`),
 		upcoming: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/upcoming${query({ timeZone })}`),
 		upNext: (timeZone: string) => request<PlanningTask[]>('GET', `/planning/up-next${query({ timeZone })}`),
+		schedule: (from: string, to: string, projectID?: string) =>
+			request<ScheduleResponse>('GET', `/planning/schedule${query({ from, to, projectID })}`),
+		unscheduled: (projectID?: string) => request<PlanningTask[]>('GET', `/planning/unscheduled${query({ projectID })}`),
+		scheduleTask: (taskID: string, body: ScheduleUpdate) => request<PlanningTask>('PATCH', `/tasks/${taskID}/schedule`, body),
 		dependencies: (taskID: string) => request<Task[]>('GET', `/planning/tasks/${taskID}/dependencies`),
 		addDependency: (taskID: string, prerequisiteID: string) =>
 			request<void>('PUT', `/planning/tasks/${taskID}/dependencies`, { prerequisiteID }),
