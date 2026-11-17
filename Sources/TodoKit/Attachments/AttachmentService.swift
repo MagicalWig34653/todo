@@ -87,6 +87,7 @@ struct AttachmentService: Sendable {
               !input.filename.contains("/"), !input.filename.contains("\\")
         else { throw Abort(.badRequest, reason: "invalid_attachment") }
         _ = try store(writeKind)  // 503 attachment_storage_unconfigured before any row exists
+        // Cheap early refusal; the authoritative check repeats under the account lock below.
         if input.taskID == nil { try await Self.checkLooseVoiceLimit(owner: try user.requireID(), db: db) }
         let a = Attachment()
         a.id = UUID(); a.storage = writeKind.rawValue; a.taskID = input.taskID ?? Attachment.noTask; a.ownerID = try user.requireID()
@@ -99,6 +100,11 @@ struct AttachmentService: Sendable {
         session.expiresAt = Date().addingTimeInterval(Self.lifetime); session.uploaded = false
         try await db.transaction { db in
             try await Self.authorize(a, user: user, db: db, role: .edit)
+            if input.taskID == nil {
+                // Serialize concurrent begins of one account so the limit holds right before the insert.
+                try await lockRow(table: User.schema, id: try user.requireID(), on: db)
+                try await Self.checkLooseVoiceLimit(owner: try user.requireID(), db: db)
+            }
             try await a.create(on: db); try await session.create(on: db)
         }
         return UploadCapability(attachmentID: try a.requireID(), uploadURL: "/v1/attachments/\(try a.requireID())/upload", token: token, expiresAt: session.expiresAt)
