@@ -20,16 +20,29 @@ const timeOf = (p: OverviewProject) => {
 	return Number.isNaN(ms) ? -Infinity : ms;
 };
 
-/** Quiet = no activity for 24 h and nothing running; a running card always keeps the project in the active group. */
+const waitingOf = (p: OverviewProject) => p.openQuestions.length + p.pendingReviews.length;
+
+/**
+ * Quiet = nothing running, no open question/review, no session younger than 24 h and no activity for 24 h.
+ * A project that waits for the user is never quiet.
+ */
 export function isQuiet(p: OverviewProject, now: Date): boolean {
-	if (p.runningTasks.length > 0) return false;
+	if (p.runningTasks.length > 0 || waitingOf(p) > 0) return false;
+	if (p.sessions.some((s) => s.ageSeconds * 1000 < QUIET_AFTER_MS)) return false;
 	return now.getTime() - timeOf(p) > QUIET_AFTER_MS;
 }
 
-/** Both groups newest activity first. */
+/** Active: waiting projects first (most waiting items, then newest), then the rest newest first. Quiet: newest first. */
 export function groupProjects(projects: readonly OverviewProject[], now: Date): { active: OverviewProject[]; quiet: OverviewProject[] } {
-	const sorted = [...projects].sort((a, b) => timeOf(b) - timeOf(a));
-	return { active: sorted.filter((p) => !isQuiet(p, now)), quiet: sorted.filter((p) => isQuiet(p, now)) };
+	const byTime = (a: OverviewProject, b: OverviewProject) => timeOf(b) - timeOf(a);
+	const byWaiting = (a: OverviewProject, b: OverviewProject) => {
+		const wa = waitingOf(a), wb = waitingOf(b);
+		if ((wa > 0) !== (wb > 0)) return wa > 0 ? -1 : 1;
+		return wb - wa || byTime(a, b);
+	};
+	const quiet = projects.filter((p) => isQuiet(p, now)).sort(byTime);
+	const active = projects.filter((p) => !isQuiet(p, now)).sort(byWaiting);
+	return { active, quiet };
 }
 
 export const defaultExpanded = (quiet: boolean): boolean => !quiet;
@@ -75,6 +88,12 @@ export function percentOf(task: OverviewRunningTask): number | null {
 
 export function buildSummary(b: OverviewBuild): string {
 	return [b.label, b.platform].filter((x): x is string => !!x).join(' · ') || b.buildID;
+}
+
+/** First 7 characters of the optional build commit, otherwise null. */
+export function buildCommit(b: OverviewBuild): string | null {
+	const c = typeof b.commit === 'string' ? b.commit.trim() : '';
+	return c ? c.slice(0, 7) : null;
 }
 
 export const isEmptyNow = (projects: readonly OverviewProject[]): boolean => projects.length === 0;

@@ -7,7 +7,7 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { liveRefresh, startLiveRefresh } from '#lib/liveRefresh.js';
 	import {
-		allowRefetch, buildSummary, groupProjects, isEmptyNow, isExpanded, isOrphaned, loadExpanded, percentOf, projectStats, saveExpanded, type ExpandedMap
+		allowRefetch, buildCommit, buildSummary, groupProjects, isEmptyNow, isExpanded, isOrphaned, loadExpanded, percentOf, projectStats, saveExpanded, type ExpandedMap
 	} from '#lib/now.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -166,6 +166,7 @@
 						{#each p.builds as b (b.buildID)}
 							<li class="flex flex-wrap items-center gap-2 py-2 text-sm" data-testid="now-build">
 								<span class="font-semibold [overflow-wrap:anywhere]">{buildSummary(b)}</span>
+								{#if buildCommit(b)}<code class="text-muted-foreground font-mono text-[12px]" title={b.commit} data-testid="now-build-commit">{buildCommit(b)}</code>{/if}
 								<span class="text-muted-foreground text-[13px]">{@render time(b.createdAt)}</span>
 							</li>
 						{/each}

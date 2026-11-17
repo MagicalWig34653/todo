@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApi, type OverviewProject } from '../src/lib/api';
 import {
-	EXPANDED_KEY, QUIET_AFTER_MS, allowRefetch, buildSummary, defaultExpanded, groupProjects, isEmptyNow, isExpanded, isOrphaned,
+	EXPANDED_KEY, QUIET_AFTER_MS, allowRefetch, buildSummary, buildCommit, defaultExpanded, groupProjects, isEmptyNow, isExpanded, isOrphaned,
 	loadExpanded, percentOf, projectStats, saveExpanded
 } from '../src/lib/now';
 
@@ -47,6 +47,55 @@ describe('groupProjects', () => {
 	});
 	it('treats an invalid date as quiet', () => {
 		expect(groupProjects([project('x', { lastActivityAt: 'nope' })], NOW).quiet).toHaveLength(1);
+	});
+});
+
+
+describe('waiting projects are never quiet', () => {
+	const old = QUIET_AFTER_MS * 3;
+	it('keeps an old project with an open question or review in the active group', () => {
+		const g = groupProjects([
+			project('q', { lastActivityAt: ago(old), openQuestions: [open('q1')] }),
+			project('r', { lastActivityAt: ago(old), pendingReviews: [open('r1')] }),
+			project('z', { lastActivityAt: ago(old) })
+		], NOW);
+		expect(g.active.map((p) => p.projectID).sort()).toEqual(['q', 'r']);
+		expect(g.quiet.map((p) => p.projectID)).toEqual(['z']);
+	});
+	it('keeps a project with a fresh session active, an old session does not', () => {
+		const ses = (age: number) => [{ sessionName: 's', activity: 'a', updatedAt: ago(age * 1000), ageSeconds: age, orphaned: false }];
+		const g = groupProjects([
+			project('fresh', { lastActivityAt: ago(old), sessions: ses(3600) }),
+			project('stale', { lastActivityAt: ago(old), sessions: ses(QUIET_AFTER_MS / 1000 + 5) })
+		], NOW);
+		expect(g.active.map((p) => p.projectID)).toEqual(['fresh']);
+		expect(g.quiet.map((p) => p.projectID)).toEqual(['stale']);
+	});
+	it('sorts waiting projects first, by waiting count and then by activity, before newer calm projects', () => {
+		const g = groupProjects([
+			project('new', { lastActivityAt: ago(1000) }),
+			project('w1-old', { lastActivityAt: ago(old), pendingReviews: [open('a')] }),
+			project('w2-old', { lastActivityAt: ago(old * 2), openQuestions: [open('b'), open('c')] }),
+			project('w1-new', { lastActivityAt: ago(5000), openQuestions: [open('d')] })
+		], NOW);
+		expect(g.active.map((p) => p.projectID)).toEqual(['w2-old', 'w1-new', 'w1-old', 'new']);
+	});
+	it('expands waiting projects by default and lets the stored user choice win', () => {
+		const p = project('w', { lastActivityAt: ago(old), pendingReviews: [open('a')] });
+		const quiet = groupProjects([p], NOW).quiet.includes(p);
+		expect(quiet).toBe(false);
+		expect(isExpanded({}, 'w', quiet)).toBe(true);
+		expect(isExpanded({ w: false }, 'w', quiet)).toBe(false);
+	});
+});
+
+describe('build commit', () => {
+	it('shows the first 7 characters only when present', () => {
+		const b = { taskID: '1', buildID: 'b', createdAt: '' };
+		expect(buildCommit(b)).toBeNull();
+		expect(buildCommit({ ...b, commit: '' })).toBeNull();
+		expect(buildCommit({ ...b, commit: 'abcdef0123456789' })).toBe('abcdef0');
+		expect(buildCommit({ ...b, commit: ' abc ' })).toBe('abc');
 	});
 });
 
