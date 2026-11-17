@@ -4,6 +4,7 @@ export type View =
 	| 'forYou'
 	| 'inbox'
 	| 'overview'
+	| 'now'
 	| 'today'
 	| 'upcoming'
 	| 'upNext'
@@ -43,6 +44,7 @@ export type View =
 	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import PanelLeft from '@lucide/svelte/icons/panel-left';
+	import Radio from '@lucide/svelte/icons/radio';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Search from '@lucide/svelte/icons/search';
 	import Users from '@lucide/svelte/icons/users';
@@ -235,6 +237,7 @@ export type View =
 			{@render navRow('forYou', Sparkles, t('nav.forYou'), workspace.attentionCount)}
 			{@render navRow('search', Search, t('nav.search'))}
 			{@render navRow('overview', Gauge, t('nav.overview'), workspace.attentionCount)}
+			{@render navRow('now', Radio, t('nav.now'))}
 			{@render navRow('inbox', Inbox, t('nav.inbox'), workspace.inboxCount)}
 			{@render navRow('today', CalendarCheck, t('nav.today'), workspace.todayCount)}
 			{@render navRow('upcoming', CalendarClock, t('nav.upcoming'))}

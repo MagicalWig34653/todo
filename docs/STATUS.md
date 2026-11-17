@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 18.11.2026: Seite „Jetzt“, PWA (Karte `F6DF71C3`, Layout A, nicht gepusht)
+
+- Neu: Route `/now` (Seitenleiste neben Überblick), `web/src/lib/now.ts` (Gruppierung, Kennzahlen, Aufklapp-Zustand in `localStorage` `todo.nowExpanded` mit try/catch, Refetch-Bremse), `components/NowView.svelte`, `i18n/de-now.ts`, `api.overviewNow()` (`GET /v1/overview/now`, Typen `OverviewProject` u. a.).
+- Zeile je Projekt als `details/summary` (Tastatur nativ), Kennzahlen als Text-Badges; aktive Projekte standardmäßig auf, „Ruhig (n Projekte ohne Aktivität in den letzten 24 Std.)“ zu. Ruhig = letzte Aktivität älter als 24 h und keine laufende Karte. Sektionen Läuft, Sessions (verwaist >30 Min. als Text), Wartet auf dich (öffnet Kartendetail), Builds, Ereignisse; leere entfallen. Leerzustand „Gerade passiert nichts“, Fehlertext mit „Erneut versuchen“.
+- Live: zentraler Live-Refresh (`startLiveRefresh`); im Poll-Modus (alter Server) höchstens alle 30 s ein Refetch; Altersangaben aktualisieren sich lokal alle 30 s ohne Abruf.
+- Grenzen: Der Vertrag liefert keinen Prozentwert und keinen Build-Status/Commit; die Fortschrittsleiste (`role=progressbar`) erscheint nur, wenn der Server ein optionales `percent` sendet (Backend ergänzen), Builds zeigen Label und Plattform. Ruhige Projekte mit offenen Punkten stehen unter „Ruhig“ (wie in der Skizze).
+- Prüfung: vitest 449 grün (neu `tests/now.test.ts`, 12), `npm run build` ok, `e2e/now.spec.ts` 7 grün (Chromium, echtes Backend, SQLite; Ruhig-Projekt und verwaiste Session per Antwort-Umschreibung im Browser, da die API nichts rückdatieren kann). `npm run check` nicht im Worktree gelaufen. Screenshots: `docs/screenshots/jetzt/`.
+
 ## Nachtrag 17.11.2026: Kalender Stufe B, PWA (Karte `8CECAD24`, Branch `worktree-agent-a181db80f6998a4f7`, nicht gepusht)
 
 - Neu: Route `/calendar` ("Kalender", Seitenleiste unter "Anstehend"), `CalendarView.svelte` (Woche/Monat, Europe/Berlin, Seitenleiste "Ohne Termin", Ziehen auf Zeitfenster/Ganztägig/zurück in die Seitenleiste, Einrasten 15 Minuten), `CalendarScheduleDialog.svelte` ("Start und Dauer"), Logik in `web/src/lib/calendar.ts` (Berlin-Zeit inkl. Sommerzeit-Lücke, Bereiche, Blocklayout, Drop-/Tastaturpläne, Konflikttexte, optimistisches Schreiben mit Rückgängig), API `schedule`, `unscheduled`, `scheduleTask` gegen `contracts/planning-ext.yaml` 1.1.0. Nur Karten mit `canEdit` und nicht erledigt sind ziehbar; 409 zeigt deutsche Meldung, rollt zurück und lädt neu; Tastatur: Pfeile 15 Minuten/Tag, Umschalt+Pfeil Dauer, Eingabe öffnet Dialog; `aria-live`. `Timestamp`/`formatTimestamp` für Fristen wiederverwendet. Kein Autostart-UI (Stufe C).

@@ -5,7 +5,7 @@ import { buildCardParam, parseCardParam, type CardRef } from './cardRef.js';
 import { DEFAULT_TAB, parseCardTab, type CardTab } from './cardTabs.js';
 
 export type RouteView =
-	| 'project' | 'forYou' | 'inbox' | 'overview' | 'today' | 'upcoming' | 'upNext' | 'calendar' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account' | 'help';
+	| 'project' | 'forYou' | 'inbox' | 'overview' | 'now' | 'today' | 'upcoming' | 'upNext' | 'calendar' | 'search' | 'filters' | 'teams' | 'agents' | 'activity' | 'account' | 'help';
 
 export type ProjectSub = 'list' | 'board' | 'overview' | 'comments' | 'graph';
 
@@ -28,7 +28,7 @@ export interface Route {
 
 const SIMPLE: Record<string, RouteView> = {
 	'for-you': 'forYou', today: 'today', inbox: 'inbox', upcoming: 'upcoming', 'up-next': 'upNext', calendar: 'calendar', search: 'search',
-	overview: 'overview', activity: 'activity', agents: 'agents', teams: 'teams'
+	overview: 'overview', now: 'now', activity: 'activity', agents: 'agents', teams: 'teams'
 };
 /** Old German paths: still understood, the app replaces the URL with the English one (bookmarks, mail links, app deep links). */
 const LEGACY_SIMPLE: Record<string, RouteView> = {
@@ -37,7 +37,7 @@ const LEGACY_SIMPLE: Record<string, RouteView> = {
 };
 const PATH_OF: Partial<Record<RouteView, string>> = {
 	forYou: '/for-you', today: '/today', inbox: '/inbox', upcoming: '/upcoming', upNext: '/up-next', calendar: '/calendar', search: '/search',
-	overview: '/overview', activity: '/activity', agents: '/agents', teams: '/teams', filters: '/filter', account: '/settings', help: '/help'
+	overview: '/overview', now: '/now', activity: '/activity', agents: '/agents', teams: '/teams', filters: '/filter', account: '/settings', help: '/help'
 };
 const SUBS: ProjectSub[] = ['list', 'board', 'overview', 'comments', 'graph'];
 const LEGACY_SUBS: Record<string, ProjectSub> = { liste: 'list', ueberblick: 'overview', kommentare: 'comments' };
@@ -89,7 +89,7 @@ export function buildPath(r: Route): string {
 }
 
 export const ROUTE_TITLES: Record<RouteView | 'notfound', string> = {
-	project: 'Projekt', forYou: 'Für dich', inbox: 'Eingang', overview: 'Überblick', today: 'Heute', upcoming: 'Anstehend', upNext: 'Als Nächstes', calendar: 'Kalender',
+	project: 'Projekt', forYou: 'Für dich', inbox: 'Eingang', overview: 'Überblick', now: 'Jetzt', today: 'Heute', upcoming: 'Anstehend', upNext: 'Als Nächstes', calendar: 'Kalender',
 	search: 'Suche', filters: 'Filter und Labels', teams: 'Teams', agents: 'Agenten', activity: 'Aktivität', account: 'Einstellungen', help: 'Hilfe', notfound: 'Nicht gefunden'
 };
 
