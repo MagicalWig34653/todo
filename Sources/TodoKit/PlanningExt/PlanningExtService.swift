@@ -98,12 +98,30 @@ struct PlanningService: Sendable {
         return false
     }
 
-    func update(_ id: UUID, body: UpdateTaskRequest, reconcileColumn: Bool = true) async throws -> TaskDTO {
+    /// `integrationGrant` is set by MCP (an agent acts, not the person). Agents never settle a card with an open review
+    /// (that is `decide_review` under the brain mandate, ADR 0032) and never move a card with an open review or question
+    /// to another project; the activity is booked as the integration, not as the person.
+    func update(_ id: UUID, body: UpdateTaskRequest, reconcileColumn: Bool = true, integrationGrant: UUID? = nil) async throws -> TaskDTO {
         try await lock()
         try await lockRow(table: TodoTask.schema, id: id, on: db)
         let t = try await task(id, role: .edit)
         guard t.version == body.version else { throw Abort(.conflict, reason: "version_conflict") }
         let before = TaskSnapshot(t)
+        if integrationGrant != nil {
+            let pendingReviews = try await TaskReview.query(on: db).filter(\.$taskID == id).filter(\.$state == "pending").count()
+            // Withdrawing its own review by settling the card stays possible; settling another connection's review is a decision.
+            if body.status == "done", t.status != "done", let grant = integrationGrant {
+                let foreign = try await TaskReview.query(on: db).filter(\.$taskID == id).filter(\.$state == "pending").all()
+                    .filter { !($0.requestedByType == .integration && $0.requestedByID == grant) }
+                if !foreign.isEmpty { throw Abort(.forbidden, reason: "brain_mandate_required") }
+            }
+            if let target = body.projectID, target != t.projectID {
+                let openQuestions = try await TaskQuestion.query(on: db).filter(\.$taskID == id).filter(\.$state == "open").count()
+                if pendingReviews > 0 || openQuestions > 0 { throw Abort(.forbidden, reason: "open_review_or_question") }
+            }
+        }
+        let actorType: ActivityActorType = integrationGrant == nil ? .person : .integration
+        let actorID = try integrationGrant ?? user.requireID()
         if let title = body.title {
             let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest, reason: "invalid_title") }
@@ -145,9 +163,9 @@ struct PlanningService: Sendable {
         }
         t.version += 1
         try await t.save(on: db)
-        try await appendTaskChangeActivity(t, from: before, actorID: user.requireID(), on: db)
+        try await appendTaskChangeActivity(t, from: before, actorID: actorID, actorType: actorType, on: db)
         if t.status == "done", before.status != "done" {
-            try await WorkflowMirror.withdrawPendingReviews(taskID: id, actorType: .person, actorID: user.requireID(), on: db)
+            try await WorkflowMirror.withdrawPendingReviews(taskID: id, actorType: actorType, actorID: actorID, on: db)
         }
         if t.status == "done", let p = try await TaskPlanning.find(id, on: db) { try await spawnNext(t, planning: p) }
         return try TaskDTO(t)

@@ -185,7 +185,7 @@ Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflic
 ## Reviews: Sammelfreigabe und Brain-Empfehlung (14.11.2026, Karte 9791E2C3)
 
 - `POST /v1/reviews/decisions` (bis 50 Reviews, gemeinsame Notiz, Teilergebnis je Review, Vertrag `contracts/command-center.yaml` 1.5.0) gibt es bewusst nur für REST/PWA, kein MCP-Werkzeug und kein neuer Scope. Gründe: (1) Die Sammelfreigabe ist eine Menschenentscheidung ("ich habe die Liste gesehen"); Agenten sollen nicht in Masse entscheiden, `decide_review` bleibt die Einzelentscheidung (verweigert eigene Anfragen, `cannot_decide_own_review`). (2) Ein Massenwerkzeug würde die Wirkung eines Agenten, der sich über eine Verbindung als Reviewer ausgibt, vervielfachen. (3) Rechte und Fachpfad sind identisch: jede Review läuft durch `WorkflowService.decideReview`; `decideReviews` (Datei `ReviewBatch.swift`) prüft nur Sichtbarkeit und Zustand vorab und übersetzt Fehler in Ergebniscodes.
-- `brainRecommended` ist abgeleitet (keine Spalte, keine Migration): Kommentar im Chat der Review mit `authorKind=agent` und `authorLabel` "brain". Er erscheint in `GET /v1/reviews`, `list_reviews` und `list_pending_reviews` (additives Feld, nur in Listen). Der Filter `?brainRecommended=true|false` ist nur REST; ein MCP-Filterargument fehlt bewusst, Agenten filtern das Feld selbst. Darauf baut die Vollmacht-Karte 11DA4A38 auf: "Brain empfohlen" ist der einzige Maßstab für eine spätere automatische Freigabe, die Empfehlung bleibt als Kommentar nachvollziehbar.
+- `brainRecommended` ist abgeleitet (keine Spalte, keine Migration): Kommentar im Chat der Review mit `authorKind=agent` und `authorLabel` "brain". Er erscheint in `GET /v1/reviews`, `list_reviews` und `list_pending_reviews` (additives Feld, nur in Listen). Der Filter `?brainRecommended=true|false` ist nur REST; ein MCP-Filterargument fehlt bewusst, Agenten filtern das Feld selbst. Darauf baut die Vollmacht-Karte 11DA4A38 auf: "Brain empfohlen" ist der einzige Maßstab für eine spätere automatische Freigabe, die Empfehlung bleibt als Kommentar nachvollziehbar. **Seit 1.29.0 (ADR 0032):** das Label allein genügt nicht mehr; der Marker hängt am Kommentar der Verbindung mit aktivem Brain-Mandat für das Projekt der Karte (Urheber aus der Aktivität `comment.created`).
 
 ## Review-Undo (ADR 0027)
 
@@ -202,7 +202,7 @@ Stand 3.11.2026, Code `Sources/TodoKit/MCP/MCPAccountTools.swift`, Tests `MCPAcc
 | `update_settings` | account:write | A | `revision` (Pflicht, aus `get_settings`), optional `colorScheme`, `accent`, `accentCustomHex` (oder null), `glow`; teilweise Änderung | `version_conflict`, `invalid_revision`, `invalid_preferences` |
 | `get_notification_prefs` | account:read | A | keine; Push-Kategorien, `showContent`, `badge` | |
 | `update_notification_prefs` | account:write | A | optional `categories` (Name zu Bool), `showContent`, `badge` | `invalid_category`, `invalid_categories`, `invalid_arguments` |
-| `get_connection` | keiner | A | keine; `{client, scopes, projects:[{id,name}], refreshExpiresAt}`, nie Tokens | |
+| `get_connection` | keiner | A | keine; `{client, name, scopes, projects:[{id,name}], brainMandate:{active, projectIDs}, refreshExpiresAt}`, nie Tokens; `brainMandate` nur lesend (1.29.0) | |
 | `list_users` | admin:read | A | optional `limit` 1..500; nur Administratoren | `forbidden`, `invalid_limit` |
 | `list_invitations` | admin:read | A | keine; Status open/used/expired, nie Codes; nur Administratoren | `forbidden` |
 
@@ -309,3 +309,9 @@ Gleicher Fachpfad für REST (Lesen) und MCP (Melden, Lesen): `LiveSessionService
 ## Sprachanhänge (T1 Schritt 1, 13.11.2026)
 
 Rolle `voice` mit `audio/mp4` und `audio/wav` (Vertrag `contracts/attachments.yaml` 1.1.0) gibt es bewusst nur im REST-Anhangsweg für die App. Die MCP-Werkzeuge `begin_task_upload`/`add_attachment` bieten Rolle und Medientypen weiter nur wie bisher an (Schema-Enum unverändert); Agenten lesen Sprachanhänge später über den Kanal #brain (T1 Schritt 2). Fachregeln (Magic Bytes, 5 MiB, 120 s aus dem Container) liegen in `AttachmentService`, nicht im Controller.
+
+## Brain-Vollmacht (ADR 0032, Handbuch 1.29.0)
+
+- Mandat verwalten gibt es bewusst nur als REST mit Personen-Sitzung (`GET/PUT/DELETE /v1/settings/brain-mandate`, `GET .../audit`, Vertrag `contracts/connections.yaml` 1.1.0), kein MCP-Schreibwerkzeug und kein neuer Scope: Ein Agent darf sich keine Vollmacht geben. MCP kennt nur das lesende `get_connection.brainMandate`.
+- `decide_review` und `answer_question` bekommen den Parameter `quote` (Pflicht) und verlangen das Mandat der aufrufenden Verbindung. Fachregeln liegen zentral in `WorkflowService` (`BrainAuthority.swift`), REST-Personen sind nicht betroffen. Neue Fehler: `brain_mandate_required`, `outside_brain_mandate`, `quote_required`, `invalid_quote`.
+- Verhaltensänderung: Verbindungen ohne Mandat entscheiden fremde Reviews/Fragen nicht mehr.

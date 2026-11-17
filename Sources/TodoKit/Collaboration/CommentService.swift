@@ -19,6 +19,20 @@ enum CommentService {
         return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    static let reservedLabelPrefix = "Brain im Auftrag von"
+
+    /// Integrations (OAuth grants) change only comments they wrote themselves: the author of a comment is the person, so the
+    /// writing connection is read from the `comment.created` activity. Decision comments of the brain mandate are immutable.
+    static func ensureMutable(_ c: TaskComment, integrationGrant: UUID?, on db: any Database) async throws {
+        if c.authorLabel?.lowercased().hasPrefix(reservedLabelPrefix.lowercased()) == true, c.authorKind == "agent" {
+            throw Abort(.forbidden, reason: "decision_comment_immutable")
+        }
+        guard let integrationGrant else { return }
+        let created = try await ActivityEvent.query(on: db).filter(\.$taskID == c.taskID).filter(\.$kind == "comment.created")
+            .filter(\.$subjectID == c.requireID()).first()
+        guard let created, created.actorType == .integration, created.actorID == integrationGrant else { throw Abort(.forbidden, reason: "not_comment_author") }
+    }
+
     /// Optional thread target. A question or review must belong to the same task.
     struct Target: Sendable { var questionID: UUID? = nil; var reviewID: UUID? = nil }
 
@@ -36,13 +50,15 @@ enum CommentService {
     static func create(
         taskID: UUID, user: User, body: String, idempotencyKey: String?,
         actor: (type: ActivityActorType, id: UUID)? = nil, target: Target = Target(), agentLabel: String? = nil,
-        scope: @escaping @Sendable (TodoTask) throws -> Void = { _ in }, on database: any Database
+        scope: @escaping @Sendable (TodoTask) throws -> Void = { _ in }, allowReservedLabel: Bool = false, on database: any Database
     ) async throws -> CommentDTO {
         try scope(try await ProjectAccess(user: user, db: database).task(taskID, role: .comment))
         let body = try text(body)
         let label = try agentLabel.map { raw -> String in
             let v = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !v.isEmpty, v.count <= 100 else { throw Abort(.badRequest, reason: "invalid_agent_name") }
+            // The label of decisions under the brain mandate (ADR 0032) is written by the server only.
+            if !allowReservedLabel, v.lowercased().hasPrefix(reservedLabelPrefix.lowercased()) { throw Abort(.badRequest, reason: "invalid_agent_name") }
             return v
         }
         let hash = try keyHash(idempotencyKey)
@@ -90,6 +106,7 @@ enum CommentService {
             guard let c = try await TaskComment.find(commentID, on: db), c.taskID == taskID else { throw Abort(.notFound) }
             guard c.authorID == userID else { throw Abort(.forbidden, reason: "not_comment_author") }
             if agentOnly, c.authorKind != "agent" { throw Abort(.forbidden, reason: "not_agent_comment") }
+            try await ensureMutable(c, integrationGrant: actor?.type == .integration ? actor?.id : nil, on: db)
             guard c.version == version else { throw Abort(.conflict, reason: "version_conflict") }
             c.body = body; c.version += 1
             try await c.save(on: db)
@@ -114,6 +131,7 @@ enum CommentService {
                 do { _ = try await ProjectAccess(user: user, db: db).task(taskID, role: .manage) }
                 catch { throw Abort(.forbidden, reason: "not_comment_author") }
             }
+            try await ensureMutable(c, integrationGrant: actor?.type == .integration ? actor?.id : nil, on: db)
             if let version, c.version != version { throw Abort(.conflict, reason: "version_conflict") }
             try await c.delete(on: db)
             try await appendActivity(taskID: taskID, actorType: actor?.type ?? .person, actorID: actor?.id ?? userID, kind: "comment.deleted", subjectID: c.id, on: db)

@@ -77,7 +77,7 @@ extension MCPController {
             _ = try await self.project(current.projectID, user: user, grant: grant, db: tx, role: .edit)
             if let target = body.projectID { _ = try await self.project(target, user: user, grant: grant, db: tx, role: .edit) }
             // REST path (PATCH /v1/tasks/{id}): activity, column reconcile, link clean-up on a move, recurrence on completion.
-            return try await PlanningService(user: user, db: tx).update(id, body: body)
+            return try await PlanningService(user: user, db: tx).update(id, body: body, integrationGrant: grant.requireID())
         }
         return try .encoded(dto)
     }

@@ -44,16 +44,16 @@ struct TaskSnapshot {
 
 /// Appends one event per changed aspect (content, status, project). The caller holds the task row lock
 /// inside the mutation's transaction and has checked ProjectAccess.
-func appendTaskChangeActivity(_ task: TodoTask, from before: TaskSnapshot, actorID: UUID, on db: any Database) async throws {
+func appendTaskChangeActivity(_ task: TodoTask, from before: TaskSnapshot, actorID: UUID, actorType: ActivityActorType = .person, on db: any Database) async throws {
     let id = try task.requireID()
     if task.title != before.title || task.details != before.details {
-        try await appendActivity(taskID: id, actorType: .person, actorID: actorID, kind: "task.updated", subjectID: nil, on: db)
+        try await appendActivity(taskID: id, actorType: actorType, actorID: actorID, kind: "task.updated", subjectID: nil, on: db)
     }
     if task.status != before.status {
-        try await appendActivity(taskID: id, actorType: .person, actorID: actorID, kind: "task.status_changed", subjectID: nil, on: db)
+        try await appendActivity(taskID: id, actorType: actorType, actorID: actorID, kind: "task.status_changed", subjectID: nil, on: db)
     }
     if task.projectID != before.projectID {
-        try await appendActivity(taskID: id, actorType: .person, actorID: actorID, kind: "task.moved", subjectID: task.projectID, on: db)
+        try await appendActivity(taskID: id, actorType: actorType, actorID: actorID, kind: "task.moved", subjectID: task.projectID, on: db)
     }
 }
 

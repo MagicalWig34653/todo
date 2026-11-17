@@ -4,6 +4,7 @@ import Vapor
 extension MCPController {
     static let taskIDField = Schema.uuid("Task id.")
     static let agentNameField = Schema.string("Optional name of this agent shown on the board (for example 'claude-code@build-mac', up to 100 characters).", maxLength: 100)
+    static let quoteField = Schema.string("The person's own words that authorise this decision (required, up to 2000 characters). Only a connection that holds the person's brain mandate (get_connection.brainMandate.active) may decide at all.", maxLength: 2000)
     static let optionalProject = Schema.uuid("Optional project id. Omit for all granted projects.")
     static let currentProjectID = Schema.uuid("The CURRENT project (projectID from .todolino.json). Strongly recommended: the answer then names it as currentProject and is limited to it (and its sub-projects). Without it the answer covers all projects of the account and carries a hint.")
     static let accountScope = Schema.string("With projectID: project (default) filters to the current project; account keeps all projects but marks entries of other projects with foreignProject=true (never work on those).", values: ["project", "account"])
@@ -119,8 +120,9 @@ extension MCPController {
              description: "Read one question: state open|answered|withdrawn, the answer, who answered and when. Poll this to find out whether your question was answered.",
              properties: ["questionID": Schema.uuid("Question id.")], required: ["questionID"]),
         Tool(name: "answer_question", scope: "tasks:write",
-             description: "Answer a question on behalf of the user who is steering you in conversation. Refused for questions asked by this same connection (cannot_answer_own_question): the person decides, not the asking agent. Normally people answer in the app.",
-             properties: ["questionID": Schema.uuid("Question id."), "answer": Schema.string("The answer text; must equal one of the options if the question has options.", maxLength: 4000)],
+             description: "Answer a question on behalf of the user who is steering you in conversation. Needs the person's brain mandate for this connection and project (brain_mandate_required / outside_brain_mandate) and a quote of their words (quote_required). Refused for questions asked by this same connection (cannot_answer_own_question). Normally people answer in the app.",
+             properties: ["questionID": Schema.uuid("Question id."), "answer": Schema.string("The answer text; must equal one of the options if the question has options.", maxLength: 4000),
+                          "quote": quoteField],
              required: ["questionID", "answer"]),
         Tool(name: "request_review", scope: "tasks:write",
              description: "Ask a person to review finished work: sets the task to in_review, moves it to the 'Review' column and shows it as 'Review fällig' on the overview. Summarise what changed, how you verified it and what to look at. Attach build screenshots first. Only for a visible result, risk, rollout or decision; proven-finished work with nothing to check is closed with update_task status=done after a post_progress with the proof.",
@@ -133,10 +135,11 @@ extension MCPController {
              description: "List pending review requests (pass projectID = current project; the answer is {currentProject, hint?, items}, other projects only with scope=account and foreignProject=true): task, project, summary, who requested, optional named reviewer. Includes reviews of local runner jobs.",
              properties: ["projectID": currentProjectID, "scope": accountScope]),
         Tool(name: "decide_review", scope: "tasks:write",
-             description: "Accept or request changes on a pending review on behalf of the user steering you. accept marks the task done; request_changes returns it to in_progress with your note. Refused for reviews requested by this same connection (cannot_decide_own_review).",
+             description: "Accept or request changes on a pending review on behalf of the user steering you. accept marks the task done; request_changes returns it to in_progress with your note. Needs the person's brain mandate for this connection and project (brain_mandate_required / outside_brain_mandate) and a quote of their words (quote_required). Refused for reviews requested by this same connection (cannot_decide_own_review).",
              properties: ["taskID": taskIDField,
                           "decision": Schema.string("accept or request_changes.", values: ["accept", "request_changes"]),
-                          "note": Schema.string("Optional note, required in practice for request_changes (up to 4000 characters).", maxLength: 4000)],
+                          "note": Schema.string("Optional note, required in practice for request_changes (up to 4000 characters).", maxLength: 4000),
+                          "quote": quoteField],
              required: ["taskID", "decision"]),
         Tool(name: "apply_agent_workflow_columns", scope: "tasks:write",
              description: "Create the standard agent workflow columns (Backlog, Bereit, In Arbeit, Frage offen, Review, Erledigt) on a project that has no own columns; existing tasks are placed by status. Fails with columns_exist otherwise. Ask the user before changing a project's board.",
@@ -303,7 +306,8 @@ extension MCPController {
         case "get_question":
             return try .encoded(try await service.question(uuid(a["questionID"])))
         case "answer_question":
-            return try .encoded(try await service.answer(uuid(a["questionID"]), value: requiredString(a, "answer"), actor: actor))
+            return try .encoded(try await service.answer(uuid(a["questionID"]), value: requiredString(a, "answer"),
+                quote: optionalString(a, "quote"), actor: actor))
         case "request_review":
             let body = RequestReviewRequest(summary: try requiredString(a, "summary"), reviewerID: try optionalUUID(a, "reviewerID"),
                 agentName: try optionalString(a, "agentName"))
@@ -314,7 +318,7 @@ extension MCPController {
             return context.wrap(items: context.markRows(try .encoded(try await service.reviews(projectID: context.filterProjectID, state: "pending"))))
         case "decide_review":
             return try .encoded(try await service.decideReview(uuid(a["taskID"]), decision: requiredString(a, "decision"),
-                note: optionalString(a, "note"), actor: actor))
+                note: optionalString(a, "note"), quote: optionalString(a, "quote"), actor: actor))
         case "apply_agent_workflow_columns":
             let projectID = try uuid(a["projectID"])
             return try await db.transaction { tx in

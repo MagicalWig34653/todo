@@ -20,23 +20,32 @@ struct ReviewBatchResponse: Content {
     let summary: ReviewBatchSummaryDTO
 }
 
-/// "Recommended by the brain": a comment in the chat of a review whose author kind is `agent` and whose label is
-/// `brain` (case-insensitive, trimmed). No column and no migration: the marker is the comment itself, so it carries
-/// the recommendation text (or Lino's quote) with it. The agent writes it through `add_comment {reviewID, agentName: "brain"}`.
-/// A person can never set the marker (authorKind is server-assigned from the actor). The proxy-authority card builds on this.
+/// "Recommended by the brain" (ADR 0032): a comment in the chat of a review that was written by the person's mandated
+/// connection (OAuth grant with an active brain mandate that covers the project of the card). The label `brain` alone
+/// no longer counts, any connection can set it. The author grant is taken from the `comment.created` activity event,
+/// which the server writes from the authenticated actor. No column and no migration; the comment carries the recommendation text.
 enum ReviewBrain {
-    static let label = "brain"
-
-    static func isBrain(kind: String?, label: String?) -> Bool {
-        kind == "agent" && label?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == Self.label
-    }
-
-    /// IDs of the reviews (of the given tasks) that carry a brain comment.
-    static func reviewIDs(taskIDs: [UUID], on db: any Database) async throws -> Set<UUID> {
-        guard !taskIDs.isEmpty else { return [] }
-        let rows = try await TaskComment.query(on: db).filter(\.$taskID ~~ taskIDs).filter(\.$reviewID != .null)
+    /// IDs of the reviews (of the given tasks) that carry a comment of the mandated connection.
+    static func reviewIDs(taskIDs: [UUID], userID: UUID, on db: any Database) async throws -> Set<UUID> {
+        guard !taskIDs.isEmpty,
+              let mandate = try await BrainMandate.query(on: db).filter(\.$userID == userID).filter(\.$revokedAt == .null).first(),
+              let grant = try await OAuthGrant.find(mandate.grantID, on: db), !grant.revoked, grant.userID == userID else { return [] }
+        let covered = Set(try await TodoTask.query(on: db).filter(\.$id ~~ taskIDs).all()
+            .filter { mandate.projects.contains($0.projectID) }.compactMap(\.id))
+        guard !covered.isEmpty else { return [] }
+        let comments = try await TaskComment.query(on: db).filter(\.$taskID ~~ Array(covered)).filter(\.$reviewID != .null)
             .filter(\.$authorKind == "agent").all()
-        return Set(rows.compactMap { isBrain(kind: $0.authorKind, label: $0.authorLabel) ? $0.reviewID : nil })
+        guard !comments.isEmpty else { return [] }
+        let commentIDs = comments.compactMap(\.id)
+        let authored = Set(try await ActivityEvent.query(on: db).filter(\.$kind == "comment.created").filter(\.$actorType == .integration)
+            .filter(\.$actorID == mandate.grantID).filter(\.$subjectID ~~ commentIDs).all().compactMap(\.subjectID))
+        // Only comments written since the mandate was (re-)granted count, and never on a review the mandated connection requested itself.
+        let candidates = comments.filter { c in (c.id.map(authored.contains) ?? false) && (c.createdAt.map { $0 >= mandate.updatedAt } ?? false) }
+        let reviewIDs = Set(candidates.compactMap(\.reviewID))
+        guard !reviewIDs.isEmpty else { return [] }
+        let own = Set(try await TaskReview.query(on: db).filter(\.$id ~~ Array(reviewIDs)).filter(\.$requestedByType == .integration)
+            .filter(\.$requestedByID == mandate.grantID).all().compactMap(\.id))
+        return reviewIDs.subtracting(own)
     }
 }
 

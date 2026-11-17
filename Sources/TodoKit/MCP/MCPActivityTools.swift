@@ -116,7 +116,11 @@ extension MCPController {
         case "delete_comment":
             let taskID = try uuid(a["taskID"])
             _ = try await task(taskID, user: user, grant: grant, db: db, role: .comment)
-            return try await confirm(pending(["taskID": taskID.uuidString, "commentID": uuid(a["commentID"]).uuidString]))
+            // An agent may only ask to delete its own comments; decision comments are never deletable (checked again on execution).
+            let commentID = try uuid(a["commentID"])
+            guard let existing = try await TaskComment.find(commentID, on: db), existing.taskID == taskID else { throw Abort(.notFound) }
+            try await CommentService.ensureMutable(existing, integrationGrant: grant.requireID(), on: db)
+            return try await confirm(pending(["taskID": taskID.uuidString, "commentID": commentID.uuidString]))
         case "list_project_comments":
             let id = try uuid(a["projectID"])
             let count = try limit(100, max: 200)
@@ -219,6 +223,7 @@ extension ConfirmableActions {
         let taskID = try uuidArg(args, "taskID"), commentID = try uuidArg(args, "commentID")
         let task = try await ProjectAccess(user: user, db: db).task(taskID, role: .comment)
         guard let c = try await TaskComment.find(commentID, on: db), c.taskID == taskID else { throw Abort(.notFound) }
+        try await CommentService.ensureMutable(c, integrationGrant: nil, on: db)
         if c.authorID != (try user.requireID()) {
             do { _ = try await ProjectAccess(user: user, db: db).task(taskID, role: .manage) } catch { throw Abort(.forbidden, reason: "not_comment_author") }
         }

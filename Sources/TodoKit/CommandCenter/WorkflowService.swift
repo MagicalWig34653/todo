@@ -309,30 +309,44 @@ struct WorkflowService: Sendable {
     }
 
     /// Answer a question. Runner-backed questions delegate to `AgentService.answer` (same rules as the runner flow).
-    func answer(_ questionID: UUID, value raw: String, actor: WorkflowActor, freeText: Bool = false) async throws -> QuestionDTO {
+    func answer(_ questionID: UUID, value raw: String, quote: String? = nil, actor: WorkflowActor, freeText: Bool = false) async throws -> QuestionDTO {
         guard let initial = try await TaskQuestion.find(questionID, on: db) else { throw Abort(.notFound) }
-        _ = try await readableTask(initial.taskID, role: .comment)
+        let readable = try await readableTask(initial.taskID, role: .comment)
         let value = try Self.text(raw, reason: "invalid_answer")
         if let agentQuestionID = initial.agentQuestionID {
-            _ = try await AgentService.answer(questionID: agentQuestionID, value: value, user: user, freeText: freeText, on: db)
-            guard let fresh = try await TaskQuestion.find(questionID, on: db) else { throw Abort(.notFound) }
-            return try QuestionDTO(fresh)
+            // One transaction: mandate check, job transition, audit row and comment commit or roll back together.
+            let user = self.user
+            return try await db.transaction { tx in
+                try await lockSharingGraph(on: tx)
+                try await lockRow(table: TodoTask.schema, id: initial.taskID, on: tx)
+                let authority = try await brainAuthority(for: actor, projectID: readable.projectID, quote: quote, on: tx)
+                _ = try await AgentService.answer(questionID: agentQuestionID, value: value, user: user, freeText: freeText, on: tx)
+                guard let fresh = try await TaskQuestion.find(questionID, on: tx) else { throw Abort(.notFound) }
+                if let authority {
+                    try await recordBrainDecision(authority, kind: "question.answered", task: readable, subjectID: questionID, note: value, actor: actor, on: tx)
+                }
+                return try QuestionDTO(fresh)
+            }
         }
         let owner = user, userID = try user.requireID()
         return try await mutate(initial.taskID, role: .comment) { task, tx in
             guard let q = try await TaskQuestion.find(questionID, on: tx) else { throw Abort(.notFound) }
+            if actor.type == .integration, q.askedByType == .integration, q.askedByID == actor.id {
+                throw Abort(.forbidden, reason: "cannot_answer_own_question")
+            }
+            let authority = try await brainAuthority(for: actor, projectID: task.projectID, quote: quote, on: tx)
             if q.state == "answered" {
                 guard q.answer == value, q.answeredBy == userID else { throw Abort(.conflict, reason: "question_already_answered") }
                 return try QuestionDTO(q)
             }
             guard q.state == "open" else { throw Abort(.conflict, reason: "question_not_open") }
-            if actor.type == .integration, q.askedByType == .integration, q.askedByID == actor.id {
-                throw Abort(.forbidden, reason: "cannot_answer_own_question")
-            }
             if !freeText, !q.options.isEmpty, !q.options.contains(value) { throw Abort(.badRequest, reason: "invalid_answer_option") }
             q.state = "answered"; q.answer = value; q.answeredBy = userID; q.answeredVia = actor.via; q.answeredAt = Date(); q.version += 1
             try await q.save(on: tx)
             try await appendActivity(taskID: q.taskID, actorType: actor.type, actorID: actor.id, kind: "question.answered", subjectID: q.id, on: tx)
+            if let authority {
+                try await recordBrainDecision(authority, kind: "question.answered", task: task, subjectID: try q.requireID(), note: value, actor: actor, on: tx)
+            }
             let stillOpen = try await TaskQuestion.query(on: tx).filter(\.$taskID == q.taskID).filter(\.$state == "open")
                 .filter(\.$blocking == true).count()
             if stillOpen == 0, task.status == "in_progress" {
@@ -408,22 +422,33 @@ struct WorkflowService: Sendable {
         }
     }
 
-    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, actor: WorkflowActor) async throws -> ReviewDTO {
+    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, quote: String? = nil, actor: WorkflowActor) async throws -> ReviewDTO {
         guard ["accept", "request_changes"].contains(decision) else { throw Abort(.badRequest, reason: "invalid_decision") }
         let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
-        _ = try await readableTask(taskID, role: .edit)
+        let readable = try await readableTask(taskID, role: .edit)
+        let kind = decision == "accept" ? "review.accepted" : "review.changes_requested"
         // Runner-backed review: the job transition (owner capability, job state) is authoritative.
         if let linked = try await TaskReview.query(on: db).filter(\.$taskID == taskID).filter(\.$state == "pending")
             .filter(\.$agentJobID != .null).first(), let jobID = linked.agentJobID {
-            _ = try await AgentService.humanTransition(jobID: jobID, decision: decision, user: user, on: db)
-            if let note {
-                _ = try await CommentService.create(taskID: taskID, user: user, body: note, idempotencyKey: nil,
-                    actor: (actor.type, actor.id), target: .init(reviewID: linked.id), agentLabel: actor.type == .person ? nil : actor.label, scope: { [allowedProjects] t in
-                        if let allowedProjects, !allowedProjects.contains(t.projectID) { throw Abort(.notFound) }
-                    }, on: db)
+            // One transaction: mandate check, job transition, note, audit row and comment commit or roll back together.
+            let user = self.user, allowed = allowedProjects
+            return try await db.transaction { tx in
+                try await lockSharingGraph(on: tx)
+                try await lockRow(table: TodoTask.schema, id: taskID, on: tx)
+                let authority = try await brainAuthority(for: actor, projectID: readable.projectID, quote: quote, on: tx)
+                _ = try await AgentService.humanTransition(jobID: jobID, decision: decision, user: user, on: tx)
+                if let note {
+                    _ = try await CommentService.create(taskID: taskID, user: user, body: note, idempotencyKey: nil,
+                        actor: (actor.type, actor.id), target: .init(reviewID: linked.id), agentLabel: actor.type == .person ? nil : actor.label, scope: { t in
+                            if let allowed, !allowed.contains(t.projectID) { throw Abort(.notFound) }
+                        }, on: tx)
+                }
+                guard let fresh = try await TaskReview.find(linked.requireID(), on: tx) else { throw Abort(.notFound) }
+                if let authority {
+                    try await recordBrainDecision(authority, kind: kind, task: readable, subjectID: try linked.requireID(), note: note, actor: actor, on: tx)
+                }
+                return try ReviewDTO(fresh)
             }
-            guard let fresh = try await TaskReview.find(linked.requireID(), on: db) else { throw Abort(.notFound) }
-            return try ReviewDTO(fresh)
         }
         let owner = user, userID = try user.requireID()
         return try await mutate(taskID, role: .edit) { task, tx in
@@ -434,6 +459,7 @@ struct WorkflowService: Sendable {
             if actor.type == .integration, r.requestedByType == .integration, r.requestedByID == actor.id {
                 throw Abort(.forbidden, reason: "cannot_decide_own_review")
             }
+            let authority = try await brainAuthority(for: actor, projectID: task.projectID, quote: quote, on: tx)
             if let reviewer = r.reviewerID, reviewer != userID {
                 do { _ = try await ProjectAccess(user: owner, db: tx).project(task.projectID, role: .manage) }
                 catch { throw Abort(.forbidden, reason: "not_the_reviewer") }
@@ -452,7 +478,10 @@ struct WorkflowService: Sendable {
             r.undoStatus = previousStatus; r.undoColumnID = previousColumn; r.undoTaskVersion = task.version
             try await r.save(on: tx)
             try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id,
-                kind: decision == "accept" ? "review.accepted" : "review.changes_requested", subjectID: r.id, on: tx)
+                kind: kind, subjectID: r.id, on: tx)
+            if let authority {
+                try await recordBrainDecision(authority, kind: kind, task: task, subjectID: try r.requireID(), note: note, actor: actor, on: tx)
+            }
             return try ReviewDTO(r)
         }
     }
@@ -508,12 +537,12 @@ struct WorkflowService: Sendable {
         // Derived flag (no column): see ReviewBrain. With the filter it must narrow the query before the limit applies.
         var brainIDs = Set<UUID>()
         if let brainRecommended {
-            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(byTask.keys), on: db)
+            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(byTask.keys), userID: user.requireID(), on: db)
             q = brainRecommended ? q.filter(\.$id ~~ Array(brainIDs)) : (brainIDs.isEmpty ? q : q.filter(\.$id !~ Array(brainIDs)))
         }
         let rows = try await q.sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(limit).all()
         if brainRecommended == nil {
-            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(Set(rows.map(\.taskID))), on: db)
+            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(Set(rows.map(\.taskID))), userID: user.requireID(), on: db)
         }
         return try rows.map { row in
             var dto = try ReviewDTO(row)

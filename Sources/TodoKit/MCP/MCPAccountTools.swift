@@ -28,7 +28,7 @@ extension MCPController {
         Tool(name: "get_system_status", scope: "account:read",
              description: "Read the latest situation report pushed by the watcher on the owner's Mac (traffic lights for Claude quota, Codex and disk): {items:[{source, label, reportedAt, status:{zeit, claude_ampel, claude_frei_fuer_brain, claude_nutzbare_konten, codex:{verbraucht_pct, erlaubt_bis_jetzt_pct, ziel_pct, reset, freigabe}, platte_frei_gb, platte_ampel, ...}}], now}. Ampel values: gruen, gelb, rot. Compare reportedAt with now: older than 30 minutes means stale. Empty items: no report yet."),
         Tool(name: "get_connection", scope: "",
-             description: "Describe this MCP connection: {client, name, scopes, projects:[{id,name}], refreshExpiresAt}. The project list is exactly this connection's grant. No tokens."),
+             description: "Describe this MCP connection: {client, name, scopes, projects:[{id,name}], brainMandate:{active, projectIDs}, refreshExpiresAt}. The project list is exactly this connection's grant; brainMandate says, read-only, whether this connection holds the person's brain mandate (ADR 0032). No tokens."),
         Tool(name: "list_users", scope: "admin:read",
              description: "Administrators only: list accounts (up to 500) with displayName, username, isAdmin and status active|disabled|anonymized. Read-only; no secrets.",
              properties: ["limit": Schema.integer("Maximum number of accounts (default 200).", min: 1, max: 500)]),
@@ -85,7 +85,12 @@ extension MCPController {
             }
             let refresh = try await OAuthSecret.query(on: db).filter(\.$grantID == grant.requireID()).filter(\.$kind == "refresh")
                 .filter(\.$consumed == false).sort(\.$expiresAt, .descending).first()
+            // Read-only (ADR 0032): whether this very connection holds the person's brain mandate.
+            let mandate = try await BrainMandate.query(on: db).filter(\.$userID == userID).filter(\.$grantID == grant.requireID())
+                .filter(\.$revokedAt == .null).first()
+            let brainMandate: JSONValue = .object(["active": .bool(mandate != nil), "projectIDs": .strings((mandate?.projects ?? []).map(\.uuidString))])
             return .object(["client": client.map { .string($0) } ?? .null, "name": .string(ConnectionNames.display(grant, clientName: client)), "scopes": .strings(grant.scopes), "projects": .array(projects),
+                            "brainMandate": brainMandate,
                             "refreshExpiresAt": refresh.map { .string(ISO8601DateFormatter().string(from: $0.expiresAt)) } ?? .null])
         case "list_users":
             try requireAdmin()
