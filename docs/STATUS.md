@@ -1,5 +1,10 @@
 # Status
 
+## Nachtrag 17.11.2026: Codex-Review, mittlere Befunde 5-12 (Karte `5C41205D`)
+
+- Alle Befunde bestätigt (roter Test zuerst) und minimal behoben, je ein Commit: (5) Passwort-Kontobucket liest nur das Feld `username` aus dem JSON, Zusatzfelder umgehen ihn nicht mehr; (8) `decideReview(expectedReviewID:)`, der Batch bindet die Entscheidung an die ausgewählte Review; (12) `removeDependency` braucht nur Bearbeitungsrecht auf die abhängige Aufgabe; (11) Voice-Quote unter Zeilensperre des Kontos im Insert-Transaktionsblock erneut geprüft; (6/7) Runner-Listen (`bindings`, `jobs`, `runs`) überspringen nicht mehr berechtigte Bindings, `reconcile` mit `observation: stopped` braucht kein Projektrecht mehr; (9) Schlüsselrotation liest/schreibt je Secret unter derselben Zeilensperre wie set/reset; (10) Mail- und Push-Worker verlängern die Lease je Zeile und brechen bei Übernahme ab.
+- Offen: Befund 4 (PWA-Kontowechsel) separat. Beim Runner ist die Liste offener Läufe eines übertragenen Projekts nicht mehr sichtbar (Läufe kennt der Runner lokal und beendet sie per ID). Befund 9 und 10 deterministisch getestet (Hook `afterListing`, Transport übernimmt die Lease), nicht mit echter Parallelität; Befund 11 mit 8 parallelen Requests, auf SQLite aussagekräftig nur eingeschränkt (MariaDB-Lauf nicht erfolgt).
+
 ## Checkpoint 17.11.2026: Codex-Review, drei hohe Befunde (Karte `5C41205D`, Branch `worktree-agent-ae0566b61748b7067`)
 
 - Alle drei Befunde bestätigt (roter Test zuerst) und minimal behoben: (3) `AudioContainer` lehnt erweiterte Boxgröße Int.max ab statt Overflow-Trap; (2) `/v1/me/export` exportiert nur aktuell lesbare Projekte (wirksamer Eigentümer = Konto) und deren Aufgaben; (1) `AccountDeletion` löscht nur wirksam eigene Projekte, übertragene bleiben (Ersteller-FK geht an wirksamen Eigentümer bzw. Teammitglied), Aufgaben des Kontos in verbleibenden Projekten gehen an den Projekteigentümer statt gelöscht zu werden, eigene Kommentare werden entfernt (FK ohne Cascade).
