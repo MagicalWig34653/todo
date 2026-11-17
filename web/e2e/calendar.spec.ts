@@ -144,7 +144,7 @@ test('keyboard: arrows move by 15 minutes, Shift changes the duration, Enter ope
 	await page.keyboard.press('Enter');
 	const dialog = page.getByTestId('calendar-dialog');
 	await expect(dialog).toBeVisible();
-	await dialog.getByLabel('Start').fill(`${berlinToday()}T11:00`);
+	await dialog.getByLabel('Start', { exact: true }).fill(`${berlinToday()}T11:00`);
 	await dialog.getByLabel('Dauer in Minuten').fill('60');
 	await dialog.getByTestId('calendar-dialog-save').click();
 	await expect.poll(async () => berlinHM((await planning(ids.planned)).plannedAt ?? '1970-01-01T00:00:00Z')).toBe('11:00');
