@@ -1,4 +1,4 @@
-# ADR 0032 – Kalender: geplanter Start getrennt von Fälligkeit, Planung per MCP; Wächter startet fällige Karten
+# ADR 0033 – Kalender: geplanter Start getrennt von Fälligkeit, Planung per MCP; Wächter startet fällige Karten
 
 Status: Entwurf (17.11.2026), noch nicht umgesetzt; wartet auf die Antworten zu den drei offenen Fragen unten. Karten `8CECAD24` (Kalender) und `6C19C1C1` (Wächter startet fällige Karten, blockiert durch die Kalenderkarte).
 
