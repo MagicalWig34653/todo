@@ -8,11 +8,14 @@ extension MCPController {
             "taskID": Schema.uuid("Task id."), "version": Schema.integer("Optional current task version.", min: 0),
             "dueDate": Schema.nullable("string", "UTC calendar date YYYY-MM-DD; null clears due date."), "dueTime": Schema.nullable("string", "UTC time HH:mm; requires a due date."),
             "dueAt": Schema.nullable("string", "REST due timestamp, ISO 8601. Do not combine with dueDate/dueTime."),
-            "plannedAt": Schema.nullable("string", "REST planned timestamp, ISO 8601."),
+            "plannedAt": Schema.nullable("string", "Planned start, ISO 8601 timestamp with offset. Clearing it also clears plannedMinutes and plannedAllDay."),
+            "plannedMinutes": .object(["type": .array([.string("integer"), .string("null")]), "description": .string("Duration in minutes, 5 through 1440; null clears (display default 30)."), "minimum": .number(5), "maximum": .number(1440)]),
+            "plannedAllDay": Schema.boolean("All-day card: needs plannedAt (start of the day); the watcher never auto-starts all-day cards."),
             "priority": Schema.integer("Priority 0 through 3.", min: 0, max: 3),
             "recurrence": .object(["type": .array([.string("object"), .string("null")]), "description": .string("REST rule: frequency daily|weekly|monthly, interval 1..1000, timeZone (IANA), optional until ISO 8601."), "properties": .object(["frequency": Schema.string("Frequency.", values: ["daily", "weekly", "monthly"]), "interval": Schema.integer("Interval.", min: 1, max: 1000), "timeZone": Schema.string("IANA zone."), "until": Schema.nullable("string", "Optional ISO 8601 end date.")]), "required": .strings(["frequency", "interval", "timeZone"])]),
             "reminders": Schema.stringArray("ISO 8601 reminder timestamps; replaces all reminders, maximum 100.", maxItems: 100)], required: ["taskID"]),
         Tool(name: "list_planned_tasks", scope: "tasks:read", description: "List open tasks like REST planning views, restricted to granted projects; default limit 50, maximum 200. Today uses UTC.", properties: ["view": Schema.string("View.", values: ["today", "upcoming", "up_next"]), "projectID": Schema.uuid("Optional project filter."), "limit": Schema.integer("Result limit.", min: 1, max: 200)], required: ["view"]),
+        Tool(name: "list_schedule", scope: "tasks:read", description: "Calendar window like REST GET /v1/planning/schedule: cards whose planned start/duration overlaps [from, to) or whose due date lies inside, with plannedAt/plannedMinutes/plannedAllDay, dueAt, blocked, autoStart, jobState and conflicts. Restricted to granted projects; window at most 62 days, default and maximum limit 500.", properties: ["from": Schema.string("Window start, ISO 8601."), "to": Schema.string("Window end (exclusive), ISO 8601."), "projectID": Schema.uuid("Optional project filter (includes sub-projects)."), "limit": Schema.integer("Result limit.", min: 1, max: 500)], required: ["from", "to"]),
         Tool(name: "set_dependencies", scope: "tasks:write", description: "Replace blockers atomically (class B). Both sides must be granted; cycles fail. Empty array clears blockers.", properties: ["taskID": Schema.uuid("Blocked task."), "blockedBy": Schema.stringArray("Prerequisite task UUIDs; maximum 100.", maxItems: 100)], required: ["taskID", "blockedBy"]),
         Tool(name: "list_dependencies", scope: "tasks:read", description: "List visible prerequisite tasks; default limit 50, maximum 200.", properties: ["taskID": Schema.uuid("Blocked task."), "limit": Schema.integer("Result limit.", min: 1, max: 200)], required: ["taskID"]),
         Tool(name: "remove_dependency", scope: "tasks:write", description: "Remove one blocker (class B); both tasks must be granted.", properties: ["taskID": Schema.uuid("Blocked task."), "otherTaskID": Schema.uuid("Prerequisite task.")], required: ["taskID", "otherTaskID"]),
@@ -55,6 +58,12 @@ extension MCPController {
                 let data = try planningPatch(a, current: p)
                 return try .encoded(await s.put(id, data: data, expectedVersion: version))
             }
+        case "list_schedule":
+            guard let from = try planningDate(a["from"]), let to = try planningDate(a["to"]) else { throw Abort(.badRequest, reason: "invalid_window") }
+            let pid = a["projectID"].isNull ? nil : try uuid(a["projectID"])
+            if let pid { _ = try await project(pid, user: user, grant: grant, db: db) }
+            let count = try intArgument(a["limit"], reason: "invalid_limit")
+            return try .encoded(await service.scheduleWindow(from: from, to: to, projectID: pid, limit: count, allowedProjects: Set(grant.projects)))
         case "list_planned_tasks":
             let view = try requiredString(a, "view"), count = try limit()
             guard ["today", "upcoming", "up_next"].contains(view) else { throw Abort(.badRequest, reason: "invalid_view") }
@@ -142,7 +151,7 @@ extension MCPController {
 
     private func planningPatch(_ a: JSONValue, current p: TaskPlanning?) throws -> PlanningData {
         guard case .object(let fields) = a else { throw Abort(.badRequest) }
-        var data = PlanningData(dueAt: p?.dueAt, plannedAt: p?.plannedAt, priority: p?.priority ?? 0, recurrence: p?.recurrence, reminders: p?.reminders ?? [])
+        var data = PlanningData(dueAt: p?.dueAt, plannedAt: p?.plannedAt, plannedMinutes: p?.plannedMinutes, plannedAllDay: p?.plannedAllDay, priority: p?.priority ?? 0, recurrence: p?.recurrence, reminders: p?.reminders ?? [])
         if fields["dueAt"] != nil {
             guard fields["dueDate"] == nil, fields["dueTime"] == nil else { throw Abort(.badRequest, reason: "invalid_date") }
             data.dueAt = try planningDate(a["dueAt"])
@@ -159,7 +168,23 @@ extension MCPController {
                 data.dueAt = try planningDay(day, time: a["dueTime"].isNull ? "00:00" : requiredString(a, "dueTime"))
             }
         }
-        if fields["plannedAt"] != nil { data.plannedAt = try planningDate(a["plannedAt"]) }
+        // Auto start is a human decision on the card (session only), never settable by an agent.
+        if fields["autoStart"] != nil || fields["autoStartedAt"] != nil { throw Abort(.badRequest, reason: "invalid_arguments") }
+        if fields["plannedAt"] != nil {
+            data.plannedAt = try planningDate(a["plannedAt"])
+            if data.plannedAt == nil && fields["plannedAllDay"] == nil { data.plannedAllDay = false }
+        }
+        if fields["plannedMinutes"] != nil {
+            if a["plannedMinutes"].isNull { data.plannedMinutes = nil; data.clearsPlannedMinutes = true }
+            else {
+                guard let n = try intArgument(a["plannedMinutes"], reason: "invalid_planned_minutes") else { throw Abort(.badRequest, reason: "invalid_planned_minutes") }
+                data.plannedMinutes = n
+            }
+        }
+        if fields["plannedAllDay"] != nil {
+            guard case .bool(let flag) = a["plannedAllDay"] else { throw Abort(.badRequest, reason: "invalid_planned_all_day") }
+            data.plannedAllDay = flag
+        }
         if fields["priority"] != nil {
             guard let n = try intArgument(a["priority"], reason: "invalid_priority") else { throw Abort(.badRequest, reason: "invalid_priority") }; data.priority = n
         }

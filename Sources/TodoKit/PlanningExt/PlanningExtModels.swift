@@ -29,12 +29,14 @@ final class TaskPlanning: Model, @unchecked Sendable {
     @ID(custom: "id", generatedBy: .user) var id: UUID?
     @OptionalField(key: "due_at") var dueAt: Date?
     @OptionalField(key: "planned_at") var plannedAt: Date?
+    @OptionalField(key: "planned_minutes") var plannedMinutes: Int?
+    @Field(key: "planned_all_day") var plannedAllDay: Bool
     @Field(key: "priority") var priority: Int
     @Field(key: "position") var position: Int
     @OptionalField(key: "recurrence") var recurrence: RecurrenceRule?
     @Field(key: "reminders") var reminders: [Date]
     init() {}
-    init(taskID: UUID) { id = taskID; priority = 0; position = 0; reminders = [] }
+    init(taskID: UUID) { id = taskID; priority = 0; position = 0; reminders = []; plannedAllDay = false }
 }
 
 final class PlanningDependency: Model, @unchecked Sendable {

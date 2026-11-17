@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Sync
-  version: 1.4.0
+  version: 1.5.0
   description: 'Änderungsfeed und idempotente Client-Mutationen für Projekte und Aufgaben (ADR 0009). Der Cursor ist
     ein undurchsichtiger Wert (Format "c<Zahl>"), der eine lückenlose, in Commit-Reihenfolge vergebene Sequenz
     im Änderungsprotokoll bezeichnet. Cursor "c0" liefert den vollständigen sichtbaren Stand. Jede Änderung wird nach
@@ -30,7 +30,12 @@ info:
     Neue Mutationen task.planning (Pflicht version, ersetzt die Planungsdaten vollständig, erhöht die Aufgabenversion; Rolle edit),
     label.create/label.rename/label.delete (nur eigene Labels, sonst 404), task.label_add/task.label_remove (id = Aufgabe,
     labelID; eigene Labels, Aufgabe lesbar, idempotent). Antworten tragen planning bzw. label. Alte Clients ignorieren unbekannte Felder,
-    Entitäten und Mutationstypen. Migration BackfillLabelSync (bestehende Labels als Upserts); vor Serverstart ausführen.'
+    Entitäten und Mutationstypen. Migration BackfillLabelSync (bestehende Labels als Upserts); vor Serverstart ausführen.
+    1.5.0 (ADR 0033, rein additiv): Kalender. planning trägt zusätzlich plannedMinutes (5 bis 1440, null = keine Dauer) und plannedAllDay
+    (immer vorhanden, Standard false); plannedAt ist der geplante Start. task.planning nimmt plannedMinutes/plannedAllDay entgegen und
+    übernimmt sie nur, wenn der Schlüssel mitgesendet wird (fehlt er, bleibt der gespeicherte Wert; null löscht die Dauer), damit Clients
+    vor 1.5.0 die Dauer nicht löschen. Ein gelöschtes plannedAt löscht Dauer und Ganztägig. Das Verschieben im Kalender läuft online über
+    PATCH /v1/tasks/{id}/schedule (planning-ext.yaml); der Sync-Weg bleibt ein Vollersatz mit version. auto_start ist kein Sync-Feld.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -214,7 +219,9 @@ components:
       required: [priority, reminders]
       properties:
         dueAt: {type: string, format: date-time}
-        plannedAt: {type: string, format: date-time}
+        plannedAt: {type: string, format: date-time, description: Geplanter Start}
+        plannedMinutes: {type: integer, minimum: 5, maximum: 1440, description: 'Dauer in Minuten (seit 1.5.0); fehlt = keine Dauer'}
+        plannedAllDay: {type: boolean, description: 'Ganztägig (seit 1.5.0), Standard false'}
         priority: {type: integer, minimum: 0, maximum: 3}
         recurrence:
           type: object
@@ -272,6 +279,8 @@ components:
         columnID: {type: string, format: uuid, description: 'task.move_column: Zielspalte; fehlt = Ohne Spalte'}
         dueAt: {type: string, format: date-time, description: 'task.planning (seit 1.4.0): vollständiger Ersatz; fehlende Felder löschen (priority 0, reminders [])'}
         plannedAt: {type: string, format: date-time}
+        plannedMinutes: {type: integer, minimum: 5, maximum: 1440, description: 'task.planning (seit 1.5.0): nur übernommen, wenn gesendet; sonst bleibt der Wert'}
+        plannedAllDay: {type: boolean, description: 'task.planning (seit 1.5.0): nur übernommen, wenn gesendet'}
         priority: {type: integer, minimum: 0, maximum: 3}
         recurrence: {$ref: '#/components/schemas/Planning/properties/recurrence', description: 'Benötigt dueAt oder plannedAt'}
         reminders: {type: array, items: {type: string, format: date-time}}

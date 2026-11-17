@@ -22,11 +22,14 @@ struct SyncChangeDTO: Content {
 struct SyncPlanningDTO: Content {
     let dueAt: Date?
     let plannedAt: Date?
+    /// Additive since sync 1.5.0 (ADR 0033).
+    let plannedMinutes: Int?
+    let plannedAllDay: Bool
     let priority: Int
     let recurrence: RecurrenceRule?
     let reminders: [Date]
     init(_ p: TaskPlanning?) {
-        dueAt = p?.dueAt; plannedAt = p?.plannedAt; priority = p?.priority ?? 0
+        dueAt = p?.dueAt; plannedAt = p?.plannedAt; plannedMinutes = p?.plannedMinutes; plannedAllDay = p?.plannedAllDay ?? false; priority = p?.priority ?? 0
         recurrence = p?.recurrence; reminders = p?.reminders ?? []
     }
 }
@@ -89,6 +92,9 @@ struct SyncMutationRequest: Content {
     /// omitted = 0, `reminders` omitted = none). Requires `version`.
     var dueAt: Date? = nil
     var plannedAt: Date? = nil
+    /// task.planning, since 1.5.0: taken over only when sent (absent = keep, so clients before 1.5.0 do not erase them).
+    var plannedMinutes: Int? = nil
+    var plannedAllDay: Bool? = nil
     var priority: Int? = nil
     var recurrence: RecurrenceRule? = nil
     var reminders: [Date]? = nil
@@ -350,7 +356,7 @@ struct SyncController: RouteCollection {
             try await ColumnService(user: user, db: db).delete(m.id, moveTo: moveTo, expectedVersion: m.version)
             return try await result(.ok, deleted: true)
         case "task.planning":
-            let data = PlanningData(dueAt: m.dueAt, plannedAt: m.plannedAt, priority: m.priority ?? 0,
+            let data = PlanningData(dueAt: m.dueAt, plannedAt: m.plannedAt, plannedMinutes: m.plannedMinutes, plannedAllDay: m.plannedAllDay, priority: m.priority ?? 0,
                 recurrence: m.recurrence, reminders: m.reminders ?? [])
             let dto = try await PlanningService(user: user, db: db).put(m.id, data: data, expectedVersion: try requireVersion())
             return try await result(.ok, task: dto.task, planning: SyncPlanningDTO(try await TaskPlanning.find(m.id, on: db)))

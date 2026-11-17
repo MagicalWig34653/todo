@@ -1,4 +1,4 @@
-<!-- manual-version: 1.28.0 -->
+<!-- manual-version: 1.29.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -276,7 +276,8 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `update_criterion` | tasks:write | Change the text of an acceptance criterion. |
 | `delete_criterion` | tasks:write | Class C: asks the person to confirm deleting a criterion. |
 | `get_task_planning` | tasks:read | Due date and time, priority, recurrence and reminders of a task. |
-| `update_task_planning` | tasks:write | Set due date/time, priority, recurrence, reminders (same rules as the app). |
+| `update_task_planning` | tasks:write | Set due date/time, planned start (`plannedAt`), duration (`plannedMinutes` 5..1440), `plannedAllDay`, priority, recurrence, reminders (same rules as the app). Cannot set `autoStart`. |
+| `list_schedule` | tasks:read | Calendar window (`from`, `to`, max 62 days; optional `projectID`, `limit`): planned starts, durations, due dates, `blocked`, `jobState`, `conflicts`. |
 | `list_planned_tasks` | tasks:read | Today, upcoming or up next (`view`), optionally for one project. |
 | `set_dependencies` | tasks:write | Replace what blocks a task (`blockedBy`); cycles are refused. |
 | `list_dependencies` | tasks:read | What blocks a task and what it blocks. |
@@ -347,6 +348,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.29.0:** calendar (ADR 0033). `plannedAt` is now the planned start (shown as "Geplanter Start"); new `plannedMinutes` (5..1440) and `plannedAllDay` in `get_task_planning`/`update_task_planning`, new tool `list_schedule` (`tasks:read`, window up to 62 days, granted projects only), REST `PATCH /v1/tasks/{id}/schedule` and `GET /v1/planning/schedule` (`contracts/planning-ext.yaml` 1.1.0, sync 1.5.0). Agents cannot set `autoStart`. All else additive.
 
 **Changed in 1.28.0:** live view per card (ADR 0031). New tools `report_session_step`, `report_session_event` and `get_task_live` (existing scopes `tasks:write`/`tasks:read`), REST `GET /v1/tasks/{id}/live` (`contracts/live-session.yaml` 1.0.0). Only compact events you report yourself are stored, secrets are masked, data goes 3 days after the card is done. All else additive.
 

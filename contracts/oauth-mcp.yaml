@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -9,6 +9,8 @@ info:
     Scopes comments:write, attachments:read und agents:read ergänzen die Werkzeuge
     (siehe x-mcp-tools); jeder Aufruf prüft Scope, Grant-Projektliste und die aktuelle
     Rolle des Benutzers wie die REST-Routen.
+    1.4.0 (ADR 0033, additiv): list_schedule (Kalenderfenster wie GET /v1/planning/schedule); get/update_task_planning tragen plannedMinutes
+    und plannedAllDay (update: plannedMinutes 5 bis 1440 oder null, plannedAllDay braucht plannedAt; autoStart wird abgelehnt, invalid_arguments).
 servers:
   - url: http://localhost:28080
 paths:
@@ -226,7 +228,8 @@ x-mcp-tools:
   delete_column: {scope: 'tasks:write', required: [id], arguments: {id: UUID, version: integer, moveTo: 'UUID oder none'}, result: 'Bestätigungsanfrage (confirmation_required), Klasse C'}
 
   get_task_planning: {scope: 'tasks:read', required: [taskID], result: PlanningTaskDTO}
-  update_task_planning: {scope: 'tasks:write', required: [taskID], optional: [version, dueDate, dueTime, dueAt, plannedAt, priority, recurrence, reminders], result: PlanningTaskDTO}
+  update_task_planning: {scope: 'tasks:write', required: [taskID], optional: [version, dueDate, dueTime, dueAt, plannedAt, plannedMinutes, plannedAllDay, priority, recurrence, reminders], result: PlanningTaskDTO}
+  list_schedule: {scope: 'tasks:read', required: [from, to], optional: [projectID, limit], result: ScheduleResponse, note: 'Fenster höchstens 62 Tage, limit höchstens 500, nur Projekte im Grant'}
   list_planned_tasks: {scope: 'tasks:read', required: [view], optional: [projectID, limit], views: [today, upcoming, up_next]}
   set_dependencies: {scope: 'tasks:write', class: B, required: [taskID, blockedBy]}
   list_dependencies: {scope: 'tasks:read', required: [taskID], optional: [limit]}
