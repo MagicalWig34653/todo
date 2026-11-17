@@ -250,7 +250,7 @@ struct ReviewDTO: Content {
     let version: Int
     /// End of the undo window for a fresh person decision; nil when not undoable by time or kind.
     let undoUntil: Date?
-    /// Derived, only set by review lists: a comment of the agent labelled "brain" hangs on this review (see `ReviewBrain`).
+    /// Derived, only set by review lists: a comment of the mandated brain connection hangs on this review (see `ReviewBrain`, ADR 0032).
     var brainRecommended: Bool? = nil
     init(_ r: TaskReview) throws {
         id = try r.requireID(); taskID = r.taskID; state = r.state; requestedByType = r.requestedByType

@@ -526,12 +526,12 @@ struct WorkflowService: Sendable {
         // Derived flag (no column): see ReviewBrain. With the filter it must narrow the query before the limit applies.
         var brainIDs = Set<UUID>()
         if let brainRecommended {
-            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(byTask.keys), on: db)
+            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(byTask.keys), userID: user.requireID(), on: db)
             q = brainRecommended ? q.filter(\.$id ~~ Array(brainIDs)) : (brainIDs.isEmpty ? q : q.filter(\.$id !~ Array(brainIDs)))
         }
         let rows = try await q.sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(limit).all()
         if brainRecommended == nil {
-            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(Set(rows.map(\.taskID))), on: db)
+            brainIDs = try await ReviewBrain.reviewIDs(taskIDs: Array(Set(rows.map(\.taskID))), userID: user.requireID(), on: db)
         }
         return try rows.map { row in
             var dto = try ReviewDTO(row)

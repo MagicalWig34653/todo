@@ -229,7 +229,7 @@ final class ReviewBatchTests: XCTestCase {
         XCTAssertEqual(unaffected.status, .ok)
     }
 
-    func testBrainRecommendedIsDerivedFromABrainAgentCommentAndFilterable() async throws {
+    func testBrainRecommendedIsDerivedFromAMandatedConnectionCommentAndFilterable() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
         let owner = try await person(t), pid = try await project(t, owner)
@@ -237,13 +237,25 @@ final class ReviewBatchTests: XCTestCase {
         let plain = try await review(t, owner, project: pid, n: 2)
         let otherAgent = try await review(t, owner, project: pid, n: 3)
         let personFaking = try await review(t, owner, project: pid, n: 4)
-        func comment(_ task: String, _ review: String, kind: String?, label: String?) async throws {
-            let c = TaskComment(taskID: UUID(uuidString: task)!, authorID: UUID(uuidString: owner.id)!, body: "Empfehlung: annehmen")
+        // ADR 0032: only a comment written by the connection that holds the mandate counts, whatever its label.
+        let client = OAuthClient(name: "Brain", redirects: []); try await client.save(on: t.app.db)
+        let userID = UUID(uuidString: owner.id)!
+        let brainGrant = OAuthGrant(userID: userID, clientID: try client.requireID(), resource: "r", scopes: [], projects: [], name: "Brain")
+        try await brainGrant.save(on: t.app.db)
+        let otherGrant = OAuthGrant(userID: userID, clientID: try client.requireID(), resource: "r", scopes: [], projects: [], name: "Other")
+        try await otherGrant.save(on: t.app.db)
+        try await BrainMandate(userID: userID, grantID: try brainGrant.requireID(), projects: [UUID(uuidString: pid)!]).save(on: t.app.db)
+        func comment(_ task: String, _ review: String, kind: String?, label: String?, by grant: OAuthGrant? = nil) async throws {
+            let c = TaskComment(taskID: UUID(uuidString: task)!, authorID: userID, body: "Empfehlung: annehmen")
             c.reviewID = UUID(uuidString: review); c.authorKind = kind; c.authorLabel = label
             try await c.save(on: t.app.db)
+            if let grant {
+                try await appendActivity(taskID: UUID(uuidString: task)!, actorType: .integration, actorID: grant.requireID(),
+                    kind: "comment.created", subjectID: c.requireID(), on: t.app.db)
+            }
         }
-        try await comment(rec.task, rec.review, kind: "agent", label: " Brain ")
-        try await comment(otherAgent.task, otherAgent.review, kind: "agent", label: "codex")
+        try await comment(rec.task, rec.review, kind: "agent", label: nil, by: brainGrant)
+        try await comment(otherAgent.task, otherAgent.review, kind: "agent", label: "brain", by: otherGrant)
         try await comment(personFaking.task, personFaking.review, kind: "person", label: "brain")
 
         let all = try await t.json(.GET, "/v1/reviews", token: owner.token)
