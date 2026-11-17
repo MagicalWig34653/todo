@@ -1297,3 +1297,9 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Additiv und optional: `Build.commit` wird als Monospace-Kurzangabe (7 Zeichen, `title` = voll) neben dem Build-Label gezeigt (`buildCommit`); `RunningTask.percent` zeigt wie bisher `role=progressbar` mit `aria-valuenow` nur, wenn vorhanden. Typen in `api.ts`. Backend liefert die Felder noch nicht, Verträge/Handbuch unverändert.
 - Prüfung: vitest 454 grün (neu: Wartepunkt-Gruppierung/Sortierung, Session-Grenze, Aufklapp-Standard und Nutzerzustand, commit), `npm run build` ok, `e2e/now.spec.ts` 8 grün (Chromium, echtes Backend, SQLite); neuer Fall „altes Projekt mit offenem Review steht oben und ist aufgeklappt“. `npm run check` nicht gelaufen. Screenshots aktualisiert: `docs/screenshots/jetzt/`.
 - Grenzen: commit-Anzeige und percent-Balken nur per vitest belegt (Backend sendet die Felder noch nicht, im E2E nicht sichtbar). Schrift im Screenshot evtl. Fallback (node_modules per Symlink, Vite-Serving-Liste).
+
+## Nachtrag 18.11.2026: Backend-Felder fuer die Seite "Jetzt" (Karte F6DF71C3)
+
+- `GET /v1/overview/now` und MCP `get_overview_now` (ein Service, `OverviewNowService`): neu optional `runningTasks[].percent` (Prozent der letzten Fortschrittsnotiz mit Prozentwert) und `builds[].commit` (buildID, wenn 7-40 Hex-Kleinbuchstaben). Vertrag `contracts/session-status.yaml` 1.1.0, Handbuch 1.33.0, ADR 0034 nachgetragen. Keine Migration.
+- Kein Build-/CI-Status: im Datenmodell existiert keine Quelle (`build_artifacts`: buildID, Label, Plattform), deshalb nicht gebaut.
+- Tests: `SessionStatusTests` um percent (mit/ohne, neuere Notiz ohne Prozent) und commit (Hash-aehnlich/anders) erweitert.

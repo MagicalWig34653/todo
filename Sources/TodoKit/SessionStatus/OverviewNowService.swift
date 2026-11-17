@@ -11,6 +11,8 @@ struct OverviewNow: Content {
         let lastProgress: Progress?
         /// Seconds since the claim, or since the last change of the card when it is not claimed.
         let ageSeconds: Int
+        /// Percent (0-100) of the newest progress note of the card that carried one, nil if none did.
+        let percent: Int?
     }
     struct Session: Content {
         let sessionName: String
@@ -21,7 +23,10 @@ struct OverviewNow: Content {
         let orphaned: Bool
     }
     struct Job: Content { let jobID: UUID; let taskID: UUID; let state: String; let mode: String; let progress: String }
-    struct Build: Content { let taskID: UUID; let buildID: String; let label: String?; let platform: String?; let createdAt: String }
+    struct Build: Content { let taskID: UUID; let buildID: String; let label: String?; let platform: String?; let createdAt: String
+        /// The build ID when it looks like a commit hash (7-40 lowercase hex characters), else nil. Not a CI status.
+        let commit: String?
+    }
     struct Open: Content { let id: UUID; let taskID: UUID; let taskTitle: String; let text: String; let createdAt: String }
     struct Event: Content { let taskID: UUID; let taskTitle: String; let kind: String; let actorType: String; let createdAt: String }
     struct Entry: Content {
@@ -50,6 +55,11 @@ struct OverviewNowService: Sendable {
     static let buildLimit = 5
     static let activeJobStates = ["queued", "claimed", "running", "waiting_for_answer"]
 
+    /// 7-40 lowercase hex characters: abbreviated or full commit hash.
+    static func commit(from buildID: String) -> String? {
+        (7...40).contains(buildID.utf8.count) && buildID.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }) ? buildID : nil
+    }
+
     let user: User
     let db: any Database
     var allowedProjects: Set<UUID>? = nil
@@ -70,6 +80,10 @@ struct OverviewNowService: Sendable {
         for note in try await TaskProgressNote.query(on: db).filter(\.$taskID ~~ runningIDs).sort(\.$createdAt, .descending).limit(2000).all() where lastNote[note.taskID] == nil {
             lastNote[note.taskID] = note
         }
+        var lastPercent: [UUID: Int] = [:]
+        for note in try await TaskProgressNote.query(on: db).filter(\.$taskID ~~ runningIDs).filter(\.$percent != nil).sort(\.$createdAt, .descending).limit(2000).all() {
+            if let percent = note.percent, lastPercent[note.taskID] == nil { lastPercent[note.taskID] = percent }
+        }
         var runningByProject: [UUID: [OverviewNow.RunningTask]] = [:]
         var activityAt: [UUID: Date] = [:]
         func touch(_ project: UUID, _ date: Date?) { if let date, date > (activityAt[project] ?? .distantPast) { activityAt[project] = date } }
@@ -80,7 +94,7 @@ struct OverviewNowService: Sendable {
             runningByProject[task.projectID, default: []].append(OverviewNow.RunningTask(
                 taskID: id, title: task.title, worker: wf?.claimedLabel ?? wf?.claimedByType,
                 lastProgress: note.flatMap { n in n.createdAt.map { OverviewNow.Progress(note: n.note, at: iso($0)) } },
-                ageSeconds: max(0, Int(clock.timeIntervalSince(since)))))
+                ageSeconds: max(0, Int(clock.timeIntervalSince(since))), percent: lastPercent[id]))
         }
 
         // Heartbeats: orphaned after 30 minutes, hidden after 24 hours.
@@ -133,7 +147,7 @@ struct OverviewNowService: Sendable {
             entries.append((last, OverviewNow.Entry(
                 projectID: pid, projectName: project.name, lastActivityAt: iso(last == .distantPast ? clock : last),
                 runningTasks: runningTasks, sessions: sessions, agentJobs: jobs,
-                builds: try builds.map { OverviewNow.Build(taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock)) },
+                builds: try builds.map { OverviewNow.Build(taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock), commit: Self.commit(from: $0.buildID)) },
                 openQuestions: questions, pendingReviews: reviews,
                 recentActivity: try events.map { e in
                     OverviewNow.Event(taskID: e.taskID, taskTitle: try e.joined(TodoTask.self).title, kind: e.kind, actorType: "\(e.actorType)", createdAt: iso(e.createdAt ?? clock))

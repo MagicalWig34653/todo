@@ -152,6 +152,53 @@ final class SessionStatusTests: XCTestCase {
         }
     }
 
+    func testRunningTaskPercentFromLatestNoteThatCarriesOne() async throws {
+        try await fixture { f, _ in
+            let uid = try f.user.requireID(), pid = try f.project.requireID(), db = f.test.app.db
+            func card(_ title: String) async throws -> UUID {
+                let t = TodoTask(ownerID: uid, projectID: pid, title: title); t.status = "in_progress"; try await t.save(on: db); return try t.requireID()
+            }
+            func note(_ id: UUID, _ text: String, _ percent: Int?, ago: TimeInterval) async throws {
+                let n = TaskProgressNote(); n.taskID = id; n.actorType = .integration; n.actorID = UUID(); n.note = text; n.percent = percent
+                try await n.save(on: db)
+                n.createdAt = Date().addingTimeInterval(-ago); try await n.save(on: db)
+            }
+            let withPercent = try await card("with"), newerWithout = try await card("newer without"), none = try await card("none")
+            try await note(withPercent, "a", 30, ago: 300); try await note(withPercent, "b", 60, ago: 100)
+            try await note(newerWithout, "a", 40, ago: 300); try await note(newerWithout, "b", nil, ago: 100)
+            try await note(none, "a", nil, ago: 100)
+            let body = try await now(f)
+            let p = try XCTUnwrap(try entry(body, f.project))
+            let byTitle = Dictionary(uniqueKeysWithValues: (p["runningTasks"] as! [[String: Any]]).map { ($0["title"] as! String, $0) })
+            XCTAssertEqual(byTitle["with"]?["percent"] as? Int, 60)
+            XCTAssertEqual(byTitle["newer without"]?["percent"] as? Int, 40)
+            XCTAssertNil(byTitle["none"]?["percent"] as? Int)
+        }
+    }
+
+    func testBuildCommitOnlyForHashLikeBuildID() async throws {
+        try await fixture { f, access in
+            let uid = try f.user.requireID(), pid = try f.project.requireID(), db = f.test.app.db
+            let task = TodoTask(ownerID: uid, projectID: pid, title: "Built"); try await task.save(on: db)
+            for id in ["abc1234", "0123456789abcdef0123456789abcdef01234567", "ABC1234", "1.4.2-beta", "abcdefg"] {
+                let b = BuildArtifact(); b.attachmentID = UUID(); b.taskID = try task.requireID(); b.buildID = id; b.label = "L"; b.platform = "ios"
+                b.createdByType = .integration; b.createdByID = UUID()
+                try await b.save(on: db)
+            }
+            let body = try await now(f)
+            let p = try XCTUnwrap(try entry(body, f.project))
+            let builds = try XCTUnwrap(p["builds"] as? [[String: Any]])
+            XCTAssertEqual(builds.count, 5)
+            for b in builds {
+                let id = b["buildID"] as! String
+                let hashLike = ["abc1234", "0123456789abcdef0123456789abcdef01234567"].contains(id)
+                XCTAssertEqual(b["commit"] as? String, hashLike ? id : nil, id)
+            }
+            let mcp = obj(try await call(f, "get_overview_now", [:], access))
+            XCTAssertNotNil(mcp["projects"])
+        }
+    }
+
     func testOrphanedAfter30MinutesHiddenAfter24Hours() async throws {
         try await fixture { f, access in
             _ = try await report(f, access, session: "fresh"); _ = try await report(f, access, session: "old"); _ = try await report(f, access, session: "gone")
