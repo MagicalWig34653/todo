@@ -1,5 +1,12 @@
 # Status
 
+## Checkpoint 17.11.2026: Codex-Review, drei hohe Befunde (Karte `5C41205D`, Branch `worktree-agent-ae0566b61748b7067`)
+
+- Alle drei Befunde bestätigt (roter Test zuerst) und minimal behoben: (3) `AudioContainer` lehnt erweiterte Boxgröße Int.max ab statt Overflow-Trap; (2) `/v1/me/export` exportiert nur aktuell lesbare Projekte (wirksamer Eigentümer = Konto) und deren Aufgaben; (1) `AccountDeletion` löscht nur wirksam eigene Projekte, übertragene bleiben (Ersteller-FK geht an wirksamen Eigentümer bzw. Teammitglied), Aufgaben des Kontos in verbleibenden Projekten gehen an den Projekteigentümer statt gelöscht zu werden, eigene Kommentare werden entfernt (FK ohne Cascade).
+- Verhaltensänderung: Aufgaben, die das gelöschte Konto in fremden Projekten angelegt hat, bleiben erhalten (SyncRetentionTests angepasst).
+- Offen: Unterprojekte anderer unterhalb eines gelöschten eigenen Projekts werden weiter per Cascade mitgelöscht; Team-Gründer-FK (`founder_id`) blockiert Kontolöschung weiterhin.
+- Geprüft: AudioContainerTests, VoiceAttachmentTests, AccountLockTests, AccountDeletionTests, SyncRetentionTests (siehe Bericht); kein Volllauf.
+
 ## Checkpoint 14.11.2026: Live-Ansicht je Karte, Stufe 2 PWA (Karte `CCCFFB78`, Branch `agent/live-ansicht-pwa`)
 
 - Neu im Karten-Detail, Tab "Aktivität" (`web/src/lib/components/card/TaskLive.svelte`): oben laufende Sitzungen (Name, Akteur-Label, Modell, Startzeit, aktueller Schritt als `aria-live="polite"`, Hinweis "Still seit N Min." bei stale, lokal auch ohne Refresh nach 15 Minuten), beendete Sitzungen eingeklappt (`<details>`), darunter der kompakte Verlauf (neueste zuerst, Art als Icon und Label, relativ und absolut, "Mehr laden" per `nextCursor`); Leerzustand, Fehlerzustand mit "Erneut versuchen" (`role="alert"`), danach die bisherige Aktivitätsliste unter "Ereignisse der Karte". Texte nur als Text (kein `{@html}`), Geheimnisse kommen vom Server schon als `[gefiltert]`.

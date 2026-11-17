@@ -146,15 +146,15 @@ final class SyncRetentionTests: XCTestCase {
         let ownerBefore = try await head(t, owner.token)
         let strangerBefore = try await head(t, stranger.token)
 
-        // The guest leaves: their own project and their task in the shared project disappear for the owner,
-        // while the owner's data stays and no one else learns anything.
+        // The guest leaves: their own project disappears for the owner; their task in the owner's project stays
+        // (handed to the owner), and no one else learns anything.
         let report = try await AccountDeletion.delete(userID: UUID(uuidString: guest.id)!, on: t.app.db)
         XCTAssertEqual(report.projects, 1)
-        XCTAssertEqual(report.tasks, 1)
+        XCTAssertEqual(report.tasks, 0)
         let o = try await feed(t, owner.token, ownerBefore)
-        XCTAssertEqual(ids(o.body, kind: "delete"), Set([guestOwn, guestTaskInShared].map { $0.lowercased() }))
+        XCTAssertEqual(ids(o.body, kind: "delete"), Set([guestOwn].map { $0.lowercased() }))
         let full = try await feed(t, owner.token, "c0")
-        XCTAssertEqual(ids(full.body, kind: "upsert"), Set([shared, sharedTask, privateP].map { $0.lowercased() }))
+        XCTAssertEqual(ids(full.body, kind: "upsert"), Set([shared, sharedTask, privateP, guestTaskInShared].map { $0.lowercased() }))
         let s = try await feed(t, stranger.token, strangerBefore)
         XCTAssertTrue(ids(s.body, kind: "delete").isEmpty)
         XCTAssertTrue(ids(s.body, kind: "upsert").isEmpty)
