@@ -70,6 +70,14 @@ class CardDetailState {
 	}
 
 	/** Closed by the user (button, Escape, backdrop): back to the entry before the window, or just drop the parameter. */
+	/** Drops the open card without touching the history (the account changed; the route no longer applies). */
+	reset(): void {
+		this.ref = null;
+		this.invalid = false;
+		this.siblings = [];
+		this.pushed = false;
+	}
+
 	close(): void {
 		if (!this.visible) return;
 		const wasPushed = this.pushed;

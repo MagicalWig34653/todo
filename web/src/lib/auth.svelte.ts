@@ -1,4 +1,6 @@
 import { api, ApiError, type User } from './api.js';
+import { cardDetail } from './cardDetail.svelte.js';
+import { reviewUndo } from './reviewUndo.svelte.js';
 import { workspace } from './workspace.svelte.js';
 import {
 	passkeysSupported,
@@ -33,7 +35,19 @@ function markSession(on: boolean): void {
 }
 
 class AuthState {
-	user = $state<User | null>(null);
+	#user = $state<User | null>(null);
+	/** Every change of the signed-in account (sign-out, switch, expiry) drops the previous account's client data. */
+	get user(): User | null {
+		return this.#user;
+	}
+	set user(next: User | null) {
+		if ((this.#user?.id ?? null) !== (next?.id ?? null)) {
+			workspace.reset();
+			reviewUndo.clear();
+			cardDetail.reset();
+		}
+		this.#user = next;
+	}
 	ready = $state(false);
 
 	async restore() {

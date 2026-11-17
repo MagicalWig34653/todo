@@ -36,18 +36,48 @@ class Workspace {
 	projectsLoaded = $state(false);
 	projectsFailed = $state(false);
 
+	/** Bumped on every account change; answers of requests started under an older value are dropped. */
+	#gen = 0;
+
+	/** Forgets everything of the previous account (sign-out, account switch) and invalidates requests still in flight. */
+	reset() {
+		this.#gen++;
+		this.projects = [];
+		this.tasks = [];
+		this.teams = [];
+		this.invitations = [];
+		this.labels = [];
+		this.filters = [];
+		this.prefs = {};
+		this.attention = null;
+		this.projectsLoaded = false;
+		this.projectsFailed = false;
+		this.prefsLoaded = false;
+		this.#tasksAt = 0;
+		this.#prefsAt = 0;
+		this.#imported = false;
+		this.#saving.clear();
+		this.#inflight = 0;
+	}
+
 	async reloadProjects() {
+		const gen = this.#gen;
 		try {
-			this.projects = await api.listProjects();
+			const projects = await api.listProjects();
+			if (gen !== this.#gen) return;
+			this.projects = projects;
 			this.projectsLoaded = true;
 			this.projectsFailed = false;
 		} catch (e) {
-			if (!this.projectsLoaded) this.projectsFailed = true;
+			if (gen === this.#gen && !this.projectsLoaded) this.projectsFailed = true;
 			throw e;
 		}
 	}
 	async reloadTasks() {
-		this.tasks = await api.listTasks();
+		const gen = this.#gen;
+		const tasks = await api.listTasks();
+		if (gen !== this.#gen) return;
+		this.tasks = tasks;
 		this.#tasksAt = Date.now();
 	}
 	#tasksAt = 0;
@@ -74,15 +104,23 @@ class Workspace {
 		api.prime([() => api.listTasks()]);
 	}
 	async reloadTeams() {
-		[this.teams, this.invitations] = await Promise.all([api.listTeams(), api.teamInvitations()]);
+		const gen = this.#gen;
+		const [teams, invitations] = await Promise.all([api.listTeams(), api.teamInvitations()]);
+		if (gen !== this.#gen) return;
+		[this.teams, this.invitations] = [teams, invitations];
 	}
 	async reloadMeta() {
-		[this.labels, this.filters] = await Promise.all([collectAll((c) => api.listLabels(c)), collectAll((c) => api.listFilters(c))]);
+		const gen = this.#gen;
+		const [labels, filters] = await Promise.all([collectAll((c) => api.listLabels(c)), collectAll((c) => api.listFilters(c))]);
+		if (gen !== this.#gen) return;
+		[this.labels, this.filters] = [labels, filters];
 	}
 	/** Cheap list-view call: only the summary is used. Failures are ignored (the badge just stays stale). */
 	async reloadAttention() {
+		const gen = this.#gen;
 		try {
-			this.attention = (await api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 })).summary;
+			const summary = (await api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 })).summary;
+			if (gen === this.#gen) this.attention = summary;
 		} catch {
 			/* optional */
 		}
@@ -92,6 +130,7 @@ class Workspace {
 	 * so unchanged data causes no re-render; failures keep the cached values.
 	 */
 	async refreshLive() {
+		const gen = this.#gen;
 		const was = { p: this.projects, t: this.tasks, m: this.teams, i: this.invitations };
 		const [projects, tasks, teams, summary] = await Promise.allSettled([
 			api.listProjects(),
@@ -100,6 +139,7 @@ class Workspace {
 			api.commandCenter({ scope: 'account', view: 'list', limit: 1, updatesLimit: 1 }),
 			this.refreshPrefsIfChanged()
 		]);
+		if (gen !== this.#gen) return;
 		if (projects.status === 'fulfilled' && this.projects === was.p && !sameList(this.projects, projects.value)) this.projects = projects.value;
 		if (tasks.status === 'fulfilled' && this.tasks === was.t) {
 			if (!sameList(this.tasks, tasks.value)) this.tasks = tasks.value;
@@ -113,9 +153,10 @@ class Workspace {
 	}
 	private async refreshPrefsIfChanged() {
 		if (this.#inflight > 0) return;
+		const gen = this.#gen;
 		try {
 			const { items } = await api.listProjectPrefs(true);
-			if (this.#inflight > 0) return;
+			if (this.#inflight > 0 || gen !== this.#gen) return;
 			const next = Object.fromEntries(items.map((p) => [p.projectID, p]));
 			if (JSON.stringify(next) !== JSON.stringify(this.prefs)) this.prefs = next;
 		} catch {
@@ -133,7 +174,9 @@ class Workspace {
 		}
 	}
 	async reloadPrefs() {
+		const gen = this.#gen;
 		const { items } = await api.listProjectPrefs(true);
+		if (gen !== this.#gen) return;
 		this.prefs = Object.fromEntries(items.map((p) => [p.projectID, p]));
 		this.prefsLoaded = true;
 		this.#prefsAt = Date.now();
@@ -151,9 +194,11 @@ class Workspace {
 	async importLegacy() {
 		if (this.#imported) return;
 		this.#imported = true;
+		const gen = this.#gen;
 		try {
 			if (!hasLegacyState(localStorage)) return;
 			const result = await importLegacyState(api, localStorage, this.projects, Object.values(this.prefs));
+			if (gen !== this.#gen) return;
 			if (result.favorites + result.descriptions + result.display > 0) {
 				await Promise.allSettled([this.reloadProjects(), this.reloadPrefs()]);
 			}
@@ -207,20 +252,25 @@ class Workspace {
 	#prefsAt = 0;
 	async setPrefs(id: string, change: ProjectPrefsChange) {
 		this.prefs = { ...this.prefs, [id]: applyPrefsChange(this.prefs[id] ?? defaultPrefs(id), change) };
+		const gen = this.#gen;
 		const run = async () => {
+			if (gen !== this.#gen) return;
 			const base = this.prefs[id] ?? defaultPrefs(id);
 			const saved = await savePrefs(api, base, change);
+			if (gen !== this.#gen) return;
 			// Keep any newer optimistic fields the user changed meanwhile; only adopt the revision.
 			this.prefs = { ...this.prefs, [id]: { ...this.prefs[id], revision: saved.revision, updatedAt: saved.updatedAt } };
 		};
 		const previous = this.#saving.get(id) ?? Promise.resolve();
 		this.#inflight++;
-		const next = previous.catch(() => undefined).then(run).finally(() => this.#inflight--);
+		const next = previous.catch(() => undefined).then(run).finally(() => {
+			if (gen === this.#gen) this.#inflight--;
+		});
 		this.#saving.set(id, next);
 		try {
 			await next;
 		} catch (e) {
-			await this.reloadPrefs().catch(() => undefined);
+			if (gen === this.#gen) await this.reloadPrefs().catch(() => undefined);
 			throw e;
 		}
 	}

@@ -1246,3 +1246,9 @@ Ziel: `https://todo.linolaske.de/` lieferte nur JSON-404, weil das Image die PWA
 - `GET /v1/daily-brief` und MCP `get_daily_brief` (Scope `tasks:read`, Handbuch 1.19.0, command-center 1.3.0, push 1.1.0): Abschnitte waiting, orphaned, stale, running, done nach Vorrang, `format=line` ≤ 200 Zeichen; Tagesgrenze UTC (keine Kontozeitzone). Push-Kategorie `daily_brief` (Standard aus), `dailyBriefHour` (Standard 8, Migration `AddPushDailyBriefHour`), höchstens eine Zeile je Konto und UTC-Tag, 6 h Lookback.
 - Geprüft: `swift test` auf main: 488 Tests, 20 übersprungen, 0 Fehler, Exit 0; DailyBriefTests (22) und PushTests (15) laut Worker auch auf MariaDB grün; unabhängiger Verifier ohne Blocker.
 - Offen: Apple-Clients/PWA zeigen die Einstellung nicht (Swift-Decoder ignoriert neue Felder); echter APNs-Versand ungeprüft; volle MariaDB-Suite nicht erneut gelaufen.
+
+## Nachtrag 17.11.2026: Kontowechsel in der PWA (Karte 5C41205D, Codex-Befund 4)
+
+- Fix: `auth.user` ist jetzt Getter/Setter; ändert sich die Konto-ID (Abmeldung, Wechsel, 401-Handler), setzt er `workspace.reset()`, `reviewUndo.clear()` und `cardDetail.reset()`. `workspace` hat einen Generationszähler: Antworten von Anfragen, die unter einem älteren Konto gestartet wurden, werden verworfen (reload*, refreshLive, Prefs, Legacy-Import, Prefs-Schreibvorgänge).
+- Test: `web/tests/accountSwitch.test.ts` (3 Fälle, vorher rot). `npx vitest run`: 42 Dateien, 405 Tests grün; `npm run build` grün. `npm run check` nicht im Worktree gewertet.
+- Grenzen: kein Playwright; `ui.svelte.ts`/Theme/lokale Geräte-Einstellungen (collapsed) bewusst geräte-, nicht kontogebunden; der Request-Cache in `api.ts` wird schon durch jeden Schreibaufruf (Logout/Login) geleert.
