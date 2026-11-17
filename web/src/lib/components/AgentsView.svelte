@@ -14,6 +14,7 @@
 	import { Select } from '#lib/components/ui/select/index.js';
 	import PageHeader from './app/PageHeader.svelte';
 	import Panel from './app/Panel.svelte';
+	import JobOriginNote from './JobOriginNote.svelte';
 
 	const STATES: JobState[] = ['queued', 'claimed', 'running', 'waiting_for_answer', 'awaiting_review', 'succeeded', 'failed', 'cancelled'];
 
@@ -306,6 +307,7 @@
 						{#if j.createdAt}<span class="text-muted-foreground ml-auto text-xs" data-tabular>{formatWhen(j.createdAt)}</span>{/if}
 					</div>
 					<p class="text-muted-foreground text-xs">{j.projectName}</p>
+					<JobOriginNote jobID={j.job.id} />
 					{#if j.job.progress}<p class="line-clamp-2 text-[13px]">{j.job.progress}</p>{/if}
 					{#if canStopJob(j.job.state)}
 						{#if confirmStop === j.job.id}
