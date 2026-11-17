@@ -270,6 +270,39 @@ final class AccountLockTests: XCTestCase {
             }
         })
     }
+
+    /// Historical authorship must not grant export access: after the owner revoked A's access, A's old task
+    /// (now with confidential edits) and a project A once created but transferred away must not be exported.
+    func testExportOmitsContentWithoutCurrentAccess() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        // Transferred project: A created it, the admin now owns it, no grant for A.
+        let transferred = Project(ownerID: f.user.id, parentID: nil, name: "Uebertragen-Projekt")
+        try await transferred.save(on: db)
+        let sharing = try ProjectSharing(project: transferred)
+        sharing.ownerID = f.admin.id
+        try await sharing.save(on: db)
+        try await TodoTask(ownerID: f.user.id, projectID: try transferred.requireID(), title: "Vertraulich-Titel").save(on: db)
+        // Access revoked: project of the admin, A's task there, no grant.
+        let foreign = Project(ownerID: f.admin.id, parentID: nil, name: "Entzogen-Projekt")
+        try await foreign.save(on: db)
+        try await TodoTask(ownerID: f.user.id, projectID: try foreign.requireID(), title: "Entzogen-Titel").save(on: db)
+        // Still granted: A's task in a project shared with A stays exportable.
+        let shared = Project(ownerID: f.admin.id, parentID: nil, name: "Geteilt-Projekt")
+        try await shared.save(on: db)
+        try await ProjectGrant(projectID: try shared.requireID(), principalType: "person", principalID: f.user.id, role: .edit).save(on: db)
+        try await TodoTask(ownerID: f.user.id, projectID: try shared.requireID(), title: "Geteilt-Titel").save(on: db)
+
+        try await f.t.app.test(.GET, "/v1/me/export", beforeRequest: { $0.headers.bearerAuthorization = .init(token: f.user.token) }, afterResponse: { res async in
+            XCTAssertEqual(res.status, .ok)
+            let text = String(decoding: res.body.readableBytesView, as: UTF8.self)
+            XCTAssertTrue(text.contains("Geteilt-Titel"))
+            for forbidden in ["Vertraulich-Titel", "Uebertragen-Projekt", "Entzogen-Titel", "Entzogen-Projekt"] {
+                XCTAssertFalse(text.contains(forbidden), forbidden)
+            }
+        })
+    }
+
 }
 
 func XCTUnwrapAsync<T>(_ value: @autoclosure () async throws -> T?, file: StaticString = #filePath, line: UInt = #line) async throws -> T {

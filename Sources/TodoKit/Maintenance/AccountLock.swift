@@ -225,11 +225,20 @@ struct AccountLockController: RouteCollection {
         let uid = try user.requireID()
         let db = req.db
         let email = try await UserEmail.query(on: db).filter(\.$userID == uid).first()?.email
-        let projects = try await Project.query(on: db).filter(\.$ownerID == uid).sort(\.$createdAt).sort(\.$id).all().map {
+        // Authorship (owner_id is only the creator) never grants access: export what the account may read right now.
+        let (snapshot, ordered) = try await SharingAccess(user: user, db: db).snapshot()
+        var readable = Set<UUID>()
+        for project in ordered where try snapshot.visibility(project).role != nil { readable.insert(try project.requireID()) }
+        let projects = try ordered.filter { project in
+            let id = try project.requireID()
+            let effectiveOwner = snapshot.sharing[id].map { $0.ownerType == "person" ? $0.ownerID : nil } ?? project.ownerID
+            return readable.contains(id) && effectiveOwner == uid
+        }.map {
             ExportProject(id: try $0.requireID(), parentID: $0.parentID, name: $0.name, description: $0.details, color: $0.color,
                           createdAt: $0.createdAt, updatedAt: $0.updatedAt)
         }
-        let tasks = try await TodoTask.query(on: db).filter(\.$ownerID == uid).sort(\.$createdAt).sort(\.$id).all().map {
+        let tasks = try await TodoTask.query(on: db).filter(\.$ownerID == uid).sort(\.$createdAt).sort(\.$id).all()
+            .filter { readable.contains($0.projectID) }.map {
             ExportTask(id: try $0.requireID(), projectID: $0.projectID, title: $0.title, description: $0.details, status: $0.status,
                        createdAt: $0.createdAt, updatedAt: $0.updatedAt)
         }
