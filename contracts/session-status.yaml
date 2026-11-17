@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: Todolino Session-Status ohne Karte und Übersicht "Jetzt"
+  version: 1.0.0
+  description: 'ADR 0034. Ein Agent meldet ohne geclaimte Karte, woran seine Sitzung gerade im Projekt arbeitet (ein Satz, höchstens 300 Zeichen).
+    Eine Zeile je (Konto, Projekt, Sitzungsname), jeder Aufruf überschreibt sie (Upsert). Der Text läuft vor dem Speichern durch den Secrets-Filter
+    ([gefiltert]). Rate-Limit: höchstens ein Schreibvorgang je 10 s und (Konto, Projekt, Sitzungsname) (429 rate_limited, Retry-After); höchstens 20
+    Sitzungen je Konto und Projekt (429 too_many_sessions). Schreiben: REST PUT (Sitzung/Bearer) oder MCP report_session_status (Scope tasks:write,
+    Projekt im OAuth-Grant); beide brauchen Rolle edit am Projekt, Unsichtbares/Fremdes 404, sichtbar aber nur lesbar 403. Lesen: GET /v1/overview/now
+    (Sitzung/Bearer) und MCP get_overview_now (Scope tasks:read, nur Projekte im Grant), je lesbarem Projekt gebündelt: laufende Karten (in_progress,
+    Worker, letzte Fortschrittsnotiz, Alter), Sitzungs-Heartbeats (orphaned nach 30 Minuten ohne Meldung, nach 24 Stunden ausgeblendet), aktive
+    Agentenaufträge, Builds (neueste 5), offene Fragen, ausstehende Reviews, letzte 10 Aktivitätsereignisse; Projekte ohne Inhalt entfallen,
+    sortiert nach letzter Aktivität. Live (ADR 0022): jede Meldung ändert das Live-Token; MCP wait_for_events liefert zusätzlich einen
+    projektbezogenen Hinweis (kind progress, ohne taskID) für lesbare Grant-Projekte. Kein Polling nötig.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/projects/{id}/session-status:
+    put:
+      operationId: putSessionStatus
+      summary: Session-Status im Projekt melden (Upsert je Sitzungsname)
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SessionStatusRequest'}
+      responses:
+        '200':
+          description: gespeichert (Text gefiltert)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SessionStatus'}
+        '400': {description: 'invalid_session, invalid_activity'}
+        '401': {description: nicht angemeldet}
+        '403': {description: Projekt lesbar, aber keine Schreibrolle}
+        '404': {description: Projekt unbekannt oder unsichtbar}
+        '429': {description: 'rate_limited (Retry-After 10) oder too_many_sessions'}
+  /v1/overview/now:
+    get:
+      operationId: getOverviewNow
+      summary: Was passiert gerade in allen lesbaren Projekten
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OverviewNow'}
+        '401': {description: nicht angemeldet}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    SessionStatusRequest:
+      type: object
+      required: [sessionName, activity]
+      properties:
+        sessionName: {type: string, minLength: 1, maxLength: 100}
+        activity: {type: string, minLength: 1, maxLength: 300}
+    SessionStatus:
+      type: object
+      required: [projectID, sessionName, activity, updatedAt]
+      properties:
+        projectID: {type: string, format: uuid}
+        sessionName: {type: string}
+        activity: {type: string}
+        updatedAt: {type: string, format: date-time}
+    OverviewNow:
+      type: object
+      required: [serverTime, projects]
+      properties:
+        serverTime: {type: string, format: date-time}
+        projects:
+          type: array
+          items: {$ref: '#/components/schemas/OverviewProject'}
+    OverviewProject:
+      type: object
+      required: [projectID, projectName, lastActivityAt, runningTasks, sessions, agentJobs, builds, openQuestions, pendingReviews, recentActivity]
+      properties:
+        projectID: {type: string, format: uuid}
+        projectName: {type: string}
+        lastActivityAt: {type: string, format: date-time}
+        runningTasks:
+          type: array
+          items:
+            type: object
+            required: [taskID, title, ageSeconds]
+            properties:
+              taskID: {type: string, format: uuid}
+              title: {type: string}
+              worker: {type: string, nullable: true}
+              lastProgress:
+                type: object
+                nullable: true
+                properties: {note: {type: string}, at: {type: string, format: date-time}}
+              ageSeconds: {type: integer}
+        sessions:
+          type: array
+          items:
+            type: object
+            required: [sessionName, activity, updatedAt, ageSeconds, orphaned]
+            properties:
+              sessionName: {type: string}
+              activity: {type: string}
+              updatedAt: {type: string, format: date-time}
+              ageSeconds: {type: integer}
+              orphaned: {type: boolean, description: 'seit mehr als 30 Minuten ohne Meldung'}
+        agentJobs:
+          type: array
+          items:
+            type: object
+            properties: {jobID: {type: string, format: uuid}, taskID: {type: string, format: uuid}, state: {type: string}, mode: {type: string}, progress: {type: string}}
+        builds:
+          type: array
+          items:
+            type: object
+            properties: {taskID: {type: string, format: uuid}, buildID: {type: string}, label: {type: string, nullable: true}, platform: {type: string, nullable: true}, createdAt: {type: string, format: date-time}}
+        openQuestions:
+          type: array
+          items: {$ref: '#/components/schemas/OverviewOpenItem'}
+        pendingReviews:
+          type: array
+          items: {$ref: '#/components/schemas/OverviewOpenItem'}
+        recentActivity:
+          type: array
+          items:
+            type: object
+            properties: {taskID: {type: string, format: uuid}, taskTitle: {type: string}, kind: {type: string}, actorType: {type: string}, createdAt: {type: string, format: date-time}}
+    OverviewOpenItem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        taskID: {type: string, format: uuid}
+        taskTitle: {type: string}
+        text: {type: string, maxLength: 200}
+        createdAt: {type: string, format: date-time}

@@ -1,5 +1,11 @@
 # Status
 
+## Checkpoint 17.11.2026: Session-Status ohne Karte, Stufe 1 Backend (Karte `F6DF71C3`, Branch `worktree-agent-a413771e80bdac778`)
+
+- Neu: Tabelle `session_statuses` (additiv, eindeutig user/project/session_name), MCP `report_session_status` und `get_overview_now`, REST `PUT /v1/projects/{id}/session-status` und `GET /v1/overview/now` (`SessionStatusService`, `OverviewNowService` in `Sources/TodoKit/SessionStatus`). Rate-Limit 1 Schreibvorgang/10 s je Sitzung, Secrets-Filter, Rechte wie `ProjectAccess` plus Grant. Live: Middleware + projektbezogener `wait_for_events`-Hinweis (`progress`, ohne `taskID`); `session_statuses` aus `taskHints` ausgenommen.
+- Verträge/Doku: `contracts/session-status.yaml` 1.0.0, Handbuch 1.31.0 (eingebettet), `docs/MCP-PARITAET.md`, ADR 0034. Tests: `SessionStatusTests`.
+- Offen: PWA/App-Anzeige, Plugin-Hook, Cleanup alter Zeilen, Absenderfilter für den Eigen-Hinweis (siehe ADR 0034).
+
 ## Checkpoint 17.11.2026: Zeitangaben in der PWA angebunden (Karte `330C57F8`)
 
 - Implementiert auf `codex/erstelldatum`, Hauptrepo/PWA `web/`: Karten-Detail zeigt `createdAt` und `updatedAt` (statt jüngster Fortschrittsnotiz als Kartenzeit); Fragen zeigen gestellt/beantwortet, Reviews angefragt/entschieden jeweils getrennt. Bericht, Überblick und „Für dich“ (Bedarfskarten und Feed-Beiträge) nutzen dieselbe Anzeige; Fortschrittsnotizen, Updates und Aufgaben-/Projektkommentare erhalten semantische Zeitangaben. Projektboard, Planungsboard und Übersichtskarten reservieren eine einzeilige dezente Erstellzeit, auch bei älteren Antworten ohne Feld.
