@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Timestamp from '../Timestamp.svelte';
 	import { api } from '#lib/api.js';
 	import { validateAnswer } from '#lib/commandCenter.js';
 	import { t } from '#lib/i18n/index.js';
@@ -11,6 +12,8 @@
 
 	/** One open question with its answer controls: options become buttons, otherwise free text. */
 	interface Props {
+		createdAt?: string | null;
+		answeredAt?: string | null;
 		id: string;
 		prompt: string;
 		options: string[];
@@ -26,7 +29,7 @@
 		bare?: boolean;
 		onanswered: () => void | Promise<void>;
 	}
-	let { id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, bare = false, onanswered }: Props = $props();
+	let { createdAt, answeredAt, id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, bare = false, onanswered }: Props = $props();
 
 	let text = $state('');
 	let busy = $state(false);
@@ -52,6 +55,7 @@
 		<div class="min-w-0 flex-1">
 			{#if context}<p class="text-muted-foreground mb-0.5 text-xs">{context}</p>{/if}
 			{#if askedBy}<p class="text-muted-foreground text-xs">{t('cc.question.title', { who: askedBy })}{blocking ? ` · ${t('cc.question.blocking')}` : ''}</p>{/if}
+			<p class="text-muted-foreground text-xs"><Timestamp value={createdAt} label="time.asked" />{#if answeredAt} · <Timestamp value={answeredAt} label="time.answered" />{/if}</p>
 			<p class="font-medium break-words whitespace-pre-wrap" data-testid="question-prompt">{prompt}</p>
 		</div>
 	</div>

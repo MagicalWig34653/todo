@@ -1,5 +1,6 @@
 /** Reference to the card shown in the large detail window (`?card=<type>:<id>`) and pure helpers around it. */
 import { t } from './i18n/index.js';
+import { formatTimestamp } from './planning.js';
 import type { ForYouNeed, ForYouPost } from './forYou.js';
 
 export type CardType = 'task' | 'question' | 'review' | 'confirmation';
@@ -51,7 +52,7 @@ export function relativeWhen(iso: string | null | undefined, now = new Date()): 
 	const hours = Math.floor(min / 60);
 	if (hours < 24) return t('card.when.hours', { count: hours });
 	const days = Math.floor(hours / 24);
-	return t(days === 1 ? 'card.when.day' : 'card.when.days', { count: days });
+	return days < 7 ? t(days === 1 ? 'card.when.day' : 'card.when.days', { count: days }) : formatTimestamp(iso, true);
 }
 
 export interface GalleryItem {

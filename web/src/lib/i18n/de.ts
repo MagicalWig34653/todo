@@ -1378,6 +1378,12 @@ export const de = {
 	'forYou.access.hint': 'Erlauben gibt der Verbindung dieses Projekt frei, höchstens mit deiner Rolle ({role}) und ihren erlaubten Rechten.',
 	'forYou.access.allow': 'Zugriff erlauben',
 	'forYou.access.ignore': 'Ignorieren',
+	'time.created': 'erstellt',
+	'time.updated': 'zuletzt geändert',
+	'time.asked': 'gestellt',
+	'time.answered': 'beantwortet',
+	'time.requested': 'angefragt',
+	'time.decided': 'entschieden',
 } as const;
 
 export type MessageKey = keyof typeof de;

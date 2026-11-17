@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Timestamp from '../Timestamp.svelte';
 	import { api, type Review } from '#lib/api.js';
 	import { decisionNeedsNote, type ReviewDecision } from '#lib/commandCenter.js';
 	import { t } from '#lib/i18n/index.js';
@@ -13,6 +14,8 @@
 
 	/** A pending review: summary, optional note and the two decisions. */
 	interface Props {
+		createdAt?: string | null;
+		decidedAt?: string | null;
 		taskID: string;
 		summary: string;
 		requestedBy?: string | null;
@@ -25,7 +28,7 @@
 		onopen?: () => void;
 		ondecided: () => void | Promise<void>;
 	}
-	let { taskID, summary, requestedBy, context, brainRecommended = false, markdown = false, onopen, ondecided }: Props = $props();
+	let { createdAt, decidedAt, taskID, summary, requestedBy, context, brainRecommended = false, markdown = false, onopen, ondecided }: Props = $props();
 
 	let note = $state('');
 	let busy = $state(false);
@@ -59,6 +62,7 @@
 		<div class="min-w-0 flex-1">
 			{#if context}<p class="text-muted-foreground mb-0.5 text-xs">{context}</p>{/if}
 			{#if requestedBy}<p class="text-muted-foreground text-xs">{t('cc.review.title', { who: requestedBy })}</p>{/if}
+			<p class="text-muted-foreground text-xs"><Timestamp value={createdAt} label="time.requested" />{#if decidedAt} · <Timestamp value={decidedAt} label="time.decided" />{/if}</p>
 			{#if brainRecommended}<Badge variant="accent" class="my-1" data-testid="review-brain-badge">{t('cc.review.brain')}</Badge>{/if}
 			{#if markdown}
 				<div data-testid="review-summary"><Markdown text={summary} /></div>

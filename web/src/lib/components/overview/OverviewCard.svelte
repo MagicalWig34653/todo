@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Timestamp from '../Timestamp.svelte';
 	import type { CommandCard } from '#lib/api.js';
 	import { percentOf, progressCounter } from '#lib/commandCenter.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
@@ -48,6 +49,7 @@
 		</button>
 	</header>
 
+	<p class="text-muted-foreground h-4 min-w-0 truncate text-xs" data-tabular><Timestamp value={card.task.createdAt} label="time.created" /></p>
 	<div class="flex flex-col gap-1" data-testid="oc-progress">
 		<div class="flex items-baseline justify-between gap-2 text-xs">
 			<span class="font-medium" data-tabular>{percent} %</span>
@@ -79,21 +81,21 @@
 	{#if card.latestUpdate}
 		<div class="border-l-2 pl-2 text-xs" data-testid="oc-latest">
 			<p class="text-muted-foreground">
-				{[card.latestUpdate.actorLabel, formatWhen(card.latestUpdate.at)].filter(Boolean).join(', ')}
+				{card.latestUpdate.actorLabel ?? ''} · <Timestamp value={card.latestUpdate.at} />
 			</p>
 			<p class="line-clamp-3 break-words whitespace-pre-wrap">{card.latestUpdate.text}</p>
 		</div>
 	{/if}
 
 	{#each card.questions as q (q.id)}
-		<QuestionAnswer id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel ?? who(null)} onanswered={onchanged} />
+		<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel ?? who(null)} onanswered={onchanged} />
 	{/each}
 	{#if hiddenQuestions > 0}
 		<button type="button" class="text-ui-accent-ink text-left text-xs underline underline-offset-2" onclick={() => onopen(card)}>{t('cc.card.moreQuestions', { count: hiddenQuestions })}</button>
 	{/if}
 
 	{#if card.pendingReview}
-		<ReviewDecision taskID={card.task.id} summary={card.pendingReview.summary} requestedBy={card.pendingReview.requestedByLabel ?? who(null)} ondecided={onchanged} />
+		<ReviewDecision createdAt={card.pendingReview.createdAt} taskID={card.task.id} summary={card.pendingReview.summary} requestedBy={card.pendingReview.requestedByLabel ?? who(null)} ondecided={onchanged} />
 	{/if}
 
 	{#if card.subtasks.length > 0}

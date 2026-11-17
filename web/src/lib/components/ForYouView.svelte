@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Timestamp from './Timestamp.svelte';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { api, ApiError } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
@@ -180,6 +181,7 @@
 							<span id="need-d-{item.id}" class="text-muted-foreground text-xs">
 								{[item.projectName, item.kind === 'question' || item.kind === 'review' ? item.taskTitle : '', item.dueAt ? formatWhen(item.dueAt) : ''].filter(Boolean).join(' · ')}
 							</span>
+							<span class="text-muted-foreground h-4 w-full truncate text-xs" data-tabular><Timestamp value={item.createdAt} label={item.kind === 'question' ? 'time.asked' : item.kind === 'review' ? 'time.requested' : 'time.created'} /></span>
 						</button>
 						{#if item.actions.length > 0}
 							{@const free = item.actions.length === 1 && item.actions[0].requiresInput && item.actions[0].inputField === 'answer'}
@@ -216,7 +218,7 @@
 							<span id="post-t-{post.id}" class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
 							{#if post.text}<span class="text-sm whitespace-pre-line">{post.text}</span>{/if}
 							{#if post.detail}<span class="text-muted-foreground text-sm">→ {post.detail}</span>{/if}
-							<span id="post-d-{post.id}" class="text-muted-foreground text-xs">{[post.projectName, post.taskTitle, post.createdAt ? formatWhen(post.createdAt) : ''].filter(Boolean).join(' · ')}</span>
+							<span id="post-d-{post.id}" class="text-muted-foreground text-xs">{[post.projectName, post.taskTitle].filter(Boolean).join(' · ')}{#if post.createdAt} · <Timestamp value={post.createdAt} />{/if}</span>
 						</button>
 						{#if post.percent != null}
 							<div class="bg-muted h-1.5 w-full overflow-hidden rounded-full" role="progressbar" aria-valuenow={post.percent} aria-valuemin="0" aria-valuemax="100">

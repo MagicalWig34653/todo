@@ -50,6 +50,8 @@ export interface TaskPlanningSummary {
 	reminderCount: number;
 }
 export interface Task {
+	createdAt?: string | null;
+	updatedAt?: string | null;
 	id: string;
 	projectID: string;
 	title: string;
