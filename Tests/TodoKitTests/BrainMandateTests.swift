@@ -365,6 +365,122 @@ final class BrainMandateTests: XCTestCase {
         }
     }
 
+    // MARK: Security review follow-ups
+
+    func testLongQuoteAndNoteSurviveInTheAudit() async throws {
+        try await run { e in
+            try await mandate(e)
+            let task = try await review(e)
+            let quote = String(repeating: "q", count: 2000), note = String(repeating: "n", count: 4000)
+            let r = try await call(e, e.brain, "decide_review", ["taskID": task, "decision": "request_changes", "note": note, "quote": quote])
+            XCTAssertFalse(r.isError, r.text)
+            let rows = try await audit(e)
+            XCTAssertEqual((rows.first?["quote"] as? String)?.count, 2000)
+            XCTAssertEqual((rows.first?["note"] as? String)?.count, 4000)
+        }
+    }
+
+    func testIntegrationCannotCloseACardWithAPendingReviewViaUpdateTask() async throws {
+        try await run { e in
+            try await mandate(e)
+            let task = try await review(e)
+            let t = try unwrap(try await TodoTask.find(UUID(uuidString: task), on: e.f.test.app.db))
+            // Another connection (even the mandated one) settles a foreign review only through decide_review.
+            for token in [e.brain] {
+                let r = try await call(e, token, "update_task", ["id": task, "version": t.version, "status": "done"])
+                XCTAssertEqual(r.text, "brain_mandate_required")
+            }
+            try await assertEqual(try await taskStatus(e, task), "in_review")
+            let pending = try await TaskReview.query(on: e.f.test.app.db).filter(\.$taskID == UUID(uuidString: task)!).filter(\.$state == "pending").count()
+            XCTAssertEqual(pending, 1)
+            // The requesting connection may still withdraw its own review by settling the card (booked as the integration).
+            let own = try await call(e, e.agent, "update_task", ["id": task, "version": t.version, "status": "done"])
+            XCTAssertFalse(own.isError, own.text)
+            // Without a pending review the documented "proven finished" path still works, booked as the integration.
+            let plain = try await newTask(e, "Plain")
+            let pt = try unwrap(try await TodoTask.find(UUID(uuidString: plain), on: e.f.test.app.db))
+            let ok = try await call(e, e.agent, "update_task", ["id": plain, "version": pt.version, "status": "done"])
+            XCTAssertFalse(ok.isError, ok.text)
+            let events = try await ActivityEvent.query(on: e.f.test.app.db).filter(\.$taskID == UUID(uuidString: plain)!).filter(\.$kind == "task.status_changed").all()
+            XCTAssertEqual(events.map(\.actorType), [.integration])
+            XCTAssertEqual(events.first?.actorID, e.agentGrant)
+        }
+    }
+
+    func testIntegrationCannotMoveACardWithAnOpenReviewOrQuestion() async throws {
+        try await run { e in
+            for g in [e.agentGrant, e.brainGrant] {
+                let grant = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
+                grant.projects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
+            }
+            let task = try await review(e)
+            let t = try unwrap(try await TodoTask.find(UUID(uuidString: task), on: e.f.test.app.db))
+            let other = try e.f.other.requireID().uuidString
+            let blocked = try await call(e, e.agent, "update_task", ["id": task, "version": t.version, "projectID": other])
+            XCTAssertEqual(blocked.text, "open_review_or_question")
+            let free = try await newTask(e, "Free")
+            let ft = try unwrap(try await TodoTask.find(UUID(uuidString: free), on: e.f.test.app.db))
+            let moved = try await call(e, e.agent, "update_task", ["id": free, "version": ft.version, "projectID": other])
+            XCTAssertFalse(moved.isError, moved.text)
+        }
+    }
+
+    func testIntegrationsEditAndDeleteOnlyTheirOwnCommentsAndDecisionCommentsAreImmutable() async throws {
+        try await run { e in
+            try await mandate(e)
+            let task = try await review(e)
+            let c = try await call(e, e.agent, "add_comment", ["taskID": task, "body": "from agent"])
+            let cid = try XCTUnwrap(c.json?["id"] as? String), version = try XCTUnwrap(c.json?["version"] as? Int)
+            let foreign = try await call(e, e.brain, "update_comment", ["taskID": task, "commentID": cid, "body": "hijack", "version": version])
+            XCTAssertEqual(foreign.text, "not_comment_author")
+            let foreignDelete = try await call(e, e.brain, "delete_comment", ["taskID": task, "commentID": cid])
+            XCTAssertEqual(foreignDelete.text, "not_comment_author")
+            let own = try await call(e, e.agent, "update_comment", ["taskID": task, "commentID": cid, "body": "edited", "version": version])
+            XCTAssertFalse(own.isError, own.text)
+            // The decision comment written under the mandate cannot be edited or deleted by anyone.
+            let d = try await call(e, e.brain, "decide_review", ["taskID": task, "decision": "accept", "quote": "ja"])
+            XCTAssertFalse(d.isError, d.text)
+            let decision = try unwrap(try await TaskComment.query(on: e.f.test.app.db).filter(\.$taskID == UUID(uuidString: task)!)
+                .filter(\.$authorLabel == "Brain im Auftrag von OAuth User").first())
+            let did = try decision.requireID().uuidString
+            let edit = try await call(e, e.brain, "update_comment", ["taskID": task, "commentID": did, "body": "x", "version": decision.version])
+            XCTAssertEqual(edit.text, "decision_comment_immutable")
+            let del = try await call(e, e.brain, "delete_comment", ["taskID": task, "commentID": did])
+            XCTAssertEqual(del.text, "decision_comment_immutable")
+        }
+    }
+
+    func testReservedBrainLabelCannotBeSetByAgents() async throws {
+        try await run { e in
+            let task = try await newTask(e)
+            for label in ["Brain im Auftrag von Lino", "  brain im auftrag von X"] {
+                let r = try await call(e, e.agent, "add_comment", ["taskID": task, "body": "x", "agentName": label])
+                XCTAssertEqual(r.text, "invalid_agent_name")
+            }
+        }
+    }
+
+    func testBrainRecommendedIgnoresOldCommentsAndOwnReviews() async throws {
+        try await run { e in
+            try await mandate(e)
+            let reviewed = try await review(e), own = try await review(e, by: e.brain)
+            _ = try await call(e, e.brain, "add_comment", ["taskID": reviewed, "body": "Empfehlung", "reviewID": try await reviewID(e, reviewed)])
+            _ = try await call(e, e.brain, "add_comment", ["taskID": own, "body": "Empfehlung", "reviewID": try await reviewID(e, own)])
+            func flags() async throws -> [String: Bool] {
+                let list = try await e.f.test.json(.GET, "/v1/reviews", token: e.f.session)
+                return Dictionary(uniqueKeysWithValues: try XCTUnwrap(list.list).map { ($0["taskID"] as! String, $0["brainRecommended"] as? Bool ?? false) })
+            }
+            var f = try await flags()
+            XCTAssertEqual(f[reviewed], true)
+            XCTAssertEqual(f[own], false, "the mandated connection's own review is never recommended by itself")
+            // A comment older than the (re-)granted mandate no longer counts.
+            let m = try unwrap(try await BrainMandate.query(on: e.f.test.app.db).first())
+            m.updatedAt = Date().addingTimeInterval(60); try await m.save(on: e.f.test.app.db)
+            f = try await flags()
+            XCTAssertEqual(f[reviewed], false)
+        }
+    }
+
     private func reviewID(_ e: Env, _ task: String) async throws -> String {
         try unwrap(try await TaskReview.query(on: e.f.test.app.db).filter(\.$taskID == UUID(uuidString: task)!).first()?.requireID().uuidString)
     }

@@ -72,6 +72,10 @@ enum BrainMandateService {
         try await db.transaction { tx in
             try await lockSharingGraph(on: tx)
             try await lockRow(table: User.schema, id: userID, on: tx)
+            // Same order as the decision check: mandate row first, then the grant row.
+            if let existing = try await BrainMandate.query(on: tx).filter(\.$userID == userID).first(), let id = existing.id {
+                try await lockRow(table: BrainMandate.schema, id: id, on: tx)
+            }
             try await lockRow(table: OAuthGrant.schema, id: request.grantID, on: tx)
             guard let g = try await OAuthGrant.find(request.grantID, on: tx), g.userID == userID else { throw Abort(.notFound) }
             guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }

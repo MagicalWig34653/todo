@@ -39,7 +39,13 @@ enum ReviewBrain {
         let commentIDs = comments.compactMap(\.id)
         let authored = Set(try await ActivityEvent.query(on: db).filter(\.$kind == "comment.created").filter(\.$actorType == .integration)
             .filter(\.$actorID == mandate.grantID).filter(\.$subjectID ~~ commentIDs).all().compactMap(\.subjectID))
-        return Set(comments.filter { $0.id.map(authored.contains) ?? false }.compactMap(\.reviewID))
+        // Only comments written since the mandate was (re-)granted count, and never on a review the mandated connection requested itself.
+        let candidates = comments.filter { c in (c.id.map(authored.contains) ?? false) && (c.createdAt.map { $0 >= mandate.updatedAt } ?? false) }
+        let reviewIDs = Set(candidates.compactMap(\.reviewID))
+        guard !reviewIDs.isEmpty else { return [] }
+        let own = Set(try await TaskReview.query(on: db).filter(\.$id ~~ Array(reviewIDs)).filter(\.$requestedByType == .integration)
+            .filter(\.$requestedByID == mandate.grantID).all().compactMap(\.id))
+        return reviewIDs.subtracting(own)
     }
 }
 

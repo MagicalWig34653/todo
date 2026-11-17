@@ -32,3 +32,10 @@ Lino steuert seine Projekt-Sessions über einen Orchestrator ("Brain"). Er will 
 - Handbuch 1.29.0, Verträge `command-center` (Parameter `quote`, neue Fehler) und `connections` (Mandat-Endpunkte).
 - Agenten, die bisher fremde Reviews ohne Mandat entschieden haben, bekommen `brain_mandate_required`.
 - Offen: Step-up (frische Passkey-Bestätigung) beim Erteilen des Mandats ist nicht Teil dieses Schritts.
+
+## Nachtrag 17.11.2026: Ergebnis des Security-Reviews
+
+Umgesetzt: Audit-Felder `quote`/`note` als TEXT; Mandat und Grant werden unter `FOR UPDATE` gelesen (Sperrreihenfolge Mandat, dann Grant); Runner-Pfade entscheiden, auditieren und kommentieren in einer Transaktion; `update_task` auf `done` bei Review einer anderen Verbindung ist `brain_mandate_required`, Projektwechsel mit offener Review/Frage ist gesperrt, Aktivitaet wird als Integration gebucht; Integrationen aendern/loeschen nur eigene Kommentare, Entscheidungskommentare sind unveraenderlich; Label-Praefix "Brain im Auftrag von" reserviert; `brainRecommended` zaehlt nur Kommentare ab Erteilung und nie auf eigenen Reviews der Mandatsverbindung.
+
+Bekannte Luecken (bewusst offen): Journal-Urteile (`review_decision`) und andere Planungsaktivitaeten laufen ausserhalb des Mandats bzw. werden als Person gebucht; Aktivitaets-Label der Mandatsentscheidung; PWA-Einstellungsseite; Passkey-Step-up beim Erteilen.
+

@@ -55,7 +55,7 @@ struct CreateBrainMandates: AsyncMigration {
             .field("grant_id", .uuid, .required)
             .field("kind", .string, .required)
             .field("task_id", .uuid, .required).field("project_id", .uuid, .required).field("subject_id", .uuid, .required)
-            .field("quote", .string, .required).field("note", .string)
+            .field("quote", .sql(raw: "TEXT"), .required).field("note", .sql(raw: "TEXT"))
             .field("created_at", .datetime, .required).create()
     }
     func revert(on db: any Database) async throws {

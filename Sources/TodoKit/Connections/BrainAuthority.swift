@@ -1,4 +1,6 @@
 import Fluent
+import FluentSQL
+import SQLKit
 import Vapor
 
 /// Proof that an agent decision is covered by the person's brain mandate (ADR 0032).
@@ -6,6 +8,16 @@ struct BrainAuthority: Sendable {
     let mandateID: UUID
     let grantID: UUID
     let quote: String
+}
+
+/// Reads a row with `SELECT ... FOR UPDATE` and decodes the model from that very result. A plain read after `lockRow` would
+/// still see the transaction's old snapshot on MariaDB (repeatable read) and could miss a concurrent revoke. SQLite (tests)
+/// serialises writers and has no row locks, so a normal query is equivalent there.
+func lockedFirst<M: Model>(_ type: M.Type, column: String, equals value: UUID, on db: any Database) async throws -> M? {
+    guard let sql = db as? any SQLDatabase else { throw Abort(.internalServerError) }
+    let lock = sql.dialect.name == "sqlite" ? "" : " FOR UPDATE"
+    guard let row = try await sql.raw("SELECT * FROM \(ident: M.schema) WHERE \(ident: column) = \(bind: value) LIMIT 1\(unsafeRaw: lock)").first() else { return nil }
+    return try row.decode(fluentModel: M.self)
 }
 
 extension WorkflowService {
@@ -16,12 +28,12 @@ extension WorkflowService {
     func brainAuthority(for actor: WorkflowActor, projectID: UUID, quote rawQuote: String?, on tx: any Database) async throws -> BrainAuthority? {
         guard actor.type != .person else { return nil }
         let userID = try user.requireID()
+        // Lock order everywhere: mandate row, then grant row (see BrainMandateService.grant).
         guard actor.type == .integration,
-              let probe = try await BrainMandate.query(on: tx).filter(\.$userID == userID).filter(\.$grantID == actor.id).first(),
-              let mandateID = probe.id else { throw Abort(.forbidden, reason: "brain_mandate_required") }
-        try await lockRow(table: BrainMandate.schema, id: mandateID, on: tx)
-        guard let mandate = try await BrainMandate.find(mandateID, on: tx), mandate.revokedAt == nil, mandate.grantID == actor.id,
-              let grant = try await OAuthGrant.find(actor.id, on: tx), !grant.revoked, grant.userID == userID else {
+              let mandate = try await lockedFirst(BrainMandate.self, column: "user_id", equals: userID, on: tx),
+              let mandateID = mandate.id, mandate.revokedAt == nil, mandate.grantID == actor.id,
+              let grant = try await lockedFirst(OAuthGrant.self, column: "id", equals: actor.id, on: tx),
+              !grant.revoked, grant.userID == userID else {
             throw Abort(.forbidden, reason: "brain_mandate_required")
         }
         guard mandate.projects.contains(projectID) else { throw Abort(.forbidden, reason: "outside_brain_mandate") }
@@ -29,12 +41,6 @@ extension WorkflowService {
         guard !quote.isEmpty else { throw Abort(.badRequest, reason: "quote_required") }
         guard quote.count <= BrainMandateLimits.maxQuote else { throw Abort(.badRequest, reason: "invalid_quote") }
         return BrainAuthority(mandateID: mandateID, grantID: actor.id, quote: quote)
-    }
-
-    /// Same checks in a short transaction of their own, for the runner-backed paths that delegate to `AgentService`.
-    func brainAuthority(for actor: WorkflowActor, projectID: UUID, quote: String?) async throws -> BrainAuthority? {
-        guard actor.type != .person else { return nil }
-        return try await db.transaction { tx in try await brainAuthority(for: actor, projectID: projectID, quote: quote, on: tx) }
     }
 
     static func brainLabel(_ user: User) -> String { "Brain im Auftrag von \(String(user.displayName.prefix(60)))" }
@@ -53,14 +59,6 @@ extension WorkflowService {
             actor: (actor.type, actor.id), target: target, agentLabel: Self.brainLabel(user),
             scope: { [allowedProjects] t in
                 if let allowedProjects, !allowedProjects.contains(t.projectID) { throw Abort(.notFound) }
-            }, on: tx)
-    }
-
-    /// Runner-backed decisions: the job transition ran in its own transaction, audit and comment follow.
-    func recordBrainDecisionAfterDelegation(_ authority: BrainAuthority, kind: String, taskID: UUID, subjectID: UUID, note: String?,
-                                            actor: WorkflowActor) async throws {
-        try await mutate(taskID, role: .comment) { task, tx in
-            try await recordBrainDecision(authority, kind: kind, task: task, subjectID: subjectID, note: note, actor: actor, on: tx)
-        }
+            }, allowReservedLabel: true, on: tx)
     }
 }
