@@ -1290,3 +1290,9 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Suche: Eingabe von genau 8 Hex-Zeichen (beliebige Schreibung, optional `#`) liefert zuoberst Treffer. Die Suche ist serverseitig und kennt keine IDs; der Abgleich läuft clientseitig gegen `workspace.tasks` sowie `GET /questions?state=all` und `GET /reviews?state=all`. Backend und Verträge unverändert.
 - Grenzen: Kurz-ID-Treffer sind auf die Listen begrenzt, die die API je Aufruf liefert (Standardlimits); Reviews werden über die Aufgabe geöffnet (Review-Karten sind nach Aufgaben-ID adressiert). Nur Treffer in diesen drei Entitäten, keine Projekte/Kommentare.
 - Prüfung: vitest 437 grün (neu `tests/shortId.test.ts`), `npm run build` ok, `e2e/short-id.spec.ts` 7 grün (Chromium, echtes Backend, SQLite). `npm run check` nicht im Worktree gelaufen. Screenshots: `docs/screenshots/kurz-id/`.
+
+## Nachtrag 18.11.2026: Backend-Felder fuer die Seite "Jetzt" (Karte F6DF71C3)
+
+- `GET /v1/overview/now` und MCP `get_overview_now` (ein Service, `OverviewNowService`): neu optional `runningTasks[].percent` (Prozent der letzten Fortschrittsnotiz mit Prozentwert) und `builds[].commit` (buildID, wenn 7-40 Hex-Kleinbuchstaben). Vertrag `contracts/session-status.yaml` 1.1.0, Handbuch 1.33.0, ADR 0034 nachgetragen. Keine Migration.
+- Kein Build-/CI-Status: im Datenmodell existiert keine Quelle (`build_artifacts`: buildID, Label, Plattform), deshalb nicht gebaut.
+- Tests: `SessionStatusTests` um percent (mit/ohne, neuere Notiz ohne Prozent) und commit (Hash-aehnlich/anders) erweitert.

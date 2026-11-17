@@ -14,6 +14,10 @@ Die Live-Ansicht (ADR 0031) hängt an einer Karte. Arbeitet ein Agent ohne Karte
 4. **Lesen:** `GET /v1/overview/now` und MCP `get_overview_now` (`tasks:read`) über `OverviewNowService`: je lesbarem Projekt (`ProjectAccess.visibleProjects`, bei MCP geschnitten mit dem Grant) laufende Karten, Heartbeats (verwaist nach 30 min, ausgeblendet nach 24 h), aktive Agentenaufträge, Builds, offene Fragen, ausstehende Reviews, letzte 10 Aktivitätsereignisse; nach letzter Aktivität sortiert. Fremd- und Kundenprojekte erscheinen nur, wenn lesbar.
 5. **Live ohne Polling:** `SessionStatus` hängt an der `live_events`-Middleware (Hinweiszeile mit Projekt-ID als `ref_id`). `wait_for_events` liefert daraus einen projektbezogenen Hinweis `progress` ohne `taskID` für lesbare Grant-Projekte. Aus dem Karten-Hinweisfilter `taskHints` ist `session_statuses` ausgenommen.
 
+## Nachtrag 18.11.2026: Felder für die PWA-Seite "Jetzt" (Vertrag 1.1.0, Handbuch 1.33.0)
+
+Additiv und optional: `runningTasks[].percent` (Prozent der letzten Fortschrittsnotiz der Karte, die einen Prozentwert trug) und `builds[].commit` (buildID, wenn sie wie ein Commit-Hash aussieht: 7 bis 40 Hex-Kleinbuchstaben). Bewusst kein Build-/CI-Status und keine Migration; im Datenmodell gibt es dafür keine Quelle (`build_artifacts` kennt nur buildID, Label, Plattform).
+
 ## Folgen und Grenzen
 
 - Aufbewahrung: Zeilen werden nicht aktiv gelöscht; nach 24 h sind sie in der Übersicht unsichtbar, Projekt-/Kontolöschung löscht per Kaskade. Ein Aufräumschritt im `ExpiredCleanup` ist nicht Teil von Stufe 1.
