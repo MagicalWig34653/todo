@@ -408,13 +408,14 @@ struct WorkflowService: Sendable {
         }
     }
 
-    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, actor: WorkflowActor) async throws -> ReviewDTO {
+    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, actor: WorkflowActor, expectedReviewID: UUID? = nil) async throws -> ReviewDTO {
         guard ["accept", "request_changes"].contains(decision) else { throw Abort(.badRequest, reason: "invalid_decision") }
         let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
         _ = try await readableTask(taskID, role: .edit)
         // Runner-backed review: the job transition (owner capability, job state) is authoritative.
         if let linked = try await TaskReview.query(on: db).filter(\.$taskID == taskID).filter(\.$state == "pending")
             .filter(\.$agentJobID != .null).first(), let jobID = linked.agentJobID {
+            if let expectedReviewID, linked.id != expectedReviewID { throw Abort(.conflict, reason: "no_pending_review") }
             _ = try await AgentService.humanTransition(jobID: jobID, decision: decision, user: user, on: db)
             if let note {
                 _ = try await CommentService.create(taskID: taskID, user: user, body: note, idempotencyKey: nil,
@@ -431,6 +432,8 @@ struct WorkflowService: Sendable {
             guard let r = try await TaskReview.query(on: tx).filter(\.$taskID == id).filter(\.$state == "pending").first() else {
                 throw Abort(.conflict, reason: "no_pending_review")
             }
+            // The caller selected one specific review; a newer pending one must not be decided in its place.
+            if let expectedReviewID, r.id != expectedReviewID { throw Abort(.conflict, reason: "no_pending_review") }
             if actor.type == .integration, r.requestedByType == .integration, r.requestedByID == actor.id {
                 throw Abort(.forbidden, reason: "cannot_decide_own_review")
             }
