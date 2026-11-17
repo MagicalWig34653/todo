@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jetzt – Entwurf A (Zeile je Projekt)</title>
+<style>
+:root{--radius:.625rem;--background:oklch(1 0 0);--foreground:oklch(.141 .005 285.823);--card:oklch(1 0 0);--secondary:oklch(.967 .001 286.375);--muted-foreground:oklch(.47 .016 285.938);--destructive:oklch(.577 .245 27.325);--border:oklch(.92 .004 286.32);--input:oklch(.88 .004 286.32);--ring:oklch(.62 .17 262);--sidebar:oklch(.985 0 0);--ui-accent:oklch(.546 .215 262.9);--ui-accent-ink:oklch(.488 .215 264);--ui-accent-soft:oklch(.96 .02 262);--success:oklch(.52 .13 150);--success-soft:oklch(.96 .04 150);--warning:oklch(.55 .13 70);--warning-soft:oklch(.97 .05 85);--shadow-card:0 1px 2px oklch(0 0 0/5%)}
+*{box-sizing:border-box;border-color:var(--border)}
+body{margin:0;background:var(--background);color:var(--foreground);font-family:'Inter Variable',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.shell{display:flex;min-height:100vh}
+nav.side{width:220px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);padding:16px 12px}
+nav.side b{display:block;padding:4px 8px 14px;font-size:17px}
+nav.side a{display:block;padding:7px 10px;border-radius:8px;color:var(--foreground);text-decoration:none;font-size:14px}
+nav.side a.on{background:var(--ui-accent-soft);color:var(--ui-accent-ink);font-weight:600}
+main{flex:1;min-width:0;padding:24px 28px 48px;max-width:1100px}
+h1{font-size:22px;margin:0 0 2px}
+.sub{color:var(--muted-foreground);font-size:13px;margin:0 0 14px}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--success);background:var(--success-soft);padding:2px 9px;border-radius:99px}
+.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--success)}
+.badge{display:inline-flex;align-items:center;font-size:12px;padding:1px 8px;border-radius:99px;background:var(--secondary);color:var(--muted-foreground);white-space:nowrap}
+.badge.acc{background:var(--ui-accent-soft);color:var(--ui-accent-ink)}.badge.warn{background:var(--warning-soft);color:var(--warning)}.badge.ok{background:var(--success-soft);color:var(--success)}.badge.bad{background:oklch(.97 .03 27);color:var(--destructive)}
+.muted{color:var(--muted-foreground)}.small{font-size:13px}
+.bar{height:6px;border-radius:9px;background:var(--secondary);overflow:hidden;margin:6px 0 4px}.bar i{display:block;height:100%;background:var(--ui-accent)}
+.item{padding:8px 0;border-top:1px solid var(--border)}.item:first-child{border-top:0}
+.item .t{font-weight:600;font-size:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sec{margin-top:12px}.sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin:0 0 2px;font-weight:600}
+.me{background:var(--warning-soft);border-radius:8px;padding:8px 10px;margin-top:6px}
+.btn{font:inherit;font-size:13px;padding:4px 11px;border-radius:8px;border:1px solid var(--input);background:var(--card);color:var(--foreground)}
+.btn.p{background:var(--ui-accent);border-color:var(--ui-accent);color:#fff}
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.tl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--border)}.tl li{position:relative;padding:3px 0 3px 8px;font-size:13px}.tl li::before{content:"";position:absolute;left:-20px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--input)}
+.tl time{color:var(--muted-foreground);margin-right:6px}
+.hint{font-size:12px;color:var(--muted-foreground);border:1px dashed var(--input);border-radius:8px;padding:6px 10px;margin:0 0 16px}
+.proj{border:1px solid var(--border);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow-card);margin-bottom:10px}
+.proj>summary{list-style:none;cursor:pointer;display:flex;gap:8px;align-items:center;padding:11px 14px;flex-wrap:wrap;border-radius:var(--radius)}
+.proj>summary::-webkit-details-marker{display:none}
+.proj>summary::before{content:"▸";color:var(--muted-foreground);width:12px}.proj[open]>summary::before{content:"▾"}
+.proj .name{font-weight:600;flex:1;min-width:140px}
+.proj .body{padding:0 14px 14px 36px}
+.quiet>summary .name{font-weight:500;color:var(--muted-foreground)}
+.group-h{font-size:12px;color:var(--muted-foreground);margin:20px 0 8px}
+@media(max-width:767px){nav.side{display:none}main{padding:16px 14px 40px}.proj .body{padding-left:14px}}
+</style></head><body><div class="shell">
+<nav class="side" aria-label="Hauptnavigation"><b>Todolino</b><a href="#">Steuerzentrale</a><a class="on" href="#" aria-current="page">Jetzt</a><a href="#">Projekte</a><a href="#">Kalender</a><a href="#">Einstellungen</a></nav>
+<main>
+<div class="row"><h1>Jetzt</h1><span class="live" role="status">Live</span></div>
+<p class="sub">Entwurf A: eine Zeile je Projekt, nach letzter Aktivität sortiert. Stand 17.11.2026, 14:32</p>
+<p class="hint">Skizze: Zeile = Name + Kennzahlen (Läuft, Sessions, Wartet auf dich, Builds). Projekte mit Aktivität oder offenen Punkten sind aufgeklappt, ruhige zusammengeklappt.</p>
+
+<details class="proj" open><summary><span class="name">Todolino</span><span class="badge acc">2 laufen</span><span class="badge ok">3 Sessions</span><span class="badge warn">2 warten auf dich</span><span class="badge">1 Build</span><span class="small muted">vor 1 Min.</span></summary>
+<div class="body">
+<div class="sec"><h3>Läuft</h3>
+<div class="item"><div class="row"><span class="t">Passkey-Anmeldung auf Safari absichern</span><span class="badge acc">Claude · Sonnet</span></div>
+<div class="bar" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" aria-label="Fortschritt 60 Prozent"><i style="width:60%"></i></div>
+<div class="small muted">60 % · „Fallback für Conditional UI geschrieben, Tests laufen“ · vor 4 Min.</div></div>
+<div class="item"><div class="row"><span class="t">Übersicht Jetzt: Entwürfe zeichnen</span><span class="badge acc">Claude · Sonnet</span></div>
+<div class="bar" role="progressbar" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100" aria-label="Fortschritt 20 Prozent"><i style="width:20%"></i></div>
+<div class="small muted">20 % · „Tokens gelesen, Variante A steht“ · vor 1 Min.</div></div></div>
+<div class="sec"><h3>Sessions</h3>
+<div class="item"><div class="row"><span class="t">web-passkey</span><span class="badge ok">aktiv</span><span class="small muted">Heartbeat vor 40 s</span></div><div class="small muted">Führt vitest für auth.test.ts aus</div></div>
+<div class="item"><div class="row"><span class="t">backend-oauth</span><span class="badge bad">verwaist</span><span class="small muted">letzte Meldung vor 47 Min.</span></div><div class="small muted">Migration 0092 prüfen – keine Meldung seit über 30 Min.</div></div></div>
+<div class="sec"><h3>Wartet auf dich</h3>
+<div class="me"><div class="small"><b>Frage:</b> Soll der Runner nach Eigentumswechsel pausieren oder weiterlaufen? <span class="muted">· vor 12 Min.</span></div><div class="row" style="margin-top:6px"><button class="btn p">Antworten</button><span class="small muted">Aufgabe: Runner-Bindings</span></div></div>
+<div class="me"><div class="small"><b>Review:</b> Kalender Stufe A – Schedule-API <span class="muted">· vor 1 Std.</span></div><div class="row" style="margin-top:6px"><button class="btn">Ansehen</button></div></div></div>
+<div class="sec"><h3>Builds</h3>
+<div class="item"><div class="row"><span class="t">CI main #482</span><span class="badge ok">grün</span><span class="small muted">web · vor 9 Min.</span></div></div></div>
+<div class="sec"><h3>Ereignisse</h3><ul class="tl"><li><time>14:31</time>Claude: Fortschritt an „Passkey-Anmeldung …“</li><li><time>14:22</time>Build main #482 grün</li><li><time>14:20</time>Frage an Lino gestellt (Runner-Bindings)</li><li><time>13:35</time>Review angefragt (Kalender Stufe A)</li></ul></div>
+</div></details>
+
+<details class="proj" open><summary><span class="name">Todolino Apple</span><span class="badge acc">1 läuft</span><span class="badge ok">1 Session</span><span class="badge">2 Builds</span><span class="small muted">vor 18 Min.</span></summary>
+<div class="body">
+<div class="sec"><h3>Läuft</h3><div class="item"><div class="row"><span class="t">Widget „Heute“ für iOS</span><span class="badge acc">Claude · Sonnet</span></div>
+<div class="bar" role="progressbar" aria-valuenow="85" aria-valuemin="0" aria-valuemax="100" aria-label="Fortschritt 85 Prozent"><i style="width:85%"></i></div>
+<div class="small muted">85 % · „Vorschau-Screenshots erzeugt, Layout-Check offen“ · vor 18 Min.</div></div></div>
+<div class="sec"><h3>Sessions</h3><div class="item"><div class="row"><span class="t">apple-widgets</span><span class="badge ok">aktiv</span><span class="small muted">Heartbeat vor 2 Min.</span></div><div class="small muted">swift build (iOS-Simulator)</div></div></div>
+<div class="sec"><h3>Builds</h3><div class="item"><div class="row"><span class="t">iOS Build 214</span><span class="badge ok">fertig</span><span class="small muted">ios · vor 1 Std.</span></div></div><div class="item"><div class="row"><span class="t">macOS Build 98</span><span class="badge bad">fehlgeschlagen</span><span class="small muted">macos · vor 3 Std.</span></div></div></div>
+</div></details>
+
+<p class="group-h">Ruhig (4 Projekte ohne Aktivität in den letzten 24 Std.)</p>
+<details class="proj quiet"><summary><span class="name">Kubus Website</span><span class="small muted">nichts offen · zuletzt gestern 16:10</span></summary><div class="body small muted">Keine laufenden Karten, keine Sessions.</div></details>
+<details class="proj quiet"><summary><span class="name">Formular-Backend</span><span class="badge warn">1 wartet auf dich</span><span class="small muted">zuletzt gestern 11:02</span></summary><div class="body small muted">Review: Rate-Limit je Mandant</div></details>
+<details class="proj quiet"><summary><span class="name">Privat</span><span class="small muted">nichts offen</span></summary><div class="body small muted">Keine laufenden Karten.</div></details>
+</main></div></body></html>
