@@ -14,9 +14,9 @@ final class BrainMandateTests: XCTestCase {
     private func env() async throws -> Env {
         let f = try await OAuthFixture.make()
         let a = try await f.tokens(scope: CommandCenterTests.scopes)
-        let gA = try XCTUnwrap(try await OAuthGrant.query(on: f.test.app.db).first()?.id)
+        let gA = try unwrap(try await OAuthGrant.query(on: f.test.app.db).first()?.id)
         let b = try await f.tokens(scope: CommandCenterTests.scopes)
-        let gB = try XCTUnwrap(try await OAuthGrant.query(on: f.test.app.db).filter(\.$id != gA).first()?.id)
+        let gB = try unwrap(try await OAuthGrant.query(on: f.test.app.db).filter(\.$id != gA).first()?.id)
         return Env(f: f, agent: a.access, brain: b.access, agentGrant: gA, brainGrant: gB)
     }
 
@@ -65,6 +65,8 @@ final class BrainMandateTests: XCTestCase {
         return r.body?["items"] as? [[String: Any]] ?? []
     }
 
+    private func unwrap<T>(_ value: T?, file: StaticString = #filePath, line: UInt = #line) throws -> T { try XCTUnwrap(value, file: file, line: line) }
+
     private func run(_ body: (Env) async throws -> Void) async throws {
         let e = try await env()
         do { try await body(e) } catch { await e.f.test.shutdown(); throw error }
@@ -102,7 +104,8 @@ final class BrainMandateTests: XCTestCase {
             let r = try await call(e, e.brain, "decide_review", ["taskID": task, "decision": "request_changes", "note": "Test fehlt", "quote": "Lino: nacharbeiten"])
             XCTAssertFalse(r.isError, r.text)
             try await assertEqual(try await taskStatus(e, task), "in_progress")
-            XCTAssertEqual(try await audit(e).first?["kind"] as? String, "review.changes_requested")
+            let rows = try await audit(e)
+            XCTAssertEqual(rows.first?["kind"] as? String, "review.changes_requested")
         }
     }
 
@@ -118,7 +121,8 @@ final class BrainMandateTests: XCTestCase {
             let long = try await call(e, e.brain, "decide_review", ["taskID": task, "decision": "accept", "quote": String(repeating: "x", count: 2001)])
             XCTAssertEqual(long.text, "invalid_quote")
             try await assertEqual(try await taskStatus(e, task), "in_review")
-            XCTAssertEqual(try await audit(e).count, 0)
+            let rows = try await audit(e)
+            XCTAssertEqual(rows.count, 0)
         }
     }
 
@@ -148,7 +152,7 @@ final class BrainMandateTests: XCTestCase {
             try await assertEqual(try await taskStatus(e, task), "in_review")
             // Revoking the grant itself makes the mandate void too.
             try await mandate(e)
-            let grant = try XCTUnwrap(try await OAuthGrant.find(e.brainGrant, on: e.f.test.app.db))
+            let grant = try unwrap(try await OAuthGrant.find(e.brainGrant, on: e.f.test.app.db))
             grant.revoked = true; try await grant.save(on: e.f.test.app.db)
             let gone = try await e.f.rpc("tools/list", access: e.brain)
             XCTAssertEqual(gone.status, .unauthorized)
@@ -158,7 +162,7 @@ final class BrainMandateTests: XCTestCase {
     func testProjectOutsideMandateIsRefused() async throws {
         try await run { e in
             for g in [e.agentGrant, e.brainGrant] {
-                let grant = try XCTUnwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
+                let grant = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
                 grant.projects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
             }
             try await mandate(e)
@@ -213,7 +217,7 @@ final class BrainMandateTests: XCTestCase {
     func testAnswerOutsideMandateProject() async throws {
         try await run { e in
             for g in [e.agentGrant, e.brainGrant] {
-                let grant = try XCTUnwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
+                let grant = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
                 grant.projects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
             }
             try await mandate(e)
@@ -242,7 +246,8 @@ final class BrainMandateTests: XCTestCase {
         let run = try await f.claim(job)
         var status = try await f.command(run, "question", ["generation": 1, "prompt": "Which option?", "options": ["A", "B"]])
         XCTAssertEqual(status, .ok)
-        let qid = try XCTUnwrap(try await f.app.json(.GET, "/v1/questions?projectID=\(f.projectID)", token: f.human).list?.first?["id"] as? String)
+        let questions = try await f.app.json(.GET, "/v1/questions?projectID=\(f.projectID)", token: f.human)
+        let qid = try XCTUnwrap(questions.list?.first?["id"] as? String)
         await assertThrowsReason("brain_mandate_required") { _ = try await service.answer(UUID(uuidString: qid)!, value: "A", quote: "ja", actor: actor) }
         let put = try await f.app.json(.PUT, "/v1/settings/brain-mandate", ["grantID": try grant.requireID().uuidString, "projectIDs": [f.projectID]], token: f.human)
         XCTAssertEqual(put.status, .ok, "\(put.body ?? [:])")
@@ -263,7 +268,7 @@ final class BrainMandateTests: XCTestCase {
         let jobState = try await f.app.json(.GET, "/v1/agents/jobs/\(job)", token: f.human)
         XCTAssertEqual((jobState.body?["job"] as? [String: Any])?["state"] as? String, "succeeded")
         let rows = try await f.app.json(.GET, "/v1/settings/brain-mandate/audit", token: f.human)
-        XCTAssertEqual((rows.body?["items"] as? [[String: Any]])?.map { $0["kind"] as? String }.sorted(), ["question.answered", "review.accepted"])
+        XCTAssertEqual((rows.body?["items"] as? [[String: Any]])?.compactMap { $0["kind"] as? String }.sorted(), ["question.answered", "review.accepted"])
     }
 
     private func assertThrowsReason(_ reason: String, file: StaticString = #filePath, line: UInt = #line, _ body: () async throws -> Void) async {
@@ -361,6 +366,6 @@ final class BrainMandateTests: XCTestCase {
     }
 
     private func reviewID(_ e: Env, _ task: String) async throws -> String {
-        try XCTUnwrap(try await TaskReview.query(on: e.f.test.app.db).filter(\.$taskID == UUID(uuidString: task)!).first()?.requireID().uuidString)
+        try unwrap(try await TaskReview.query(on: e.f.test.app.db).filter(\.$taskID == UUID(uuidString: task)!).first()?.requireID().uuidString)
     }
 }
