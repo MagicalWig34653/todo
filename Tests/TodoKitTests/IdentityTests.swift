@@ -220,6 +220,23 @@ final class IdentityTests: XCTestCase {
         XCTAssertEqual(finish.status, .tooManyRequests)
     }
 
+    /// A body with extra fields is accepted by the login DTO, so it must still pass the per-account bucket.
+    func testPasswordAccountBucketAppliesDespiteExtraBodyFields() async throws {
+        let t = try await TestApp.make(password: true)
+        defer { Task { await t.shutdown() } }
+        var settings = IdentitySettings()
+        settings.window = 3600
+        t.app.identitySettings = settings
+        let plain = try await t.json(.POST, "/v1/auth/password/login", ["username": "alice", "password": "guess"])
+        XCTAssertNotEqual(plain.status, .tooManyRequests)
+        let before = try await IdentityRateLimitRow.count(on: t.app.db)
+        let extra = try await t.json(.POST, "/v1/auth/password/login", ["username": "bob", "password": "guess", "extra": 0])
+        XCTAssertNotEqual(extra.status, .tooManyRequests)
+        let after = try await IdentityRateLimitRow.count(on: t.app.db)
+        // The IP bucket row already exists; the account bucket of "bob" must add exactly one new row.
+        XCTAssertEqual(after - before, 1)
+    }
+
     func testRateLimitCannotBeBypassedWithPathVariants() async throws {
         let t = try await TestApp.make(password: true)
         defer { Task { await t.shutdown() } }
@@ -354,5 +371,12 @@ final class IdentityTests: XCTestCase {
         }
         XCTAssertEqual(results.filter { $0 == .noContent }.count, 1)
         XCTAssertEqual(results.filter { $0 == .conflict }.count, 1)
+    }
+}
+
+private enum IdentityRateLimitRow {
+    static func count(on db: any Database) async throws -> Int {
+        let sql = db as! any SQLDatabase
+        return try await sql.raw("SELECT COUNT(*) AS c FROM identity_rate_limits").first()!.decode(column: "c", as: Int.self)
     }
 }
