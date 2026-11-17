@@ -29,6 +29,17 @@ export function formatWhen(iso: string | null | undefined, locale = 'de-DE'): st
 	return new Intl.DateTimeFormat(locale, midnight ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' }).format(d);
 }
 
+/** Audit timestamps always use Berlin, including seconds and the offset at a DST transition. */
+export function formatTimestamp(iso: string | null | undefined, dateOnly = false): string {
+	if (!iso) return '';
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return '';
+	return new Intl.DateTimeFormat('de-DE', dateOnly
+		? { timeZone: 'Europe/Berlin', dateStyle: 'medium' }
+		: { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'shortOffset' }
+	).format(date);
+}
+
 export function isOverdue(iso: string | null | undefined, done: boolean, now = new Date()): boolean {
 	return !!iso && !done && new Date(iso).getTime() < now.getTime();
 }

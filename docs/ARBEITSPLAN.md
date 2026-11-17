@@ -1,5 +1,13 @@
 # Arbeitsplan
 
+## Checkpoint 17.11.2026: Zeitangaben, Grundlage (Karte `330C57F8`)
+
+- Ziel/Nutzerentscheidung: Erstell-/Änderungszeit von Karten sowie Frage-, Review-, Fortschritts- und Kommentarzeiten sichtbar; nur PWA. Auf ausdrücklichen Wunsch keine Builds, Server, Playwright-, vitest- oder sonstigen Testläufe und kein Push; Lino prüft über „sparsam“.
+- Grundlage auf Branch `codex/erstelldatum`: vorhandenes `relativeWhen` weiterverwendet, ab sieben verstrichenen Tagen Berliner Datum; gemeinsame `Timestamp.svelte` mit ISO-`datetime` und genauem Berliner Tooltip inkl. Sekunden/UTC-Offset. Deutsche Labels in i18n. Unit-Tests für Rundungsgrenzen und beide Sommerzeitwechsel geschrieben, nicht ausgeführt.
+- Nächster Teilschritt: alle Karten-/Fragen-/Review-/Notiz-/Kommentaransichten anbinden, fehlende TS-Kartenfelder ergänzen, statischen Diff prüfen und kleine deutsche Commits erstellen. Keine Backend-/Vertrags-/Migrationsfolgen, Apple unverändert; keine eigenen laufenden Jobs.
+- Board-Grenze: Todolino-Werkzeuge fehlen in dieser Sitzung; claim/post_progress/request_review/record_sync zu `330C57F8` nicht ausführbar. Fortschritt hier dokumentiert, Board-Abgleich durch Hauptsession/Lino nach Anschluss des Connectors offen. Prozessinventar `ps` durch Sandbox verweigert.
+
+
 ## Checkpoint 3.11.2026: Überfällige Aufgaben im MCP (F75F1E09)
 
 - Ziel/Stand: Branch `worktree-agent-a75096a8dcc0a3252`, Backend/PWA-Repo; `summary.overdue` zählt sichtbare nicht erledigte Aufgaben mit Planning.dueAt vor Serverzeit (auch Backlog/Unteraufgaben, vor Kartenfiltern/Limit). Karten: eigene `dueDate`, `nextDue` ohne erledigte Aufgaben/Kinder; REST/MCP `overdue=true` mit gemeinsamem SharingSnapshot-Listenpfad und gebündelter Planung. Keine Migration, kein Push/Deploy/Review, Apple/Web unverändert.

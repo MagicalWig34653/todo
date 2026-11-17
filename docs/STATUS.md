@@ -1,5 +1,13 @@
 # Status
 
+## Checkpoint 17.11.2026: Zeitangaben, Grundlage (Karte `330C57F8`)
+
+- Ziel/Nutzerentscheidung: Erstell-/Änderungszeit von Karten sowie Frage-, Review-, Fortschritts- und Kommentarzeiten sichtbar; nur PWA. Auf ausdrücklichen Wunsch keine Builds, Server, Playwright-, vitest- oder sonstigen Testläufe und kein Push; Lino prüft über „sparsam“.
+- Grundlage auf Branch `codex/erstelldatum`: vorhandenes `relativeWhen` weiterverwendet, ab sieben verstrichenen Tagen Berliner Datum; gemeinsame `Timestamp.svelte` mit ISO-`datetime` und genauem Berliner Tooltip inkl. Sekunden/UTC-Offset. Deutsche Labels in i18n. Unit-Tests für Rundungsgrenzen und beide Sommerzeitwechsel geschrieben, nicht ausgeführt.
+- Nächster Teilschritt: alle Karten-/Fragen-/Review-/Notiz-/Kommentaransichten anbinden, fehlende TS-Kartenfelder ergänzen, statischen Diff prüfen und kleine deutsche Commits erstellen. Keine Backend-/Vertrags-/Migrationsfolgen, Apple unverändert; keine eigenen laufenden Jobs.
+- Board-Grenze: Todolino-Werkzeuge fehlen in dieser Sitzung; claim/post_progress/request_review/record_sync zu `330C57F8` nicht ausführbar. Fortschritt hier dokumentiert, Board-Abgleich durch Hauptsession/Lino nach Anschluss des Connectors offen. Prozessinventar `ps` durch Sandbox verweigert.
+
+
 ## Checkpoint 14.11.2026: Live-Ansicht je Karte, Stufe 2 PWA (Karte `CCCFFB78`, Branch `agent/live-ansicht-pwa`)
 
 - Neu im Karten-Detail, Tab "Aktivität" (`web/src/lib/components/card/TaskLive.svelte`): oben laufende Sitzungen (Name, Akteur-Label, Modell, Startzeit, aktueller Schritt als `aria-live="polite"`, Hinweis "Still seit N Min." bei stale, lokal auch ohne Refresh nach 15 Minuten), beendete Sitzungen eingeklappt (`<details>`), darunter der kompakte Verlauf (neueste zuerst, Art als Icon und Label, relativ und absolut, "Mehr laden" per `nextCursor`); Leerzustand, Fehlerzustand mit "Erneut versuchen" (`role="alert"`), danach die bisherige Aktivitätsliste unter "Ereignisse der Karte". Texte nur als Text (kein `{@html}`), Geheimnisse kommen vom Server schon als `[gefiltert]`.
