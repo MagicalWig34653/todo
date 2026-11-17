@@ -309,7 +309,7 @@ struct WorkflowService: Sendable {
     }
 
     /// Answer a question. Runner-backed questions delegate to `AgentService.answer` (same rules as the runner flow).
-    func answer(_ questionID: UUID, value raw: String, actor: WorkflowActor, freeText: Bool = false) async throws -> QuestionDTO {
+    func answer(_ questionID: UUID, value raw: String, quote: String? = nil, actor: WorkflowActor, freeText: Bool = false) async throws -> QuestionDTO {
         guard let initial = try await TaskQuestion.find(questionID, on: db) else { throw Abort(.notFound) }
         _ = try await readableTask(initial.taskID, role: .comment)
         let value = try Self.text(raw, reason: "invalid_answer")
@@ -408,7 +408,7 @@ struct WorkflowService: Sendable {
         }
     }
 
-    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, actor: WorkflowActor) async throws -> ReviewDTO {
+    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, quote: String? = nil, actor: WorkflowActor) async throws -> ReviewDTO {
         guard ["accept", "request_changes"].contains(decision) else { throw Abort(.badRequest, reason: "invalid_decision") }
         let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
         _ = try await readableTask(taskID, role: .edit)
