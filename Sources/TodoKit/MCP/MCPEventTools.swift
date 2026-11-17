@@ -107,6 +107,12 @@ extension MCPController {
             result.append(EventHint(kind: kind, taskID: hint.taskID.uuidString, projectID: project.uuidString))
             if result.count >= 50 { break }
         }
+        // Session status reports (ADR 0034) carry the project id: one project-level progress hint per readable grant project.
+        for projectID in Array(Set(try await LiveToken.refHints(after: after, kind: SessionStatus.schema, on: db))).sorted(by: { $0.uuidString < $1.uuidString }) where result.count < 50 {
+            guard allowed.contains(projectID) else { continue }
+            if readable[projectID] == nil { readable[projectID] = (try? await ProjectAccess(user: user, db: db).project(projectID, role: .read)) != nil }
+            if readable[projectID] == true { result.append(EventHint(kind: "progress", projectID: projectID.uuidString)) }
+        }
         return result
     }
 }

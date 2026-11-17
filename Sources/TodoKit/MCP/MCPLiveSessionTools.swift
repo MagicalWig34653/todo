@@ -29,9 +29,25 @@ extension MCPController {
                           "cursor": Schema.string("nextCursor of the previous page.", maxLength: 80),
                           "since": Schema.string("ISO 8601 date-time: only events created after it.", maxLength: 40)],
              required: ["taskID"]),
+        Tool(name: "report_session_status", scope: "tasks:write",
+             description: "Light heartbeat without a claimed card: tell the project what this session is doing right now, in one short sentence (up to 300 characters, for example 'Baue den Migrationstest'). One status per session name and project, overwritten by every call; at most one write per 10 seconds per session (429 rate_limited). Without updates it is marked orphaned after 30 minutes and hidden after 24 hours. Secrets are masked before storage; never report transcripts. Needs edit access to the project (and the project in your grant).",
+             properties: ["projectID": Schema.uuid("The project you work in."),
+                          "sessionName": Schema.string("Name of this session, for example the machine or window, 1 to 100 characters.", maxLength: 100),
+                          "activity": Schema.string("What you are doing now, 1 to 300 characters.", maxLength: 300)],
+             required: ["projectID", "sessionName", "activity"]),
+        Tool(name: "get_overview_now", scope: "tasks:read",
+             description: "What is happening now across your projects: {serverTime, projects:[{projectID, projectName, lastActivityAt, runningTasks:[{taskID, title, worker, lastProgress, ageSeconds}], sessions:[{sessionName, activity, updatedAt, ageSeconds, orphaned}], agentJobs, builds, openQuestions, pendingReviews, recentActivity}]}. Only projects you can read and that are in your grant; most recently active first.",
+             properties: [:]),
     ]
 
     func callLiveSession(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
+        if name == "report_session_status" {
+            let service = SessionStatusService(user: user, db: db, allowedProjects: Set(grant.projects))
+            return try .encoded(try await service.report(projectID: uuid(a["projectID"]), sessionName: requiredString(a, "sessionName"), activity: requiredString(a, "activity")))
+        }
+        if name == "get_overview_now" {
+            return try .encoded(try await OverviewNowService(user: user, db: db, allowedProjects: Set(grant.projects)).now())
+        }
         let taskID = try uuid(a["taskID"])
         var service = LiveSessionService(user: user, db: db, allowedProjects: Set(grant.projects))
         switch name {

@@ -299,6 +299,8 @@ Gleicher Fachpfad für REST (Lesen) und MCP (Melden, Lesen): `LiveSessionService
 | `report_session_step` | tasks:write | B | `taskID, step? (1-280), session? (80, main), model?, ended?, agentName?` → LiveSession; Rolle edit, Grant-Projekt nötig |
 | `report_session_event` | tasks:write | B | `taskID, kind (tool, note, question, progress), text (1-280), session?, clientUUID?` → LiveEvent; idempotent über `clientUUID` |
 | `get_task_live` | tasks:read | A | `taskID, limit? (1-200, 50), cursor?, since?` → `{taskID, serverTime, sessions, items, nextCursor}`; REST `GET /v1/tasks/{id}/live` |
+| `report_session_status` | tasks:write | B | `projectID, sessionName (1-100), activity (1-300)` → SessionStatus (Upsert); Rolle edit am Projekt, Projekt im Grant; höchstens 1 Schreibvorgang/10 s je Sitzung; REST `PUT /v1/projects/{id}/session-status` (ADR 0034) |
+| `get_overview_now` | tasks:read | A | `{}` → `{serverTime, projects:[{projectID, projectName, lastActivityAt, runningTasks, sessions, agentJobs, builds, openQuestions, pendingReviews, recentActivity}]}`; nur lesbare Grant-Projekte; REST `GET /v1/overview/now` |
 
 - Bewusst kein REST-Schreibweg und kein Runner-Weg: gemeldet wird nur vom Agenten per MCP. Kein Transkript, keine Befehlsausgabe (Entscheidung Lino, Frage 5190C437).
 - Rechte wie `post_progress` (edit) beim Melden und `get_task_context` (read) beim Lesen; Fremde/ohne Recht/außerhalb des Grants: 404.
