@@ -27,7 +27,8 @@ extension PlanningService {
     }
 
     func removeDependency(_ id: UUID, prerequisite: UUID) async throws {
-        try await lock(); _ = try await task(id, role: .edit); _ = try await task(prerequisite)
+        // The prerequisite may have become unreadable; the edge must stay removable or the task stays blocked for good.
+        try await lock(); _ = try await task(id, role: .edit)
         let query = PlanningDependency.query(on: db).filter(\.$taskID == id).filter(\.$prerequisiteID == prerequisite)
         if try await query.first() != nil {
             try await query.delete()

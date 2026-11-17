@@ -62,7 +62,7 @@ final class MailWorker: LifecycleHandler, @unchecked Sendable {
             return .failed("lease")
         }
         do {
-            let report = try await tick()
+            let report = try await tick(keepLease: { [self] in await renew(sql) })
             try await finish(sql, status: "ok", message: "sent \(report.sent), retried \(report.retried), failed \(report.failed)")
             return .ran(report)
         } catch {
@@ -74,12 +74,14 @@ final class MailWorker: LifecycleHandler, @unchecked Sendable {
 
     // MARK: One run
 
-    func tick(now: Date = Date()) async throws -> Report {
+    func tick(now: Date = Date(), keepLease: (@Sendable () async -> Bool)? = nil) async throws -> Report {
         var report = Report()
         let db = app.db
         let due = try await MailOutbox.query(on: db).filter(\.$state == "pending").filter(\.$nextAttemptAt <= now)
             .sort(\.$nextAttemptAt).sort(\.$id).limit(20).all()
         for row in due {
+            // A replica that took the lease over owns the remaining rows now; stop instead of sending them twice.
+            if let keepLease, !(await keepLease()) { break }
             var next: (state: String, error: String?, retryAfter: TimeInterval?)
             if row.expiresAt <= now {
                 next = ("expired", "expired", nil)
@@ -186,6 +188,17 @@ final class MailWorker: LifecycleHandler, @unchecked Sendable {
             """).run()
         let row = try await sql.raw("SELECT holder FROM maintenance_leases WHERE name = \(bind: Self.jobName)").first()
         return try row?.decode(column: "holder", as: String.self) == holder
+    }
+
+    /// Extends the lease while this holder still owns it. False once another replica took it over, in which case
+    /// the run must stop before it touches any further row.
+    private func renew(_ sql: any SQLDatabase) async -> Bool {
+        do {
+            let until = try await databaseNow(sql) + Int64(leaseDuration)
+            try await sql.raw("UPDATE maintenance_leases SET expires_at = \(bind: until) WHERE name = \(bind: Self.jobName) AND holder = \(bind: holder)").run()
+            let row = try await sql.raw("SELECT holder FROM maintenance_leases WHERE name = \(bind: Self.jobName)").first()
+            return try row?.decode(column: "holder", as: String.self) == holder
+        } catch { return false }
     }
 
     private func finish(_ sql: any SQLDatabase, status: String, message: String) async throws {

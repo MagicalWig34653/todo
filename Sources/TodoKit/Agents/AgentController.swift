@@ -320,7 +320,7 @@ struct AgentController: RouteCollection {
         let device = try await device(req)
         var result: [BindingDTO] = []
         for binding in try await ProjectRunnerBinding.query(on: req.db).filter(\.$deviceID == device.requireID()).all() {
-            try await AgentService.authorized(binding, device: device, on: req.db)
+            guard try await AgentService.isAuthorized(binding, device: device, on: req.db) else { continue }
             result.append(try BindingDTO(binding))
         }
         return result
@@ -331,7 +331,7 @@ struct AgentController: RouteCollection {
         let bindings = try await ProjectRunnerBinding.query(on: req.db).filter(\.$deviceID == device.requireID()).all()
         var result: [AgentJobDTO] = []
         for binding in bindings {
-            try await AgentService.authorized(binding, device: device, on: req.db)
+            guard try await AgentService.isAuthorized(binding, device: device, on: req.db) else { continue }
             result += try await AgentJob.query(on: req.db).filter(\.$bindingID == binding.requireID()).filter(\.$state == "queued").all().map(AgentJobDTO.init)
         }
         return result
@@ -354,7 +354,7 @@ struct AgentController: RouteCollection {
         for run in try await AgentRun.query(on: req.db).filter(\.$deviceID == device.requireID()).filter(\.$endedAt == nil).all() {
             guard let binding = try await ProjectRunnerBinding.find(run.bindingID, on: req.db),
                   let job = try await AgentJob.find(run.jobID, on: req.db) else { continue }
-            try await AgentService.authorized(binding, device: device, on: req.db)
+            guard try await AgentService.isAuthorized(binding, device: device, on: req.db) else { continue }
             result.append(try await AgentRunDTO(run, job: job, on: req.db))
         }
         return result

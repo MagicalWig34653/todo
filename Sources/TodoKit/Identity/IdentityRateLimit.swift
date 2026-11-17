@@ -39,6 +39,14 @@ struct IdentityRateMiddleware: AsyncMiddleware {
         return "/" + path.lowercased().split(separator: "/").joined(separator: "/")
     }
 
+    /// Reads just the one string field the bucket needs. Decoding the whole body as `[String: String]` failed on extra or
+    /// non-string fields that the login DTO still accepts, which skipped the account bucket entirely.
+    private static func stringField(_ name: String, in req: Request) -> String? {
+        guard let buffer = req.body.data, let object = try? JSONSerialization.jsonObject(with: Data(buffer.readableBytesView)) as? [String: Any]
+        else { return (try? req.content.decode([String: String].self))?[name] }
+        return object[name] as? String
+    }
+
     func respond(to req: Request, chainingTo next: any AsyncResponder) async throws -> Response {
         let s = req.application.identitySettings
         let scope: String
@@ -57,7 +65,7 @@ struct IdentityRateMiddleware: AsyncMiddleware {
         // A second bucket prevents distributing guesses for one account/code across replicas and IPs.
         let field = scope == "password" ? "username" : "code"
         if allowed, ["password", "recovery"].contains(scope),
-           let body = try? req.content.decode([String: String].self), let value = body[field] {
+           let value = Self.stringField(field, in: req) {
             let accountAllowed = try await IdentityRateLimit.take(scope: scope, subject: "subject:\(scope == "password" ? value.lowercased() : value)", limit: limit, window: s.window, on: req.db)
             allowed = allowed && accountAllowed
         }

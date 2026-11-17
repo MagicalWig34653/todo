@@ -422,7 +422,7 @@ struct WorkflowService: Sendable {
         }
     }
 
-    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, quote: String? = nil, actor: WorkflowActor) async throws -> ReviewDTO {
+    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, quote: String? = nil, actor: WorkflowActor, expectedReviewID: UUID? = nil) async throws -> ReviewDTO {
         guard ["accept", "request_changes"].contains(decision) else { throw Abort(.badRequest, reason: "invalid_decision") }
         let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
         let readable = try await readableTask(taskID, role: .edit)
@@ -430,6 +430,7 @@ struct WorkflowService: Sendable {
         // Runner-backed review: the job transition (owner capability, job state) is authoritative.
         if let linked = try await TaskReview.query(on: db).filter(\.$taskID == taskID).filter(\.$state == "pending")
             .filter(\.$agentJobID != .null).first(), let jobID = linked.agentJobID {
+            if let expectedReviewID, linked.id != expectedReviewID { throw Abort(.conflict, reason: "no_pending_review") }
             // One transaction: mandate check, job transition, note, audit row and comment commit or roll back together.
             let user = self.user, allowed = allowedProjects
             return try await db.transaction { tx in
@@ -456,6 +457,8 @@ struct WorkflowService: Sendable {
             guard let r = try await TaskReview.query(on: tx).filter(\.$taskID == id).filter(\.$state == "pending").first() else {
                 throw Abort(.conflict, reason: "no_pending_review")
             }
+            // The caller selected one specific review; a newer pending one must not be decided in its place.
+            if let expectedReviewID, r.id != expectedReviewID { throw Abort(.conflict, reason: "no_pending_review") }
             if actor.type == .integration, r.requestedByType == .integration, r.requestedByID == actor.id {
                 throw Abort(.forbidden, reason: "cannot_decide_own_review")
             }

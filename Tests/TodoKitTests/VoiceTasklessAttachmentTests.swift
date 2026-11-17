@@ -50,6 +50,35 @@ final class VoiceTasklessAttachmentTests: AttachmentTestBase {
         XCTAssertEqual(still?.taskID, UUID(uuidString: "00000000-0000-0000-0000-000000000000"))
     }
 
+    /// Parallel begin requests must not push the account past the loose-voice limit (count and insert under one lock).
+    func testParallelBeginRequestsCannotExceedTheLooseVoiceLimit() async throws {
+        let (t, alice, _, _, a, _) = try await fixture()
+        defer { Task { await t.shutdown() } }
+        let limit = AttachmentService.maxLooseVoice
+        for n in 0..<(limit - 1) {
+            let row = Attachment()
+            row.id = UUID(); row.taskID = Attachment.noTask; row.ownerID = try alice.requireID()
+            row.filename = "m\(n).m4a"; row.role = "voice"; row.mediaType = "audio/mp4"; row.size = 10
+            row.checksum = String(repeating: "a", count: 64); row.status = "pending"; row.createdAt = Date()
+            row.objectKey = "attachments/\(row.id!.uuidString.lowercased())"
+            try await row.create(on: t.app.db)
+        }
+        let audio = AudioFixtures.m4a(duration: 3000)
+        let statuses = try await withThrowingTaskGroup(of: HTTPStatus.self) { group -> [HTTPStatus] in
+            for _ in 0..<8 {
+                group.addTask {
+                    let body: [String: Any] = ["filename": "memo.m4a", "role": "voice", "mediaType": "audio/mp4", "size": audio.count,
+                                               "checksum": AttachmentChecksum.sha256(audio)]
+                    return try await t.json(.POST, "/v1/attachments/begin", body, token: a).status
+                }
+            }
+            return try await group.reduce(into: []) { $0.append($1) }
+        }
+        XCTAssertEqual(statuses.filter { $0 == .ok }.count, 1, "\(statuses)")
+        let loose = try await AttachmentService.looseVoiceAttachments(owner: try alice.requireID(), db: t.app.db).count
+        XCTAssertEqual(loose, limit)
+    }
+
     func testOtherRolesStillNeedATaskAndTaskBoundVoiceKeepsWorking() async throws {
         let (t, _, _, task, a, _) = try await fixture()
         defer { Task { await t.shutdown() } }

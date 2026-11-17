@@ -93,7 +93,7 @@ extension WorkflowService {
         catch let e as Abort where e.status == .notFound { return .init(reviewID: rid, result: "not_found") }
         guard review.state == "pending" else { return .init(reviewID: rid, result: "already_decided") }
         do {
-            let dto = try await decideReview(review.taskID, decision: decision, note: note, actor: actor)
+            let dto = try await decideReview(review.taskID, decision: decision, note: note, actor: actor, expectedReviewID: id)
             return .init(reviewID: rid, result: "ok", review: dto)
         } catch let e as Abort {
             switch e.status {

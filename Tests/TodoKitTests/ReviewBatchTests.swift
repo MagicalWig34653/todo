@@ -187,6 +187,29 @@ final class ReviewBatchTests: XCTestCase {
         XCTAssertEqual(row.state, "accepted")
     }
 
+    /// The batch read R1 as pending; meanwhile R1 was decided and R2 opened. Deciding "R1" must not touch R2.
+    func testDecisionBoundToTheSelectedReviewDoesNotDecideALaterOne() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let owner = try await person(t), pid = try await project(t, owner)
+        let first = try await review(t, owner, project: pid, n: 1)
+        let changes = try await t.json(.POST, "/v1/tasks/\(first.task)/review/decision", ["decision": "request_changes"], token: owner.token)
+        XCTAssertEqual(changes.status, .ok, "\(changes.body ?? [:])")
+        let second = try await t.json(.POST, "/v1/tasks/\(first.task)/review", ["summary": "Again"], token: owner.token)
+        let secondID = try XCTUnwrap(second.body?["id"] as? String)
+        let user = try await XCTUnwrapAsync(await User.find(UUID(uuidString: owner.id), on: t.app.db))
+        let service = WorkflowService(user: user, db: t.app.db)
+        do {
+            _ = try await service.decideReview(UUID(uuidString: first.task)!, decision: "accept", note: nil,
+                                               actor: try .person(user), expectedReviewID: UUID(uuidString: first.review)!)
+            XCTFail("the later review must not be decided")
+        } catch let e as Abort {
+            XCTAssertEqual(e.status, .conflict)
+        }
+        let row = try await reviewRow(t, secondID)
+        XCTAssertEqual(row.state, "pending")
+    }
+
     func testDuplicateIDsAreDecidedOnceAndReportedOnce() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }

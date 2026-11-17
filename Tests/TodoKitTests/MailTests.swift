@@ -1,5 +1,6 @@
 import Crypto
 import Fluent
+import SQLKit
 import NIOCore
 import NIOPosix
 import XCTVapor
@@ -482,6 +483,31 @@ final class MailTests: XCTestCase {
         let d = try XCTUnwrap((r.body?["devices"] as? [[String: Any]])?.first)
         XCTAssertEqual(d["id"] as? String, id); XCTAssertEqual(d["result"] as? String, "failed"); XCTAssertEqual(d["detail"] as? String, "InvalidProviderToken")
     }
+
+    /// A worker that lost its lease mid-run must stop instead of sending rows a second replica now owns.
+    func testWorkerStopsWhenItsLeaseWasTakenOverDuringTheRun() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        let worker = f.worker
+        for n in 0..<3 {
+            let row = MailOutbox()
+            let account = try await Self.account(f.t, "Empfaenger \(n)")
+            row.kind = MailKind.test; row.recipient = "anna\(n)@example.org"; row.userID = account.id
+            row.payload = "{}"; row.state = "pending"; row.attempts = 0; row.dedupeKey = UUID().uuidString
+            row.nextAttemptAt = Date().addingTimeInterval(-60); row.expiresAt = Date().addingTimeInterval(3600)
+            try await row.save(on: db)
+            let email = UserEmail(); email.userID = account.id; email.email = row.recipient; email.verifiedAt = Date()
+            try await email.save(on: db)
+        }
+        let thief = StealingTransport(db: db)
+        f.t.app.mailTransport = thief
+        let outcome = await worker.runIfDue()
+        guard case .ran(let report) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(thief.sentCount, 1)
+        XCTAssertEqual(report.sent, 1)
+        let pending = try await MailOutbox.query(on: db).filter(\.$state == "pending").count()
+        XCTAssertEqual(pending, 2)
+    }
 }
 
 // MARK: - SMTP client against a scripted loopback server
@@ -633,5 +659,18 @@ final class SMTPClientTests: XCTestCase {
         let client = try SMTPClient(config: config(silent.localAddress!.port!), timeout: .milliseconds(300))
         do { try await client.send(message); XCTFail() }
         catch let e as MailSendError { XCTAssertEqual(e.stage, .timeout) }
+    }
+}
+
+/// Counts deliveries and takes the worker's lease over after the first one, like a second replica would after expiry.
+final class StealingTransport: MailTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    let db: any Database
+    init(db: any Database) { self.db = db }
+    var sentCount: Int { lock.withLock { count } }
+    func send(_ message: MailMessage) async throws {
+        lock.withLock { count += 1 }
+        try await (db as! any SQLDatabase).raw("UPDATE maintenance_leases SET holder = 'other-replica' WHERE name = \(bind: MailWorker.jobName)").run()
     }
 }

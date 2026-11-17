@@ -189,6 +189,20 @@ final class ServerSettingsTests: XCTestCase {
         XCTAssertEqual(again, 0)
     }
 
+    /// A secret removed by an admin while the rotation is running must not be written back from the stale read.
+    func testKeyRotationDoesNotResurrectSecretRemovedMeanwhile() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        _ = try await put(f, "attachments.s3SecretKey", "s3-secret-value")
+        let ring = try SettingsKeyRing.fromEnvironment(get: { ["SETTINGS_ENCRYPTION_KEY": Self.keyB, "SETTINGS_ENCRYPTION_KEY_PREVIOUS": Self.keyA][$0] })
+        let db = f.t.app.db
+        _ = try await RotateSettingsKeyCommand.rotate(ring: ring, on: db, afterListing: {
+            try await ServerSetting.query(on: db).filter(\.$settingKey == "attachments.s3SecretKey")
+                .set(\.$value, to: nil).set(\.$keyID, to: nil).set(\.$fingerprint, to: nil).update()
+        })
+        let row = try await ServerSetting.query(on: db).filter(\.$settingKey == "attachments.s3SecretKey").first()
+        XCTAssertNil(row?.value)
+    }
+
     // MARK: Versions, validation, audit
 
     func testVersionConflictAndAudit() async throws {
