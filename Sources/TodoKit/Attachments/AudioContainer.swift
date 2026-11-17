@@ -59,7 +59,8 @@ enum AudioContainer {
             } else if size32 == 0 {
                 size = range.upperBound - pos
             }
-            guard size >= header, pos + size <= range.upperBound else { throw Invalid() }
+            // Compare against the remaining length: `pos + size` would overflow for sizes near Int.max.
+            guard size >= header, size <= range.upperBound - pos else { throw Invalid() }
             out.append(Box(type: String(decoding: b[(pos + 4)..<(pos + 8)], as: UTF8.self), body: (pos + header)..<(pos + size)))
             pos += size
         }
