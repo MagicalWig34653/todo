@@ -5,6 +5,9 @@
 	import { attempt } from '#lib/notice.svelte.js';
 	import { openTaskRoute } from '#lib/navigate.js';
 	import { STATUSES, collectAll } from '#lib/planning.js';
+	import { findByShortID, parseShortIdQuery, shortID, type IdHit } from '#lib/shortId.js';
+	import { workspace } from '#lib/workspace.svelte.js';
+	import IdChip from './IdChip.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
@@ -30,6 +33,8 @@
 	let searched = $state(false);
 	let searching = $state(false);
 	let seq = 0;
+	/** Entries whose short id was typed (client side: the server search does not know ids). */
+	let idHits = $state<IdHit[]>([]);
 	let labels = $state<Label[]>([]);
 	let filters = $state<SavedFilter[]>([]);
 	let activeFilter = $state<SavedFilter | null>(null);
@@ -63,6 +68,18 @@
 		});
 	});
 
+	/** Looks a typed short id up in the loaded tasks and in the questions and reviews of the account. */
+	async function lookupShortID(text: string): Promise<IdHit[]> {
+		const short = parseShortIdQuery(text);
+		if (!short) return [];
+		const [questions, reviews] = await Promise.all([
+			api.listQuestions({ state: 'all' }).catch(() => []),
+			api.listReviews({ state: 'all' }).catch(() => [])
+		]);
+		return findByShortID(short, { tasks: workspace.tasks, questions, reviews });
+	}
+	const openIdHit = (h: IdHit) => cardDetail.open({ type: h.kind, id: h.cardID });
+
 	/** Only the newest request may apply its answer; older ones are dropped. */
 	async function run(more = false) {
 		const mine = ++seq;
@@ -71,6 +88,8 @@
 			const page = activeFilter
 				? await api.filterResults(activeFilter.id, more ? next : null)
 				: await api.search(criteria, more ? next : null);
+			if (mine !== seq) return;
+			if (!more) idHits = await lookupShortID(activeFilter ? '' : (q ?? ''));
 			if (mine !== seq) return;
 			hits = more ? [...hits, ...page.items] : page.items;
 			next = page.nextCursor ?? null;
@@ -156,7 +175,18 @@
 
 	{#if activeFilter}<p class="text-muted-foreground text-sm">{t('search.activeFilter', { name: activeFilter.name })}</p>{/if}
 	{#if searching}<p class="text-muted-foreground text-sm" role="status" data-testid="search-status">{t('search.searching')}</p>{/if}
-	{#if searched && !searching && hits.length === 0}<EmptyState title={t('search.noResults')} icon={SearchIcon} />{/if}
+	{#if idHits.length > 0}
+		<ul class="flex flex-col gap-2" aria-label={t('search.byId', { id: shortID(idHits[0]!.id) })} data-testid="search-id-hits">
+			{#each idHits as h (h.kind + h.id)}
+				<li class="bg-card border-ui-accent/40 flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm shadow-card" data-testid="search-id-hit">
+					<Badge variant="accent">{t(`search.hit.${h.kind}` as MessageKey)}</Badge>
+					<button class="min-w-0 flex-1 text-left font-medium hover:underline" onclick={() => openIdHit(h)}>{h.title}</button>
+					<IdChip id={h.id} subtle testid="search-hit-id" />
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	{#if searched && !searching && hits.length === 0 && idHits.length === 0}<EmptyState title={t('search.noResults')} icon={SearchIcon} />{/if}
 	<ul class="flex flex-col gap-2">
 		{#each hits as h (h.kind + h.id)}
 			<li class="bg-card flex flex-wrap items-center gap-2 rounded-xl border p-3 text-sm shadow-card" data-testid="search-hit">

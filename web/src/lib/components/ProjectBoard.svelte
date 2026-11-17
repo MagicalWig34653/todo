@@ -15,6 +15,7 @@
 	import { parseQuickAdd } from '#lib/quickAdd.js';
 	import { createQuickTask } from '#lib/quickAddCreate.js';
 	import Popover from './app/Popover.svelte';
+	import IdChip from './IdChip.svelte';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Check from '@lucide/svelte/icons/check';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
@@ -316,17 +317,16 @@
 				{#if task.description.trim()}
 					<p class="text-muted-foreground mt-0.5 line-clamp-2 text-[13px] break-words">{snippet(task.description, 120)}</p>
 				{/if}
-				{#if pl?.dueAt || labels.length > 0 || pl?.hasRecurrence}
-					<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-						{#if pl?.dueAt}
-							<span class={['inline-flex items-center gap-1', dueTone(pl.dueAt, task.status === 'done')]} data-testid="card-due"><CalendarDays class="size-3.5" aria-hidden="true" />{formatWhen(pl.dueAt)}</span>
-						{/if}
-						{#if pl?.hasRecurrence}<Repeat class="text-muted-foreground size-3.5" aria-label={t('planning.chip.recurrence')} />{/if}
-						{#each labels as l (l)}
-							<span class="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5" data-testid="card-label"><Tag class="size-3" aria-hidden="true" />{l}</span>
-						{/each}
-					</div>
-				{/if}
+				<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+					<IdChip id={task.id} subtle testid="board-card-id" />
+					{#if pl?.dueAt}
+						<span class={['inline-flex items-center gap-1', dueTone(pl.dueAt, task.status === 'done')]} data-testid="card-due"><CalendarDays class="size-3.5" aria-hidden="true" />{formatWhen(pl.dueAt)}</span>
+					{/if}
+					{#if pl?.hasRecurrence}<Repeat class="text-muted-foreground size-3.5" aria-label={t('planning.chip.recurrence')} />{/if}
+					{#each labels as l (l)}
+						<span class="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5" data-testid="card-label"><Tag class="size-3" aria-hidden="true" />{l}</span>
+					{/each}
+				</div>
 			</div>
 		</div>
 		<Popover

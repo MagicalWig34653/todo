@@ -12,6 +12,7 @@
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import Timestamp from '../Timestamp.svelte';
+	import IdChip from '../IdChip.svelte';
 	import { formatWhen } from '#lib/planning.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -297,6 +298,14 @@
 				{:else}
 					<div class="flex min-w-0 flex-col gap-1.5">
 						<h2 class="text-2xl leading-tight font-semibold tracking-tight [overflow-wrap:anywhere] md:text-[1.7rem]" data-testid="card-title-static">{task?.title ?? request?.summary ?? title}</h2>
+					</div>
+				{/if}
+
+				{#if task || request}
+					<div class="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1" role="group" aria-label={t('id.group')} data-testid="card-ids">
+						<IdChip id={task?.id ?? request?.id ?? ''} kind="id.kind.card" testid="id-card" />
+						{#if card.type === 'question' && data.question}<IdChip id={data.question.id} kind="id.kind.question" testid="id-question" />{/if}
+						{#if card.type === 'review' && review}<IdChip id={review.id} kind="id.kind.review" testid="id-review" />{/if}
 					</div>
 				{/if}
 

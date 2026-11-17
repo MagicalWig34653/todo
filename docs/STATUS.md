@@ -1274,3 +1274,11 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Logik in `web/src/lib/autoStart.ts`, Texte `i18n/de-autostart.ts`, Tests `web/tests/autoStart.test.ts` (25 Fälle). `vitest run` und `npm run build` grün; `npm run check` und Playwright nicht gelaufen.
 - Grenzen: die ältere Formularvariante von `TaskPlanning` (ohne `side`, `TaskDetail`) hat den Schalter nicht; Job-Hinweis lädt je Listenzeile ein Detail (bis 20 Anfragen je Seite).
 
+
+## Nachtrag 17.11.2026: Kurz-IDs in der PWA (Karte 3485F012)
+
+- Neu: `web/src/lib/shortId.ts` (`shortID`, `parseShortIdQuery`, `findByShortID`), `clipboard.ts` (Clipboard-API mit execCommand-Fallback), `components/IdChip.svelte` (Monospace-Kurz-ID, Klick/Enter/Leertaste kopiert die volle UUID, `aria-live`-Rückmeldung „Kopiert“ ohne Layoutsprung, `title` = volle UUID, `stopPropagation`).
+- Sichtbar im Kartendetail (Karte, bei Fragen zusätzlich „Frage“, bei Reviews „Review“, jeweils beschriftet) und dezent auf der Board-Karte (öffnet die Karte nicht).
+- Suche: Eingabe von genau 8 Hex-Zeichen (beliebige Schreibung, optional `#`) liefert zuoberst Treffer. Die Suche ist serverseitig und kennt keine IDs; der Abgleich läuft clientseitig gegen `workspace.tasks` sowie `GET /questions?state=all` und `GET /reviews?state=all`. Backend und Verträge unverändert.
+- Grenzen: Kurz-ID-Treffer sind auf die Listen begrenzt, die die API je Aufruf liefert (Standardlimits); Reviews werden über die Aufgabe geöffnet (Review-Karten sind nach Aufgaben-ID adressiert). Nur Treffer in diesen drei Entitäten, keine Projekte/Kommentare.
+- Prüfung: vitest 437 grün (neu `tests/shortId.test.ts`), `npm run build` ok, `e2e/short-id.spec.ts` 7 grün (Chromium, echtes Backend, SQLite). `npm run check` nicht im Worktree gelaufen. Screenshots: `docs/screenshots/kurz-id/`.
