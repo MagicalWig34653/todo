@@ -41,6 +41,10 @@ struct FeedPostDTO: Content {
     let percent: Int?
     let images: [FeedImageDTO]
     let createdAt: Date?
+    /// Build status (building | succeeded | failed) of `build.*` posts; absent for other kinds and builds that never reported one.
+    var status: String? = nil
+    /// Platform of the build of a `build.status_changed` post.
+    var platform: String? = nil
 }
 
 /// A request the client can send as is. `requiresInput` actions need the user's text in `inputField`.

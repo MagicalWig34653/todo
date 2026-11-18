@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Session-Status ohne Karte und Übersicht "Jetzt"
-  version: 1.2.0
+  version: 1.3.0
   description: 'ADR 0034. Ein Agent meldet ohne geclaimte Karte, woran seine Sitzung gerade im Projekt arbeitet (ein Satz, höchstens 300 Zeichen).
     Eine Zeile je (Konto, Projekt, Sitzungsname), jeder Aufruf überschreibt sie (Upsert). Der Text läuft vor dem Speichern durch den Secrets-Filter
     ([gefiltert]). Rate-Limit: höchstens ein Schreibvorgang je 10 s und (Konto, Projekt, Sitzungsname) (429 rate_limited, Retry-After); höchstens 20
@@ -129,7 +129,7 @@ components:
           type: array
           items:
             type: object
-            properties: {taskID: {type: string, format: uuid}, taskTitle: {type: string}, kind: {type: string}, actorType: {type: string}, createdAt: {type: string, format: date-time}}
+            properties: {taskID: {type: string, format: uuid}, taskTitle: {type: string}, kind: {type: string}, actorType: {type: string}, createdAt: {type: string, format: date-time}, label: {type: string, nullable: true, description: 'Seit 1.3.0, nur bei kind build.added und build.status_changed: Label des Builds; fehlt ohne Label.'}, platform: {type: string, nullable: true, description: 'Seit 1.3.0, nur bei Build-Ereignissen: Plattform des Builds.'}, status: {type: string, nullable: true, enum: [building, succeeded, failed], description: 'Seit 1.3.0, nur bei Build-Ereignissen: aktueller Status des Builds (nicht der zum Ereigniszeitpunkt); fehlt, wenn nie gemeldet.'}}
     OverviewOpenItem:
       type: object
       properties:

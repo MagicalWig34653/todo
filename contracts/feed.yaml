@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Feed "Für dich"
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0023. Kontoweite Startansicht: oben needsYou (was dich braucht, höchstens 10, mit direkt ausführbaren Aktionen auf bestehenden
     Endpunkten), darunter posts (chronologisch, neueste zuerst). Reine Lesesicht über bestehende Tabellen (activity_events, task_progress_notes,
     task_questions, task_reviews, build_artifacts, attachments, comments, task_workflow, task_planning); keine Migration. Rechte wie überall:
@@ -24,7 +24,7 @@ paths:
         inputField}: body unverändert an path senden (bei requiresInput den Text in body[inputField] ergänzen). answer -> POST /v1/questions/{id}/answer
         {answer}; accept/request_changes -> POST /v1/tasks/{id}/review/decision {decision, note?}; complete -> PATCH /v1/tasks/{id} {status:done, version}.
         posts[]: {id (Aktivitätsereignis), kind=progress|build|done|review|question|comment|agent_run, event, state, projectID, projectName, taskID,
-        taskTitle, actor{type,id,name}, text, detail, percent, images[], createdAt}. images[]: {attachmentID, buildArtifactID, filename, mediaType,
+        taskTitle, actor{type,id,name}, text, detail, percent, images[], createdAt, status?, platform?}. Seit 1.1.0 liefert der Feed auch das Ereignis build.status_changed als Post kind=build mit text=Label (sonst Build-ID), status (building|succeeded|failed, aktueller Stand des Builds) und platform; je Statuswechsel ein eigener Post ohne images, nicht mit build.added zusammengefasst. Bei build.added erscheint status nur, wenn der Build einen hat; bei anderen Arten fehlen beide Felder. images[]: {attachmentID, buildArtifactID, filename, mediaType,
         previewURL (/v1/attachments/{id}/preview, authentifiziert), buildID, label, platform}; Screenshots derselben Build-ID einer Aufgabe werden innerhalb
         einer Seite zu einem Post zusammengefasst. Sortierung (createdAt, id) absteigend, total. Cursor: exakt (Bitmuster des Zeitstempels + Ereignis-ID),
         daher keine Rundungsfehler; Datenbank schränkt nur grob (+1 s Toleranz) ein, genaue Grenze und Gleichstandsreihenfolge werden auf den geladenen Werten

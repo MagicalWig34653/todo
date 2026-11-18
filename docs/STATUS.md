@@ -1313,3 +1313,8 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 ## Nachtrag 18.11.2026: register_build mit status und commit
 
 - `register_build` / REST `POST /v1/builds`: optional `status` (building|succeeded|failed, `invalid_status`) und `commit` (7-40 Hex-Kleinbuchstaben, `invalid_commit`); erneuter Aufruf mit anderem Status aktualisiert ihn (Aktivität `build.status_changed`), ohne `status` bleibt er. `OverviewNow.Build.status`, `commit` explizit sonst aus buildID; auch in BuildArtifactDTO (list_builds, read_attachment, Karten-Kontext). Migration `AddBuildStatusCommit` (additiv). Verträge session-status 1.2.0, oauth-mcp 1.6.0, command-center 1.7.0; Handbuch 1.34.0; ADR 0034 Nachtrag. Feed zeigt die Statusänderung nicht (offen).
+
+## Nachtrag 18.11.2026: build.status_changed in Feed und "Jetzt" (Karte 90298BDD, Folge von F6DF71C3)
+
+- Backend: `FeedService` nimmt `build.status_changed` auf (Post kind `build`, text = Label sonst Build-ID, neu `status`/`platform` in `FeedPostDTO`, nil fehlt im JSON; build.added zeigt `status`, wenn vorhanden). `OverviewNow.Event` hat optional `label`/`platform`/`status` nur fuer Build-Ereignisse. Keine Migration. Vertraege: session-status 1.3.0, feed 1.1.0, Handbuch 1.35.0, ADR 0034 Nachtrag.
+- Grenze: Status ist der aktuelle Stand des Builds, nicht der zum Ereigniszeitpunkt.
