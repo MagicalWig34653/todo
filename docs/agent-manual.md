@@ -1,4 +1,4 @@
-<!-- manual-version: 1.34.0 -->
+<!-- manual-version: 1.35.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -352,6 +352,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.7.0:** chat per card. `list_comments` and `add_comment` take `questionID`/`reviewID` (the question or review must belong to the task); messages carry `authorKind`, `authorLabel`, `createdAt`, `questionID`, `reviewID`. No new scopes. Read new messages from people at the start of a session and after finishing a step.
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
+
+**Changed in 1.35.0:** build status in the activity views, additive. `get_overview_now` (and REST `GET /v1/overview/now`): `recentActivity[]` entries of kind `build.added` and `build.status_changed` carry optional `label`, `platform` and `status` (current state of that build); other entries are unchanged. The REST feed `GET /v1/feed` now also shows `build.status_changed` as a post of kind `build` (`text` = label or build ID, plus `status` and `platform`; one post per status change). No new tools, no scope changes.
 
 **Changed in 1.34.0:** `register_build` (and REST `POST /v1/builds`) takes optional `status` (`building`, `succeeded` or `failed`; otherwise `invalid_status`) and `commit` (7-40 lowercase hex characters; otherwise `invalid_commit`). Old calls without them behave as before. Calling again for the same attachment with another `status` updates it (for example `building` then `succeeded`) and adds a `build.status_changed` entry to the card activity; a call without `status` never changes an existing status. `list_builds`, `read_attachment` and `get_overview_now` (`builds[]`) show `status` and `commit` when present; `commit` falls back to a hash-like `buildID`.
 

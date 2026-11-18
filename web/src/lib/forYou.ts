@@ -29,6 +29,9 @@ export interface ForYouPost {
 	percent?: number | null;
 	images: ForYouImage[];
 	createdAt?: string | null;
+	/** build.status_changed (and build.added with a reported status), feed contract 1.1.0. */
+	status?: string | null;
+	platform?: string | null;
 }
 export interface ForYouAction {
 	key: string;
@@ -162,10 +165,10 @@ export function appendPosts(posts: readonly ForYouPost[], more: readonly ForYouP
 }
 
 /** i18n key of a post's headline. */
-export function postTitleKey(p: Pick<ForYouPost, 'kind' | 'state'>): string {
+export function postTitleKey(p: Pick<ForYouPost, 'kind' | 'state'> & { event?: string }): string {
 	switch (p.kind) {
 		case 'progress': return 'forYou.post.progress';
-		case 'build': return 'forYou.post.build';
+		case 'build': return p.event === 'build.status_changed' ? 'forYou.post.buildStatus' : 'forYou.post.build';
 		case 'done': return 'forYou.post.done';
 		case 'review': return p.state === 'accepted' ? 'forYou.post.reviewAccepted' : 'forYou.post.reviewChanges';
 		case 'question': return 'forYou.post.answered';

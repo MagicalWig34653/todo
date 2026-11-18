@@ -219,6 +219,45 @@ final class SessionStatusTests: XCTestCase {
         }
     }
 
+    func testRecentActivityCarriesBuildFieldsOnlyForBuildEvents() async throws {
+        try await fixture { f, access in
+            let uid = try f.user.requireID(), pid = try f.project.requireID(), db = f.test.app.db
+            let task = TodoTask(ownerID: uid, projectID: pid, title: "Built"); try await task.save(on: db)
+            let labelled = BuildArtifact(); labelled.attachmentID = UUID(); labelled.taskID = try task.requireID(); labelled.buildID = "b1"
+            labelled.label = "iOS 4.2"; labelled.platform = "ios"; labelled.status = "failed"; labelled.createdByType = .person; labelled.createdByID = uid
+            try await labelled.save(on: db)
+            let plain = BuildArtifact(); plain.attachmentID = UUID(); plain.taskID = try task.requireID(); plain.buildID = "b2"
+            plain.createdByType = .person; plain.createdByID = uid
+            try await plain.save(on: db)
+            try await appendActivity(taskID: try task.requireID(), actorType: .person, actorID: uid, kind: "build.status_changed", subjectID: labelled.id, on: db)
+            try await appendActivity(taskID: try task.requireID(), actorType: .person, actorID: uid, kind: "build.status_changed", subjectID: plain.id, on: db)
+            try await appendActivity(taskID: try task.requireID(), actorType: .person, actorID: uid, kind: "build.added", subjectID: labelled.id, on: db)
+            try await appendActivity(taskID: try task.requireID(), actorType: .person, actorID: uid, kind: "task.claimed", subjectID: nil, on: db)
+            let first = try await now(f)
+            let events = try XCTUnwrap(try entry(first, f.project)?["recentActivity"] as? [[String: Any]])
+            let changed = events.filter { $0["kind"] as? String == "build.status_changed" }
+            XCTAssertEqual(changed.count, 2)
+            let withLabel = try XCTUnwrap(changed.first { $0["label"] as? String == "iOS 4.2" })
+            XCTAssertEqual(withLabel["platform"] as? String, "ios"); XCTAssertEqual(withLabel["status"] as? String, "failed")
+            let without = try XCTUnwrap(changed.first { $0["label"] == nil })
+            XCTAssertFalse(without.keys.contains("label")); XCTAssertFalse(without.keys.contains("platform")); XCTAssertFalse(without.keys.contains("status"))
+            let added = try XCTUnwrap(events.first { $0["kind"] as? String == "build.added" })
+            XCTAssertEqual(added["label"] as? String, "iOS 4.2")
+            let claimed = try XCTUnwrap(events.first { $0["kind"] as? String == "task.claimed" })
+            XCTAssertFalse(claimed.keys.contains("label")); XCTAssertFalse(claimed.keys.contains("status"))
+            // Unreadable projects stay hidden.
+            let stranger = User(displayName: "S", isAdmin: false); try await stranger.save(on: db)
+            let foreign = Project(ownerID: try stranger.requireID(), parentID: nil, name: "Foreign"); try await foreign.save(on: db)
+            let ft = TodoTask(ownerID: try stranger.requireID(), projectID: try foreign.requireID(), title: "F"); try await ft.save(on: db)
+            let fb = BuildArtifact(); fb.attachmentID = UUID(); fb.taskID = try ft.requireID(); fb.buildID = "f1"; fb.label = "Secret"; fb.status = "building"
+            fb.createdByType = .person; fb.createdByID = try stranger.requireID(); try await fb.save(on: db)
+            try await appendActivity(taskID: try ft.requireID(), actorType: .person, actorID: try stranger.requireID(), kind: "build.status_changed", subjectID: fb.id, on: db)
+            let body = try await now(f)
+            XCTAssertNil(try entry(body, foreign))
+            XCTAssertFalse(String(describing: body).contains("Secret"))
+        }
+    }
+
     func testOrphanedAfter30MinutesHiddenAfter24Hours() async throws {
         try await fixture { f, access in
             _ = try await report(f, access, session: "fresh"); _ = try await report(f, access, session: "old"); _ = try await report(f, access, session: "gone")

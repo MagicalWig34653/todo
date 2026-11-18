@@ -869,7 +869,8 @@ export interface OverviewSession { sessionName: string; activity: string; update
 export interface OverviewJob { jobID: string; taskID: string; state: string; mode: string; progress: string }
 export interface OverviewBuild { taskID: string; buildID: string; label?: string | null; platform?: string | null; commit?: string | null; status?: BuildStatus | null; createdAt: string }
 export interface OverviewOpenItem { id: string; taskID: string; taskTitle: string; text: string; createdAt: string }
-export interface OverviewEvent { taskID: string; taskTitle: string; kind: string; actorType: string; createdAt: string }
+/** label, platform and status only for build.added / build.status_changed (contract session-status 1.3.0). */
+export interface OverviewEvent { taskID: string; taskTitle: string; kind: string; actorType: string; createdAt: string; label?: string | null; platform?: string | null; status?: BuildStatus | null }
 export interface OverviewProject {
 	projectID: string;
 	projectName: string;

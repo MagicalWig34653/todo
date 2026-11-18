@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createApi, type OverviewProject } from '../src/lib/api';
 import {
 	EXPANDED_KEY, QUIET_AFTER_MS, allowRefetch, buildSummary, buildCommit, buildStatusOf, shortCommit, defaultExpanded, groupProjects, isEmptyNow, isExpanded, isOrphaned, isQuiet,
-	loadExpanded, percentOf, projectStats, saveExpanded
+	loadExpanded, percentOf, projectStats, saveExpanded, buildEventHead
 } from '../src/lib/now';
+import { t } from '../src/lib/i18n/index';
 
 const NOW = new Date('2026-11-18T12:00:00Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
@@ -182,5 +183,18 @@ describe('build status', () => {
 	it('does not change the quiet rule: a failed build alone keeps a project quiet', () => {
 		const p = { ...project('x', { lastActivityAt: ago(3 * 24 * 3600 * 1000) }), builds: [{ taskID: '1', buildID: 'b', createdAt: '', status: 'failed' as const }] };
 		expect(isQuiet(p, NOW)).toBe(true);
+	});
+});
+
+describe('build status event', () => {
+	it('heads the line with "Build <label>:" or "Build:" without a label', () => {
+		expect(t(...buildEventHead('iOS 42'))).toBe('Build iOS 42:');
+		expect(t(...buildEventHead('  '))).toBe('Build:');
+		expect(t(...buildEventHead(null))).toBe('Build:');
+		expect(t(...buildEventHead(undefined))).toBe('Build:');
+	});
+	it('accepts the new optional event fields', () => {
+		const e: import('../src/lib/api').OverviewEvent = { taskID: '1', taskTitle: 'T', kind: 'build.status_changed', actorType: 'integration', createdAt: '', label: 'Web 1', platform: 'web', status: 'failed' };
+		expect(buildStatusOf(e.status)?.tone).toBe('danger');
 	});
 });

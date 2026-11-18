@@ -33,7 +33,7 @@ struct FeedService: Sendable {
 
     static let maxNeedsYou = 10
     static let managementKinds = [
-        "progress.posted", "build.added", "task.status_changed", "review.accepted", "review.changes_requested",
+        "progress.posted", "build.added", "build.status_changed", "task.status_changed", "review.accepted", "review.changes_requested",
         "question.answered", "comment.created", "agent.claimed", "agent.submit", "agent.stop", "agent.fail",
         "agent.accept", "agent.request_changes",
     ]
@@ -224,7 +224,7 @@ struct FeedService: Sendable {
         let reviews = Dictionary(uniqueKeysWithValues: try await TaskReview.query(on: db).filter(\.$id ~~ subjects(["review.accepted", "review.changes_requested"])).all().map { ($0.id!, $0) })
         let answeredIDs = subjects(["question.answered"])
         let questions = Dictionary(uniqueKeysWithValues: try await TaskQuestion.query(on: db).filter(\.$id ~~ answeredIDs).all().map { ($0.id!, $0) })
-        let artifacts = Dictionary(uniqueKeysWithValues: try await BuildArtifact.query(on: db).filter(\.$id ~~ subjects(["build.added"])).all().map { ($0.id!, $0) })
+        let artifacts = Dictionary(uniqueKeysWithValues: try await BuildArtifact.query(on: db).filter(\.$id ~~ subjects(["build.added", "build.status_changed"])).all().map { ($0.id!, $0) })
         let attachments = Dictionary(uniqueKeysWithValues: try await Attachment.query(on: db).filter(\.$id ~~ artifacts.values.map(\.attachmentID)).all().map { ($0.id!, $0) })
         let names = try await displayNames(events.filter { $0.actorType == .person }.map(\.actorID), on: db)
         // Integration actors carry the grant id: without a label the agent reported, show the connection's name.
@@ -238,7 +238,7 @@ struct FeedService: Sendable {
         for e in events {
             guard let task = tasks[e.taskID], let eventID = e.id else { continue }
             var actorName: String? = e.actorType == .person ? names[e.actorID] : (e.actorType == .integration ? connectionNames[e.actorID] : nil)
-            var kind = "", state: String?, text: String?, detail: String?, percent: Int?
+            var kind = "", state: String?, text: String?, detail: String?, percent: Int?, status: String?, platform: String?
             var images: [FeedImageDTO] = []
             switch e.kind {
             case "progress.posted":
@@ -246,7 +246,7 @@ struct FeedService: Sendable {
                 kind = "progress"; text = n.note; percent = n.percent; actorName = n.actorLabel ?? actorName
             case "build.added":
                 guard let artifact = e.subjectID.flatMap({ artifacts[$0] }) else { continue }
-                kind = "build"; text = artifact.label ?? artifact.buildID
+                kind = "build"; text = artifact.label ?? artifact.buildID; status = artifact.status
                 if let a = attachments[artifact.attachmentID], a.mediaType.hasPrefix("image/") {
                     images = [FeedImageDTO(attachmentID: artifact.attachmentID, buildArtifactID: artifact.id, filename: a.filename, mediaType: a.mediaType,
                         previewURL: "/v1/attachments/\(artifact.attachmentID.uuidString)/preview", buildID: artifact.buildID, label: artifact.label, platform: artifact.platform)]
@@ -257,10 +257,15 @@ struct FeedService: Sendable {
                     let existing = result[at]
                     result[at] = FeedPostDTO(id: existing.id, kind: existing.kind, event: existing.event, state: existing.state, projectID: existing.projectID,
                         projectName: existing.projectName, taskID: existing.taskID, taskTitle: existing.taskTitle, actor: existing.actor, text: existing.text,
-                        detail: existing.detail, percent: nil, images: existing.images + images, createdAt: existing.createdAt)
+                        detail: existing.detail, percent: nil, images: existing.images + images, createdAt: existing.createdAt,
+                        status: existing.status, platform: existing.platform)
                     continue
                 }
                 buildIndex[key] = result.count
+            case "build.status_changed":
+                // One post per status change, never merged with build.added or other changes of the same build.
+                guard let artifact = e.subjectID.flatMap({ artifacts[$0] }) else { continue }
+                kind = "build"; text = artifact.label ?? artifact.buildID; status = artifact.status; platform = artifact.platform
             case "task.status_changed":
                 guard task.status == "done" else { continue }
                 kind = "done"
@@ -285,7 +290,7 @@ struct FeedService: Sendable {
             result.append(FeedPostDTO(id: eventID, kind: kind, event: e.kind, state: state, projectID: task.projectID,
                 projectName: scope.projects[task.projectID]?.name ?? "", taskID: e.taskID, taskTitle: task.title,
                 actor: FeedActorDTO(type: e.actorType, id: e.actorID, name: actorName), text: text, detail: detail, percent: percent,
-                images: images, createdAt: e.createdAt))
+                images: images, createdAt: e.createdAt, status: status, platform: platform))
         }
         return result
     }

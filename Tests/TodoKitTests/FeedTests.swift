@@ -106,6 +106,48 @@ final class FeedTests: XCTestCase {
         await w.f.test.shutdown()
     }
 
+    func testBuildStatusChangedPostCarriesLabelPlatformAndStatusOnlyForReadableProjects() async throws {
+        let w = try await world()
+        func artifact(_ task: TodoTask, _ buildID: String, label: String?, status: String?, owner: User) async throws -> BuildArtifact {
+            let a = BuildArtifact()
+            a.attachmentID = UUID(); a.taskID = try task.requireID(); a.buildID = buildID; a.label = label; a.platform = label == nil ? nil : "ios"; a.status = status
+            a.createdByType = .person; a.createdByID = try owner.requireID()
+            try await a.save(on: w.db)
+            try await appendActivity(taskID: a.taskID, actorType: .person, actorID: a.createdByID, kind: "build.status_changed", subjectID: a.id, on: w.db)
+            return a
+        }
+        _ = try await artifact(w.task, "b-lab", label: "iOS 4.2", status: "succeeded", owner: w.f.user)
+        _ = try await artifact(w.task, "b-nolab", label: nil, status: "building", owner: w.f.user)
+        _ = try await artifact(w.foreignTask, "b-foreign", label: "Secret build", status: "failed", owner: w.other)
+        // build.added of a build with a status keeps working and now carries the status too.
+        let added = try await artifact(w.task, "b-added", label: "Mac", status: "failed", owner: w.f.user)
+        try await appendActivity(taskID: added.taskID, actorType: .person, actorID: added.createdByID, kind: "build.added", subjectID: added.id, on: w.db)
+
+        let r = try await feed(w)
+        let posts = try XCTUnwrap(r.body?["posts"] as? [[String: Any]])
+        let changed = posts.filter { $0["event"] as? String == "build.status_changed" }
+        XCTAssertEqual(changed.count, 3)
+        XCTAssertTrue(changed.allSatisfy { $0["kind"] as? String == "build" })
+        let lab = try XCTUnwrap(changed.first { $0["text"] as? String == "iOS 4.2" })
+        XCTAssertEqual(lab["status"] as? String, "succeeded"); XCTAssertEqual(lab["platform"] as? String, "ios")
+        XCTAssertEqual((lab["images"] as? [Any])?.count, 0)
+        let nolab = try XCTUnwrap(changed.first { $0["text"] as? String == "b-nolab" })
+        XCTAssertEqual(nolab["status"] as? String, "building"); XCTAssertFalse(nolab.keys.contains("platform"))
+        XCTAssertFalse(String(describing: r.body ?? [:]).contains("Secret build"))
+        let addedPost = try XCTUnwrap(posts.first { $0["event"] as? String == "build.added" })
+        XCTAssertEqual(addedPost["status"] as? String, "failed")
+        // Other kinds carry neither field.
+        _ = try await note(w, w.task, "plain")
+        let againResponse = try await feed(w)
+        let again = try XCTUnwrap(againResponse.body?["posts"] as? [[String: Any]])
+        let progress = try XCTUnwrap(again.first { $0["kind"] as? String == "progress" })
+        XCTAssertFalse(progress.keys.contains("status")); XCTAssertFalse(progress.keys.contains("platform"))
+        // A foreign reader sees the foreign build only after a grant.
+        let other = try await feed(w, as: w.otherSession)
+        XCTAssertTrue((other.body?["posts"] as? [[String: Any]] ?? []).contains { $0["text"] as? String == "Secret build" })
+        await w.f.test.shutdown()
+    }
+
     func testNeedsYouOrderCapActionsAndDirectAnswer() async throws {
         let w = try await world()
         let tid = try w.task.requireID()

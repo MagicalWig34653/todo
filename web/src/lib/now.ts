@@ -107,6 +107,12 @@ export function buildStatusOf(status: string | null | undefined): { key: (typeof
 	return status && Object.hasOwn(BUILD_STATUS, status) ? BUILD_STATUS[status as keyof typeof BUILD_STATUS] : null;
 }
 
+/** Message key and params of the head of a build status line: "Build <label>:" or "Build:" without a label. */
+export function buildEventHead(label: string | null | undefined): ['build.event.titled', { label: string }] | ['build.event.untitled'] {
+	const l = typeof label === 'string' ? label.trim() : '';
+	return l ? ['build.event.titled', { label: l }] : ['build.event.untitled'];
+}
+
 /** First 7 characters of a commit, otherwise null. */
 export function shortCommit(commit: string | null | undefined): string | null {
 	const c = typeof commit === 'string' ? commit.trim() : '';

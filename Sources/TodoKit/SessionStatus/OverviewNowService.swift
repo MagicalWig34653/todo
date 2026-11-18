@@ -30,7 +30,11 @@ struct OverviewNow: Content {
         let status: String?
     }
     struct Open: Content { let id: UUID; let taskID: UUID; let taskTitle: String; let text: String; let createdAt: String }
-    struct Event: Content { let taskID: UUID; let taskTitle: String; let kind: String; let actorType: String; let createdAt: String }
+    struct Event: Content {
+        let taskID: UUID; let taskTitle: String; let kind: String; let actorType: String; let createdAt: String
+        /// Only for build.added / build.status_changed (from the build artifact); absent otherwise.
+        var label: String? = nil; var platform: String? = nil; var status: String? = nil
+    }
     struct Entry: Content {
         let projectID: UUID
         let projectName: String
@@ -54,6 +58,7 @@ struct OverviewNowService: Sendable {
     static let orphanedAfter: TimeInterval = 30 * 60
     static let hiddenAfter: TimeInterval = 24 * 3600
     static let activityLimit = 10
+    static let buildEventKinds: Set<String> = ["build.added", "build.status_changed"]
     static let buildLimit = 5
     static let activeJobStates = ["queued", "claimed", "running", "waiting_for_answer"]
 
@@ -140,6 +145,8 @@ struct OverviewNowService: Sendable {
                 .filter(TodoTask.self, \.$projectID == pid).sort(\.$createdAt, .descending).limit(Self.buildLimit).all()
             let events = try await ActivityEvent.query(on: db).join(TodoTask.self, on: \ActivityEvent.$taskID == \TodoTask.$id)
                 .filter(TodoTask.self, \.$projectID == pid).sort(\.$createdAt, .descending).limit(Self.activityLimit).all()
+            let eventBuilds = Dictionary(uniqueKeysWithValues: try await BuildArtifact.query(on: db)
+                .filter(\.$id ~~ events.filter { Self.buildEventKinds.contains($0.kind) }.compactMap(\.subjectID)).all().compactMap { b in b.id.map { ($0, b) } })
             for b in builds { touch(pid, b.createdAt) }
             for e in events { touch(pid, e.createdAt) }
             let runningTasks = runningByProject[pid] ?? [], sessions = sessionsByProject[pid] ?? [], jobs = jobsByProject[pid] ?? []
@@ -152,7 +159,9 @@ struct OverviewNowService: Sendable {
                 builds: try builds.map { OverviewNow.Build(taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock), commit: $0.commit ?? Self.commit(from: $0.buildID), status: $0.status) },
                 openQuestions: questions, pendingReviews: reviews,
                 recentActivity: try events.map { e in
-                    OverviewNow.Event(taskID: e.taskID, taskTitle: try e.joined(TodoTask.self).title, kind: e.kind, actorType: "\(e.actorType)", createdAt: iso(e.createdAt ?? clock))
+                    let b = Self.buildEventKinds.contains(e.kind) ? e.subjectID.flatMap { eventBuilds[$0] } : nil
+                    return OverviewNow.Event(taskID: e.taskID, taskTitle: try e.joined(TodoTask.self).title, kind: e.kind, actorType: "\(e.actorType)", createdAt: iso(e.createdAt ?? clock),
+                        label: b?.label, platform: b?.platform, status: b?.status)
                 })))
         }
         return OverviewNow(serverTime: iso(clock), projects: entries.sorted { $0.0 > $1.0 }.map(\.1))

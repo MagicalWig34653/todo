@@ -44,6 +44,8 @@ describe('for you feed helpers', () => {
 		expect(postTitleKey({ kind: 'agent_run', state: 'failed' })).toBe('forYou.post.runFailed');
 		expect(postTitleKey({ kind: 'agent_run', state: 'finished' })).toBe('forYou.post.runFinished');
 		expect(postTitleKey({ kind: 'future' })).toBe('forYou.post.other');
+		expect(postTitleKey({ kind: 'build', event: 'build.added' })).toBe('forYou.post.build');
+		expect(postTitleKey({ kind: 'build', event: 'build.status_changed' })).toBe('forYou.post.buildStatus');
 	});
 	it('routes /fuer-dich and the root to the feed', () => {
 		expect(parseRoute('/for-you')).toEqual({ view: 'forYou' });
