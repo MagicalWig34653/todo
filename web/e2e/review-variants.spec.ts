@@ -67,17 +67,26 @@ async function imagesLoaded(scope: Locator, count: number) {
 	await expect(imgs).toHaveCount(count);
 	await expect.poll(() => imgs.evaluateAll((els) => els.filter((e) => (e as HTMLImageElement).complete && (e as HTMLImageElement).naturalWidth > 0).length)).toBe(count);
 }
-/** Result images: Chromium gets the full set, the other projects the two that show engine differences most. */
+/** Result images: Chromium gets the full set (light and dark), the other projects the two that show engine differences most. */
 const WANTED: Record<string, string[]> = {
-	chromium: ['01-ueberblick-hell', '02-kartendetail-hell', '03-nach-wahl-leiste-hell', '04-sammelfreigabe-hell', '05-mobil-hell', '06-fokus-tastatur-hell'],
-	webkit: ['01-ueberblick-hell', '02-kartendetail-hell'],
-	'mobile-safari': ['05-mobil-hell']
+	chromium: ['01-ueberblick', '02-kartendetail', '03-nach-wahl-leiste', '04-sammelfreigabe', '05-mobil', '06-fokus-tastatur'],
+	webkit: ['01-ueberblick', '02-kartendetail'],
+	'mobile-safari': ['05-mobil']
 };
+const DARK = new Set(['chromium']);
 async function shot(name: string) {
 	const project = test.info().project.name;
 	if (!(WANTED[project] ?? []).includes(name)) return;
+	const prefix = project === 'chromium' ? '' : `${project}-`;
 	await page.waitForTimeout(400);
-	await page.screenshot({ path: `${SHOTS}/${project === 'chromium' ? '' : `${project}-`}${name}.png` });
+	await page.screenshot({ path: `${SHOTS}/${prefix}${name}-hell.png` });
+	// The real app in the dark colour scheme (system setting emulated; the PWA follows it in the default "System" mode).
+	if (DARK.has(project)) {
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await page.waitForTimeout(400);
+		await page.screenshot({ path: `${SHOTS}/dunkel/${prefix}${name}-dunkel.png` });
+		await page.emulateMedia({ colorScheme: 'light' });
+	}
 }
 /** "noch 4:32" -> seconds. */
 async function undoSeconds(scope: Locator): Promise<number> {
@@ -88,7 +97,7 @@ async function undoSeconds(scope: Locator): Promise<number> {
 }
 
 test.beforeAll(async ({ browser }) => {
-	mkdirSync(SHOTS, { recursive: true });
+	mkdirSync(`${SHOTS}/dunkel`, { recursive: true });
 	page = await signedInPage(browser, 'Varianten Tester');
 	await page.setViewportSize({ width: 1280, height: 900 });
 	projectID = (await post<{ id: string }>('/v1/projects', { name: 'ShowerNow' })).id;
@@ -115,7 +124,7 @@ test.beforeAll(async ({ browser }) => {
 	});
 	made.v1 = { taskID: v1.id, reviewID: r1.id, title: 'Kartenwahl Regenvorhersage' };
 
-	// V2: three variants for the keyboard test; one without an attachment, one whose attachment is a PDF (no inline preview).
+	// V2: three variants, mixed: A with image, B without any attachment (compact card, no picture area), C whose attachment is a PDF (no inline preview, compact fallback).
 	const v2 = await post<{ id: string }>('/v1/tasks', { projectID, title: 'Farbschema Warnstufen' });
 	const temp = await upload(v2.id, 'temperaturkarte.png', 'image/png', image('temperaturkarte'));
 	const pdf = await upload(v2.id, 'skizze.pdf', 'application/pdf', PDF);
@@ -177,7 +186,7 @@ test('the server delivers the variants and the app shows A and B in the overview
 	await expect(r.getByTestId('review-variants-hint')).toContainText('Danach bleiben 5 Minuten zum Rückgängigmachen.');
 	await r.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 	await page.evaluate(() => window.scrollBy(0, -70));
-	await shot('01-ueberblick-hell');
+	await shot('01-ueberblick');
 
 	await r.getByTestId('card-open').click();
 	await expect(dialog()).toBeVisible();
@@ -185,25 +194,87 @@ test('the server delivers the variants and the app shows A and B in the overview
 	await expect(detail.getByTestId('review-variant')).toHaveCount(2);
 	await expect(detail.getByTestId('review-accept')).toHaveCount(0);
 	await imagesLoaded(detail, 2);
-	await shot('02-kartendetail-hell');
+	await shot('02-kartendetail');
 	await page.keyboard.press('Escape');
 	await expect(dialog()).toHaveCount(0);
 });
 
-test('placeholder: a variant without image or with a non-image attachment shows its label, choosing stays possible', async () => {
+test('no empty picture area: a variant without attachment is a compact card; a broken attachment gets a small fallback with the label', async () => {
 	await openReviews();
 	const r = row(made.v2);
-	await expect(r.getByTestId('review-variant')).toHaveCount(3);
-	// B has no attachment; C has a PDF, whose preview answers 415, so its broken image turns into the same placeholder (after the
-	// failed load; the images load lazily, so bring the last variant into view first).
-	await r.getByTestId('review-variant').nth(2).scrollIntoViewIfNeeded();
-	await expect(r.getByTestId('review-variant-placeholder')).toHaveCount(2);
-	await expect(r.getByTestId('review-variant-image')).toHaveCount(1);
-	await expect.poll(() => r.getByTestId('review-variant-image').evaluateAll((els) => els.filter((e) => (e as HTMLImageElement).naturalWidth > 0).length)).toBe(1);
-	await expect(r.getByTestId('review-variant').nth(1).getByTestId('review-variant-placeholder')).toContainText('Blau-Orange');
-	await expect(r.getByTestId('review-variant').nth(2).getByTestId('review-variant-placeholder')).toContainText('Monochrom');
+	const cards = r.getByTestId('review-variant');
+	await expect(cards).toHaveCount(3);
+	// C has a PDF, whose preview answers 415, so its broken image turns into the fallback (after the failed load; the images load
+	// lazily, so bring the last variant into view first).
+	await cards.nth(2).scrollIntoViewIfNeeded();
+	await expect(cards.nth(2).getByTestId('review-variant-placeholder')).toBeVisible();
+	// A (image) shows the picture, B (no attachment) has neither picture nor placeholder, C only the fallback.
+	await expect(cards.nth(0).getByTestId('review-variant-image')).toBeVisible();
+	await expect(cards.nth(0).getByTestId('review-variant-placeholder')).toHaveCount(0);
+	await expect(cards.nth(1).getByTestId('review-variant-image')).toHaveCount(0);
+	await expect(cards.nth(1).getByTestId('review-variant-placeholder')).toHaveCount(0);
+	await expect(cards.nth(1).locator('img, svg')).toHaveCount(0);
+	await expect(cards.nth(2).getByTestId('review-variant-image')).toHaveCount(0);
+	await expect(cards.nth(2).getByTestId('review-variant-placeholder')).toContainText('Monochrom');
+	await expect.poll(() => cards.nth(0).getByTestId('review-variant-image').evaluate((e) => (e as HTMLImageElement).naturalWidth > 0)).toBe(true);
+	// Compact: the card of B is clearly smaller than the picture, the fallback is a small line, not a picture-sized area.
+	const [compact, fallback, imgBox] = await Promise.all([
+		cards.nth(1).boundingBox(),
+		cards.nth(2).getByTestId('review-variant-placeholder').boundingBox(),
+		cards.nth(0).getByTestId('review-variant-image').boundingBox()
+	]);
+	expect(fallback!.height, 'fallback').toBeLessThan(imgBox!.height / 2);
+	expect(compact!.height, 'card without picture').toBeGreaterThan(0);
+	// Text and choice stay complete and usable.
+	await expect(cards.nth(1)).toContainText('Variante B');
+	await expect(cards.nth(1)).toContainText('Blau-Orange');
+	await expect(cards.nth(1)).toContainText('Auch bei Farbfehlsichtigkeit gut lesbar.');
 	await expect(choose(r, 'Wählen: Variante B, Blau-Orange')).toBeEnabled();
 	await expect(choose(r, 'Wählen: Variante C, Monochrom')).toBeEnabled();
+});
+
+test('card detail: text-only variants show no picture area; choosing one shows the chosen variant without a picture', async () => {
+	await makeReview('t1', 'Wetterdaten-Anbieter', [
+		{ id: 'a', label: 'Anbieter A', description: 'Stündliche Werte, kostenlos bis 10 000 Abrufe am Tag.' },
+		{ id: 'b', label: 'Anbieter B', description: 'Minutengenaue Regenwerte, dafür kostenpflichtig.' }
+	]);
+	await openReviews();
+	const r = row(made.t1);
+	await expect(r.getByTestId('review-variant')).toHaveCount(2);
+	await expect(r.locator('[data-testid=review-variant] img, [data-testid=review-variant] svg')).toHaveCount(0);
+	await expect(r.getByTestId('review-variant-placeholder')).toHaveCount(0);
+	await r.getByTestId('card-open').click();
+	const detail = dialog().getByTestId('card-decide');
+	await expect(detail.getByTestId('review-variant')).toHaveCount(2);
+	await expect(detail.getByTestId('review-variant-image')).toHaveCount(0);
+	await expect(detail.getByTestId('review-variant-placeholder')).toHaveCount(0);
+	await choose(detail, 'Wählen: Variante B, Anbieter B').click();
+	const chosen = dialog().getByTestId('card-review-result').getByTestId('review-chosen');
+	await expect(chosen).toContainText('Anbieter B');
+	await expect(chosen).toContainText('Minutengenaue Regenwerte, dafür kostenpflichtig.');
+	await expect(chosen.locator('img, svg')).toHaveCount(0);
+	await expect(chosen.getByTestId('review-chosen-fallback')).toHaveCount(0);
+	expect((await review(made.t1)).chosenVariantID).toBe('b');
+	await page.keyboard.press('Escape');
+});
+
+test('card detail: a chosen variant whose attachment cannot be previewed shows the compact fallback with its label', async () => {
+	const t = await post<{ id: string }>('/v1/tasks', { projectID, title: 'Skizze als PDF' });
+	const pdf = await upload(t.id, 'skizze.pdf', 'application/pdf', PDF);
+	const rv = await post<{ id: string }>(`/v1/tasks/${t.id}/review`, {
+		summary: 'Zwei Entwürfe.', agentName: 'Claude Code',
+		variants: [{ id: 'a', label: 'Nur Text', description: 'Ohne Anhang.' }, { id: 'b', label: 'Als PDF', description: 'Anhang ohne Vorschau.', attachmentID: pdf }]
+	});
+	made.tc = { taskID: t.id, reviewID: rv.id, title: 'Skizze als PDF' };
+	await openReviews();
+	await row(made.tc).getByTestId('card-open').click();
+	await choose(dialog().getByTestId('card-decide'), 'Wählen: Variante B, Als PDF').click();
+	const chosen = dialog().getByTestId('card-review-result').getByTestId('review-chosen');
+	await expect(chosen.getByTestId('review-chosen-fallback')).toBeVisible();
+	await expect(chosen.getByTestId('review-chosen-fallback')).toContainText('Als PDF');
+	const box = (await chosen.getByTestId('review-chosen-fallback').boundingBox())!;
+	expect(box.height).toBeLessThan(60);
+	await page.keyboard.press('Escape');
 });
 
 test('one tap on "Wählen" accepts with that variant; the toast names the choice and the real undo window', async () => {
@@ -261,7 +332,7 @@ test('card detail: the choice shows bar, chosen variant and history (chat line a
 	const chat = result.getByRole('region', { name: 'Unterhaltung zum Review' });
 	await expect(chat.getByText('Variante B gewählt: Radarkarte', { exact: true })).toHaveCount(2);
 	await expect(chat.getByText('Freigabe zurückgenommen.', { exact: true })).toHaveCount(1);
-	await shot('03-nach-wahl-leiste-hell');
+	await shot('03-nach-wahl-leiste');
 	// Activity tab: the accepting decision names the variant.
 	await dialog().getByRole('tab', { name: /Aktivität/ }).click();
 	// Two accepting entries exist (the first one was taken back); only the newest names the current choice.
@@ -274,24 +345,90 @@ test('card detail: the choice shows bar, chosen variant and history (chat line a
 	await page.keyboard.press('Escape');
 });
 
-test('keyboard: Tab (Option+Tab in Safari) reaches "Wählen" in variant order, Enter chooses; Space works as well', async () => {
-	// Safari/WebKit on macOS skips buttons with plain Tab (system setting "Tab highlights each item"); Option+Tab is its way.
-	const tabKey = test.info().project.use.browserName === 'webkit' || test.info().project.name.includes('safari') ? 'Alt+Tab' : 'Tab';
-	await openReviews();
-	const r = row(made.v2);
+// Safari/WebKit on macOS skips buttons with plain Tab (system setting "Tab highlights each item"); Option+Tab is its way.
+// The arrow keys are independent of that setting.
+const tabKey = () => (test.info().project.use.browserName === 'webkit' || test.info().project.name.includes('safari') ? 'Alt+Tab' : 'Tab');
+const focusedName = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
+/** Tab from the filter bar until the first "Wählen" button of the group is focused. */
+async function tabInto(firstName: string) {
 	await page.getByTestId('review-filter-all').focus();
 	let seen = '';
-	for (let i = 0; i < 150 && !seen.startsWith('Wählen: Variante A, Ampel'); i++) {
-		await page.keyboard.press(tabKey);
-		seen = (await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '')) ?? '';
+	for (let i = 0; i < 200 && seen !== firstName; i++) {
+		await page.keyboard.press(tabKey());
+		seen = await focusedName();
 	}
-	expect(seen).toBe('Wählen: Variante A, Ampel');
-	await page.keyboard.press(tabKey);
-	await expect(choose(r, 'Wählen: Variante B, Blau-Orange')).toBeFocused();
-	// The focus ring is visible (outline or ring shadow on the focused button).
-	const ring = await choose(r, 'Wählen: Variante B, Blau-Orange').evaluate((el) => { const s = getComputedStyle(el); return `${s.outlineStyle}|${s.boxShadow}`; });
+	expect(seen).toBe(firstName);
+}
+
+test('keyboard: the variants of a review are one group with one tab stop; ArrowRight moves to the second, Enter chooses it', async () => {
+	await makeReview('k2', 'Tastatur zwei Varianten', [{ id: 'a', label: 'Links' }, { id: 'b', label: 'Rechts' }]);
+	await openReviews();
+	const r = row(made.k2);
+	const group = r.getByRole('group', { name: 'Wähle eine Variante' });
+	await expect(group).toBeVisible();
+	// Roving tab index: exactly one "Wählen" button of the group is a tab stop.
+	await expect(group.locator('[data-testid=review-variant-choose][tabindex="0"]')).toHaveCount(1);
+	await expect(group.locator('[data-testid=review-variant-choose][tabindex="-1"]')).toHaveCount(1);
+	await tabInto('Wählen: Variante A, Links');
+	await page.keyboard.press('ArrowRight');
+	await expect(choose(r, 'Wählen: Variante B, Rechts')).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect.poll(async () => (await review(made.k2)).state).toBe('accepted');
+	expect((await review(made.k2)).chosenVariantID).toBe('b');
+	await expect(page.getByTestId('review-undo-toast').getByTestId('review-undo-message')).toHaveText('Variante B gewählt: Rechts');
+});
+
+test('keyboard: three variants, ArrowRight twice and ArrowLeft once choose the middle one; Tab leaves the group; Shift+Tab returns to the last one', async () => {
+	await makeReview('k3', 'Tastatur drei Varianten', [{ id: 'a', label: 'Eins' }, { id: 'b', label: 'Zwei' }, { id: 'c', label: 'Drei' }]);
+	await openReviews();
+	const r = row(made.k3);
+	await tabInto('Wählen: Variante A, Eins');
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('ArrowRight');
+	await expect(choose(r, 'Wählen: Variante C, Drei')).toBeFocused();
+	// The ends stop (no wrapping), ArrowDown/Up work like Right/Left, Home/End jump.
+	await page.keyboard.press('ArrowDown');
+	await expect(choose(r, 'Wählen: Variante C, Drei')).toBeFocused();
+	await page.keyboard.press('Home');
+	await expect(choose(r, 'Wählen: Variante A, Eins')).toBeFocused();
+	await page.keyboard.press('ArrowLeft');
+	await expect(choose(r, 'Wählen: Variante A, Eins')).toBeFocused();
+	await page.keyboard.press('End');
+	await expect(choose(r, 'Wählen: Variante C, Drei')).toBeFocused();
+	await page.keyboard.press('ArrowLeft');
+	await expect(choose(r, 'Wählen: Variante B, Zwei')).toBeFocused();
+	// The focus ring on the arrow-selected button is visible.
+	const ring = await choose(r, 'Wählen: Variante B, Zwei').evaluate((el) => { const s = getComputedStyle(el); return `${s.outlineStyle}|${s.boxShadow}`; });
 	expect(ring).not.toBe('none|none');
-	await shot('06-fokus-tastatur-hell');
+	await shot('06-fokus-tastatur');
+	// Only one tab stop per group: Tab leaves it (the note field is next), Shift+Tab returns to the last focused variant, not to A.
+	await page.keyboard.press(tabKey());
+	expect(await focusedName()).not.toMatch(/^Wählen: Variante/);
+	await expect(r.getByTestId('review-note')).toBeFocused();
+	await page.keyboard.press(`Shift+${tabKey()}`);
+	await expect(choose(r, 'Wählen: Variante B, Zwei')).toBeFocused();
+	// No focus loss after a re-render: a new review arrives through the live refresh while the focus sits on the variant.
+	await makeReview('k4', 'Neu während der Wahl', null, 'Neues Review ohne Varianten.');
+	await expect(row(made.k4)).toBeVisible({ timeout: 15_000 });
+	await expect(choose(r, 'Wählen: Variante B, Zwei')).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect.poll(async () => (await review(made.k3)).state).toBe('accepted');
+	expect((await review(made.k3)).chosenVariantID).toBe('b');
+	// k4 was only there to trigger the re-render.
+	await post(`/v1/tasks/${made.k4.taskID}/review/decision`, { decision: 'accept' });
+});
+
+test('keyboard: Tab (Option+Tab in Safari) reaches "Wählen" with one stop per group; Enter and Space choose without further dialog', async () => {
+	await openReviews();
+	const r = row(made.v2);
+	await tabInto('Wählen: Variante A, Ampel');
+	// One tab stop per group: the next Tab does not go to variant B.
+	await page.keyboard.press(tabKey());
+	expect(await focusedName()).not.toBe('Wählen: Variante B, Blau-Orange');
+	await page.keyboard.press(`Shift+${tabKey()}`);
+	await expect(choose(r, 'Wählen: Variante A, Ampel')).toBeFocused();
+	await page.keyboard.press('ArrowRight');
+	await expect(choose(r, 'Wählen: Variante B, Blau-Orange')).toBeFocused();
 	await page.keyboard.press('Enter');
 	await expect.poll(async () => (await review(made.v2)).state).toBe('accepted');
 	expect((await review(made.v2)).chosenVariantID).toBe('b');
@@ -356,7 +493,7 @@ test('bulk release: variant reviews are not selectable and say why; the normal o
 	// Tall viewport so that the rows with variants and the bar are in one picture.
 	await page.setViewportSize({ width: 1280, height: 1900 });
 	await page.evaluate(() => window.scrollTo(0, 0));
-	await shot('04-sammelfreigabe-hell');
+	await shot('04-sammelfreigabe');
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.getByTestId('review-bulk-accept').click();
 	await expect(page.getByTestId('review-bulk-confirm')).toContainText('2 Reviews annehmen?');
@@ -394,7 +531,7 @@ test('mobile (iPhone viewport): variants stand one below the other, tap targets 
 	await noOverflow('overview');
 	await expect(r.getByTestId('review-variants-hint')).toBeVisible();
 	await r.getByTestId('review-variant').nth(0).scrollIntoViewIfNeeded();
-	await shot('05-mobil-hell');
+	await shot('05-mobil');
 	// One click/tap decides (the mobile-safari project emulates touch).
 	await choose(row(made.v4), 'Wählen: Variante B, Zwei B').click();
 	await expect.poll(async () => (await review(made.v4)).state).toBe('accepted');

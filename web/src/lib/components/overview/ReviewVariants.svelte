@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { api } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
-	import { chooseLabel, variantName, type ReviewVariant } from '#lib/reviewVariants.js';
+	import { chooseLabel, previewState, roveFocus, variantName, type ReviewVariant } from '#lib/reviewVariants.js';
 	import { REVIEW_UNDO_MINUTES } from '#lib/reviewUndo.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import ImageOff from '@lucide/svelte/icons/image-off';
 
 	/**
 	 * The offered variants of a pending review (card 1D9C8B0C): one card per variant with image, label and description. One tap
-	 * on "Wählen" accepts the review with that variant (no extra dialog). Plain buttons in a labelled list, not a radio group,
-	 * because nothing is selected first and confirmed after. A missing or failing image becomes a placeholder; choosing stays possible.
+	 * on "Wählen" accepts the review with that variant (no extra dialog). Plain buttons in a labelled group, not a radio group,
+	 * because nothing is selected first and confirmed after. Keyboard: the group is ONE tab stop (the last focused button, roving
+	 * tabindex); arrow keys move between the buttons (stopping at the ends), Home/End jump, Enter/Space choose. A variant without
+	 * attachment has no picture area at all (compact card); an attachment whose preview fails gets a small fallback with the label.
 	 */
 	interface Props {
 		variants: ReviewVariant[];
@@ -23,32 +25,57 @@
 
 	const uid = $props.id();
 	let failed = $state<Record<string, boolean>>({});
+	let group = $state<HTMLElement>();
+	/** Index of the button that is the tab stop (last focused). */
+	let active = $state(0);
+	const current = $derived(Math.min(active, variants.length - 1));
+	function buttons(): HTMLButtonElement[] {
+		return group ? Array.from(group.querySelectorAll<HTMLButtonElement>('[data-variant-choose]')) : [];
+	}
+	function onkeydown(e: KeyboardEvent) {
+		const list = buttons();
+		const from = list.indexOf(e.target as HTMLButtonElement);
+		if (from < 0) return;
+		const to = roveFocus(e, from, list.length);
+		if (to === null) return;
+		e.preventDefault();
+		list[to]?.focus();
+	}
 	const columns = $derived(variants.length === 3 ? '@lg:grid-cols-2 @2xl:grid-cols-3' : '@lg:grid-cols-2');
 </script>
 
-<div class="@container flex min-w-0 flex-col gap-2" data-testid="review-variants">
+<!-- Key handling is delegated from the real buttons inside (roving focus); the group itself is not interactive. -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+	bind:this={group}
+	class="@container flex min-w-0 flex-col gap-2"
+	role="group"
+	aria-labelledby="{uid}-title"
+	aria-describedby="{uid}-hint"
+	data-testid="review-variants"
+	{onkeydown}
+>
 	<div>
 		<h3 id="{uid}-title" class="text-sm font-semibold">{t('cc.review.variants.title')}</h3>
-		<p class="text-muted-foreground text-xs" data-testid="review-variants-hint">{t('cc.review.variants.hint', { minutes: REVIEW_UNDO_MINUTES })}</p>
+		<p id="{uid}-hint" class="text-muted-foreground text-xs" data-testid="review-variants-hint">{t('cc.review.variants.hint', { minutes: REVIEW_UNDO_MINUTES })}</p>
 	</div>
-	<ul class="grid grid-cols-1 gap-3 {columns}" aria-labelledby="{uid}-title">
-		{#each variants as v (v.id)}
+	<ul class="grid grid-cols-1 gap-3 {columns}">
+		{#each variants as v, i (v.id)}
 			<li class="min-w-0">
 				<article class="bg-card focus-within:border-ui-accent focus-within:ring-ui-accent flex h-full flex-col gap-2 rounded-xl border p-2.5 shadow-xs focus-within:ring-1" aria-labelledby="{uid}-{v.id}-label" data-testid="review-variant" data-variant-id={v.id}>
-					{#if v.attachmentID && !failed[v.id]}
+					{#if previewState(v, !!failed[v.id]) === 'image'}
 						<img
-							src={api.attachmentPreviewURL(v.attachmentID)}
+							src={api.attachmentPreviewURL(v.attachmentID!)}
 							alt={t('cc.review.variants.imageAlt', { name: variantName(v.id), label: v.label })}
 							loading="lazy"
 							class="bg-muted aspect-video w-full rounded-lg border object-cover"
 							data-testid="review-variant-image"
 							onerror={() => (failed = { ...failed, [v.id]: true })}
 						/>
-					{:else}
-						<div class="bg-muted text-muted-foreground flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-lg border px-2 text-center text-xs" data-testid="review-variant-placeholder">
-							<ImageOff class="size-5" aria-hidden="true" />
-							<span class="font-medium break-words">{v.label}</span>
-							<span>{t('cc.review.variants.noImage')}</span>
+					{:else if previewState(v, !!failed[v.id]) === 'fallback'}
+						<div class="bg-muted text-muted-foreground flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs" data-testid="review-variant-placeholder">
+							<ImageOff class="size-4 shrink-0" aria-hidden="true" />
+							<span class="min-w-0 break-words"><span class="font-medium">{v.label}</span> · {t('cc.review.variants.noPreview')}</span>
 						</div>
 					{/if}
 					<div class="min-w-0">
@@ -65,6 +92,9 @@
 						aria-busy={choosing === v.id}
 						aria-label={chooseLabel(v)}
 						data-testid="review-variant-choose"
+						data-variant-choose
+						tabindex={i === current ? 0 : -1}
+						onfocus={() => (active = i)}
 						onclick={() => onchoose(v.id)}>{choosing === v.id ? t('cc.review.variants.saving') : t('cc.review.variants.button')}</Button
 					>
 				</article>

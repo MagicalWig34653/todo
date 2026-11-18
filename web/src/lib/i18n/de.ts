@@ -1396,7 +1396,7 @@ export const de = {
 	'cc.review.variants.chosenBadge': 'Variante {name} gewählt',
 	'cc.review.variants.saving': 'Wird gespeichert …',
 	'cc.review.variants.imageAlt': 'Bild zu Variante {name}: {label}',
-	'cc.review.variants.noImage': 'Kein Bild',
+	'cc.review.variants.noPreview': 'Vorschau nicht verfügbar',
 	'cc.review.variants.others': 'Nicht gewählt:',
 	'cc.review.variants.other': '{name} {label}',
 	'cc.review.bulk.selectAllSelectable': 'Alle auswählbaren auswählen',

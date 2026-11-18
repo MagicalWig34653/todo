@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { api } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
-	import { otherVariants, variantName, type ReviewVariant, type VariantReview } from '#lib/reviewVariants.js';
+	import { otherVariants, previewState, variantName, type ReviewVariant, type VariantReview } from '#lib/reviewVariants.js';
 	import ImageOff from '@lucide/svelte/icons/image-off';
 
-	/** The accepted review's choice: the chosen variant with its image, the others as small labels. */
+	/**
+	 * The accepted review's choice: the chosen variant with its image, the others as small labels. Without attachment there is no
+	 * picture column; an attachment that does not preview gives a small fallback line (no empty picture area).
+	 */
 	interface Props {
 		review: VariantReview;
 		chosen: ReviewVariant;
@@ -15,16 +18,21 @@
 </script>
 
 <div class="flex flex-col gap-2" data-testid="review-chosen">
-	<div class="grid grid-cols-[8rem_1fr] items-center gap-3 max-sm:grid-cols-[6rem_1fr]">
-		{#if chosen.attachmentID && !failed}
+	{#if previewState(chosen, failed) === 'fallback'}
+		<div class="bg-muted text-muted-foreground flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs" data-testid="review-chosen-fallback">
+			<ImageOff class="size-4 shrink-0" aria-hidden="true" />
+			<span class="min-w-0 break-words"><span class="font-medium">{chosen.label}</span> · {t('cc.review.variants.noPreview')}</span>
+		</div>
+	{/if}
+	<div class={previewState(chosen, failed) === 'image' ? 'grid grid-cols-[8rem_1fr] items-center gap-3 max-sm:grid-cols-[6rem_1fr]' : ''}>
+		{#if previewState(chosen, failed) === 'image'}
 			<img
-				src={api.attachmentPreviewURL(chosen.attachmentID)}
+				src={api.attachmentPreviewURL(chosen.attachmentID!)}
 				alt={t('cc.review.variants.imageAlt', { name: variantName(chosen.id), label: chosen.label })}
 				class="bg-muted aspect-video w-full rounded-lg border object-cover"
+				data-testid="review-chosen-image"
 				onerror={() => (failed = true)}
 			/>
-		{:else}
-			<div class="bg-muted text-muted-foreground flex aspect-video w-full items-center justify-center rounded-lg border" aria-hidden="true"><ImageOff class="size-5" /></div>
 		{/if}
 		<div class="min-w-0">
 			<p class="text-ui-accent-ink text-xs font-semibold">{t('cc.review.variants.tag', { name: variantName(chosen.id) })}</p>
