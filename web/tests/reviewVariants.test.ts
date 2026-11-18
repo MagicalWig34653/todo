@@ -12,6 +12,8 @@ import {
 	hasVariants,
 	needsChoice,
 	otherVariants,
+	previewState,
+	roveFocus,
 	variantName,
 	variantsOf
 } from '../src/lib/reviewVariants.js';
@@ -117,5 +119,46 @@ describe('api: choosing a variant', () => {
 	});
 	it('builds the preview URL of the variant attachment', () => {
 		expect(api.attachmentPreviewURL('att-1')).toBe('/v1/attachments/att-1/preview');
+	});
+});
+
+describe('image slot of a variant (no empty picture area without an attachment)', () => {
+	it('a variant without attachment has no preview at all, not even a placeholder', () => {
+		expect(previewState(B, false)).toBe('none');
+		expect(previewState(B, true)).toBe('none');
+		expect(previewState({ id: 'c', label: 'x', attachmentID: '' }, false)).toBe('none');
+	});
+	it('a variant with attachment shows the image until it fails to load, then a compact fallback', () => {
+		expect(previewState(A, false)).toBe('image');
+		expect(previewState(A, true)).toBe('fallback');
+	});
+});
+
+describe('roving focus over the variant buttons (arrow keys, Home/End; stops at the ends)', () => {
+	const key = (k: string, mods: Partial<Record<'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey', boolean>> = {}) => ({ key: k, ...mods });
+	it('right and down go to the next button, left and up to the previous one', () => {
+		expect(roveFocus(key('ArrowRight'), 0, 3)).toBe(1);
+		expect(roveFocus(key('ArrowDown'), 1, 3)).toBe(2);
+		expect(roveFocus(key('ArrowLeft'), 2, 3)).toBe(1);
+		expect(roveFocus(key('ArrowUp'), 1, 3)).toBe(0);
+	});
+	it('stops at the ends instead of wrapping (a stray Enter must not pick a surprising variant)', () => {
+		expect(roveFocus(key('ArrowRight'), 2, 3)).toBe(2);
+		expect(roveFocus(key('ArrowDown'), 1, 2)).toBe(1);
+		expect(roveFocus(key('ArrowLeft'), 0, 3)).toBe(0);
+		expect(roveFocus(key('ArrowUp'), 0, 2)).toBe(0);
+	});
+	it('Home and End jump to the first and last button', () => {
+		expect(roveFocus(key('Home'), 2, 4)).toBe(0);
+		expect(roveFocus(key('End'), 0, 4)).toBe(3);
+	});
+	it('ignores other keys and keys with modifiers (Alt+Arrow is browser navigation); Tab, Enter and Space stay native', () => {
+		for (const k of ['Tab', 'Enter', ' ', 'a', 'PageDown']) expect(roveFocus(key(k), 0, 3)).toBeNull();
+		for (const m of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'] as const) expect(roveFocus(key('ArrowRight', { [m]: true }), 0, 3)).toBeNull();
+	});
+	it('is safe without buttons and with an out-of-range current index', () => {
+		expect(roveFocus(key('ArrowRight'), 0, 0)).toBeNull();
+		expect(roveFocus(key('ArrowRight'), 9, 3)).toBe(2);
+		expect(roveFocus(key('ArrowLeft'), -4, 3)).toBe(0);
 	});
 });

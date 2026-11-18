@@ -2,6 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACCENT_PRESETS, accentTokens, contrast, normalizeHex } from '../src/lib/theme/accent';
 
 describe('accent helpers', () => {
+	it('keeps ink readable on the raised dark surfaces too (card, popover), not only on the page background', () => {
+		// card = oklch(0.18) is about #111114, popover = oklch(0.21) about #1c1c20 (src/routes/layout.css); small accent text sits on them
+		for (const p of ACCENT_PRESETS) {
+			const t = accentTokens(p.hex, true);
+			expect(contrast(t.ink, '#1c1c20'), p.id).toBeGreaterThanOrEqual(4.5);
+			expect(contrast(t.ink, '#111114'), p.id).toBeGreaterThanOrEqual(4.5);
+		}
+	});
 	it('normalises hex input', () => {
 		expect(normalizeHex('#ABC')).toBe('#aabbcc');
 		expect(normalizeHex(' #2563EB ')).toBe('#2563eb');
