@@ -12,6 +12,8 @@
 	 * because nothing is selected first and confirmed after. Keyboard: the group is ONE tab stop (the last focused button, roving
 	 * tabindex); arrow keys move between the buttons (stopping at the ends), Home/End jump, Enter/Space choose. A variant without
 	 * attachment has no picture area at all (compact card); an attachment whose preview fails gets a small fallback with the label.
+	 * Focus: the primary button's own ring is replaced by the accent glow (layout.css), only a faint halo, so the button turns on the
+	 * real outline (`focus-visible:outline-solid`; colour from the global focus rule, 5:1 on the card in dark).
 	 */
 	interface Props {
 		variants: ReviewVariant[];
@@ -41,7 +43,7 @@
 		e.preventDefault();
 		list[to]?.focus();
 	}
-	const columns = $derived(variants.length === 3 ? '@lg:grid-cols-2 @2xl:grid-cols-3' : '@lg:grid-cols-2');
+	const columns = $derived(variants.length === 3 ? '@lg:grid-cols-2 @xl:grid-cols-3' : '@lg:grid-cols-2');
 </script>
 
 <!-- Key handling is delegated from the real buttons inside (roving focus); the group itself is not interactive. -->
@@ -87,7 +89,7 @@
 					{#if v.description}<p class="text-muted-foreground flex-1 text-[0.8125rem] leading-snug break-words whitespace-pre-wrap">{v.description}</p>{:else}<span class="flex-1"></span>{/if}
 					<Button
 						type="button"
-						class="h-11 w-full text-sm max-sm:text-base"
+						class="h-11 w-full text-sm focus-visible:outline-solid max-sm:text-base"
 						disabled={busy}
 						aria-busy={choosing === v.id}
 						aria-label={chooseLabel(v)}

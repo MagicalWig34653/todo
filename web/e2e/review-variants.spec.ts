@@ -184,8 +184,12 @@ test('the server delivers the variants and the app shows A and B in the overview
 	await expect(r.getByRole('button', { name: 'Änderungen anfordern' })).toBeVisible();
 	// The hint names the real undo window (one source: REVIEW_UNDO_MINUTES = server window of 5 minutes).
 	await expect(r.getByTestId('review-variants-hint')).toContainText('Danach bleiben 5 Minuten zum Rückgängigmachen.');
-	await r.evaluate((el) => el.scrollIntoView({ block: 'start' }));
-	await page.evaluate(() => window.scrollBy(0, -70));
+	// Lazy images above the row grow the page while it loads: scroll twice so that the row stands right under the header.
+	for (let i = 0; i < 2; i++) {
+		await r.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+		await page.evaluate(() => window.scrollBy(0, -70));
+		await page.waitForFunction(() => [...document.images].every((img) => img.complete));
+	}
 	await shot('01-ueberblick');
 
 	await r.getByTestId('card-open').click();
@@ -473,6 +477,151 @@ test('a review without variants is unchanged: "Freigeben", no variant UI, no var
 	expect(server.state).toBe('accepted');
 	expect(server.chosenVariantID ?? null).toBeNull();
 	await expect(page.getByTestId('review-undo-toast').getByTestId('review-undo-message')).toHaveText('Entscheidung gespeichert.');
+});
+
+/** Colour contrast helpers (in the page, so that oklch/color-mix values resolve exactly as the browser paints them). */
+interface Measure { ratio: number; fg: string; bg: string }
+async function measure(loc: Locator, what: 'text' | 'ring' | 'border' = 'text', baselineShadow = ''): Promise<Measure> {
+	return loc.first().evaluate((el, [kind, baseline]) => {
+		const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+		const rgba = (css: string): [number, number, number, number] => {
+			ctx.clearRect(0, 0, 1, 1);
+			ctx.fillStyle = '#000';
+			ctx.fillStyle = css;
+			ctx.fillRect(0, 0, 1, 1);
+			const d = ctx.getImageData(0, 0, 1, 1).data;
+			return [d[0], d[1], d[2], d[3] / 255];
+		};
+		const over = (top: number[], under: number[]) => {
+			const a = top[3];
+			return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a)).concat([1]);
+		};
+		// Effective background: composite every translucent layer from the root down to the element's parent chain.
+		const layers: number[][] = [];
+		for (let n: Element | null = el; n; n = n.parentElement) {
+			const c = rgba(getComputedStyle(n).backgroundColor);
+			if (c[3] > 0) layers.push(c);
+			if (c[3] === 1) break;
+		}
+		let bg: number[] = [255, 255, 255, 1];
+		for (const l of layers.reverse()) bg = over(l, bg);
+		const lum = (c: number[]) => {
+			const f = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+			return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+		};
+		const style = getComputedStyle(el);
+		const behind = (from: Element | null) => {
+			const pl: number[][] = [];
+			for (let n: Element | null = from; n; n = n.parentElement) {
+				const c = rgba(getComputedStyle(n).backgroundColor);
+				if (c[3] > 0) pl.push(c);
+				if (c[3] === 1) break;
+			}
+			let out: number[] = [255, 255, 255, 1];
+			for (const l of pl.reverse()) out = over(l, out);
+			return out;
+		};
+		const ratioOf = (a: number[], b: number[]) => {
+			const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+			return (hi + 0.05) / (lo + 0.05);
+		};
+		let fg: number[];
+		let under = bg;
+		if (kind === 'ring') {
+			// The ring sits outside the element: it is seen against the parent's background. The strongest colour among the
+			// outline and the box-shadow layers (offset gap, ring, drop shadow) is the visible indicator.
+			under = behind(el.parentElement);
+			const colours = (v: string) => [...v.matchAll(/(?:rgba?|color|oklch|oklab|lab|lch|hsl)\([^)]*\)/g)].map((m) => m[0]);
+			// Layers the button also has without focus (drop shadow, glow) are not the focus indicator.
+			const known = colours(baseline);
+			const candidates = colours(style.boxShadow).filter((c) => !known.includes(c));
+			if (style.outlineStyle !== 'none' && style.outlineWidth !== '0px') candidates.push(style.outlineColor);
+			const composed = candidates.map((c) => over(rgba(c), under));
+			fg = composed.sort((a, b) => ratioOf(b, under) - ratioOf(a, under))[0] ?? under;
+		} else if (kind === 'border') {
+			under = behind(el.parentElement);
+			fg = over(rgba(style.borderTopColor), under);
+		} else {
+			fg = over(rgba(style.color), under);
+		}
+		const [hi, lo] = [lum(fg), lum(under)].sort((a, b) => b - a);
+		const hex = (c: number[]) => `rgb(${c.slice(0, 3).map(Math.round).join(',')})`;
+		return { ratio: Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100, fg: hex(fg), bg: hex(under) };
+	}, [what, baselineShadow] as const);
+}
+
+test('dark scheme: texts, badge, variant cards, focus ring and the green choice bar reach WCAG contrast', async () => {
+	test.skip(test.info().project.name !== 'chromium', 'colour measurements run once, in Chromium');
+	await page.emulateMedia({ colorScheme: 'dark' });
+	try {
+		await openReviews();
+		await expect(page.locator('html')).toHaveClass(/dark/);
+		const r = row(made.v3);
+		const card = r.getByTestId('review-variant').first();
+		await card.scrollIntoViewIfNeeded();
+		const text: [string, Locator][] = [
+			['badge "Wahl nötig"', r.getByTestId('review-choice-badge')],
+			['hint line', r.getByTestId('review-variants-hint')],
+			['variant tag "Variante A"', card.locator('span.text-ui-accent-ink')],
+			['variant label', card.getByRole('heading', { level: 4 })],
+			['variant description', card.locator('p')],
+			['choose button text', card.getByTestId('review-variant-choose')],
+			['group title', r.getByRole('heading', { name: 'Wähle eine Variante' })]
+		];
+		const report: string[] = [];
+		for (const [name, loc] of text) {
+			const m = await measure(loc);
+			report.push(`${name}: ${m.ratio} (${m.fg} on ${m.bg})`);
+			expect.soft(m.ratio, `dark text contrast: ${name}`).toBeGreaterThanOrEqual(4.5);
+		}
+		// The variant card against the row, and the focus indicators of the keyboard path (non-text contrast >= 3:1).
+		const cardBorder = await measure(card, 'border');
+		report.push(`card border: ${cardBorder.ratio}`);
+		const btn = choose(r, 'Wählen: Variante A, Eins A');
+		const baseline = await choose(r, 'Wählen: Variante B, Eins B').evaluate((el) => getComputedStyle(el).boxShadow);
+		await btn.focus();
+		await page.keyboard.press('Tab');
+		await page.keyboard.press('Shift+Tab');
+		await expect(btn).toBeFocused();
+		await page.waitForTimeout(600); // the buttons transition their shadow/outline
+		const ring = await measure(btn, 'ring', baseline);
+		report.push(`focus ring of the button: ${ring.ratio} (${ring.fg} on ${ring.bg})`);
+		const focusedCard = await measure(card, 'border');
+		report.push(`card border while focused: ${focusedCard.ratio} (${focusedCard.fg} on ${focusedCard.bg})`);
+		expect.soft(Math.max(ring.ratio, focusedCard.ratio), 'a focus indicator reaches 3:1').toBeGreaterThanOrEqual(3);
+		expect.soft(focusedCard.ratio, 'focused card outline').toBeGreaterThanOrEqual(3);
+		expect.soft(ring.ratio, 'focus ring on the button').toBeGreaterThanOrEqual(3);
+
+		// After the choice: green bar, badge, chosen block (card detail).
+		await makeReview('dk', 'Dunkelmodus Wahl', [{ id: 'a', label: 'Hell', description: 'Heller Hintergrund.' }, { id: 'b', label: 'Dunkel', description: 'Dunkler Hintergrund.' }]);
+		await openReviews();
+		await row(made.dk).getByTestId('card-open').click();
+		await choose(dialog().getByTestId('card-decide'), 'Wählen: Variante B, Dunkel').click();
+		const result = dialog().getByTestId('card-review-result');
+		const after: [string, Locator][] = [
+			['chosen badge', result.getByTestId('review-chosen-badge')],
+			['bar message', result.getByTestId('review-undo-message')],
+			['undo remaining time', result.getByTestId('review-undo-time')],
+			['undo button', result.getByTestId('review-undo')],
+			['chosen tag "Variante B"', result.getByTestId('review-chosen').locator('p.text-ui-accent-ink')],
+			['chosen label', result.getByTestId('review-chosen').locator('p.font-semibold:not(.text-ui-accent-ink)')],
+			['chosen description', result.getByTestId('review-chosen').locator('p.text-sm')],
+			['"Nicht gewählt" chip', result.getByTestId('review-chosen').locator('span.rounded-full')]
+		];
+		for (const [name, loc] of after) {
+			await expect(loc.first(), name).toBeVisible();
+			const m = await measure(loc);
+			report.push(`${name}: ${m.ratio} (${m.fg} on ${m.bg})`);
+			expect.soft(m.ratio, `dark text contrast: ${name}`).toBeGreaterThanOrEqual(4.5);
+		}
+		const bar = await measure(result.getByTestId('review-undo-bar'), 'border');
+		report.push(`green bar border: ${bar.ratio}`);
+		test.info().annotations.push({ type: 'dark contrast', description: report.join(' | ') });
+		console.log(`DARK CONTRAST\n${report.join('\n')}`);
+		await page.keyboard.press('Escape');
+	} finally {
+		await page.emulateMedia({ colorScheme: 'light' });
+	}
 });
 
 test('bulk release: variant reviews are not selectable and say why; the normal ones are accepted, the variant ones stay pending', async () => {
