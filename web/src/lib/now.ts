@@ -1,4 +1,5 @@
 /** Page "Jetzt" (contracts/session-status.yaml): grouping, counters and device-local expand state. Pure and testable. */
+import type { MessageKey } from './i18n/de.js';
 import type { OverviewBuild, OverviewProject, OverviewRunningTask, OverviewSession } from './api.js';
 
 export const QUIET_AFTER_MS = 24 * 3600 * 1000;
@@ -108,7 +109,7 @@ export function buildStatusOf(status: string | null | undefined): { key: (typeof
 }
 
 /** Message key and params of the head of a build status line: "Build <label>:" or "Build:" without a label. */
-export function buildEventHead(label: string | null | undefined): ['build.event.titled', { label: string }] | ['build.event.untitled'] {
+export function buildEventHead(label: string | null | undefined): [key: MessageKey, params?: Record<string, string | number>] {
 	const l = typeof label === 'string' ? label.trim() : '';
 	return l ? ['build.event.titled', { label: l }] : ['build.event.untitled'];
 }
