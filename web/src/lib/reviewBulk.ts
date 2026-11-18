@@ -43,13 +43,13 @@ export function selectionState(sel: ReadonlySet<string>, visibleIDs: readonly st
 }
 
 /** A review with variants needs a deliberate choice, so the bulk bar cannot accept it (the server refuses with `variant_required`). */
-export const bulkSelectable = (review: { variants?: unknown }): boolean => !hasVariants(review);
+export const bulkSelectable = (review: { id?: string; variants?: unknown }): boolean => !hasVariants(review);
 
-export function selectableReviews<T extends { variants?: unknown }>(reviews: readonly T[]): T[] {
+export function selectableReviews<T extends { id?: string; variants?: unknown }>(reviews: readonly T[]): T[] {
 	return reviews.filter(bulkSelectable);
 }
 
-export const variantBlockedCount = (reviews: readonly { variants?: unknown }[]): number => reviews.filter((r) => !bulkSelectable(r)).length;
+export const variantBlockedCount = (reviews: readonly { id?: string; variants?: unknown }[]): number => reviews.filter((r) => !bulkSelectable(r)).length;
 
 /** Stable i18n suffix of a failed batch entry: the result, refined by the single-decision reason where the UI has a plainer wording. */
 export function reasonCode(f: BatchItem): string {

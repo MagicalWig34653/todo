@@ -10,7 +10,10 @@
 	import { newerThan, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
-	let { taskID, refreshKey = 0 }: { taskID: string; refreshKey?: number } = $props();
+	import { activityChoice, type VariantReview } from '#lib/reviewVariants.js';
+
+	/** `review`: the card's current review; its chosen variant is named on the entry of the accepting decision. */
+	let { taskID, refreshKey = 0, review = null }: { taskID: string; refreshKey?: number; review?: VariantReview | null } = $props();
 
 	let items = $state<Activity[]>([]);
 	let next = $state<string | null>(null);
@@ -53,7 +56,7 @@
 	{#each items as a (a.id)}
 		<li class="flex flex-wrap gap-x-2" data-testid="activity">
 			<span class="text-muted-foreground">{a.createdAt ? formatWhen(a.createdAt) : ''}</span>
-			<span>{label(a.kind)}</span>
+			<span>{label(a.kind)}{#if activityChoice(a, review)}: <strong class="font-semibold" data-testid="activity-choice">{activityChoice(a, review)}</strong>{/if}</span>
 			<span class="text-muted-foreground" data-testid="activity-actor">
 				({a.actorType === 'Person' ? personName(a.actorName, t('activity.actor.Person')) : t(`activity.actor.${a.actorType}` as MessageKey)})
 			</span>

@@ -7,10 +7,14 @@
 	import {
 		BATCH_MAX,
 		failureCodes,
+		bulkSelectable,
 		pruneSelection,
+		reasonCode,
 		selectAllVisible,
+		selectableReviews,
 		selectionState,
 		toggleSelection,
+		variantBlockedCount,
 		type BatchItem,
 		type BatchResponse
 	} from '#lib/reviewBulk.js';
@@ -43,7 +47,9 @@
 
 	const brainCount = $derived(reviews.filter((r) => r.brainRecommended).length);
 	const listed = $derived(filter === 'brain' ? reviews.filter((r) => r.brainRecommended) : reviews);
-	const listedIDs = $derived(listed.map((r) => r.id));
+	// Reviews with variants need a deliberate choice: they are listed but never part of the selection (card 1D9C8B0C).
+	const listedIDs = $derived(selectableReviews(listed).map((r) => r.id));
+	const blockedCount = $derived(variantBlockedCount(listed));
 	const selState = $derived(selectionState(selected, listedIDs));
 	const capped = $derived(listedIDs.length > BATCH_MAX);
 
@@ -115,12 +121,18 @@
 	}
 	/** Stable result code, refined by the single-decision reason where the UI has a plainer wording for it. */
 	function reasonLabel(f: BatchItem): string {
-		const known = f.result === 'forbidden' && (f.reason === 'not_the_reviewer' || f.reason === 'cannot_decide_own_review');
-		return t(`cc.review.bulk.reason.${known ? f.reason : f.result}` as MessageKey);
+		return t(`cc.review.bulk.reason.${reasonCode(f)}` as MessageKey);
 	}
 	const failures = $derived(outcome ? failureCodes(outcome.response) : []);
 	const doneCount = $derived(outcome?.response.summary.ok ?? 0);
 </script>
+
+{#snippet variantsHint()}
+	<p id="review-variants-hint" class="text-xs {selected.size > 0 ? 'border-warning/40 bg-warning-soft/60 rounded-lg border px-2.5 py-2 text-sm' : 'text-muted-foreground'}" role="status" data-testid="review-bulk-variants-hint">
+		<span class="font-medium">{blockedCount === 1 ? t('cc.review.bulk.variantsOne') : t('cc.review.bulk.variants', { count: blockedCount })}</span>
+		{t('cc.review.bulk.variantsMore')}
+	</p>
+{/snippet}
 
 <div class="flex max-w-3xl flex-col gap-3">
 	{#if reviews.length > 0}
@@ -129,11 +141,11 @@
 				<Checkbox
 					checked={selState === 'all'}
 					aria-checked={selState === 'some' ? 'mixed' : selState === 'all'}
-					disabled={listed.length === 0 || busy}
+					disabled={listedIDs.length === 0 || busy}
 					onchange={toggleAll}
 					data-testid="review-select-all"
 				/>
-				{t('cc.review.bulk.selectAll')}
+				{blockedCount > 0 ? t('cc.review.bulk.selectAllSelectable') : t('cc.review.bulk.selectAll')}
 			</label>
 			<div class="flex flex-wrap gap-1.5" role="group" aria-label={t('cc.review.filter.label')}>
 				<Button
@@ -154,6 +166,7 @@
 				>
 			</div>
 		</div>
+		{#if blockedCount > 0 && selected.size === 0}{@render variantsHint()}{/if}
 		{#if capped && selState === 'all'}<p class="text-muted-foreground text-xs" data-testid="review-capped">{t('cc.review.bulk.capped', { max: BATCH_MAX })}</p>{/if}
 	{/if}
 
@@ -201,8 +214,9 @@
 				<label class="flex min-h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center">
 					<Checkbox
 						checked={selected.has(r.id)}
-						disabled={busy || (!selected.has(r.id) && selected.size >= BATCH_MAX)}
-						aria-label={t('cc.review.bulk.select', { title: r.taskTitle ?? '' })}
+						disabled={busy || !bulkSelectable(r) || (!selected.has(r.id) && selected.size >= BATCH_MAX)}
+						aria-label={bulkSelectable(r) ? t('cc.review.bulk.select', { title: r.taskTitle ?? '' }) : t('cc.review.bulk.selectBlocked', { title: r.taskTitle ?? '' })}
+						aria-describedby={bulkSelectable(r) ? undefined : 'review-variants-hint'}
 						onchange={() => toggle(r.id)}
 						data-testid="review-select"
 					/>
@@ -215,6 +229,7 @@
 						summary={r.summary}
 						requestedBy={r.requestedByLabel}
 						brainRecommended={r.brainRecommended}
+						variants={r.variants}
 						context={t('cc.question.in', { task: r.taskTitle ?? '', project: r.projectName ?? '' })}
 						onopen={() => onopen(r.taskID, r.taskTitle ?? '')}
 						ondecided={onrefresh}
@@ -236,6 +251,7 @@
 				<p class="text-sm font-medium" aria-live="polite" data-testid="review-bulk-count">{t('cc.review.bulk.selected', { count: selected.size })}</p>
 				<Button variant="ghost" size="sm" disabled={busy} data-testid="review-bulk-clear" onclick={clear}>{t('cc.review.bulk.clear')}</Button>
 			</div>
+			{#if blockedCount > 0}{@render variantsHint()}{/if}
 			{#if confirming}
 				<div class="flex flex-col gap-2 rounded-lg border border-warning/50 bg-warning-soft/60 p-2.5" role="alertdialog" aria-labelledby="bulk-confirm-title" aria-describedby="bulk-confirm-hint" data-testid="review-bulk-confirm">
 					<p id="bulk-confirm-title" class="text-sm font-medium">
