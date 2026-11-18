@@ -91,3 +91,43 @@ export function choiceActivity(
 	});
 	return latest ? { id: (latest as { id: string }).id, text } : null;
 }
+
+/**
+ * What the card shows for the picture of a variant. Only a variant that has an attachment gets a picture slot: without one there
+ * is nothing to show, so no empty area and no "no image" placeholder (compact card). An attachment whose preview does not load
+ * (e.g. a PDF, 415) becomes a small fallback with the label.
+ */
+export function previewState(v: ReviewVariant, loadFailed: boolean): 'image' | 'fallback' | 'none' {
+	if (!v.attachmentID) return 'none';
+	return loadFailed ? 'fallback' : 'image';
+}
+
+/**
+ * Roving focus over the "Wählen" buttons of one review (one tab stop per group). Arrow right/down = next, left/up = previous,
+ * Home/End = first/last. Stops at the ends (no wrapping): a stray Enter then never lands on a surprising variant.
+ * Returns the new index, or null when the key is not ours (Tab, Enter, Space stay native; modified keys such as Alt+Arrow
+ * are browser navigation).
+ */
+export function roveFocus(
+	e: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean },
+	current: number,
+	count: number
+): number | null {
+	if (count <= 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
+	const last = count - 1;
+	const at = Math.min(Math.max(current, 0), last);
+	switch (e.key) {
+		case 'ArrowRight':
+		case 'ArrowDown':
+			return Math.min(at + 1, last);
+		case 'ArrowLeft':
+		case 'ArrowUp':
+			return Math.max(at - 1, 0);
+		case 'Home':
+			return 0;
+		case 'End':
+			return last;
+		default:
+			return null;
+	}
+}
