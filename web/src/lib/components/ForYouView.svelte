@@ -19,6 +19,8 @@
 	import ConfirmationCard from './overview/ConfirmationCard.svelte';
 	import AccessRequestCard from './overview/AccessRequestCard.svelte';
 	import Dialog from './app/Dialog.svelte';
+	import BuildStatusBadge from './BuildStatusBadge.svelte';
+	import { buildEventHead, buildStatusOf } from '#lib/now.js';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 
 	let needs = $state<ForYouNeed[]>([]);
@@ -216,7 +218,9 @@
 					<article class="bg-card flex flex-col gap-2 rounded-xl border p-3" data-testid="post-card" data-kind={post.kind}>
 						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="post-t-{post.id}" aria-describedby="post-d-{post.id}" onclick={() => cardDetail.open(cardOfPost(post), orderedCards)}>
 							<span id="post-t-{post.id}" class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
-							{#if post.text}<span class="text-sm whitespace-pre-line">{post.text}</span>{/if}
+							{#if post.event === 'build.status_changed' && buildStatusOf(post.status)}
+								<span class="inline-flex flex-wrap items-center gap-1 text-sm" data-testid="post-build-status">{t(...buildEventHead(post.text))} <BuildStatusBadge status={post.status} /></span>
+							{:else if post.text}<span class="text-sm whitespace-pre-line">{post.text}</span>{/if}
 							{#if post.detail}<span class="text-muted-foreground text-sm">→ {post.detail}</span>{/if}
 							<span id="post-d-{post.id}" class="text-muted-foreground text-xs">{[post.projectName, post.taskTitle].filter(Boolean).join(' · ')}{#if post.createdAt} · <Timestamp value={post.createdAt} />{/if}</span>
 						</button>

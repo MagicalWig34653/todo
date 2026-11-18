@@ -7,7 +7,7 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { liveRefresh, startLiveRefresh } from '#lib/liveRefresh.js';
 	import {
-		allowRefetch, buildCommit, buildSummary, groupProjects, isEmptyNow, isExpanded, isOrphaned, loadExpanded, percentOf, projectStats, saveExpanded, type ExpandedMap
+		allowRefetch, buildCommit, buildEventHead, buildStatusOf, buildSummary, groupProjects, isEmptyNow, isExpanded, isOrphaned, loadExpanded, percentOf, projectStats, saveExpanded, type ExpandedMap
 	} from '#lib/now.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -180,7 +180,7 @@
 					<h3 id="evt-{p.projectID}" class={sectionHead}>{t('now.section.events')}</h3>
 					<ul class="border-border ml-1 flex flex-col gap-0.5 border-l-2 pl-3">
 						{#each p.recentActivity as e, i (e.createdAt + e.kind + i)}
-							<li class="text-[13px]"><time class="text-muted-foreground mr-1.5" datetime={new Date(e.createdAt).toISOString()} title={e.createdAt}>{clock(e.createdAt)}</time>{eventLabel(e.kind)}: {e.taskTitle}</li>
+							<li class="text-[13px]"><time class="text-muted-foreground mr-1.5" datetime={new Date(e.createdAt).toISOString()} title={e.createdAt}>{clock(e.createdAt)}</time>{#if e.kind === 'build.status_changed' && buildStatusOf(e.status)}{t(...buildEventHead(e.label))} <BuildStatusBadge status={e.status} />: {e.taskTitle}{:else}{eventLabel(e.kind)}: {e.taskTitle}{/if}</li>
 						{/each}
 					</ul>
 				</section>

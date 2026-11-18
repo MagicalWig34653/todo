@@ -1318,3 +1318,5 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 
 - Backend: `FeedService` nimmt `build.status_changed` auf (Post kind `build`, text = Label sonst Build-ID, neu `status`/`platform` in `FeedPostDTO`, nil fehlt im JSON; build.added zeigt `status`, wenn vorhanden). `OverviewNow.Event` hat optional `label`/`platform`/`status` nur fuer Build-Ereignisse. Keine Migration. Vertraege: session-status 1.3.0, feed 1.1.0, Handbuch 1.35.0, ADR 0034 Nachtrag.
 - Grenze: Status ist der aktuelle Stand des Builds, nicht der zum Ereigniszeitpunkt.
+
+- PWA: Feed und "Jetzt" zeigen "Build <Label>: <Status>" (BuildStatusBadge) fuer build.status_changed; ohne Label "Build: <Status>", ohne status wie bisher. vitest 460 gruen, npm run build ok; Playwright nicht ausgefuehrt.
