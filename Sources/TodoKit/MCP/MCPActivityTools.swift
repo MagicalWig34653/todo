@@ -173,7 +173,7 @@ extension MCPController {
         case "get_attachment_download":
             guard let att = try await Attachment.find(uuid(a["id"]), on: db), att.status == "complete" else { throw Abort(.notFound) }
             _ = try await task(att.taskID, user: user, grant: grant, db: db)
-            let link = AttachmentLink.path(for: try att.requireID())
+            let link = AttachmentLink.path(for: try att.requireID(), key: try await AttachmentLink.resolveKey(db: db))
             return .object(["id": .string(try att.requireID().uuidString), "filename": .string(att.filename),
                             "mediaType": .string(att.mediaType), "size": .number(Double(att.size)),
                             "url": .string(settings.oauthIssuer + link.path), "expiresAt": try .encoded(link.expiresAt)])

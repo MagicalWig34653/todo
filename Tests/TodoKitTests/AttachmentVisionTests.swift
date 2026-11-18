@@ -58,12 +58,36 @@ final class AttachmentVisionTests: AttachmentTestBase {
 
     }
 
+    /// Bug A0C2F574: without SETTINGS_ENCRYPTION_KEY each replica had its own random key, so a link issued by one
+    /// replica was a 404 on the others. Two processes are simulated by resolving the key without the process cache.
+    func testSignedLinkKeyIsSharedAcrossReplicas() async throws {
+        let (t, alice, _, task, a, _) = try await helper.fixture()
+        defer { Task { await t.shutdown() } }
+        try XCTSkipIf(Environment.get("SETTINGS_ENCRYPTION_KEY") != nil || Environment.get("SETTINGS_ENCRYPTION_KEY_FILE") != nil)
+        let id = try await completed(t, alice, task, token: a)
+        let replicaA = try await AttachmentLink.resolveKey(db: t.app.db, useCache: false)
+        let replicaB = try await AttachmentLink.resolveKey(db: t.app.db, useCache: false)
+        XCTAssertEqual(replicaA, replicaB)
+        XCTAssertEqual(replicaA.count, 32)
+        let rows = try await ServerSetting.query(on: t.app.db).filter(\.$settingKey == AttachmentLink.storedSettingKey).count()
+        XCTAssertEqual(rows, 1)
+        // A link made with the key of "replica A" opens on "replica B" (cache cleared, key read from the database).
+        let link = AttachmentLink.path(for: id, key: replicaA)
+        let res = try await download(t, link.path)
+        XCTAssertEqual(res.0, .ok)
+        XCTAssertEqual(res.2, helper.png)
+        // The unrelated settings list is unaffected by the internal row.
+        let list = try await t.json(.GET, "/v1/settings", token: a)
+        XCTAssertNotEqual(list.status, .internalServerError)
+    }
+
     func testSignedLinkSecurity() async throws {
         let (t, alice, _, task, a, _) = try await helper.fixture()
         defer { Task { await t.shutdown() } }
         let id = try await completed(t, alice, task, token: a)
         let second = try await completed(t, alice, task, token: a)
-        let link = AttachmentLink.path(for: id)
+        let key = try await AttachmentLink.resolveKey(db: t.app.db)
+        let link = AttachmentLink.path(for: id, key: key)
 
         // Works without a session, with safe headers.
         let ok = try await download(t, link.path)
@@ -91,10 +115,10 @@ final class AttachmentVisionTests: AttachmentTestBase {
 
         // Expiry (verified without waiting): valid now, invalid after the five minutes.
         let now = Date()
-        XCTAssertTrue(AttachmentLink.verify(id: id, exp: String(exp), sig: sig, now: now))
-        XCTAssertFalse(AttachmentLink.verify(id: id, exp: String(exp), sig: sig, now: now.addingTimeInterval(AttachmentLink.lifetime + 1)))
+        XCTAssertTrue(AttachmentLink.verify(id: id, exp: String(exp), sig: sig, key: key, now: now))
+        XCTAssertFalse(AttachmentLink.verify(id: id, exp: String(exp), sig: sig, key: key, now: now.addingTimeInterval(AttachmentLink.lifetime + 1)))
         // A far-future expiry cannot be forged into a long-lived link even with a matching signature.
-        XCTAssertFalse(AttachmentLink.verify(id: id, exp: String(exp + 86_400), sig: sig, now: now))
+        XCTAssertFalse(AttachmentLink.verify(id: id, exp: String(exp + 86_400), sig: sig, key: key, now: now))
 
         // The session-less route is a no-op for preview.
         let preview = try await download(t, "/v1/attachments/\(id)/preview?exp=\(exp)&sig=\(sig)")

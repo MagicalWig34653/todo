@@ -108,7 +108,8 @@ struct AttachmentController: RouteCollection {
         // Signed agent link (get_attachment_download): no session, valid for this attachment until `exp`, GET only.
         var signed = false
         if !preview, req.query[String.self, at: "sig"] != nil {
-            guard req.method == .GET, AttachmentLink.verify(id: try id(req), exp: req.query[String.self, at: "exp"], sig: req.query[String.self, at: "sig"])
+            let key = try await AttachmentLink.resolveKey(db: req.db)
+            guard req.method == .GET, AttachmentLink.verify(id: try id(req), exp: req.query[String.self, at: "exp"], sig: req.query[String.self, at: "sig"], key: key)
             else { throw Abort(.notFound) }
             signed = true
         }
