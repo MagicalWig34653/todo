@@ -65,12 +65,17 @@ function mix(hex: string, share: number, base: string): string {
 	return toHex(a.map((v, i) => v * share + b[i] * (1 - share)));
 }
 
-const BACKGROUND = { light: '#ffffff', dark: '#09090b' } as const;
+/**
+ * Surfaces the ink must read on. Dark: the raised popover surface (oklch 0.21, about #1c1c20), which is lighter than the page
+ * (#09090b) and the card (#111114); small accent text such as "Variante A" sits on cards, so measuring against the page alone
+ * left it at 4.36:1.
+ */
+const BACKGROUND = { light: '#ffffff', dark: '#1c1c20' } as const;
 
 export interface AccentTokens {
 	primary: string;
 	foreground: string;
-	/** accent as text colour, nudged towards black/white until it reaches 4.5:1 on the page background */
+	/** accent as text colour, nudged towards black/white until it reaches 4.5:1 on the page and raised surfaces */
 	ink: string;
 }
 
