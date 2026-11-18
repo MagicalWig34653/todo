@@ -580,6 +580,7 @@ export interface ReviewBrief {
 	agentJobID?: string | null;
 	createdAt?: string | null;
 }
+export type BuildStatus = 'building' | 'succeeded' | 'failed';
 export interface BuildArtifact {
 	id: string;
 	attachmentID: string;
@@ -590,6 +591,9 @@ export interface BuildArtifact {
 	filename: string;
 	mediaType: string;
 	size: number;
+	/** Reported by register_build (additive, contract session-status 1.2.0); absent if never reported. */
+	status?: BuildStatus | null;
+	commit?: string | null;
 	/** Authenticated image endpoint (cookie), images only. */
 	previewURL: string;
 	createdAt?: string | null;
@@ -863,7 +867,7 @@ export interface OverviewRunningTask {
 }
 export interface OverviewSession { sessionName: string; activity: string; updatedAt: string; ageSeconds: number; orphaned: boolean }
 export interface OverviewJob { jobID: string; taskID: string; state: string; mode: string; progress: string }
-export interface OverviewBuild { taskID: string; buildID: string; label?: string | null; platform?: string | null; commit?: string | null; createdAt: string }
+export interface OverviewBuild { taskID: string; buildID: string; label?: string | null; platform?: string | null; commit?: string | null; status?: BuildStatus | null; createdAt: string }
 export interface OverviewOpenItem { id: string; taskID: string; taskTitle: string; text: string; createdAt: string }
 export interface OverviewEvent { taskID: string; taskTitle: string; kind: string; actorType: string; createdAt: string }
 export interface OverviewProject {

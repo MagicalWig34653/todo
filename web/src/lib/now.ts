@@ -96,6 +96,23 @@ export function buildCommit(b: OverviewBuild): string | null {
 	return c ? c.slice(0, 7) : null;
 }
 
+export type BuildStatusTone = 'info' | 'ok' | 'danger';
+const BUILD_STATUS = {
+	building: { key: 'build.status.building', tone: 'info' },
+	succeeded: { key: 'build.status.succeeded', tone: 'ok' },
+	failed: { key: 'build.status.failed', tone: 'danger' }
+} as const;
+/** Message key and tone for a reported build status; null when none (or an unknown one) was reported. */
+export function buildStatusOf(status: string | null | undefined): { key: (typeof BUILD_STATUS)[keyof typeof BUILD_STATUS]['key']; tone: BuildStatusTone } | null {
+	return status && Object.hasOwn(BUILD_STATUS, status) ? BUILD_STATUS[status as keyof typeof BUILD_STATUS] : null;
+}
+
+/** First 7 characters of a commit, otherwise null. */
+export function shortCommit(commit: string | null | undefined): string | null {
+	const c = typeof commit === 'string' ? commit.trim() : '';
+	return c ? c.slice(0, 7) : null;
+}
+
 export const isEmptyNow = (projects: readonly OverviewProject[]): boolean => projects.length === 0;
 
 export function allowRefetch(lastFetchAt: number | null, now: number, mode: 'live' | 'poll' | 'idle' | 'unauthorized'): boolean {

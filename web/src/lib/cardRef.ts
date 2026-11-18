@@ -59,14 +59,17 @@ export interface GalleryItem {
 	id: string;
 	url: string;
 	label: string;
+	/** Only for builds, when reported. */
+	status?: string;
+	commit?: string;
 }
 /** Screenshots of a task for the gallery: build previews first, then image attachments that are not builds already. */
 export function galleryOf(
-	builds: readonly { attachmentID: string; previewURL: string; label?: string | null; filename: string }[],
+	builds: readonly { attachmentID: string; previewURL: string; label?: string | null; filename: string; status?: string | null; commit?: string | null }[],
 	attachments: readonly { id: string; filename: string; mediaType: string }[],
 	previewURL: (attachmentID: string) => string
 ): GalleryItem[] {
-	const out: GalleryItem[] = builds.map((b) => ({ id: b.attachmentID, url: b.previewURL, label: b.label || b.filename }));
+	const out: GalleryItem[] = builds.map((b) => ({ id: b.attachmentID, url: b.previewURL, label: b.label || b.filename, ...(b.status ? { status: b.status } : {}), ...(b.commit ? { commit: b.commit } : {}) }));
 	const seen = new Set(out.map((i) => i.id));
 	for (const a of attachments) {
 		if (!a.mediaType.startsWith('image/') || seen.has(a.id)) continue;

@@ -14,6 +14,7 @@
 	import PageHeader from './app/PageHeader.svelte';
 	import EmptyState from './app/EmptyState.svelte';
 	import IdChip from './IdChip.svelte';
+	import BuildStatusBadge from './BuildStatusBadge.svelte';
 	import Radio from '@lucide/svelte/icons/radio';
 
 	const sectionHead = 'text-muted-foreground mb-0.5 text-[11px] font-semibold tracking-wider uppercase';
@@ -166,6 +167,7 @@
 						{#each p.builds as b (b.buildID)}
 							<li class="flex flex-wrap items-center gap-2 py-2 text-sm" data-testid="now-build">
 								<span class="font-semibold [overflow-wrap:anywhere]">{buildSummary(b)}</span>
+								<BuildStatusBadge status={b.status} />
 								{#if buildCommit(b)}<code class="text-muted-foreground font-mono text-[12px]" title={b.commit} data-testid="now-build-commit">{buildCommit(b)}</code>{/if}
 								<span class="text-muted-foreground text-[13px]">{@render time(b.createdAt)}</span>
 							</li>

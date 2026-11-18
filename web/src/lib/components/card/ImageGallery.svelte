@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '#lib/i18n/index.js';
+	import BuildStatusBadge from '#lib/components/BuildStatusBadge.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -10,6 +11,8 @@
 		id: string;
 		url: string;
 		label: string;
+		status?: string;
+		commit?: string;
 	}
 	let { images }: { images: GalleryImage[] } = $props();
 
@@ -49,6 +52,7 @@
 		<div class="flex flex-wrap items-center justify-between gap-2 text-xs">
 			<span class="text-muted-foreground min-w-0 [overflow-wrap:anywhere]" aria-live="polite">
 				{current.label}{many ? ` · ${t('card.gallery.count', { index: Math.min(index, images.length - 1) + 1, total: images.length })}` : ''}
+				<BuildStatusBadge status={current.status} commit={current.commit} />
 			</span>
 			<Button variant="outline" size="sm" onclick={fullscreen} data-testid="gallery-fullscreen"><Maximize aria-hidden="true" />{t('card.gallery.fullscreen')}</Button>
 		</div>
