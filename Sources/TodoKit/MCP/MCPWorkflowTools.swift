@@ -5,6 +5,16 @@ extension MCPController {
     static let taskIDField = Schema.uuid("Task id.")
     static let agentNameField = Schema.string("Optional name of this agent shown on the board (for example 'claude-code@build-mac', up to 100 characters).", maxLength: 100)
     static let quoteField = Schema.string("The person's own words that authorise this decision (required, up to 2000 characters). Only a connection that holds the person's brain mandate (get_connection.brainMandate.active) may decide at all.", maxLength: 2000)
+    static let reviewVariantsField: JSONValue = .object([
+        "type": .string("array"), "minItems": .number(2), "maxItems": .number(4),
+        "description": .string("Optional 2 to 4 variants for the person to choose from (A/B). Each: id (1-20 characters of a-z, 0-9, hyphen; unique), label (1-60 characters), optional description (up to 500 characters) and optional attachmentID of a finished attachment of THIS task (add_attachment first) that shows the variant. The person accepts with exactly one variant; request_changes needs none. Omit for a plain review."),
+        "items": .object(["type": .string("object"), "properties": .object([
+            "id": Schema.string("Variant id, 1 to 20 characters of a-z, 0-9 and hyphen, unique within the review (for example 'a').", maxLength: 20),
+            "label": Schema.string("Short name shown on the choice card, 1 to 60 characters.", maxLength: 60),
+            "description": Schema.string("Optional one or two sentences, up to 500 characters.", maxLength: 500),
+            "attachmentID": Schema.uuid("Optional id of a finished attachment (image) of this task that shows the variant."),
+        ]), "required": .strings(["id", "label"])]),
+    ])
     static let optionalProject = Schema.uuid("Optional project id. Omit for all granted projects.")
     static let currentProjectID = Schema.uuid("The CURRENT project (projectID from .todolino.json). Strongly recommended: the answer then names it as currentProject and is limited to it (and its sub-projects). Without it the answer covers all projects of the account and carries a hint.")
     static let accountScope = Schema.string("With projectID: project (default) filters to the current project; account keeps all projects but marks entries of other projects with foreignProject=true (never work on those).", values: ["project", "account"])
@@ -125,20 +135,22 @@ extension MCPController {
                           "quote": quoteField],
              required: ["questionID", "answer"]),
         Tool(name: "request_review", scope: "tasks:write",
-             description: "Ask a person to review finished work: sets the task to in_review, moves it to the 'Review' column and shows it as 'Review fällig' on the overview. Summarise what changed, how you verified it and what to look at. Attach build screenshots first. Only for a visible result, risk, rollout or decision; proven-finished work with nothing to check is closed with update_task status=done after a post_progress with the proof.",
+             description: "Ask a person to review finished work: sets the task to in_review, moves it to the 'Review' column and shows it as 'Review fällig' on the overview. Summarise what changed, how you verified it and what to look at. Attach build screenshots first. Only for a visible result, risk, rollout or decision; proven-finished work with nothing to check is closed with update_task status=done after a post_progress with the proof. For a choice between 2 to 4 alternatives pass variants (with a screenshot each via attachmentID); the person picks one, you read it as review.chosenVariantID in get_task_context.",
              properties: ["taskID": taskIDField,
                           "summary": Schema.string("Review summary, 1 to 4000 characters.", maxLength: 4000),
                           "reviewerID": Schema.uuid("Optional user id of the person who must review (must be able to read the project)."),
+                          "variants": reviewVariantsField,
                           "agentName": agentNameField],
              required: ["taskID", "summary"]),
         Tool(name: "list_pending_reviews", scope: "tasks:read",
              description: "List pending review requests (pass projectID = current project; the answer is {currentProject, hint?, items}, other projects only with scope=account and foreignProject=true): task, project, summary, who requested, optional named reviewer. Includes reviews of local runner jobs.",
              properties: ["projectID": currentProjectID, "scope": accountScope]),
         Tool(name: "decide_review", scope: "tasks:write",
-             description: "Accept or request changes on a pending review on behalf of the user steering you. accept marks the task done; request_changes returns it to in_progress with your note. Needs the person's brain mandate for this connection and project (brain_mandate_required / outside_brain_mandate) and a quote of their words (quote_required). Refused for reviews requested by this same connection (cannot_decide_own_review).",
+             description: "Accept or request changes on a pending review on behalf of the user steering you. accept marks the task done; request_changes returns it to in_progress with your note. Needs the person's brain mandate for this connection and project (brain_mandate_required / outside_brain_mandate) and a quote of their words (quote_required). Refused for reviews requested by this same connection (cannot_decide_own_review). For a review with variants, accept also needs the chosen variantID (the person's choice, quoted).",
              properties: ["taskID": taskIDField,
                           "decision": Schema.string("accept or request_changes.", values: ["accept", "request_changes"]),
                           "note": Schema.string("Optional note, required in practice for request_changes (up to 4000 characters).", maxLength: 4000),
+                          "variantID": Schema.string("Id of the chosen variant. Required for accept on a review with variants (variant_required / unknown_variant); refused otherwise (unexpected_variant).", maxLength: 20),
                           "quote": quoteField],
              required: ["taskID", "decision"]),
         Tool(name: "apply_agent_workflow_columns", scope: "tasks:write",
@@ -192,6 +204,14 @@ extension MCPController {
     func requiredBool(_ a: JSONValue, _ key: String) throws -> Bool {
         guard let b = try optionalBool(a, key) else { throw Abort(.badRequest, reason: "invalid_\(key)") }
         return b
+    }
+    /// `variants` of request_review; a shape that does not decode is `invalid_variants` (422) like every other shape error.
+    func reviewVariants(_ value: JSONValue) throws -> [ReviewVariantInput]? {
+        if value.isNull { return nil }
+        guard case .array = value, let list = try? JSONDecoder().decode([ReviewVariantInput].self, from: JSONEncoder().encode(value)) else {
+            throw Abort(.unprocessableEntity, reason: "invalid_variants")
+        }
+        return list
     }
     func optionalUUID(_ a: JSONValue, _ key: String) throws -> UUID? {
         if a[key].isNull { return nil }
@@ -310,7 +330,7 @@ extension MCPController {
                 quote: optionalString(a, "quote"), actor: actor))
         case "request_review":
             let body = RequestReviewRequest(summary: try requiredString(a, "summary"), reviewerID: try optionalUUID(a, "reviewerID"),
-                agentName: try optionalString(a, "agentName"))
+                agentName: try optionalString(a, "agentName"), variants: try reviewVariants(a["variants"]))
             return try .encoded(try await service.requestReview(uuid(a["taskID"]), body, actor: actor))
         case "list_pending_reviews":
             let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
@@ -318,7 +338,7 @@ extension MCPController {
             return context.wrap(items: context.markRows(try .encoded(try await service.reviews(projectID: context.filterProjectID, state: "pending"))))
         case "decide_review":
             return try .encoded(try await service.decideReview(uuid(a["taskID"]), decision: requiredString(a, "decision"),
-                note: optionalString(a, "note"), quote: optionalString(a, "quote"), actor: actor))
+                note: optionalString(a, "note"), variantID: optionalString(a, "variantID"), quote: optionalString(a, "quote"), actor: actor))
         case "apply_agent_workflow_columns":
             let projectID = try uuid(a["projectID"])
             return try await db.transaction { tx in

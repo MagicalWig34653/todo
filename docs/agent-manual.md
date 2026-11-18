@@ -1,4 +1,4 @@
-<!-- manual-version: 1.35.0 -->
+<!-- manual-version: 1.36.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -78,7 +78,10 @@ Create the columns with `apply_agent_workflow_columns {projectID}` when `get_pro
 - `request_review {taskID, summary, reviewerID?}` is for something the person has to look at or decide: a visible result to try, a risk, a rollout or merge decision. Pure update information (commit hash, tests green, internal change, numbers) is NOT a review: put it into `post_progress` and keep the task where it is. Write the summary as one sentence of result plus at most four bullets: what is new, how it was checked (with numbers), what to look at, what is open. No commit hashes or file lists as the main content. Optionally name the person who must review (`reviewerID`, a user id from the brief or the task context).
 - `list_pending_reviews {projectID, scope?}` answers `{currentProject, hint?, items}` with the pending reviews of the current project (same `scope`/`foreignProject`/`hint` rules as `list_open_questions`).
 - A person accepts (task becomes `done`) or requests changes (task returns to `in_progress`). `decide_review` exists for a person steering you via chat; it refuses reviews requested by your own connection (`cannot_decide_own_review`). Since 1.29.0 it also needs the brain mandate: without it `brain_mandate_required`, outside the mandated projects `outside_brain_mandate`, and a `quote` with the person's own words is required (`quote_required`, `invalid_quote` above 2000 characters).
-- One pending review per task: requesting again updates the summary.
+- One pending review per task: requesting again updates the summary (and the variants, see below).
+- **Variants (since 1.36.0).** When the person should choose between 2 to 4 alternatives (map styles, layouts, wordings), pass `variants` to `request_review`: `[{id, label, description?, attachmentID?}]`. `id` is 1 to 20 characters of `a-z`, `0-9` and `-`, unique within the review (use `a`, `b`, ...); `label` 1 to 60 characters; `description` up to 500; `attachmentID` optionally names a finished attachment (image) of THIS task that shows the variant (upload it first with `add_attachment`/`complete_attachment`). A bad shape is `invalid_variants` (422), an attachment that is unknown, unfinished or belongs to another task is `invalid_variant_attachment` (422). Without `variants` nothing changes.
+- The person chooses by accepting: the review becomes `accepted`, the task `done`, and the review carries `chosenVariantID`; the chat of the review gets the entry "Variante B gewählt: <Label>". Read the choice in `get_task_context` (`review.variants`, `review.chosenVariantID`); `list_pending_reviews` and the pending review on the cards show `variants` too. Requesting changes needs no variant.
+- `decide_review` for such a review: `accept` needs `variantID` (the person's choice, quoted in `quote`): without it `variant_required`, an id the review does not offer `unknown_variant`. A `variantID` on a review without variants (or together with `request_changes`) is `unexpected_variant`. All three are 422. The brain mandate and `quote` checks run first, as before. The bulk release (`POST /v1/reviews/decisions`) leaves such reviews out on accept (`result` `invalid`, `reason` `variant_required`); changes can still be requested in bulk.
 
 ## Build screenshots
 
@@ -240,9 +243,9 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `get_question` | tasks:read | One question with its answer. |
 | `wait_for_events` | tasks:read | Wait up to 25 s for board changes; returns hints only (no content). Use a few rounds after a blocking question or a confirmation request, then `get_question` / `get_action_request`. |
 | `answer_question` | tasks:write | Answer a question on behalf of the user (not your own). Needs the brain mandate and `quote`. |
-| `request_review` | tasks:write | Ask for review; task becomes `in_review`. |
+| `request_review` | tasks:write | Ask for review; task becomes `in_review`. Optional `variants` (2-4) for a choice. |
 | `list_pending_reviews` | tasks:read | Pending reviews of the current project (`projectID`), `scope=account` for all; answer `{currentProject, hint?, items}`. |
-| `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). Needs the brain mandate and `quote`. |
+| `decide_review` | tasks:write | Accept or request changes on behalf of the user (not your own request). Needs the brain mandate and `quote`; `accept` on a review with variants needs `variantID`. |
 | `list_comments` | tasks:read | Chat messages of a task; filters `questionID`, `reviewID`, `thread: "task"`, `authorKind`, `since`. Uploads by people appear as entries with `kind: "attachment"` and `attachments: [{id, filename, mediaType, size}]`; files without a chat entry add one trailing `attachments_note`. |
 | `add_comment` | comments:write | Write a message into the chat of a task, question (`questionID`) or review (`reviewID`); optional `agentName`. |
 | `list_columns` | projects:read | Board with tasks per column. |
@@ -353,6 +356,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 
 **Scopes added in 1.6.0:** `labels:read`/`labels:write` and `filters:read`/`filters:write`. An existing connection does not get new scopes by itself: the person has to connect again and approve them. Labels and filters are private to the person; search and filter results only contain projects of this connection.
 
+**Changed in 1.36.0:** review with variants, additive (card 1D9C8B0C). `request_review` (and REST `POST /v1/tasks/{id}/review`) takes the optional `variants` (2-4 entries `{id, label, description?, attachmentID?}`); `decide_review` (and REST `POST /v1/tasks/{id}/review/decision`) takes the optional `variantID`. Review objects (`get_task_context.review`, `list_pending_reviews`, `GET /v1/reviews`) carry `variants` and, after the acceptance, `chosenVariantID`; both are absent for a review without a choice, old clients ignore them. New 422 reasons: `invalid_variants`, `invalid_variant_attachment`, `variant_required`, `unknown_variant`, `unexpected_variant`. Cards (`pendingReview`) show `variants`. The bulk release skips accepting reviews with variants (`variant_required`). New migration `AddReviewVariants` (two nullable columns on `task_reviews`). No new tools, no scope changes.
+
 **Changed in 1.35.0:** build status in the activity views, additive. `get_overview_now` (and REST `GET /v1/overview/now`): `recentActivity[]` entries of kind `build.added` and `build.status_changed` carry optional `label`, `platform` and `status` (current state of that build); other entries are unchanged. The REST feed `GET /v1/feed` now also shows `build.status_changed` as a post of kind `build` (`text` = label or build ID, plus `status` and `platform`; one post per status change). No new tools, no scope changes.
 
 **Changed in 1.34.0:** `register_build` (and REST `POST /v1/builds`) takes optional `status` (`building`, `succeeded` or `failed`; otherwise `invalid_status`) and `commit` (7-40 lowercase hex characters; otherwise `invalid_commit`). Old calls without them behave as before. Calling again for the same attachment with another `status` updates it (for example `building` then `succeeded`) and adds a `build.status_changed` entry to the card activity; a call without `status` never changes an existing status. `list_builds`, `read_attachment` and `get_overview_now` (`builds[]`) show `status` and `commit` when present; `commit` falls back to a hash-like `buildID`.
@@ -424,6 +429,7 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 - `version_conflict`: someone changed the object; re-read it and apply your change again.
 - `already_claimed`: another agent works on the task. Pick another task or ask the user.
 - `question_already_answered`, `review_already_pending`, `no_pending_review`, `cannot_answer_own_question`, `cannot_decide_own_review`: workflow guards; do not retry blindly.
+- `invalid_variants`, `invalid_variant_attachment`, `variant_required`, `unknown_variant`, `unexpected_variant` (422): review variants; fix the `variants` or `variantID` argument, the reason names the problem.
 - `columns_exist`: the project already has columns; do not apply the template.
 - `invalid_arguments` and `invalid_*`: fix the arguments; the reason names the field.
 - Network errors: retry writes only with an `idempotencyKey` (`add_comment`, `ask_question`) or after re-reading the object.

@@ -1320,3 +1320,12 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Grenze: Status ist der aktuelle Stand des Builds, nicht der zum Ereigniszeitpunkt.
 
 - PWA: Feed und "Jetzt" zeigen "Build <Label>: <Status>" (BuildStatusBadge) fuer build.status_changed; ohne Label "Build: <Status>", ohne status wie bisher. vitest 460 gruen, npm run build ok; Playwright nicht ausgefuehrt.
+
+## Nachtrag 18.11.2026: Review mit Variantenwahl, Stufe 1 Backend/MCP (Karte 1D9C8B0C)
+
+- Teilschritt: Stufe 1 von 3 (Backend, REST + MCP, Vertrag, Handbuch). Branch `agent/review-varianten-s1`, nicht gemergt, nicht gepusht. PWA (Stufe 2) und Apple (Stufe 3) sind nicht begonnen.
+- Umgesetzt: Migration `AddReviewVariants` (`task_reviews.variants`, `chosen_variant_id`, nullable); `request_review` mit `variants` (2-4, Validierung, 422 `invalid_variants`/`invalid_variant_attachment`); Annahme mit `variantID` in REST (`POST /v1/tasks/{id}/review/decision`) und MCP `decide_review` (422 `variant_required`/`unknown_variant`/`unexpected_variant`, Brain-Mandat und Pflichtzitat laufen vorher); Wahl in `ReviewDTO.chosenVariantID`, `get_task_context.review`, Review-Listen, Chat-Eintrag und Feed-/Update-Text; Undo setzt die Wahl zurueck; Sammelfreigabe laesst Reviews mit Varianten bei accept aus (`variant_required`).
+- Vertraege/Doku: `contracts/command-center.yaml` 1.8.0, Handbuch 1.36.0, ADR 0027 Nachtrag. `oauth-mcp.yaml`/`openapi.yaml` fuehren request_review/decide_review nicht einzeln und blieben unveraendert.
+- Tests: neue `ReviewVariantsTests` (REST: Validierung, Fehlercodes, Wahl, Verlauf, Undo, Sammelfreigabe, Review ohne Varianten) und `ReviewVariantsMCPTests` (Tool-Schema, request_review, decide_review mit Mandat+Zitat+variantID). Bestehende Review-/Brain-/Feed-/Handbuchtests unveraendert gruen (Versions-Asserts auf 1.36.0).
+- Grenzen: nur SQLite gelaufen, MariaDB-Lauf und Volllauf stehen aus (Hauptsession). Keine PWA/App-Anpassung: ReviewDTO-Felder sind additiv, alte Clients zeigen Varianten-Reviews wie bisher; ein Annehmen ohne Variante schlaegt dort mit 422 `variant_required` fehl, bis Stufe 2 die Auswahl bringt (Risiko beim Merge vor Stufe 2: eine Review mit Varianten ist in der alten PWA nicht annehmbar, nur ueber Aenderungen/Undo).
+- Naechster Schritt: Stufe 2 (PWA `ReviewDecision.svelte`, Karten-Detail, Sammelleiste, E2E `review-variants.spec.ts`).
