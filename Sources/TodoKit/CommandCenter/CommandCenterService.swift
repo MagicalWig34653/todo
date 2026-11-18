@@ -56,6 +56,8 @@ struct ReviewBrief: Content {
     let reviewerID: UUID?
     let agentJobID: UUID?
     let createdAt: Date?
+    /// Offered variants of a review with a choice (absent otherwise).
+    var variants: [ReviewVariantDTO]? = nil
 }
 
 struct CardTask: Content {
@@ -460,7 +462,7 @@ struct CommandCenterService: Sendable {
                 questions: try allQuestions.prefix(3).map { QuestionBrief(id: try $0.requireID(), prompt: $0.prompt, options: $0.options,
                     blocking: $0.blocking, askedByType: $0.askedByType, askedByLabel: $0.askedByLabel, createdAt: $0.createdAt) },
                 pendingReview: try review.map { ReviewBrief(id: try $0.requireID(), summary: $0.summary, requestedByType: $0.requestedByType,
-                    requestedByLabel: $0.requestedByLabel, reviewerID: $0.reviewerID, agentJobID: $0.agentJobID, createdAt: $0.createdAt) },
+                    requestedByLabel: $0.requestedByLabel, reviewerID: $0.reviewerID, agentJobID: $0.agentJobID, createdAt: $0.createdAt, variants: $0.variants) },
                 blockedReason: s.wf?.blockedReason, blockedBy: s.blockedBy, latestUpdate: update,
                 builds: Array(sortedBuilds.prefix(3)), buildCount: sortedBuilds.count,
                 dueDate: due, nextDue: ((task.status == "done" ? [] : [due].compactMap { $0 }) + kidDue).min(), priority: planning[id]?.priority ?? 0,
@@ -602,7 +604,7 @@ struct CommandCenterService: Sendable {
                 case "question.asked", "question.withdrawn": text = questionByKey[s]?.prompt
                 case "question.answered", "agent.answered": text = questionByKey[s]?.answer
                 case "review.requested": text = reviews[s]?.summary
-                case "review.accepted", "review.changes_requested": text = reviews[s]?.decisionNote ?? reviews[s]?.summary
+                case "review.accepted", "review.changes_requested": text = reviews[s]?.decisionText ?? reviews[s]?.summary
                 case "build.added", "build.status_changed": text = artifacts[s].map { $0.label ?? $0.buildID }
                 default: break
                 }

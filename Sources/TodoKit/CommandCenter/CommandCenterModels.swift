@@ -64,7 +64,66 @@ final class TaskReview: Model, @unchecked Sendable {
     @OptionalField(key: "undo_status") var undoStatus: String?
     @OptionalField(key: "undo_column_id") var undoColumnID: UUID?
     @OptionalField(key: "undo_task_version") var undoTaskVersion: Int?
+    /// Offered variants as JSON text (`[ReviewVariantDTO]`, 2-4 entries); nil = a review without a choice.
+    @OptionalField(key: "variants") var variantsJSON: String?
+    /// Variant picked when the review was accepted; only set on `accepted` reviews with variants.
+    @OptionalField(key: "chosen_variant_id") var chosenVariantID: String?
     init() {}
+}
+
+/// One option of a review with variants (card 1D9C8B0C). `attachmentID` points at an attachment (image) of the same task.
+struct ReviewVariantDTO: Content, Equatable {
+    let id: String
+    let label: String
+    let description: String?
+    let attachmentID: UUID?
+}
+
+/// Request shape of a variant; `attachmentID` stays a string so that a malformed one is reported as
+/// `invalid_variant_attachment` (422) instead of a generic decoding error.
+struct ReviewVariantInput: Content {
+    let id: String
+    let label: String
+    let description: String?
+    let attachmentID: String?
+}
+
+extension TaskReview {
+    var variants: [ReviewVariantDTO]? {
+        get {
+            guard let json = variantsJSON, let list = try? JSONDecoder().decode([ReviewVariantDTO].self, from: Data(json.utf8)), !list.isEmpty else { return nil }
+            return list
+        }
+        set {
+            guard let newValue, !newValue.isEmpty, let data = try? JSONEncoder().encode(newValue) else { variantsJSON = nil; return }
+            variantsJSON = String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    /// "Variante B gewählt: Label" for an accepted review with a choice; the one-letter id is shown upper case.
+    var chosenVariantLine: String? {
+        guard let chosenVariantID, let variant = variants?.first(where: { $0.id == chosenVariantID }) else { return nil }
+        let name = chosenVariantID.count == 1 ? chosenVariantID.uppercased() : chosenVariantID
+        return "Variante \(name) gewählt: \(variant.label)"
+    }
+
+    /// Text of the decision for activity views: the choice (if any) plus the note, else the note, else nil.
+    var decisionText: String? {
+        guard let line = chosenVariantLine else { return decisionNote }
+        return decisionNote.map { "\(line) – \($0)" } ?? line
+    }
+}
+
+/// Additive migration for review variants (card 1D9C8B0C): both columns are nullable, old rows stay reviews without a choice.
+struct AddReviewVariants: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(TaskReview.schema).field("variants", .sql(raw: "TEXT")).update()
+        try await db.schema(TaskReview.schema).field("chosen_variant_id", .string).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(TaskReview.schema).deleteField("chosen_variant_id").update()
+        try await db.schema(TaskReview.schema).deleteField("variants").update()
+    }
 }
 
 /// Migration for the review undo window (ADR 0020): previous task state and the task version right after the decision.
@@ -268,7 +327,12 @@ struct ReviewDTO: Content {
     let undoUntil: Date?
     /// Derived, only set by review lists: a comment of the mandated brain connection hangs on this review (see `ReviewBrain`, ADR 0032).
     var brainRecommended: Bool? = nil
+    /// Offered variants (2-4); absent for a review without a choice.
+    let variants: [ReviewVariantDTO]?
+    /// Variant picked on acceptance; absent otherwise.
+    let chosenVariantID: String?
     init(_ r: TaskReview) throws {
+        variants = r.variants; chosenVariantID = r.chosenVariantID
         id = try r.requireID(); taskID = r.taskID; state = r.state; requestedByType = r.requestedByType
         requestedByID = r.requestedByID; requestedByLabel = r.requestedByLabel; reviewerID = r.reviewerID
         summary = r.summary; decidedBy = r.decidedBy; decidedAt = r.decidedAt; decisionNote = r.decisionNote
@@ -376,8 +440,19 @@ struct AskQuestionRequest: Content {
 }
 /// `freeText: true` answers a question that has options with the person's own text (additive; omitted = one of the options).
 struct AnswerQuestionRequest: Content { let answer: String; let freeText: Bool? }
-struct RequestReviewRequest: Content { let summary: String; let reviewerID: UUID?; let agentName: String? }
-struct ReviewDecisionRequest: Content { let decision: String; let note: String? }
+struct RequestReviewRequest: Content {
+    let summary: String
+    let reviewerID: UUID?
+    let agentName: String?
+    /// Optional 2-4 variants to choose from (card 1D9C8B0C).
+    var variants: [ReviewVariantInput]? = nil
+}
+struct ReviewDecisionRequest: Content {
+    let decision: String
+    let note: String?
+    /// Required when accepting a review with variants; refused otherwise.
+    var variantID: String? = nil
+}
 struct ReviewBatchRequest: Content {
     struct Item: Content { let reviewID: String }
     let decisions: [Item]

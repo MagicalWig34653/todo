@@ -272,7 +272,7 @@ struct FeedService: Sendable {
             case "review.accepted", "review.changes_requested":
                 guard let r = e.subjectID.flatMap({ reviews[$0] }), r.state != "pending" else { continue }
                 kind = "review"; state = e.kind == "review.accepted" ? "accepted" : "changes_requested"
-                text = r.decisionNote ?? r.summary
+                text = r.decisionText ?? r.summary
             case "question.answered":
                 guard let q = e.subjectID.flatMap({ questions[$0] }) else { continue }
                 kind = "question"; text = q.prompt; detail = q.answer

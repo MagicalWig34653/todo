@@ -32,7 +32,7 @@ final class ReviewVariantsTests: XCTestCase {
         let a = Attachment()
         a.taskID = try XCTUnwrap(UUID(uuidString: task)); a.ownerID = try XCTUnwrap(UUID(uuidString: owner.id))
         a.filename = "variant.png"; a.role = "result"; a.mediaType = "image/png"; a.size = 3; a.checksum = "x"
-        a.status = status; a.objectKey = "k"
+        a.status = status; a.objectKey = UUID().uuidString
         try await a.save(on: t.app.db)
         return try a.requireID().uuidString
     }
@@ -197,7 +197,7 @@ final class ReviewVariantsTests: XCTestCase {
         // Activity: the feed post of the decision names the choice (and keeps the note).
         let feed = try await t.json(.GET, "/v1/feed", token: owner.token)
         let posts = try XCTUnwrap(feed.body?["posts"] as? [[String: Any]])
-        let text = posts.compactMap { $0["text"] as? String }.first { $0.contains("Variante B gewählt") }
+        let text = posts.first { $0["kind"] as? String == "review" }?["text"] as? String
         XCTAssertNotNil(text, "\(posts)")
         XCTAssertTrue(text?.contains("Radarkarte") ?? false)
         XCTAssertTrue(text?.contains("Radar bitte mit Legende") ?? false)
@@ -373,9 +373,9 @@ final class ReviewVariantsMCPTests: XCTestCase {
             XCTAssertEqual(noVariant.text, "variant_required")
             let unknown = try await call(e, e.brain, "decide_review", ["taskID": task, "decision": "accept", "quote": "Lino: Radar", "variantID": "q"])
             XCTAssertEqual(unknown.text, "unknown_variant")
-            // Without a mandate the connection that asked cannot decide, variant or not.
+            // The connection that asked cannot decide its own review, variant or not.
             let noMandate = try await call(e, e.agent, "decide_review", ["taskID": task, "decision": "accept", "quote": "ja", "variantID": "a"])
-            XCTAssertEqual(noMandate.text, "brain_mandate_required")
+            XCTAssertEqual(noMandate.text, "cannot_decide_own_review")
             try await assertEqual(try await TodoTask.find(UUID(uuidString: task), on: e.f.test.app.db)?.status, "in_review")
 
             let ok = try await call(e, e.brain, "decide_review", ["taskID": task, "decision": "accept", "quote": "Lino: Radar", "variantID": "b"])

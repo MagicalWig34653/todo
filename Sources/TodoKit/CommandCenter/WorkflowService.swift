@@ -55,6 +55,12 @@ enum WorkflowLimits {
     /// ... and at most this many batch requests per account in one rate-limit window.
     static let reviewBatchRequestsPerWindow = 20
     static let reviewBatchWindowSeconds = 600
+    /// Review variants (card 1D9C8B0C): 2 to 4 entries, id `[a-z0-9-]{1,20}`, label up to 60, description up to 500 characters.
+    static let reviewVariantsMin = 2
+    static let reviewVariantsMax = 4
+    static let reviewVariantIDMax = 20
+    static let reviewVariantLabelMax = 60
+    static let reviewVariantDescriptionMax = 500
 }
 
 /// Business rules for questions, progress, reviews, builds, briefs and claims. REST and MCP use the same
@@ -398,6 +404,7 @@ struct WorkflowService: Sendable {
         return try await mutate(taskID, role: .edit) { task, tx in
             let id = try task.requireID()
             guard task.status != "done" else { throw Abort(.conflict, reason: "task_done") }
+            let variants = try await Self.validatedVariants(body.variants, taskID: id, on: tx)
             if let reviewerID = body.reviewerID {
                 guard let reviewer = try await User.find(reviewerID, on: tx),
                       (try? await ProjectAccess(user: reviewer, db: tx).project(task.projectID, role: .read)) != nil else {
@@ -406,13 +413,13 @@ struct WorkflowService: Sendable {
             }
             if let pending = try await TaskReview.query(on: tx).filter(\.$taskID == id).filter(\.$state == "pending").first() {
                 guard pending.agentJobID == nil, pending.requestedByID == actor.id else { throw Abort(.conflict, reason: "review_already_pending") }
-                pending.summary = summary; pending.reviewerID = body.reviewerID; pending.version += 1
+                pending.summary = summary; pending.reviewerID = body.reviewerID; pending.variants = variants; pending.version += 1
                 try await pending.save(on: tx)
                 return try ReviewDTO(pending)
             }
             let r = TaskReview()
             r.taskID = id; r.state = "pending"; r.requestedByType = actor.type; r.requestedByID = actor.id
-            r.requestedByLabel = label; r.reviewerID = body.reviewerID; r.summary = summary; r.version = 1
+            r.requestedByLabel = label; r.reviewerID = body.reviewerID; r.summary = summary; r.variants = variants; r.version = 1
             try await r.save(on: tx)
             try await Self.applyStatus(task, "in_review", actor: actor, on: tx)
             try await Self.place(task, role: .review, on: tx)
@@ -422,11 +429,12 @@ struct WorkflowService: Sendable {
         }
     }
 
-    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, quote: String? = nil, actor: WorkflowActor, expectedReviewID: UUID? = nil) async throws -> ReviewDTO {
+    func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, variantID rawVariantID: String? = nil, quote: String? = nil, actor: WorkflowActor, expectedReviewID: UUID? = nil) async throws -> ReviewDTO {
         guard ["accept", "request_changes"].contains(decision) else { throw Abort(.badRequest, reason: "invalid_decision") }
         let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
         let readable = try await readableTask(taskID, role: .edit)
         let kind = decision == "accept" ? "review.accepted" : "review.changes_requested"
+        let variantID = rawVariantID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         // Runner-backed review: the job transition (owner capability, job state) is authoritative.
         if let linked = try await TaskReview.query(on: db).filter(\.$taskID == taskID).filter(\.$state == "pending")
             .filter(\.$agentJobID != .null).first(), let jobID = linked.agentJobID {
@@ -437,6 +445,8 @@ struct WorkflowService: Sendable {
                 try await lockSharingGraph(on: tx)
                 try await lockRow(table: TodoTask.schema, id: taskID, on: tx)
                 let authority = try await brainAuthority(for: actor, projectID: readable.projectID, quote: quote, on: tx)
+                // Runner-backed reviews never carry variants.
+                if variantID != nil { throw Abort(.unprocessableEntity, reason: "unexpected_variant") }
                 _ = try await AgentService.humanTransition(jobID: jobID, decision: decision, user: user, on: tx)
                 if let note {
                     _ = try await CommentService.create(taskID: taskID, user: user, body: note, idempotencyKey: nil,
@@ -467,9 +477,11 @@ struct WorkflowService: Sendable {
                 do { _ = try await ProjectAccess(user: owner, db: tx).project(task.projectID, role: .manage) }
                 catch { throw Abort(.forbidden, reason: "not_the_reviewer") }
             }
+            // After every existing check, so the order of refusals stays as before (mandate, quote, reviewer, then the choice).
+            let chosen = try Self.chosenVariant(of: r, decision: decision, variantID: variantID)
             let previousStatus = task.status, previousColumn = task.columnID
             r.state = decision == "accept" ? "accepted" : "changes_requested"
-            r.decidedBy = userID; r.decidedAt = Date(); r.decisionNote = note; r.version += 1
+            r.decidedBy = userID; r.decidedAt = Date(); r.decisionNote = note; r.chosenVariantID = chosen?.id; r.version += 1
             try await r.save(on: tx)
             if decision == "accept" {
                 try await Self.applyStatus(task, "done", actor: actor, on: tx)
@@ -482,11 +494,62 @@ struct WorkflowService: Sendable {
             try await r.save(on: tx)
             try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id,
                 kind: kind, subjectID: r.id, on: tx)
+            if let line = r.chosenVariantLine {
+                // History of the card: the choice as a chat entry on the review (by the person, or by the connection deciding for them).
+                let allowed = allowedProjects
+                _ = try await CommentService.create(taskID: id, user: owner, body: line, idempotencyKey: nil,
+                    actor: (actor.type, actor.id), target: .init(reviewID: r.id), agentLabel: actor.type == .person ? nil : actor.label,
+                    scope: { t in if let allowed, !allowed.contains(t.projectID) { throw Abort(.notFound) } }, on: tx)
+            }
             if let authority {
                 try await recordBrainDecision(authority, kind: kind, task: task, subjectID: try r.requireID(), note: note, actor: actor, on: tx)
             }
             return try ReviewDTO(r)
         }
+    }
+
+    // MARK: Review variants (card 1D9C8B0C)
+
+    /// Checks 2-4 variants and normalises them. `nil` means a review without a choice. 422 `invalid_variants` for the
+    /// shape, 422 `invalid_variant_attachment` for an attachment that is not a finished one of this task.
+    static func validatedVariants(_ input: [ReviewVariantInput]?, taskID: UUID, on db: any Database) async throws -> [ReviewVariantDTO]? {
+        guard let input else { return nil }
+        let invalid = Abort(.unprocessableEntity, reason: "invalid_variants")
+        guard (WorkflowLimits.reviewVariantsMin...WorkflowLimits.reviewVariantsMax).contains(input.count) else { throw invalid }
+        var seen = Set<String>()
+        var result: [ReviewVariantDTO] = []
+        for item in input {
+            let id = item.id
+            guard (1...WorkflowLimits.reviewVariantIDMax).contains(id.count),
+                  id.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-" }),
+                  seen.insert(id).inserted else { throw invalid }
+            let label = item.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard (1...WorkflowLimits.reviewVariantLabelMax).contains(label.count),
+                  !label.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw invalid }
+            let description = item.description?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            guard (description?.count ?? 0) <= WorkflowLimits.reviewVariantDescriptionMax else { throw invalid }
+            var attachmentID: UUID?
+            if let raw = item.attachmentID {
+                guard let uuid = UUID(uuidString: raw),
+                      let attachment = try await Attachment.find(uuid, on: db), attachment.taskID == taskID, attachment.status == "complete"
+                else { throw Abort(.unprocessableEntity, reason: "invalid_variant_attachment") }
+                attachmentID = try attachment.requireID()
+            }
+            result.append(ReviewVariantDTO(id: id, label: label, description: description, attachmentID: attachmentID))
+        }
+        return result
+    }
+
+    /// The variant an accepting decision picks. Accepting a review with variants needs a known one (`variant_required`,
+    /// `unknown_variant`); every other combination with a variant is `unexpected_variant`. All 422.
+    static func chosenVariant(of review: TaskReview, decision: String, variantID: String?) throws -> ReviewVariantDTO? {
+        guard let offered = review.variants, decision == "accept" else {
+            if variantID != nil { throw Abort(.unprocessableEntity, reason: "unexpected_variant") }
+            return nil
+        }
+        guard let variantID else { throw Abort(.unprocessableEntity, reason: "variant_required") }
+        guard let chosen = offered.first(where: { $0.id == variantID }) else { throw Abort(.unprocessableEntity, reason: "unknown_variant") }
+        return chosen
     }
 
     /// Takes back the latest decision of a pending-less review within `reviewUndoWindow`. Only the deciding person,
@@ -516,7 +579,7 @@ struct WorkflowService: Sendable {
             } else { try await ColumnService.reconcile(task, on: tx) }
             task.version += 1
             try await task.save(on: tx)
-            r.state = "pending"; r.decidedBy = nil; r.decidedAt = nil; r.decisionNote = nil
+            r.state = "pending"; r.decidedBy = nil; r.decidedAt = nil; r.decisionNote = nil; r.chosenVariantID = nil
             r.undoStatus = nil; r.undoColumnID = nil; r.undoTaskVersion = nil; r.version += 1
             try await r.save(on: tx)
             try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "task.status_changed", subjectID: nil, on: tx)
@@ -863,4 +926,8 @@ enum WorkflowMirror {
             try await r.save(on: db)
         }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

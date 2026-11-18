@@ -164,7 +164,7 @@ struct CommandCenterController: RouteCollection {
     }
     @Sendable func decide(_ req: Request) async throws -> ReviewDTO {
         let body = try req.content.decode(ReviewDecisionRequest.self)
-        return try await service(req).decideReview(id(req), decision: body.decision, note: body.note, actor: actor(req))
+        return try await service(req).decideReview(id(req), decision: body.decision, note: body.note, variantID: body.variantID, actor: actor(req))
     }
     @Sendable func undoDecision(_ req: Request) async throws -> ReviewDTO {
         try await service(req).undoReviewDecision(id(req), actor: actor(req))
@@ -183,5 +183,6 @@ func configureCommandCenter(_ app: Application) {
     app.migrations.add(CreateCommandCenter())
     app.migrations.add(ClearCrossProjectSubtaskLinks())
     app.migrations.add(AddReviewUndo())
+    app.migrations.add(AddReviewVariants())
     app.migrations.add(CreateTaskDecisions())
 }
