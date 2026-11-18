@@ -26,6 +26,8 @@
 	import QuestionAnswer from '../overview/QuestionAnswer.svelte';
 	import ReviewDecision from '../overview/ReviewDecision.svelte';
 	import ReviewUndoBar from '../overview/ReviewUndoBar.svelte';
+	import ReviewChosenVariant from '../overview/ReviewChosenVariant.svelte';
+	import { chosenText, chosenVariant, variantName } from '#lib/reviewVariants.js';
 	import TaskActivity from '../TaskActivity.svelte';
 	import TaskLive from './TaskLive.svelte';
 	import TaskAttachments from '../TaskAttachments.svelte';
@@ -134,6 +136,7 @@
 	const openQuestions = $derived(ctx?.questions.filter((q) => q.state === 'open') ?? []);
 	const answeredQuestions = $derived(ctx?.questions.filter((q) => q.state === 'answered') ?? []);
 	const review = $derived(ctx?.review ?? null);
+	const chosen = $derived(chosenVariant(review));
 	const images = $derived(ctx ? galleryOf(ctx.builds, data?.attachments ?? [], api.attachmentPreviewURL) : []);
 	const pathLabel = $derived(projectChain(workspace.projects, projectID, 2).map((p) => p.name).join(' / '));
 
@@ -359,7 +362,7 @@
 								<CardConversation taskID={task.id} thread={{ questionID: q.id }} title={t('card.chat.question')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/each}
 							{#if review && review.state === 'pending'}
-								<ReviewDecision createdAt={review.createdAt} decidedAt={review.decidedAt} taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} markdown ondecided={changed} />
+								<ReviewDecision createdAt={review.createdAt} decidedAt={review.decidedAt} taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} variants={review.variants} markdown ondecided={changed} />
 								<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/if}
 						</section>
@@ -367,9 +370,13 @@
 
 					{#if review && review.state !== 'pending'}
 						<section class="flex flex-col gap-2 rounded-xl border p-3" data-testid="card-review-result">
-							<h3 class="font-semibold">{t(review.state === 'accepted' ? 'card.review.accepted' : review.state === 'changes_requested' ? 'card.review.changes' : 'card.review.withdrawn')}</h3>
+							<h3 class="flex flex-wrap items-center gap-2 font-semibold">
+								{t(review.state === 'accepted' ? 'card.review.accepted' : review.state === 'changes_requested' ? 'card.review.changes' : 'card.review.withdrawn')}
+								{#if chosen}<Badge variant="success" data-testid="review-chosen-badge">{t('cc.review.variants.chosenBadge', { name: variantName(chosen.id) })}</Badge>{/if}
+							</h3>
 							<p class="text-muted-foreground text-xs">{review.requestedByLabel ?? ''} · <Timestamp value={review.createdAt} label="time.requested" />{#if review.decidedAt} · <Timestamp value={review.decidedAt} label="time.decided" />{/if}</p>
-							{#if review.undoUntil}<ReviewUndoBar taskID={task.id} until={review.undoUntil} onundone={changed} />{/if}
+							{#if review.undoUntil}<ReviewUndoBar taskID={task.id} until={review.undoUntil} message={chosenText(review)} onundone={changed} />{/if}
+							{#if chosen}<ReviewChosenVariant {review} {chosen} />{/if}
 							<Markdown text={review.summary} />
 							{#if review.decisionNote}<p class="border-l-2 pl-2 [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="review-note-shown">{review.decisionNote}</p>{/if}
 							<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />
@@ -456,7 +463,7 @@
 					{#if isTask && management}
 						<section class="flex flex-col gap-1.5" aria-label={t('card.activity')} data-testid="card-activity">
 							<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('card.activity')}</h3>
-							<TaskActivity taskID={task.id} refreshKey={rev} />
+							<TaskActivity taskID={task.id} refreshKey={rev} {review} />
 						</section>
 					{/if}
 					{:else if tab === 'activity'}
@@ -464,7 +471,7 @@
 						<section class="flex flex-col gap-1.5 border-t pt-4" aria-label={t('card.activity.all')} data-testid="card-activity-all">
 							<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('card.activity.all')}</h3>
 							<p class="text-muted-foreground text-xs">{t('card.activity.hint')}</p>
-							<TaskActivity taskID={task.id} refreshKey={rev} />
+							<TaskActivity taskID={task.id} refreshKey={rev} {review} />
 						</section>
 					{:else if tab === 'report' && report}
 						<CardReport {report} />

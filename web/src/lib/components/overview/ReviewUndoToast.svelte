@@ -16,7 +16,7 @@
 
 {#if reviewUndo.taskID && reviewUndo.until && !cardDetail.visible}
 	<div class="bg-card text-card-foreground fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg border px-3 py-2 shadow-lg" role="status" data-testid="review-undo-toast">
-		<span class="text-sm">{t('cc.review.decided')}</span>
+		<span class="text-sm" data-testid="review-undo-message">{reviewUndo.message ?? t('cc.review.decided')}</span>
 		<ReviewUndoBar taskID={reviewUndo.taskID} until={reviewUndo.until} />
 	</div>
 {/if}

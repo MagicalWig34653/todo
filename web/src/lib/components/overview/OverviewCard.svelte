@@ -95,7 +95,7 @@
 	{/if}
 
 	{#if card.pendingReview}
-		<ReviewDecision createdAt={card.pendingReview.createdAt} taskID={card.task.id} summary={card.pendingReview.summary} requestedBy={card.pendingReview.requestedByLabel ?? who(null)} ondecided={onchanged} />
+		<ReviewDecision createdAt={card.pendingReview.createdAt} taskID={card.task.id} summary={card.pendingReview.summary} requestedBy={card.pendingReview.requestedByLabel ?? who(null)} variants={card.pendingReview.variants} ondecided={onchanged} />
 	{/if}
 
 	{#if card.subtasks.length > 0}
