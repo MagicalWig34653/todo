@@ -5,8 +5,8 @@ import { createApi } from '../src/lib/api';
 import { t } from '../src/lib/i18n/index.js';
 import { REVIEW_UNDO_MINUTES, REVIEW_UNDO_WINDOW_MS, formatUndoRemaining } from '../src/lib/reviewUndo.js';
 import {
-	activityChoice,
 	chooseLabel,
+	choiceActivity,
 	chosenText,
 	chosenVariant,
 	hasVariants,
@@ -61,12 +61,22 @@ describe('names and texts', () => {
 		expect(chosenVariant({ variants: [A, B], chosenVariantID: 'zz' })).toBeNull();
 		expect(chosenText({ variants: [A, B] })).toBeNull();
 	});
-	it('adds the choice to the activity entry of the accepting decision only', () => {
+	it('names the choice on the newest accepting activity of the review only (earlier ones were taken back)', () => {
 		const r = { id: 'r1', state: 'accepted', variants: [A, B], chosenVariantID: 'b' };
-		expect(activityChoice({ kind: 'review.accepted', subjectID: 'r1' }, r)).toBe('Variante B gewählt: Radarkarte');
-		expect(activityChoice({ kind: 'review.accepted', subjectID: 'other' }, r)).toBeNull();
-		expect(activityChoice({ kind: 'review.requested', subjectID: 'r1' }, r)).toBeNull();
-		expect(activityChoice({ kind: 'review.accepted', subjectID: 'r1' }, null)).toBeNull();
+		const acts = [
+			{ id: 'x5', kind: 'review.accepted', sequence: 9, subjectID: 'r1' },
+			{ id: 'x4', kind: 'review.undone', sequence: 8, subjectID: 'r1' },
+			{ id: 'x3', kind: 'review.accepted', sequence: 7, subjectID: 'r1' },
+			{ id: 'x2', kind: 'review.accepted', sequence: 6, subjectID: 'other' },
+			{ id: 'x1', kind: 'review.requested', sequence: 5, subjectID: 'r1' }
+		];
+		expect(choiceActivity(acts, r)).toEqual({ id: 'x5', text: 'Variante B gewählt: Radarkarte' });
+		expect(choiceActivity([...acts].reverse(), r)?.id).toBe('x5'); // independent of list order
+		expect(choiceActivity(acts.slice(1), r)?.id).toBe('x3');
+		expect(choiceActivity([{ id: 'n', kind: 'review.accepted', subjectID: 'other' }], r)).toBeNull();
+		expect(choiceActivity(acts, { ...r, state: 'pending', chosenVariantID: null })).toBeNull();
+		expect(choiceActivity(acts, { id: 'r1', state: 'accepted' })).toBeNull(); // plain review
+		expect(choiceActivity(acts, null)).toBeNull();
 	});
 });
 

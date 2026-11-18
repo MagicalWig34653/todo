@@ -73,8 +73,21 @@ export function chosenText(review: VariantReview | null | undefined): string | n
 	return v ? t('cc.review.variants.chosen', { name: variantName(v.id), label: v.label }) : null;
 }
 
-/** Extra text for the activity entry of the decision that accepted `review` with a choice. */
-export function activityChoice(activity: { kind: string; subjectID?: string | null }, review: VariantReview | null | undefined): string | null {
-	if (activity.kind !== 'review.accepted' || !review?.id || activity.subjectID !== review.id) return null;
-	return chosenText(review);
+/**
+ * The activity entry that carries the current choice: the newest `review.accepted` of this review. Earlier acceptances were
+ * taken back (undo) and may have chosen another variant, so they must not claim the current choice. Null without a choice.
+ */
+export function choiceActivity(
+	activities: readonly { id: string; kind: string; sequence?: number; subjectID?: string | null }[],
+	review: VariantReview | null | undefined
+): { id: string; text: string } | null {
+	const text = chosenText(review);
+	if (!text || !review?.id || review.state !== 'accepted') return null;
+	let latest: { id: string; sequence: number } | null = null;
+	activities.forEach((a, i) => {
+		if (a.kind !== 'review.accepted' || a.subjectID !== review.id) return;
+		const seq = a.sequence ?? -i; // list order is newest first when there is no sequence
+		if (!latest || seq > latest.sequence) latest = { id: a.id, sequence: seq };
+	});
+	return latest ? { id: (latest as { id: string }).id, text } : null;
 }
