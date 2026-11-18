@@ -1,5 +1,11 @@
 # Status
 
+## Nachtrag 18.11.2026: PWA Build-Status und Commit (Karte `F6DF71C3`)
+
+- Neu: `BuildStatusBadge.svelte` (Text plus Symbol: Baut, Erfolgreich, Fehlgeschlagen; ohne `status` keine Badge, Commit 7 Zeichen Monospace mit vollem Commit im `title`) auf der Seite „Jetzt“ und in der Bildergalerie des Kartendetails; Feed/Aktivität kennt `build.status_changed` als „Build-Status geändert“. Die Ruhig-Regel bleibt unverändert (ein fehlgeschlagener Build holt ein altes Projekt nicht aus „Ruhig“).
+- Geprüft im Hauptcheckout: vitest 458, check 0 Fehler, build ok, Playwright build-status 3/3, now 8/8, short-id 7/7, calendar 8/8 (Chromium, echtes Backend). Screenshots `docs/screenshots/build-status/`.
+- Offen: Feed-Text „Build <Label>: <Status>“ geht erst, wenn das Backend Label und Status im Ereignis mitliefert; Apple-Anzeige des Status; nur Chromium/hell.
+
 ## Nachtrag 18.11.2026: Seite „Jetzt“, PWA (Karte `F6DF71C3`, Layout A, nicht gepusht)
 
 - Neu: Route `/now` (Seitenleiste neben Überblick), `web/src/lib/now.ts` (Gruppierung, Kennzahlen, Aufklapp-Zustand in `localStorage` `todo.nowExpanded` mit try/catch, Refetch-Bremse), `components/NowView.svelte`, `i18n/de-now.ts`, `api.overviewNow()` (`GET /v1/overview/now`, Typen `OverviewProject` u. a.).
