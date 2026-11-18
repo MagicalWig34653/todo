@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entwurf: Review mit Variantenwahl (Todolino PWA)</title>
+<!--
+  Static design draft, no build needed. Tokens copied from web/src/routes/layout.css (shadcn zinc scale + accent).
+  Look modelled on ReviewDecision.svelte, ReviewList.svelte, ReviewUndoBar.svelte, CardDetailBody.svelte.
+  Open with ?s=1..5 (screen) and optionally &theme=dark. Not product code.
+-->
+<style>
+@font-face { font-family: 'Inter Variable'; src: url('inter-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+:root {
+	--radius: 0.625rem;
+	--background: oklch(1 0 0); --foreground: oklch(0.141 0.005 285.823);
+	--card: oklch(1 0 0); --muted: oklch(0.967 0.001 286.375); --muted-foreground: oklch(0.47 0.016 285.938);
+	--secondary: oklch(0.967 0.001 286.375);
+	--border: oklch(0.92 0.004 286.32); --input: oklch(0.88 0.004 286.32); --ring: oklch(0.62 0.17 262);
+	--sidebar: oklch(0.985 0 0);
+	--ui-accent: oklch(0.546 0.215 262.9); --ui-accent-foreground: oklch(1 0 0); --ui-accent-ink: oklch(0.488 0.215 264); --ui-accent-soft: oklch(0.96 0.02 262);
+	--success: oklch(0.52 0.13 150); --success-soft: oklch(0.96 0.04 150);
+	--warning: oklch(0.55 0.13 70); --warning-soft: oklch(0.97 0.05 85);
+	--shadow-pop: 0 12px 40px oklch(0 0 0 / 14%);
+	color-scheme: light;
+}
+.dark {
+	--background: oklch(0.141 0.005 285.823); --foreground: oklch(0.985 0 0);
+	--card: oklch(0.18 0.006 285.885); --muted: oklch(0.255 0.006 286.033); --muted-foreground: oklch(0.72 0.015 286.067);
+	--secondary: oklch(0.274 0.006 286.033);
+	--border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 16%); --ring: oklch(0.65 0.17 262);
+	--sidebar: oklch(0.17 0.006 285.885);
+	--ui-accent: oklch(0.62 0.19 262); --ui-accent-foreground: oklch(0.141 0.005 285.823); --ui-accent-ink: oklch(0.75 0.14 262); --ui-accent-soft: oklch(0.27 0.06 262);
+	--success: oklch(0.75 0.15 150); --success-soft: oklch(0.27 0.05 150);
+	--warning: oklch(0.8 0.14 80); --warning-soft: oklch(0.29 0.05 80);
+	--shadow-pop: 0 12px 40px oklch(0 0 0 / 50%);
+	color-scheme: dark;
+}
+* { box-sizing: border-box; border-color: var(--border); }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4, p, ul, ol { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted-foreground); }
+.xs { font-size: 12px; line-height: 1.4; }
+.sm { font-size: 14px; }
+.tab-num { font-variant-numeric: tabular-nums; }
+
+/* Buttons (ui/button) */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent; font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer; background: transparent; }
+.btn-primary { background: var(--ui-accent); color: var(--ui-accent-foreground); }
+.btn-outline { background: var(--background); border-color: var(--border); }
+.dark .btn-outline { background: oklch(1 0 0 / 5%); border-color: var(--input); }
+.btn-ghost { color: var(--ui-accent-ink); }
+.btn-sm { min-height: 32px; padding: 0 10px; font-size: 13px; }
+.btn-lg { min-height: 48px; font-size: 16px; border-radius: 10px; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--muted); color: var(--muted-foreground); }
+.badge-warning { background: var(--warning-soft); color: var(--warning); }
+.badge-success { background: var(--success-soft); color: var(--success); }
+.badge-accent { background: var(--ui-accent-soft); color: var(--ui-accent-ink); }
+.chk { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 0; border: 1.5px solid var(--input); border-radius: 5px; background: var(--background); flex: none; display: inline-block; vertical-align: middle; }
+.chk:checked { background: var(--ui-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center no-repeat; border-color: var(--ui-accent); }
+.dark .chk:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E"); }
+.chk:disabled { opacity: .45; cursor: not-allowed; background: var(--muted); }
+
+/* App shell */
+.shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+.sidebar { background: var(--sidebar); border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+.sidebar .brand { font-weight: 600; padding: 0 6px 12px; }
+.nav { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; font-size: 14px; }
+.nav .ni { width: 16px; height: 16px; border: 1.8px solid currentColor; border-radius: 5px; opacity: .75; }
+.nav .n { margin-left: auto; font-size: 12px; opacity: .75; }
+.nav.on { background: var(--ui-accent-soft); color: var(--ui-accent-ink); font-weight: 500; }
+.nav.add { color: var(--ui-accent-ink); font-weight: 500; margin-bottom: 8px; }
+.main { padding: 24px 32px 120px; min-width: 0; }
+.main h1 { font-size: 30px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
+.tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border); margin: 20px 0 14px; }
+.tabs a { padding: 8px 4px; font-size: 14px; color: var(--muted-foreground); text-decoration: none; display: inline-flex; gap: 6px; align-items: center; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a[aria-current] { color: var(--ui-accent-ink); border-bottom-color: var(--ui-accent); font-weight: 500; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { border-radius: 999px; min-height: 32px; padding: 0 12px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--background); display: inline-flex; align-items: center; }
+.pill.on { background: var(--secondary); border-color: transparent; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0; }
+.toolbar label { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 14px; }
+
+/* Review list rows */
+.rows { display: flex; flex-direction: column; gap: 12px; max-width: 840px; }
+.row { display: flex; align-items: flex-start; gap: 8px; }
+.row > .sel { min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center; flex: none; }
+.row > .body { flex: 1; min-width: 0; }
+
+/* Review box (ReviewDecision.svelte look) */
+.review { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 14px; background: color-mix(in oklch, var(--warning-soft) 60%, transparent); }
+.review.plain { background: var(--muted); }
+.review .head { display: flex; gap: 8px; align-items: flex-start; }
+.review .head svg { color: var(--warning); margin-top: 2px; }
+.review .summary { font-size: 14px; }
+.review .summary li { list-style: disc; margin-left: 18px; }
+.review .foot { margin: 0 -12px -12px; border-top: 1px solid var(--border); padding: 4px 6px; display: flex; justify-content: flex-end; }
+.pick-title { font-weight: 600; font-size: 14px; }
+.pick-hint { color: var(--muted-foreground); font-size: 12px; }
+
+/* Variant cards: one tap on "Wählen" accepts the review with this variant */
+.variants { display: grid; gap: 12px; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); }
+.variant { display: flex; flex-direction: column; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px; box-shadow: 0 1px 2px oklch(0 0 0 / 5%); }
+.variant:focus-within { border-color: var(--ui-accent); box-shadow: 0 0 0 1px var(--ui-accent); }
+.variant figure { margin: 0; }
+.variant img { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--muted); }
+.variant .tag { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--ui-accent-ink); }
+.variant h4 { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.variant p { font-size: 13px; color: var(--muted-foreground); line-height: 1.4; flex: 1; }
+.variant .btn { width: 100%; }
+.alt { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.note-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.note { flex: 1 1 220px; min-height: 40px; border: 1px solid var(--input); border-radius: 999px; padding: 0 16px; background: var(--background); color: var(--muted-foreground); display: flex; align-items: center; font-size: 14px; }
+
+/* Card detail window */
+.backdrop { min-height: 100vh; background: oklch(0 0 0 / 40%); display: flex; justify-content: center; align-items: flex-start; padding: 28px 24px; }
+.dialog { width: 100%; max-width: 1120px; background: var(--background); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-pop); overflow: hidden; }
+.dh { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 20px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.dh .crumb { color: var(--muted-foreground); font-weight: 500; }
+.dh .sp { flex: 1; }
+.ib { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted-foreground); border-radius: 8px; }
+.dbody { display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
+.dmain { padding: 20px 24px 28px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dside { border-left: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 14px; }
+.dside dt { font-size: 12px; color: var(--muted-foreground); }
+.dside dd { margin: 2px 0 0; }
+.dmain h2 { font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.idchip { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--muted); border-radius: 6px; padding: 1px 6px; }
+.ctabs { display: flex; gap: 18px; border-bottom: 1px solid var(--border); }
+.ctabs span { padding: 6px 2px; font-size: 14px; color: var(--muted-foreground); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.ctabs span.on { color: var(--ui-accent-ink); border-bottom-color: var(--ui-accent); font-weight: 500; }
+.result { border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.result h3 { font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.undo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; background: var(--success-soft); border: 1px solid color-mix(in oklch, var(--success) 40%, transparent); border-radius: 10px; padding: 8px 10px; }
+.undo .msg { display: inline-flex; gap: 6px; align-items: center; font-weight: 500; }
+.undo .msg svg { color: var(--success); }
+.chosen { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: center; }
+.chosen img { width: 100%; height: auto; aspect-ratio: 8/5; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.others { display: flex; gap: 6px; flex-wrap: wrap; }
+.log { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.log li { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.log li strong { font-weight: 600; }
+.sectitle { font-size: 14px; font-weight: 600; }
+
+/* Bulk bar */
+.bar { position: fixed; left: 240px; right: 0; bottom: 14px; margin: 0 32px; max-width: 840px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-pop); }
+.bar .hint { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; background: var(--warning-soft); border: 1px solid color-mix(in oklch, var(--warning) 40%, transparent); border-radius: 8px; padding: 8px 10px; }
+.bar .hint svg { color: var(--warning); margin-top: 1px; }
+.bar .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.minirow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Mobile */
+.mbar { display: flex; align-items: center; gap: 4px; min-height: 52px; padding: 6px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+@media (max-width: 700px) {
+	.variants { grid-template-columns: 1fr; gap: 14px; }
+	.variant { padding: 12px; gap: 10px; }
+	.variant img { aspect-ratio: 16 / 9; }
+	.variant h4 { font-size: 17px; }
+	.variant p { font-size: 14px; }
+	.variant .btn { min-height: 48px; font-size: 16px; border-radius: 10px; }
+	.note-row .btn { width: 100%; min-height: 44px; }
+	.dbody { grid-template-columns: 1fr; }
+	.dside { border-left: 0; border-top: 1px solid var(--border); }
+	.dmain { padding: 16px 14px 24px; }
+	.dmain h2 { font-size: 21px; }
+	.backdrop { padding: 0; }
+	.dialog { border-radius: 0; border: 0; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const ICON = {
+	clip: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+	undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>',
+	info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+	ok: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+	right: '<path d="m9 18 6-6-6-6"/>',
+	x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+	up: '<path d="m18 15-6-6-6 6"/>',
+	down: '<path d="m6 9 6 6 6-6"/>',
+	check: '<path d="M20 6 9 17l-5-5"/>'
+};
+const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+
+const VARIANTS = [
+	{ id: 'A', label: 'Windkarte', desc: 'Pfeile zeigen Richtung und Stärke des Winds.', img: 'bilder/windkarte.png', alt: 'Beispielgrafik der Windkarte: Windpfeile über einer Landkarte' },
+	{ id: 'B', label: 'Radarkarte', desc: 'Regen der nächsten Stunde im Fünf-Minuten-Raster.', img: 'bilder/radarkarte.png', alt: 'Beispielgrafik der Radarkarte: Regenzellen über einer Landkarte' },
+	{ id: 'C', label: 'Temperaturkarte', desc: 'Farbverlauf mit Linien gleicher Temperatur.', img: 'bilder/temperaturkarte.png', alt: 'Beispielgrafik der Temperaturkarte: Farbverlauf mit Isolinien' }
+];
+
+/** Radiogroup would imply "select, then confirm"; the decision is one tap, so these are buttons inside a labelled list. */
+function variantList(n, groupID) {
+	const items = VARIANTS.slice(0, n).map((v) => `
+		<li>
+			<article class="variant" aria-labelledby="${groupID}-${v.id}-l">
+				<figure><img src="${v.img}" alt="${v.alt}" width="800" height="500"></figure>
+				<div>
+					<span class="tag" aria-hidden="true">Variante ${v.id}</span>
+					<h4 id="${groupID}-${v.id}-l"><span class="sr">Variante ${v.id}: </span>${v.label}</h4>
+				</div>
+				<p>${v.desc}</p>
+				<button type="button" class="btn btn-primary" aria-label="Wählen: Variante ${v.id}, ${v.label}" data-variant="${v.id}">Wählen</button>
+			</article>
+		</li>`).join('');
+	return `<ul class="variants" style="--n:${n}" role="list" aria-labelledby="${groupID}-t">${items}</ul>`;
+}
+
+function reviewBox({ n, groupID, context, summaryHtml, openButton }) {
+	return `
+	<section class="review" data-testid="review" aria-label="Review mit ${n} Varianten">
+		<div class="head">${ic('clip')}
+			<div style="min-width:0;flex:1">
+				<p class="muted xs">${context}</p>
+				<p class="muted xs">Review angefordert von Claude Code</p>
+				<p class="muted xs">angefragt vor 6 Minuten</p>
+				<span class="badge badge-warning" style="margin-top:4px">Wahl nötig</span>
+				<div class="summary" style="margin-top:4px">${summaryHtml}</div>
+			</div>
+		</div>
+		<div>
+			<h3 id="${groupID}-t" class="pick-title">Wähle eine Variante</h3>
+			<p class="pick-hint">Ein Tipp auf „Wählen“ nimmt das Review mit dieser Variante an. Danach bleibt kurz Zeit zum Rückgängigmachen.</p>
+		</div>
+		${variantList(n, groupID)}
+		<div class="note-row">
+			<label class="note" for="${groupID}-note" style="cursor:text">Notiz (nötig bei Änderungswunsch)</label>
+			<input id="${groupID}-note" class="sr" type="text">
+			<button type="button" class="btn btn-outline">Änderungen anfordern</button>
+		</div>
+		${openButton ? `<div class="foot"><button type="button" class="btn btn-ghost btn-sm">Details öffnen ${ic('right')}</button></div>` : ''}
+	</section>`;
+}
+
+const SUMMARY = `<p>Drei Kartenarten sind als Prototyp fertig.</p><ul><li>Neu: Vorschau je Variante im Entwurf</li><li>Geprüft: Ladezeit unter 1 s</li><li>Offen: Entscheidung, welche Karte in die Regenvorhersage kommt</li></ul>`;
+const SUMMARY2 = `<p>Zwei Kartenarten sind als Prototyp fertig. Welche kommt in die Regenvorhersage?</p>`;
+
+function shell(active, inner) {
+	const nav = [['Für dich', 14], ['Suche'], ['Überblick', 14], ['Eingang', 14], ['Heute'], ['Anstehend'], ['Teams']]
+		.map(([n, c]) => `<div class="nav${n === active ? ' on' : ''}"><span class="ni"></span>${n}${c ? `<span class="n">${c}</span>` : ''}</div>`).join('');
+	return `<div class="shell"><nav class="sidebar" aria-label="Hauptnavigation"><div class="brand">Todolino</div><div class="nav add"><span class="ni"></span>Aufgabe hinzufügen</div>${nav}</nav><main class="main">${inner}</main></div>`;
+}
+const overviewHead = (count) => `
+	<h1>Überblick</h1>
+	<p class="muted" style="margin-top:6px">Laufende Features, Rückfragen, Reviews und Updates deiner Agenten an einem Ort.</p>
+	<div class="tabs" role="tablist"><a>Board</a><a>Offene Fragen</a><a aria-current="page">Reviews <span class="badge badge-accent">${count}</span></a><a>Updates</a></div>`;
+const toolbar = (checked, label) => `
+	<div class="toolbar"><label><input class="chk" type="checkbox" ${checked ? 'checked' : ''}>${label}</label>
+	<div class="pills" role="group" aria-label="Filter"><span class="pill on">Alle (4)</span><span class="pill">Vom Brain empfohlen (1)</span></div></div>`;
+
+const ctx = (t) => `${t} in ShowerNow`;
+
+function screen1() {
+	return shell('Überblick', `${overviewHead(4)}${toolbar(false, 'Alle sichtbaren auswählen')}
+	<ul class="rows" data-testid="cc-reviews">
+		<li class="row"><label class="sel"><input class="chk" type="checkbox" disabled aria-describedby="s1-wh" aria-label="Review auswählen: Kartenwahl Regenvorhersage (nicht sammelbar)"></label>
+			<div class="body">${reviewBox({ n: 2, groupID: 's1', context: ctx('Kartenwahl Regenvorhersage'), summaryHtml: SUMMARY2, openButton: true })}<p id="s1-wh" class="sr">Reviews mit Varianten brauchen eine Wahl und lassen sich nicht sammelweise annehmen.</p></div></li>
+		<li class="row"><label class="sel"><input class="chk" type="checkbox" aria-label="Review auswählen: Ladezeit messen"></label>
+			<div class="body"><section class="review"><div class="head">${ic('clip')}<div><p class="muted xs">Ladezeit messen in ShowerNow</p><p class="muted xs">Review angefordert von Claude Code</p><p class="summary" style="margin-top:4px">Messung ist fertig: Startseite lädt in 0,8 s.</p></div></div>
+			<div class="note-row"><span class="note">Notiz (nötig bei Änderungswunsch)</span><button class="btn btn-primary" style="border-radius:999px">Freigeben</button></div></section></div></li>
+	</ul>`);
+}
+
+const sideBar = `<aside class="dside" aria-label="Eigenschaften"><dl style="margin:0;display:flex;flex-direction:column;gap:12px">
+	<div><dt>Status</dt><dd><span class="badge badge-warning">Review</span></dd></div>
+	<div><dt>Projekt</dt><dd><b style="color:#dc2626">#</b> ShowerNow</dd></div>
+	<div><dt>Priorität</dt><dd>Hoch</dd></div>
+	<div><dt>Fällig</dt><dd>Fr., 20.11.2026</dd></div>
+	<div><dt>Etiketten</dt><dd class="chips"><span class="badge">Wetter</span><span class="badge">Karte</span></dd></div></dl></aside>`;
+
+function dialog(mainHtml, sub) {
+	return `<div class="backdrop"><div class="dialog" role="dialog" aria-label="Kartenwahl Regenvorhersage">
+	<header class="dh"><span class="crumb"><b style="color:#dc2626">#</b> ShowerNow</span><span class="muted">/</span><span class="crumb">Wetter-Funktion</span><span class="sp"></span>
+		<span class="ib">${ic('up')}</span><span class="ib">${ic('down')}</span><span class="ib">${ic('x')}</span></header>
+	<div class="dbody"><div class="dmain">
+		<div class="chips"><span class="idchip">1D9C8B0C</span><span class="badge badge-warning">Review</span></div>
+		<h2>Kartenwahl für die Regenvorhersage</h2>
+		<div class="ctabs" role="tablist"><span class="on">Übersicht</span><span>Aktivität</span><span>Bericht</span></div>
+		${mainHtml}</div>${sideBar}</div></div></div>`;
+}
+
+function screen2() {
+	return dialog(`${reviewBox({ n: 3, groupID: 's2', context: ctx('Kartenwahl Regenvorhersage'), summaryHtml: SUMMARY })}
+		<div><p class="sectitle">Beschreibung</p><p class="muted sm" style="margin-top:4px">Für die Regenvorhersage soll eine Kartenansicht gewählt werden. Claude Code hat drei Varianten vorbereitet.</p></div>`);
+}
+
+function screen3() {
+	return `<div class="mbar"><span class="ib">${ic('x')}</span><span class="muted" style="font-weight:500"><b style="color:#dc2626">#</b> ShowerNow</span><span style="flex:1"></span><span class="ib">${ic('up')}</span><span class="ib">${ic('down')}</span></div>` + dialog(`${reviewBox({ n: 3, groupID: 's3', context: ctx('Kartenwahl Regenvorhersage'), summaryHtml: SUMMARY2 })}`).replace('<header class="dh">', '<header class="dh" hidden>');
+}
+
+function screen4() {
+	const v = VARIANTS[1];
+	return dialog(`
+	<section class="result" data-testid="card-review-result" aria-labelledby="s4-h">
+		<h3 id="s4-h">${ic('ok')}Review angenommen <span class="badge badge-success">Variante B gewählt</span></h3>
+		<p class="muted xs">Claude Code · angefragt vor 6 Minuten · entschieden gerade eben</p>
+		<div class="undo" role="status" data-testid="review-undo-bar" aria-live="polite">
+			<span class="msg">${ic('check')}Variante B gewählt: Radarkarte</span>
+			<button type="button" class="btn btn-sm btn-outline" data-testid="review-undo">${ic('undo')}Rückgängig</button>
+			<span class="muted xs tab-num">noch 4:32</span>
+		</div>
+		<div class="chosen"><img src="${v.img}" alt="${v.alt}" width="800" height="500">
+			<div><span class="tag" style="font-size:12px;font-weight:600;color:var(--ui-accent-ink)">Variante B</span><h4 style="margin:0;font-size:16px">${v.label}</h4><p class="muted sm">${v.desc}</p></div></div>
+		<div class="others"><span class="muted xs">Nicht gewählt:</span><span class="badge">A Windkarte</span><span class="badge">C Temperaturkarte</span></div>
+	</section>
+	<section aria-labelledby="s4-log"><h3 id="s4-log" class="sectitle" style="margin-bottom:6px">Verlauf</h3>
+		<ol class="log" data-testid="activity-list">
+			<li><span class="muted tab-num">18.11.2026, 22:11</span><strong>Variante B gewählt: Radarkarte</strong><span class="muted">(Lino)</span></li>
+			<li><span class="muted tab-num">18.11.2026, 22:05</span><span>Review angefragt mit 3 Varianten</span><span class="muted">(Claude Code)</span></li>
+			<li><span class="muted tab-num">18.11.2026, 21:58</span><span>Aufgabe in Bearbeitung</span><span class="muted">(Claude Code)</span></li>
+		</ol></section>`);
+}
+
+function screen5() {
+	const chips = (a) => `<div class="minirow"><span class="badge badge-warning">Wahl nötig</span>${a}</div>`;
+	const plain = (title, text) => `<li class="row"><label class="sel"><input class="chk" type="checkbox" checked aria-label="Review auswählen: ${title}"></label><div class="body"><section class="review"><div class="head">${ic('clip')}<div><p class="muted xs">${title} in ShowerNow</p><p class="summary" style="margin-top:2px">${text}</p></div></div></section></div></li>`;
+	const variant = (title, text, a) => `<li class="row"><label class="sel"><input class="chk" type="checkbox" disabled aria-describedby="s5-d-${title.length}" aria-label="Review auswählen: ${title} (nicht sammelbar)"></label><div class="body"><section class="review plain"><div class="head">${ic('clip')}<div style="flex:1"><p class="muted xs">${title} in ShowerNow</p><p class="summary" style="margin-top:2px">${text}</p><div style="margin-top:6px">${chips(a)}</div><p id="s5-d-${title.length}" class="sr">Braucht eine Wahl, nicht sammelbar.</p></div><button type="button" class="btn btn-outline btn-sm">Variante wählen</button></div></section></div></li>`;
+	return shell('Überblick', `${overviewHead(4)}${toolbar(true, 'Alle auswählbaren auswählen')}
+	<ul class="rows" data-testid="cc-reviews">
+		${variant('Kartenwahl Regenvorhersage', 'Zwei Kartenarten sind als Prototyp fertig.', '<span class="badge">A Windkarte</span><span class="badge">B Radarkarte</span>')}
+		${variant('Farbschema Warnstufen', 'Drei Farbschemata zur Auswahl.', '<span class="badge">A Ampel</span><span class="badge">B Blau-Orange</span><span class="badge">C Monochrom</span>')}
+		${plain('Ladezeit messen', 'Messung ist fertig: Startseite lädt in 0,8 s.')}
+		${plain('Texte prüfen', 'Alle deutschen Texte der Wetterseite sind geprüft.')}
+	</ul>
+	<section class="bar" aria-label="Sammelaktion für Reviews" data-testid="review-bulk-bar">
+		<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><p class="sm" style="font-weight:500" aria-live="polite">2 ausgewählt</p><button type="button" class="btn btn-sm" style="color:var(--foreground)">Auswahl aufheben</button></div>
+		<p class="hint" role="status">${ic('info')}<span><b>2 Reviews mit Varianten brauchen eine Wahl.</b> Sie sind nicht auswählbar und lassen sich nur einzeln mit „Wählen“ entscheiden.</span></p>
+		<div class="acts"><button type="button" class="btn btn-primary">Annehmen</button><button type="button" class="btn btn-outline">Änderungen anfordern</button></div>
+	</section>`);
+}
+
+const params = new URLSearchParams(location.search);
+if (params.get('theme') === 'dark') document.documentElement.classList.add('dark');
+document.getElementById('app').innerHTML = { 1: screen1, 2: screen2, 3: screen3, 4: screen4, 5: screen5 }[params.get('s') || '1']();
+</script>
+</body>
+</html>
