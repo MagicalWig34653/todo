@@ -1,6 +1,7 @@
 import type { AuthenticationPayload, CreationOptionsJSON, RegistrationPayload, RequestOptionsJSON } from './webauthn.js';
 import type { ActionRequest, ForYouPage } from './forYou.js';
 import type { BatchResponse } from './reviewBulk.js';
+import type { ReviewVariant } from './reviewVariants.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -579,6 +580,8 @@ export interface ReviewBrief {
 	reviewerID?: string | null;
 	agentJobID?: string | null;
 	createdAt?: string | null;
+	/** 2 to 4 offered variants (contract command-center 1.8.0); absent = a plain review. Read it through `variantsOf`. */
+	variants?: ReviewVariant[] | null;
 }
 export type BuildStatus = 'building' | 'succeeded' | 'failed';
 export interface BuildArtifact {
@@ -794,6 +797,10 @@ export interface Review {
 	undoUntil?: string | null;
 	/** Derived by the server in lists: a comment of the agent "brain" hangs on this review. */
 	brainRecommended?: boolean;
+	/** 2 to 4 offered variants (contract command-center 1.8.0); absent = a plain review. Read it through `variantsOf`. */
+	variants?: ReviewVariant[] | null;
+	/** The variant chosen with the acceptance; reset by undo. */
+	chosenVariantID?: string | null;
 }
 export interface AgentBrief {
 	projectID: string;
@@ -1280,8 +1287,9 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		/** Bulk decision (contracts/command-center.yaml 1.5.0): one result per review, no overall rollback. */
 		decideReviewsBatch: (reviewIDs: string[], decision: 'accept' | 'changes_requested', note?: string) =>
 			request<BatchResponse>('POST', '/reviews/decisions', { decisions: reviewIDs.map((reviewID) => ({ reviewID })), decision, note: note || undefined }),
-		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string) =>
-			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined }),
+		/** `variantID`: the chosen variant, required by the server when accepting a review with variants. */
+		decideReview: (taskID: string, decision: 'accept' | 'request_changes', note?: string, variantID?: string) =>
+			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined, variantID: variantID || undefined }),
 		undoReviewDecision: (taskID: string) => request<Review>('POST', `/tasks/${taskID}/review/undo`),
 		taskContext: (taskID: string) => request<TaskContext>('GET', `/tasks/${taskID}/context`),
 		setTaskStructure: (taskID: string, body: { kind?: string; parentTaskID?: string | null }) => request<unknown>('PUT', `/tasks/${taskID}/structure`, body),

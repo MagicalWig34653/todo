@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
 	BATCH_MAX,
+	bulkSelectable,
 	failureCodes,
 	pruneSelection,
+	reasonCode,
+	selectableReviews,
+	variantBlockedCount,
 	selectAllVisible,
 	selectionState,
 	toggleSelection,
@@ -55,5 +59,32 @@ describe('batch result', () => {
 			['b', 'forbidden'],
 			['c', 'already_decided']
 		]);
+	});
+});
+
+describe('reviews with variants in the bulk selection', () => {
+	const plain = { id: 'p1' };
+	const variants = { id: 'v1', variants: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] };
+	it('are not selectable for accepting; reviews without variants are', () => {
+		expect(bulkSelectable(plain)).toBe(true);
+		expect(bulkSelectable(variants)).toBe(false);
+		expect(bulkSelectable({ id: 'x', variants: null })).toBe(true);
+		expect(selectableReviews([plain, variants, { id: 'p2' }]).map((r) => r.id)).toEqual(['p1', 'p2']);
+	});
+	it('counts the ones that need a choice', () => {
+		expect(variantBlockedCount([plain, variants, { ...variants, id: 'v2' }])).toBe(2);
+		expect(variantBlockedCount([plain])).toBe(0);
+	});
+	it('select-all over the selectable ones never takes a variants review', () => {
+		const sel = selectAllVisible(selectableReviews([plain, variants]).map((r) => r.id));
+		expect([...sel]).toEqual(['p1']);
+		expect(selectionState(sel, ['p1'])).toBe('all');
+	});
+	it('refines an invalid result with reason variant_required into its own code', () => {
+		expect(reasonCode({ reviewID: 'v1', result: 'invalid', reason: 'variant_required' })).toBe('variant_required');
+		expect(reasonCode({ reviewID: 'v1', result: 'invalid', reason: 'other' })).toBe('invalid');
+		expect(reasonCode({ reviewID: 'b', result: 'forbidden', reason: 'not_the_reviewer' })).toBe('not_the_reviewer');
+		expect(reasonCode({ reviewID: 'b', result: 'forbidden', reason: 'weird' })).toBe('forbidden');
+		expect(reasonCode({ reviewID: 'c', result: 'already_decided' })).toBe('already_decided');
 	});
 });
