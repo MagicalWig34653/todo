@@ -102,6 +102,7 @@ export function updateKind(kind: string): UpdateGroup {
 		case 'agent.request_changes':
 			return 'changes';
 		case 'build.added':
+		case 'build.status_changed':
 			return 'build';
 		case 'task.claimed':
 		case 'agent.claimed':

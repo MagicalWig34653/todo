@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApi, type OverviewProject } from '../src/lib/api';
 import {
-	EXPANDED_KEY, QUIET_AFTER_MS, allowRefetch, buildSummary, buildCommit, defaultExpanded, groupProjects, isEmptyNow, isExpanded, isOrphaned,
+	EXPANDED_KEY, QUIET_AFTER_MS, allowRefetch, buildSummary, buildCommit, buildStatusOf, shortCommit, defaultExpanded, groupProjects, isEmptyNow, isExpanded, isOrphaned, isQuiet,
 	loadExpanded, percentOf, projectStats, saveExpanded
 } from '../src/lib/now';
 
@@ -162,5 +162,25 @@ describe('api.overviewNow', () => {
 		});
 		expect((await api.overviewNow()).projects).toEqual([]);
 		expect(url).toBe('/v1/overview/now');
+	});
+});
+
+describe('build status', () => {
+	it('maps known statuses to a message key and tone, nothing without status', () => {
+		expect(buildStatusOf('building')).toEqual({ key: 'build.status.building', tone: 'info' });
+		expect(buildStatusOf('succeeded')).toEqual({ key: 'build.status.succeeded', tone: 'ok' });
+		expect(buildStatusOf('failed')).toEqual({ key: 'build.status.failed', tone: 'danger' });
+		expect(buildStatusOf(undefined)).toBeNull();
+		expect(buildStatusOf(null)).toBeNull();
+		expect(buildStatusOf('weird')).toBeNull();
+	});
+	it('shortens commits to 7 characters', () => {
+		expect(shortCommit('abcdef0123456789')).toBe('abcdef0');
+		expect(shortCommit('  ')).toBeNull();
+		expect(shortCommit(undefined)).toBeNull();
+	});
+	it('does not change the quiet rule: a failed build alone keeps a project quiet', () => {
+		const p = { ...project('x', { lastActivityAt: ago(3 * 24 * 3600 * 1000) }), builds: [{ taskID: '1', buildID: 'b', createdAt: '', status: 'failed' as const }] };
+		expect(isQuiet(p, NOW)).toBe(true);
 	});
 });

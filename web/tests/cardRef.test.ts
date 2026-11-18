@@ -117,3 +117,15 @@ describe('project breadcrumb chain', () => {
 		expect(projectChain([{ id: 'a', parentID: 'b' }, { id: 'b', parentID: 'a' }], 'a', 5).length).toBe(2);
 	});
 });
+
+describe('gallery build status', () => {
+	it('carries status and commit of builds, not of plain attachments', () => {
+		const items = galleryOf(
+			[{ attachmentID: 'a1', previewURL: '/p/a1', label: 'L', filename: 'x.png', status: 'failed', commit: 'abcdef0123' }],
+			[{ id: 'a2', filename: 'y.jpg', mediaType: 'image/jpeg' }],
+			(id) => `/p/${id}`
+		);
+		expect(items[0]).toEqual({ id: 'a1', url: '/p/a1', label: 'L', status: 'failed', commit: 'abcdef0123' });
+		expect(items[1]).toEqual({ id: 'a2', url: '/p/a2', label: 'y.jpg' });
+	});
+});
