@@ -1303,3 +1303,7 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - `GET /v1/overview/now` und MCP `get_overview_now` (ein Service, `OverviewNowService`): neu optional `runningTasks[].percent` (Prozent der letzten Fortschrittsnotiz mit Prozentwert) und `builds[].commit` (buildID, wenn 7-40 Hex-Kleinbuchstaben). Vertrag `contracts/session-status.yaml` 1.1.0, Handbuch 1.33.0, ADR 0034 nachgetragen. Keine Migration.
 - Kein Build-/CI-Status: im Datenmodell existiert keine Quelle (`build_artifacts`: buildID, Label, Plattform), deshalb nicht gebaut.
 - Tests: `SessionStatusTests` um percent (mit/ohne, neuere Notiz ohne Prozent) und commit (Hash-aehnlich/anders) erweitert.
+
+## Nachtrag 18.11.2026: register_build mit status und commit
+
+- `register_build` / REST `POST /v1/builds`: optional `status` (building|succeeded|failed, `invalid_status`) und `commit` (7-40 Hex-Kleinbuchstaben, `invalid_commit`); erneuter Aufruf mit anderem Status aktualisiert ihn (Aktivität `build.status_changed`), ohne `status` bleibt er. `OverviewNow.Build.status`, `commit` explizit sonst aus buildID; auch in BuildArtifactDTO (list_builds, read_attachment, Karten-Kontext). Migration `AddBuildStatusCommit` (additiv). Verträge session-status 1.2.0, oauth-mcp 1.6.0, command-center 1.7.0; Handbuch 1.34.0; ADR 0034 Nachtrag. Feed zeigt die Statusänderung nicht (offen).

@@ -272,7 +272,7 @@ struct CommandCenterService: Sendable {
 
     static let updateKinds = [
         "progress.posted", "question.asked", "question.answered", "question.withdrawn", "review.requested",
-        "review.accepted", "review.changes_requested", "build.added", "task.claimed", "task.released", "task.blocked",
+        "review.accepted", "review.changes_requested", "build.added", "build.status_changed", "task.claimed", "task.released", "task.blocked",
         "agent.released", "agent.claimed", "agent.question", "agent.answered", "agent.resume", "agent.submit",
         "agent.stop", "agent.fail", "agent.accept", "agent.request_changes",
     ]
@@ -603,7 +603,7 @@ struct CommandCenterService: Sendable {
                 case "question.answered", "agent.answered": text = questionByKey[s]?.answer
                 case "review.requested": text = reviews[s]?.summary
                 case "review.accepted", "review.changes_requested": text = reviews[s]?.decisionNote ?? reviews[s]?.summary
-                case "build.added": text = artifacts[s].map { $0.label ?? $0.buildID }
+                case "build.added", "build.status_changed": text = artifacts[s].map { $0.label ?? $0.buildID }
                 default: break
                 }
             }

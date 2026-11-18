@@ -199,6 +199,26 @@ final class SessionStatusTests: XCTestCase {
         }
     }
 
+    func testBuildStatusAndExplicitCommit() async throws {
+        try await fixture { f, access in
+            let uid = try f.user.requireID(), pid = try f.project.requireID(), db = f.test.app.db
+            let task = TodoTask(ownerID: uid, projectID: pid, title: "Built"); try await task.save(on: db)
+            let rows: [(String, String?, String?)] = [("v1", "failed", "deadbee"), ("abc1234", "building", nil), ("v2", nil, nil)]
+            for (id, status, commit) in rows {
+                let b = BuildArtifact(); b.attachmentID = UUID(); b.taskID = try task.requireID(); b.buildID = id; b.status = status; b.commit = commit
+                b.createdByType = .integration; b.createdByID = UUID()
+                try await b.save(on: db)
+            }
+            let body = try await now(f)
+            let builds = try XCTUnwrap(try entry(body, f.project)?["builds"] as? [[String: Any]])
+            let byID = Dictionary(uniqueKeysWithValues: builds.map { ($0["buildID"] as! String, $0) })
+            XCTAssertEqual(byID["v1"]?["status"] as? String, "failed"); XCTAssertEqual(byID["v1"]?["commit"] as? String, "deadbee")
+            XCTAssertEqual(byID["abc1234"]?["status"] as? String, "building"); XCTAssertEqual(byID["abc1234"]?["commit"] as? String, "abc1234")
+            XCTAssertNil(byID["v2"]?["status"]); XCTAssertNil(byID["v2"]?["commit"])
+            XCTAssertFalse(byID["v2"]!.keys.contains("status"))
+        }
+    }
+
     func testOrphanedAfter30MinutesHiddenAfter24Hours() async throws {
         try await fixture { f, access in
             _ = try await report(f, access, session: "fresh"); _ = try await report(f, access, session: "old"); _ = try await report(f, access, session: "gone")
