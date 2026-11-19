@@ -1,24 +1,36 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test';
 import { signedInPage } from './support/session';
 
-// Needs a fresh backend database and the path of its SQLite file (the "brain" marker is an agent comment, which only
-// MCP can write; the spec inserts that one row like the MCP path stores it):
-//   E2E_DB=/abs/path/e2e.sqlite npx playwright test e2e/reviews-bulk.spec.ts --project=chromium   (also --project=webkit)
+// Needs a fresh backend database (first account via the bootstrap token):
+//   npx playwright test e2e/reviews-bulk.spec.ts --project=chromium   (also --project=webkit)
 // Card 9791E2C3: Sammelfreigabe. Reviews in the overview are selectable, a bar accepts or requests changes for all selected
 // ones after a confirmation step with the count, partial failures are listed, "Vom Brain empfohlen" filters the list.
+//
+// "Vom Brain empfohlen" follows the brain mandate (backend 1.29.0, ADR 0032), not a label: the spec does what a person and
+// an agent do. Two real OAuth connections are authorized (dynamic client registration, code + PKCE, consent through the
+// signed-in session). The person gives the first one ("brain") the mandate for the project (PUT /v1/settings/brain-mandate,
+// session only). Only then does the brain connection write its recommendations as real MCP calls (add_comment into the
+// review chat). The second connection ("other") has no mandate: its comment labelled "brain" must not count. A review that the
+// mandated connection requested itself is never recommended by it. No database access, everything goes through REST/OAuth/MCP.
 const SHOTS = resolve(dirname(fileURLToPath(import.meta.url)), '../../docs/screenshots/reviews-bulk');
-const DB = process.env.E2E_DB;
+const CALLBACK = 'http://127.0.0.1:59999/callback';
+const SCOPES = 'projects:read tasks:read tasks:write comments:write';
 test.describe.configure({ mode: 'serial' });
 let page: Page;
+let mcpApi: APIRequestContext;
 const json = { headers: { 'Content-Type': 'application/json' } };
 const N = 14;
 const BRAIN = [1, 2, 3];
+/** Not recommended although a comment labelled "brain" hangs in their chat: 12 from a connection without mandate, 13 on a review the mandated connection requested itself. */
+const FAKE_LABEL = 12;
+const OWN_REVIEW = 13;
 let tasks: { id: string; title: string; reviewID: string }[] = [];
+let brain = { grantID: '', token: '' };
+let other = { grantID: '', token: '' };
 const title = (n: number) => `Review-Aufgabe ${String(n).padStart(2, '0')}`;
 
 async function post<T>(path: string, data: unknown): Promise<T> {
@@ -26,6 +38,47 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 	expect(r.status(), `${path}: ${await r.text()}`).toBeLessThan(300);
 	return (await r.json()) as T;
 }
+/** An agent connection like Claude Code gets it: register a client, authorize with PKCE, the person approves for one project. */
+async function connect(name: string, projectID: string): Promise<{ grantID: string; token: string }> {
+	const reg = await page.request.post('/oauth/register', { data: { client_name: name, redirect_uris: [CALLBACK], token_endpoint_auth_method: 'none' } });
+	expect(reg.ok(), `register: ${await reg.text()}`).toBeTruthy();
+	const clientID = ((await reg.json()) as { client_id: string }).client_id;
+	const verifier = randomBytes(32).toString('base64url');
+	const query = new URLSearchParams({
+		response_type: 'code', client_id: clientID, redirect_uri: CALLBACK, scope: SCOPES, state: 'bulk',
+		code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256'
+	});
+	const auth = await page.request.get(`/oauth/authorize?${query}`, { headers: { Accept: 'application/json' } });
+	expect(auth.ok(), `authorize: ${await auth.text()}`).toBeTruthy();
+	const consent = await post<{ redirect_uri: string }>('/oauth/consent', {
+		consent_token: ((await auth.json()) as { consent_token: string }).consent_token, approve: true, project_ids: [projectID], connection_name: name
+	});
+	const code = new URL(consent.redirect_uri).searchParams.get('code');
+	expect(code, consent.redirect_uri).toBeTruthy();
+	const token = await page.request.post('/oauth/token', {
+		form: { grant_type: 'authorization_code', client_id: clientID, code: code!, redirect_uri: CALLBACK, code_verifier: verifier }
+	});
+	expect(token.ok(), `token: ${await token.text()}`).toBeTruthy();
+	const grants = (await (await page.request.get('/oauth/grants')).json()) as { id: string; client_id: string }[];
+	const grant = grants.find((g) => g.client_id.toLowerCase() === clientID.toLowerCase());
+	expect(grant, 'grant of the new connection').toBeTruthy();
+	return { grantID: grant!.id, token: ((await token.json()) as { access_token: string }).access_token };
+}
+/** One MCP tool call with the OAuth token of a connection (no session cookie involved). */
+async function mcp(token: string, tool: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+	const r = await mcpApi.post('/mcp', {
+		headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+		data: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }
+	});
+	expect(r.status(), `${tool}: ${await r.text()}`).toBe(200);
+	const result = ((await r.json()) as { result: { isError?: boolean; content: { text: string }[] } }).result;
+	expect(result.isError ?? false, `${tool}: ${result.content[0].text}`).toBe(false);
+	return JSON.parse(result.content[0].text) as Record<string, unknown>;
+}
+const recommend = (token: string, t: { id: string; reviewID: string }) =>
+	mcp(token, 'add_comment', { taskID: t.id, reviewID: t.reviewID, agentName: 'brain', body: 'Lino: das ist ok, annehmen.' });
+const reviewFlags = async () =>
+	new Map(((await (await page.request.get('/v1/reviews?state=all&limit=200')).json()) as { id: string; brainRecommended?: boolean }[]).map((r) => [r.id, r.brainRecommended === true]));
 const status = async (id: string) => ((await (await page.request.get(`/v1/tasks/${id}/context`)).json()) as { task: { status: string } }).task.status;
 const reviewState = async (id: string) =>
 	((await (await page.request.get('/v1/reviews?state=all&limit=200')).json()) as { id: string; state: string; decisionNote?: string }[]).find((r) => r.id === id);
@@ -52,15 +105,24 @@ async function theme(mode: 'dark' | 'light') {
 }
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(!DB, 'E2E_DB (path of the scratch SQLite file) is required');
 	mkdirSync(SHOTS, { recursive: true });
 	page = await signedInPage(browser, 'Sammel Tester');
+	mcpApi = await request.newContext({ baseURL: test.info().project.use.baseURL });
 	const project = await post<{ id: string }>('/v1/projects', { name: 'Sammelprojekt' });
+	brain = await connect('Brain-Verbindung', project.id);
+	other = await connect('Andere Verbindung', project.id);
 	for (let n = 1; n <= N; n++) {
 		const t = await post<{ id: string }>('/v1/tasks', { projectID: project.id, title: title(n) });
+		if (n === OWN_REVIEW) {
+			await mcp(brain.token, 'request_review', { taskID: t.id, summary: `Ergebnis ${n} ist fertig.` });
+			tasks.push({ id: t.id, title: title(n), reviewID: '' });
+			continue;
+		}
 		const r = await post<{ id: string }>(`/v1/tasks/${t.id}/review`, { summary: `Ergebnis ${n} ist fertig.\n- Neu: Sammelfreigabe\n- Geprüft: Tests`, agentName: 'Claude Code' });
 		tasks.push({ id: t.id, title: title(n), reviewID: r.id });
 	}
+	const listed = (await (await page.request.get('/v1/reviews?state=all&limit=200')).json()) as { id: string; taskID: string }[];
+	tasks[OWN_REVIEW - 1].reviewID = listed.find((r) => r.taskID.toLowerCase() === tasks[OWN_REVIEW - 1].id.toLowerCase())!.id;
 	// The management view lists the project in the account overview.
 	await page.goto(`/project/${project.id}`);
 	if (!(await page.getByTestId('project-tabs').isVisible())) {
@@ -69,16 +131,19 @@ test.beforeAll(async ({ browser }) => {
 		await page.keyboard.press('Escape');
 	}
 	await expect(page.getByTestId('project-tabs')).toBeVisible();
-	// "Vom Brain empfohlen": an agent comment labelled brain in the chat of the review.
-	for (const n of BRAIN) {
-		const t = tasks[n - 1];
-		// Fluent stores UUIDs upper-case in SQLite.
-		execFileSync('sqlite3', ['-cmd', '.timeout 10000', DB!, `INSERT INTO comments (id, task_id, author_id, body, version, review_id, author_kind, author_label, created_at)
-			VALUES ('${randomUUID().toUpperCase()}', '${t.id.toUpperCase()}', (SELECT id FROM users LIMIT 1), 'Lino: das ist ok, annehmen.', 1,
-			'${t.reviewID.toUpperCase()}', 'agent', 'brain', strftime('%s','now'))`]);
-	}
+	// The person gives the first connection the brain mandate for this project. Only comments written afterwards count.
+	const mandate = await page.request.put('/v1/settings/brain-mandate', { ...json, data: { grantID: brain.grantID, projectIDs: [project.id] } });
+	expect(mandate.status(), await mandate.text()).toBe(200);
+	expect(((await mcp(brain.token, 'get_connection', {})).brainMandate as { active: boolean }).active).toBe(true);
+	expect(((await mcp(other.token, 'get_connection', {})).brainMandate as { active: boolean }).active).toBe(false);
+	// "Vom Brain empfohlen": real MCP comments in the chat of the review.
+	for (const n of BRAIN) await recommend(brain.token, tasks[n - 1]);
+	// Look-alikes that must not count: label "brain" from a connection without mandate, and a comment on the mandated connection's own review.
+	await recommend(other.token, tasks[FAKE_LABEL - 1]);
+	await recommend(brain.token, tasks[OWN_REVIEW - 1]);
 });
 test.afterAll(async () => {
+	await mcpApi?.dispose();
 	await page?.context().close();
 });
 
@@ -149,6 +214,33 @@ test('filter "Vom Brain empfohlen": badge on the rows, only they are listed, sel
 	await expect(box(4)).not.toBeChecked();
 	await page.getByTestId('review-filter-brain').click();
 	await shot('desktop-hell-brain-filter');
+});
+
+test('regression: a bare "brain" label from a connection without mandate, and a comment on the mandated connection\'s own review, are not recommendations', async () => {
+	// The look-alike comments really exist in the review chats, so the checks below are not vacuous.
+	type Comment = { reviewID?: string; authorKind: string; authorLabel: string };
+	for (const n of [FAKE_LABEL, OWN_REVIEW]) {
+		const body = (await (await page.request.get(`/v1/tasks/${tasks[n - 1].id}/comments`)).json()) as Comment[] | { items: Comment[] };
+		const list = Array.isArray(body) ? body : body.items;
+		const hit = list.some((c) => c.authorKind === 'agent' && c.authorLabel === 'brain' && c.reviewID?.toLowerCase() === tasks[n - 1].reviewID.toLowerCase());
+		expect(hit, `comment labelled brain on ${title(n)}`).toBe(true);
+	}
+	// API: only the real recommendations are flagged.
+	const flags = await reviewFlags();
+	for (const n of BRAIN) expect(flags.get(tasks[n - 1].reviewID), title(n)).toBe(true);
+	for (const n of [FAKE_LABEL, OWN_REVIEW]) expect(flags.get(tasks[n - 1].reviewID), title(n)).toBe(false);
+	const only = (await (await page.request.get('/v1/reviews?brainRecommended=true')).json()) as { id: string }[];
+	expect(only.map((r) => r.id.toLowerCase()).sort()).toEqual(BRAIN.map((n) => tasks[n - 1].reviewID.toLowerCase()).sort());
+	// UI: no badge on the look-alikes, and the filter does not list them.
+	await openReviews();
+	for (const n of [FAKE_LABEL, OWN_REVIEW]) {
+		await expect(row(n)).toBeVisible();
+		await expect(row(n).getByTestId('review-brain-badge')).toHaveCount(0);
+	}
+	await page.getByTestId('review-filter-brain').click();
+	await expect(rows()).toHaveCount(BRAIN.length);
+	for (const n of [FAKE_LABEL, OWN_REVIEW]) await expect(row(n)).toHaveCount(0);
+	await page.getByTestId('review-filter-all').click();
 });
 
 test('accept: confirmation names the count and can be cancelled; confirming accepts all selected and reports it', async () => {
