@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 19.11.2026: Kommentarvergleich, Bug-Karte `DA09D11A` (nur Test, keine Ursache, nicht reproduziert)
+
+- Auftrag: Kurze und mehrzeilige Texte mit Listenstrichen im normalen Kommentarformular vergleichen, Speichern und Neuladen pruefen, Rueckmeldung und tatsaechlich gespeicherten Kommentar belegen.
+- Neu: `web/e2e/comment-compare.spec.ts` (je Browser 2 Tests, je 19 Texte): Karten-Chat und Review-Chat. Texte: kurz, 150 Zeichen einfach, drei Zeilen, "- "-Listen (ca. 150 und 72 Zeichen, 60 Zeilen, geschachtelt), "* ", "•", nummeriert, 30 Leerzeilen, nur Leerzeilen dazwischen, Zeilenumbrueche am Ende, CRLF, nur Striche, Markdown-Mix, Umlaute/Emoji, 2000 und 9091 Zeichen.
+- Je Text geprueft: POST-Status, keine Fehlermeldung "Etwas ist schiefgelaufen", kein Konsolenfehler, Feld geleert; nach Neuladen ueber die API: der Text steht im richtigen Thread (Aufgabe bzw. `reviewID`) gespeichert (getrimmt, CRLF zu LF), und der kurze Kommentar wird nach dem Neuladen angezeigt.
+- Ergebnis (main e65849a, frisches natives Backend auf SQLite, Ports 28096/25196, je Browser frische DB): Chromium 2/2 und WebKit 2/2 gruen, Exit 0, alle 19 Faelle je Chat "ok", 19 von 19 gespeichert. **Der Fehler ist auf main nicht reproduziert.** Eine Ursache wird nicht benannt.
+- Nicht geprueft: Live-Stand 1.28.0 (der Fehler trat dort auf), Firefox, echtes iOS/macOS-Geraet, Apple-App, Projektkommentare, MCP `add_comment` (laut Karte geht derselbe Inhalt dort durch), Reverse-Proxy des Live-Systems.
+- Naechster Schritt: dieselbe Spec gegen einen Build von v1.28.0 laufen lassen (Fehler dort vorhanden = auf main behoben, sonst Umgebung/Geraet) oder Lino nach Geraet und Fehltext fragen.
+
 ## Nachtrag 19.11.2026: PWA-Seite "Brain-Vollmacht" (Karte `11DA4A38`, ADR 0032, Branch `agent/pwa-brain-mandat`, nicht gepusht)
 
 - Neu (nur `web/` und Doku, kein Backend, keine neuen Endpunkte): Einstellungen, "Brain-Vollmacht" (`/settings/brain-mandate`, Gruppe "Verbundene Apps & Agenten"). Erklaerung (erlaubt/nicht erlaubt), aktueller Inhaber (Verbindungsname, Status aktiv/widerrufen/Verbindung selbst widerrufen, Projekte mit Namen, nicht lesbare als "Nicht mehr zugaenglich", erteilt/geaendert/zuletzt benutzt), Protokoll (Zitat, Anmerkung, Link zur Karte), Erteilen/Aendern (eigene nicht widerrufene Verbindung, explizite Projekte 1 bis 200 mit Suche, nichts vorausgewaehlt), Bestaetigungsdiff vor dem Ersetzen einer aktiven Vollmacht (Vorher/Nachher, hinzugekommen/entfallen/unveraendert, "verliert die Vollmacht sofort"), Widerruf mit Bestaetigung, Fehlertexte fuer 400/401/404/409, Fokusfuehrung, `aria-live`-Meldungen.
