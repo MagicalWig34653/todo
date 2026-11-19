@@ -62,6 +62,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		label: 'settings.group.connected',
 		entries: [
 			{ id: 'verbindungen', label: 'settings.verbindungen', description: 'settings.verbindungen.description', keywords: 'oauth claude chatgpt mcp apps zugriff widerrufen' },
+			{ id: 'brain-vollmacht', label: 'settings.brain-vollmacht', description: 'settings.brain-vollmacht.description', keywords: 'brain vollmacht mandat orchestrator entscheiden review frage freigabe widerrufen codex' },
 			{ id: 'runner', label: 'settings.runner', description: 'settings.runner.description', keywords: 'runner mac agent gerät koppeln claude code' },
 			{ id: 'mcp', label: 'settings.mcp', description: 'settings.mcp.description', keywords: 'mcp claude code verbinden plugin befehl' }
 		]
@@ -115,6 +116,7 @@ export const SETTINGS_SLUGS: Record<string, string> = {
 	benachrichtigungen: 'notifications',
 	berechtigungen: 'permissions',
 	verbindungen: 'connections',
+	'brain-vollmacht': 'brain-mandate',
 	daten: 'data',
 	'verwaltung-konten': 'admin-accounts',
 	'verwaltung-einladungen': 'admin-invitations',
