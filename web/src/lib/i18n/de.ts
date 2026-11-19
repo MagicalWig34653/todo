@@ -4,6 +4,7 @@ import { deSettings } from './de-settings.js';
 import { deAdminSettings } from './de-admin-settings.js';
 import { deAutoStart } from './de-autostart.js';
 import { deNow } from './de-now.js';
+import { deBrainMandate } from './de-brain-mandate.js';
 
 export const de = {
 	...deNotify,
@@ -11,6 +12,7 @@ export const de = {
 	...deAdminSettings,
 	...deAutoStart,
 	...deNow,
+	...deBrainMandate,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',

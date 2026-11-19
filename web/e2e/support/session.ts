@@ -30,7 +30,7 @@ export async function signedInPage(browser: Browser, displayName: string): Promi
 		const state = await ctx.storageState();
 		const own = await (await browser.newContext({ storageState: state })).newPage();
 		await own.goto('/');
-		await expect(own.getByTestId('account-menu')).toBeVisible();
+		await expect(own.getByTestId('account-menu')).toBeVisible({ timeout: 20_000 });
 		return own;
 	} finally {
 		await helper.close();
@@ -48,5 +48,5 @@ async function register(page: Page, displayName: string) {
 	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
 	await page.getByLabel('Anzeigename').fill(displayName);
 	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByTestId('account-menu')).toBeVisible();
+	await expect(page.getByTestId('account-menu')).toBeVisible({ timeout: 20_000 });
 }

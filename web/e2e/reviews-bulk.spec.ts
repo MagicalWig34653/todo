@@ -1,8 +1,8 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test';
+import { connect as connectGrant, mcp as mcpTool } from './support/oauth';
 import { signedInPage } from './support/session';
 
 // Needs a fresh backend database (first account via the bootstrap token):
@@ -17,8 +17,6 @@ import { signedInPage } from './support/session';
 // review chat). The second connection ("other") has no mandate: its comment labelled "brain" must not count. A review that the
 // mandated connection requested itself is never recommended by it. No database access, everything goes through REST/OAuth/MCP.
 const SHOTS = resolve(dirname(fileURLToPath(import.meta.url)), '../../docs/screenshots/reviews-bulk');
-const CALLBACK = 'http://127.0.0.1:59999/callback';
-const SCOPES = 'projects:read tasks:read tasks:write comments:write';
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 let mcpApi: APIRequestContext;
@@ -38,43 +36,10 @@ async function post<T>(path: string, data: unknown): Promise<T> {
 	expect(r.status(), `${path}: ${await r.text()}`).toBeLessThan(300);
 	return (await r.json()) as T;
 }
-/** An agent connection like Claude Code gets it: register a client, authorize with PKCE, the person approves for one project. */
-async function connect(name: string, projectID: string): Promise<{ grantID: string; token: string }> {
-	const reg = await page.request.post('/oauth/register', { data: { client_name: name, redirect_uris: [CALLBACK], token_endpoint_auth_method: 'none' } });
-	expect(reg.ok(), `register: ${await reg.text()}`).toBeTruthy();
-	const clientID = ((await reg.json()) as { client_id: string }).client_id;
-	const verifier = randomBytes(32).toString('base64url');
-	const query = new URLSearchParams({
-		response_type: 'code', client_id: clientID, redirect_uri: CALLBACK, scope: SCOPES, state: 'bulk',
-		code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256'
-	});
-	const auth = await page.request.get(`/oauth/authorize?${query}`, { headers: { Accept: 'application/json' } });
-	expect(auth.ok(), `authorize: ${await auth.text()}`).toBeTruthy();
-	const consent = await post<{ redirect_uri: string }>('/oauth/consent', {
-		consent_token: ((await auth.json()) as { consent_token: string }).consent_token, approve: true, project_ids: [projectID], connection_name: name
-	});
-	const code = new URL(consent.redirect_uri).searchParams.get('code');
-	expect(code, consent.redirect_uri).toBeTruthy();
-	const token = await page.request.post('/oauth/token', {
-		form: { grant_type: 'authorization_code', client_id: clientID, code: code!, redirect_uri: CALLBACK, code_verifier: verifier }
-	});
-	expect(token.ok(), `token: ${await token.text()}`).toBeTruthy();
-	const grants = (await (await page.request.get('/oauth/grants')).json()) as { id: string; client_id: string }[];
-	const grant = grants.find((g) => g.client_id.toLowerCase() === clientID.toLowerCase());
-	expect(grant, 'grant of the new connection').toBeTruthy();
-	return { grantID: grant!.id, token: ((await token.json()) as { access_token: string }).access_token };
-}
+/** An agent connection like Claude Code gets it: register a client, authorize with PKCE, the person approves for one project (e2e/support/oauth.ts). */
+const connect = (name: string, projectID: string) => connectGrant(page, name, [projectID]);
 /** One MCP tool call with the OAuth token of a connection (no session cookie involved). */
-async function mcp(token: string, tool: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-	const r = await mcpApi.post('/mcp', {
-		headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-		data: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }
-	});
-	expect(r.status(), `${tool}: ${await r.text()}`).toBe(200);
-	const result = ((await r.json()) as { result: { isError?: boolean; content: { text: string }[] } }).result;
-	expect(result.isError ?? false, `${tool}: ${result.content[0].text}`).toBe(false);
-	return JSON.parse(result.content[0].text) as Record<string, unknown>;
-}
+const mcp = (token: string, tool: string, args: Record<string, unknown>) => mcpTool(mcpApi, token, tool, args);
 const recommend = (token: string, t: { id: string; reviewID: string }) =>
 	mcp(token, 'add_comment', { taskID: t.id, reviewID: t.reviewID, agentName: 'brain', body: 'Lino: das ist ok, annehmen.' });
 const reviewFlags = async () =>

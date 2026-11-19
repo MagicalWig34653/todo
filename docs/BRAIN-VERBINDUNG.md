@@ -12,7 +12,7 @@ Das Brain (Orchestrator) darf Reviews entscheiden und Fragen beantworten ("nimm 
 
 ## 2. Vollmacht erteilen
 
-Einstellungen, "Brain-Vollmacht" (PWA-Seite noch offen, siehe STATUS): Verbindung wählen, Projekte wählen, speichern. Bis die Seite existiert, per REST mit Personen-Sitzung (OAuth-Token werden abgelehnt):
+PWA: Einstellungen, "Brain-Vollmacht" (`/settings/brain-mandate`, Gruppe "Verbundene Apps & Agenten"): eigene, nicht widerrufene Verbindung wählen, Projekte ausdrücklich wählen (1 bis 200, Suche, keine "alle"-Abkürzung, nichts vorausgewählt), speichern. Wird eine aktive Vollmacht ersetzt (andere Verbindung und/oder andere Projekte), zeigt die Seite vorher einen Vorher/Nachher-Vergleich mit hinzugekommenen und entfallenen Projekten und dem Hinweis, dass die bisherige Verbindung die Vollmacht sofort verliert; erst "Vollmacht jetzt übertragen" speichert. Die Seite zeigt außerdem Status (aktiv, widerrufen, Verbindung selbst widerrufen = wirkungslos), Projekte im Umfang, erteilt/geändert/zuletzt benutzt und das Protokoll der letzten Entscheidungen mit Zitat und Link zur Karte. Screenshots: `docs/screenshots/brain-mandat/`. Dasselbe per REST mit Personen-Sitzung (OAuth-Token werden abgelehnt):
 
 ```
 PUT /v1/settings/brain-mandate   {"grantID": "<Verbindung>", "projectIDs": ["<Projekt>", ...]}
@@ -25,7 +25,7 @@ GET /v1/settings/brain-mandate/audit
 
 ## 3. Widerrufen
 
-`DELETE /v1/settings/brain-mandate` (oder in den Einstellungen "Widerrufen"). Wirkt sofort für die nächste Entscheidung; ein widerrufener Grant macht die Vollmacht ebenfalls wirkungslos. Bereits getroffene Entscheidungen bleiben (Rücknahme wie bisher durch die Person).
+`DELETE /v1/settings/brain-mandate` (oder in den Einstellungen "Vollmacht widerrufen", mit Bestätigung). Wirkt sofort für die nächste Entscheidung; ein widerrufener Grant macht die Vollmacht ebenfalls wirkungslos. Bereits getroffene Entscheidungen bleiben (Rücknahme wie bisher durch die Person).
 
 ## 4. Was das Brain tun muss
 

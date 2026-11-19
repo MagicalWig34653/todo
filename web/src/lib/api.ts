@@ -2,6 +2,7 @@ import type { AuthenticationPayload, CreationOptionsJSON, RegistrationPayload, R
 import type { ActionRequest, ForYouPage } from './forYou.js';
 import type { BatchResponse } from './reviewBulk.js';
 import type { ReviewVariant } from './reviewVariants.js';
+import type { BrainAuditItem, BrainMandate } from './brainMandate.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -1365,7 +1366,16 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		ignoreAccessRequest: (id: string) => request<void>('POST', `/connection-access-requests/${id}/ignore`, {}),
 		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`),
 		/** Replaces the projects of an existing connection (authorise and deauthorise afterwards); effective immediately. */
-		setOAuthGrantProjects: (id: string, projectIDs: string[]) => request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: projectIDs })
+		setOAuthGrantProjects: (id: string, projectIDs: string[]) => request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: projectIDs }),
+
+		// Brain mandate (contracts/connections.yaml 1.1.0, ADR 0032); person session only, OAuth tokens get 401.
+		/** `null` while the person never gave a mandate. After a revocation the mandate stays, with `active: false`. */
+		getBrainMandate: async () => (await request<{ mandate: BrainMandate | null }>('GET', '/settings/brain-mandate')).mandate,
+		/** Gives or overwrites the single mandate (400 invalid_projects, 404 unknown grant/project, 409 grant_revoked). */
+		putBrainMandate: (grantID: string, projectIDs: string[]) => request<BrainMandate>('PUT', '/settings/brain-mandate', { grantID, projectIDs }),
+		revokeBrainMandate: () => request<void>('DELETE', '/settings/brain-mandate'),
+		/** Decisions made under the mandate, newest first (at most 200). */
+		listBrainAudit: async () => (await request<{ items: BrainAuditItem[] }>('GET', '/settings/brain-mandate/audit')).items
 	};
 }
 
