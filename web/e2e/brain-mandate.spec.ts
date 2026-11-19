@@ -12,7 +12,8 @@ import { signedInPage } from './support/session';
 // effect is checked through REST (GET /v1/settings/brain-mandate) and MCP (get_connection, decide_review with the old token).
 // Screenshots (docs/screenshots/brain-mandat/) are written by the Chromium run only; they are real screenshots of the real app.
 const SHOTS = resolve(dirname(fileURLToPath(import.meta.url)), '../../docs/screenshots/brain-mandat');
-test.describe.configure({ mode: 'serial' });
+// The look matrices reload the page eight times; allow for a loaded machine.
+test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
 let page: Page;
 let mcpApi: APIRequestContext;
@@ -75,8 +76,20 @@ const shot = async (name: string) => {
 	await page.evaluate(() => {
 		if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 	});
+	// No fullPage: the app shell has fixed parts (sidebar, header, bottom bar) that a stitched full-page capture would paste into
+	// the middle of the page. Instead the viewport is made as tall as the content, so one real frame shows everything in place.
+	const { width, height } = page.viewportSize()!;
+	await page.setViewportSize({ width, height: 4000 });
+	await page.waitForTimeout(300);
+	const bottom = await page.evaluate(() =>
+		Math.max(...['bm-intro', 'bm-current', 'bm-form-card', 'bm-audit'].map((id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().bottom ?? 0))
+	);
+	// Room below the last card; on a phone the fixed bottom bar needs its own space.
+	await page.setViewportSize({ width, height: Math.ceil(bottom) + (width < 600 ? 110 : 40) });
 	await page.waitForTimeout(400);
-	await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+	await page.evaluate(() => window.scrollTo(0, 0));
+	await page.screenshot({ path: `${SHOTS}/${name}.png` });
+	await page.setViewportSize({ width, height });
 };
 async function noOverflow(label: string) {
 	const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }));
