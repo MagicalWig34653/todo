@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 19.11.2026: E2E Sammelfreigabe an Brain-Vollmacht angepasst (Karte `1649A82E`, Branch `agent/e2e-reviews-bulk-brain`, nicht gepusht)
+
+- Nur `web/e2e/reviews-bulk.spec.ts` geaendert (kein Produktcode). Das Spec erzeugt die Empfehlung nicht mehr per SQLite-INSERT mit Label `brain`, sondern wie im Betrieb: zwei echte OAuth-Verbindungen (Client registrieren, Code + PKCE, Zustimmung mit Sitzung, Scopes `projects:read tasks:read tasks:write comments:write`), `PUT /v1/settings/brain-mandate` (Sitzung) fuer die erste Verbindung und das Projekt Sammelprojekt, danach echte MCP-Aufrufe `add_comment` (`reviewID`, `agentName: brain`) mit deren Token. Das Spec braucht keine Datenbankdatei mehr (`E2E_DB` entfaellt).
+- Neuer Regressionstest: ein Kommentar mit bloßem Label `brain` von einer zweiten Verbindung ohne Mandat (Review 12) und ein Kommentar der Mandatsverbindung auf einem Review, das sie selbst angefordert hat (Review 13), liefern kein Badge und keinen Filter-Treffer; API `brainRecommended` nicht `true`, `?brainRecommended=true` nennt genau die drei echten Empfehlungen. Die Vorbedingung (Kommentare existieren im Review-Chat) wird mitgeprueft.
+- Geprueft (frisches Scratch-Backend je Lauf, `.build/debug/App` des Hauptcheckouts): vorher Chromium Exit 1 (Test 3 „Vom Brain empfohlen“: 0 statt 3, 5 nicht gelaufen, 2 bestanden); nachher Chromium 9/9 Exit 0, WebKit 9/9 Exit 0; `review-variants.spec.ts` Chromium 15/15 Exit 0. Mutationsprobe: Fremdkommentar mit dem Token der Mandatsverbindung gesendet -> Test 3 rot (4 statt 3), danach zurueckgesetzt.
+- Grenzen: Firefox und mobile-Projekte nicht gelaufen; vitest/`npm run check` nicht gelaufen (keine Aenderung an `src/`). Der Befund vom 18.11. (Spec rot seit 1.29.0) ist damit behoben.
+
 ## Nachtrag 18.11.2026: Review mit Variantenwahl, Stufe 2b PWA (Karte `1D9C8B0C`, Branch `agent/review-varianten-s2b`, nicht gepusht)
 
 - Neu: Variante ohne Anhang = kompakte Karte ohne Bildfläche und ohne "Kein Bild" (`previewState` in `reviewVariants.ts`); nur ein nicht ladender Anhang (z. B. PDF, 415) zeigt eine kleine Fallback-Zeile mit Label (Liste, Detail, `ReviewChosenVariant`). Die Varianten einer Karte sind `role="group"` (Name "Wähle eine Variante") mit Roving-Fokus: ein Tabstopp (zuletzt fokussierte Variante), Pfeile rechts/unten und links/oben, Home/End, Enden stoppen (kein Umlauf, damit ein verirrtes Enter keine überraschende Variante wählt); Enter/Leertaste wählt wie bisher mit einem Tipp (`roveFocus`, vitest).
