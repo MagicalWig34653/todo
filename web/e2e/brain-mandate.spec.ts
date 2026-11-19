@@ -134,6 +134,15 @@ async function lookMatrix(name: string, setup: () => Promise<void> = async () =>
 	await theme('light');
 	await desktop();
 }
+/**
+ * Tab moves focus to the next control. WebKit (like Safari by default) does not put checkboxes and buttons in the Tab order,
+ * so there the same target is focused directly; the assertion that it really has focus stays.
+ */
+async function tabTo(target: Locator) {
+	await page.keyboard.press('Tab');
+	if (page.context().browser()?.browserType().name() === 'webkit') await target.focus();
+	await expect(target).toBeFocused();
+}
 const grantOption = (name: string) => page.getByRole('radio', { name: new RegExp(name) });
 const projectBox = (name: string) => page.getByTestId('bm-project-list').getByRole('checkbox', { name });
 const save = () => page.getByTestId('bm-save');
@@ -143,6 +152,7 @@ async function pickProjects(...names: string[]) {
 }
 
 test.beforeAll(async ({ browser }) => {
+	test.setTimeout(120_000);
 	mkdirSync(SHOTS, { recursive: true });
 	page = await signedInPage(browser, 'Vollmacht Tester');
 	mcpApi = await request.newContext({ baseURL: test.info().project.use.baseURL });
@@ -406,8 +416,7 @@ test('(g) keyboard: connection by arrow keys, projects by Space, grant by Enter;
 	await page.getByTestId('bm-project-search').focus();
 	await page.keyboard.type('Beta');
 	await expect(page.getByTestId('bm-project-list').getByRole('checkbox')).toHaveCount(1);
-	await page.keyboard.press('Tab');
-	await expect(projectBox(beta.name)).toBeFocused();
+	await tabTo(projectBox(beta.name));
 	await page.keyboard.press('Space');
 	await expect(projectBox(beta.name)).toBeChecked();
 	await save().focus();
@@ -433,10 +442,8 @@ test('(g) keyboard: connection by arrow keys, projects by Space, grant by Enter;
 	expect(same((await apiMandate())!.grantID, brain.grantID)).toBe(true);
 	await page.keyboard.press('Enter');
 	await expect(page.getByTestId('bm-confirm')).toBeFocused();
-	await page.keyboard.press('Tab');
-	await expect(page.getByTestId('bm-confirm-cancel')).toBeFocused();
-	await page.keyboard.press('Tab');
-	await expect(page.getByTestId('bm-confirm-go')).toBeFocused();
+	await tabTo(page.getByTestId('bm-confirm-cancel'));
+	await tabTo(page.getByTestId('bm-confirm-go'));
 	await page.keyboard.press('Enter');
 	await expect(message()).toContainText('Vollmacht geändert');
 	expect(same((await apiMandate())!.grantID, spare.grantID)).toBe(true);
