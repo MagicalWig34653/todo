@@ -21,6 +21,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build
         run: swift build
+      - name: Third-party notices match the resolved BoringSSL copies
+        run: scripts/check-third-party-notices.sh
       - name: Test (SQLite; MariaDB-only tests are skipped)
         run: swift test
 

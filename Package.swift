@@ -13,7 +13,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         // Already pulled in by Vapor; declared directly for the SMTP client (Sources/TodoKit/Mail). Package.resolved pins the versions.
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.30.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.6"),
         .package(url: "https://github.com/swift-server/webauthn-swift.git", from: "1.0.0-beta.1"),
     ],
     targets: [

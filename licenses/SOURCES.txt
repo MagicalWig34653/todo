@@ -1,0 +1,9 @@
+# Quellstand der mitgelieferten Lizenztexte. scripts/check-third-party-notices.sh vergleicht diese Datei mit Package.resolved,
+# den BoringSSL-Revisionen in .build/checkouts (hash.txt) und den Texten selbst. Bei jedem Update von swift-nio-ssl oder
+# swift-crypto muss sie gemeinsam mit den Lizenztexten und THIRD-PARTY-NOTICES.md angepasst werden.
+swift-nio-ssl.version=2.37.6
+swift-nio-ssl.revision=15e0b9e495786807272dd4891fa4bac76aa43034
+swift-nio-ssl.boringssl=8eb25be6fa18d475291122887a7bccd3762ff236
+swift-crypto.version=3.15.1
+swift-crypto.revision=95ba0316a9b733e92bb6b071255ff46263bbe7dc
+swift-crypto.boringssl=0226f30467f540a3f62ef48d453f93927da199b6
