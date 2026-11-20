@@ -8,6 +8,8 @@
 - Ergebnis (main e65849a, frisches natives Backend auf SQLite, Ports 28096/25196, je Browser frische DB): Chromium 2/2 und WebKit 2/2 gruen, Exit 0, alle 19 Faelle je Chat "ok", 19 von 19 gespeichert. **Der Fehler ist auf main nicht reproduziert.** Eine Ursache wird nicht benannt.
 - Nicht geprueft: Live-Stand 1.28.0 (der Fehler trat dort auf), Firefox, echtes iOS/macOS-Geraet, Apple-App, Projektkommentare, MCP `add_comment` (laut Karte geht derselbe Inhalt dort durch), Reverse-Proxy des Live-Systems.
 - Naechster Schritt: dieselbe Spec gegen einen Build von v1.28.0 laufen lassen (Fehler dort vorhanden = auf main behoben, sonst Umgebung/Geraet) oder Lino nach Geraet und Fehltext fragen.
+- Vergleich mit dem 1.28.0-Stand (20.11.2026): Es gibt keine Tags; als Stand "Handbuch 1.28.0" gilt `72b5a6f` (letzter Commit auf main vor dem Merge der Brain-Vollmacht, `manual-version: 1.28.0`). Natives Backend (`swift build --product App`) und PWA (Vite-Dev) aus einem Wegwerf-Worktree, dieselbe Spec, frische SQLite je Browser, Ports 28097/25197. Chromium 2/2 und WebKit 2/2 gruen, Exit 0, alle 19 Texte je Chat "ok" und nach Neuladen gespeichert. **Auch auf dem alten Stand nicht reproduziert.** Keine Ursache benannt.
+- Grenzen: Der live ausgerollte Commit ist nicht belegt (nur Handbuchversion); Live laeuft mit gebautem PWA-Bundle und Reverse-Proxy (Vite-Dev hier), MariaDB (hier SQLite) und echten Geraeten (hier Chromium/WebKit-Desktop). Offen bleibt: Lino nach Geraet und genauem Fehltext fragen oder Live-Logs lesen (Lino).
 
 ## Nachtrag 19.11.2026: PWA-Seite "Brain-Vollmacht" (Karte `11DA4A38`, ADR 0032, Branch `agent/pwa-brain-mandat`, nicht gepusht)
 
