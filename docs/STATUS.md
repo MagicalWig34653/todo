@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 20.11.2026: Firefox-Test zum Kommentarfehler, Karte `DA09D11A` (nicht reproduziert, keine Ursache)
+
+- Auftrag: Lino hat Firefox als betroffenen Browser bestaetigt (moeglicherweise viele Zeilenumbrueche/Aufzaehlungsstriche). Gezielter Firefox-Lauf auf main d416bd1.
+- Vorbereitung: `web/node_modules` stand noch auf Playwright 1.64.1 (Firefox `firefox-1555` startet auf diesem Mac nie, `Could not find profile folder`); `npm ci` nach der gepinnten Lockdatei (1.65.0) und `npx playwright install firefox` (`firefox-1572`, Firefox 159) – danach startet Firefox. Keine Aenderung an `package.json`/Lockdatei.
+- Spec `web/e2e/comment-compare.spec.ts`: bestehende 19 Faelle je Karten- und Review-Chat (fill + Klick) plus neuer dritter Test mit Tastatureingabe (Tasten einzeln, Shift+Enter fuer Zeilenumbrueche, Senden per Enter, Ctrl/Cmd+Enter und Button; 12 und 60 Aufzaehlungsstriche, 40 Zeilen mit Leerzeilen, verschachtelte Striche mit Umlauten/Emoji). Pruefung je Fall: POST-Status, keine Fehlermeldung, kein Konsolenfehler, Feld geleert, Inhalt vor dem Senden gleich Soll, nach Neuladen ueber `GET /v1/tasks/{id}/comments` unveraendert gespeichert. Eine Race im Test behoben (Pruefung "kurzer Kommentar nach Neuladen" zaehlte sofort, bevor die Liste geladen war; nur mit dem Produktions-Bundle sichtbar).
+- Ergebnis (frisches natives Backend, SQLite): Firefox 159 gegen Vite-Dev 3/3 gruen; gegen das Produktions-Bundle (`web/build`, vom Backend selbst ausgeliefert, gleicher Ursprung wie live) Firefox, Chromium und WebKit je 3/3 gruen, Exit 0. Alle Faelle gespeichert, kein Fehler, keine Konsolenmeldung.
+- Nicht belegt: MariaDB statt SQLite, Reverse-Proxy/Traefik-Limits (Body-Groesse, Timeouts), Live-Version/Live-Daten, Firefox auf iOS/Android, Browser-Erweiterungen/Autofill, Konto mit Berechtigungsunterschieden. Der Fehler bleibt ohne Reproduktion; naechster Schritt: genauer Fehlertext/Zeitpunkt von Lino oder Live-Logs (Backend-Antwort und Proxy), sonst Test gegen MariaDB-Stack.
+
 ## Nachtrag 20.11.2026: BoringSSL-Altlizenz abgeloest, swift-nio-ssl 2.37.6 (Karte `72A0421F`, main 443d2e7, kein Deploy)
 
 - Ausgangslage: swift-nio-ssl 2.37.5 bindet BoringSSL `817ab07e` mit OpenSSL-/SSLeay-Altlizenz ein. Lino hat Update und Lizenzvermerke freigegeben.
