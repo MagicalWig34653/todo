@@ -15,20 +15,22 @@ const VIRTUAL_AUTHENTICATOR = {
  */
 export async function signedInPage(browser: Browser, displayName: string): Promise<Page> {
 	const baseURL = test.info().project.use.baseURL;
+	// Test stacks with a self-signed certificate (E2E_IGNORE_HTTPS_ERRORS=1, see playwright.config.ts): every context must accept it.
+	const ignoreHTTPSErrors = test.info().project.use.ignoreHTTPSErrors ?? false;
 	if (browser.browserType().name() === 'chromium') {
-		const page = await (await browser.newContext()).newPage();
+		const page = await (await browser.newContext({ ignoreHTTPSErrors })).newPage();
 		await addAuthenticator(page);
 		await register(page, displayName);
 		return page;
 	}
 	const helper = await chromium.launch();
 	try {
-		const ctx = await helper.newContext({ baseURL });
+		const ctx = await helper.newContext({ baseURL, ignoreHTTPSErrors });
 		const page = await ctx.newPage();
 		await addAuthenticator(page);
 		await register(page, displayName);
 		const state = await ctx.storageState();
-		const own = await (await browser.newContext({ storageState: state })).newPage();
+		const own = await (await browser.newContext({ storageState: state, ignoreHTTPSErrors })).newPage();
 		await own.goto('/');
 		await expect(own.getByTestId('account-menu')).toBeVisible({ timeout: 20_000 });
 		return own;

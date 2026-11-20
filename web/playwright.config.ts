@@ -8,7 +8,11 @@ const port = process.env.E2E_PORT ?? '25173';
 export default defineConfig({
 	testDir: 'e2e',
 	workers: 1,
-	use: { baseURL: process.env.E2E_BASE_URL ?? `http://localhost:${port}` },
+	use: {
+		baseURL: process.env.E2E_BASE_URL ?? `http://localhost:${port}`,
+		// Only for a test stack behind a self-signed certificate (production-like https, secure cookies): E2E_IGNORE_HTTPS_ERRORS=1.
+		ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === '1'
+	},
 	// Chromium is the default and the only browser CI runs today. Select others with `npx playwright test --project=webkit`
 	// after `npx playwright install firefox webkit`. Specs that use e2e/support/session.ts (for-you, freetext-review,
 	// task-graph, oauth-consent, attachment-upload) also run in Firefox/WebKit: the account is created in a helper Chromium
