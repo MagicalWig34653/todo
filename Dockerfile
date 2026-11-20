@@ -10,6 +10,10 @@ FROM swift:6.2-noble AS build
 WORKDIR /src
 COPY Package.swift Package.resolved* ./
 RUN swift package resolve
+# Licence notices must match the resolved BoringSSL copies; the build fails if they drift (card 72A0421F).
+COPY licenses licenses
+COPY scripts/check-third-party-notices.sh scripts/
+RUN scripts/check-third-party-notices.sh
 COPY Sources Sources
 COPY Tests Tests
 RUN swift build -c release --product App --static-swift-stdlib
@@ -19,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && useradd --system --create-home todo
 COPY --from=build /src/.build/release/App /usr/local/bin/todo-app
 COPY --from=web /web/build /srv/web
+COPY licenses /usr/share/licenses/todo-app
 ENV WEB_ROOT=/srv/web
 USER todo
 EXPOSE 8080
