@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 20.11.2026: BoringSSL-Altlizenz abgeloest, swift-nio-ssl 2.37.6 (Karte `72A0421F`, main 443d2e7, kein Deploy)
+
+- Ausgangslage: swift-nio-ssl 2.37.5 bindet BoringSSL `817ab07e` mit OpenSSL-/SSLeay-Altlizenz ein. Lino hat Update und Lizenzvermerke freigegeben.
+- Neu: `Package.resolved` swift-nio-ssl 2.37.6 (Rev `15e0b9e4`, BoringSSL `8eb25be6`, Apache-2.0), `Package.swift` Minimum 2.37.6; sonst keine Pin-Aenderung (swift-crypto bleibt 3.15.1, BoringSSL `0226f304`, Apache-2.0). `licenses/` mit dem BoringSSL-`LICENSE` (in beiden Revisionen byteidentisch), der fiat-crypto-Lizenz, den unveraenderten Upstream-`LICENSE.txt`/`NOTICE.txt` beider Pakete, `SOURCES.txt`, `SHA256SUMS` und `THIRD-PARTY-NOTICES.md` (erklaert u. a. den veralteten Verweis "ISC and OpenSSL" in der swift-nio-ssl-NOTICE). `scripts/check-third-party-notices.sh` prueft Pins, BoringSSL-Revisionen, Byteidentitaet der Upstream-Texte und Pruefsummen (CI-Schritt und Dockerfile-Build); Dockerfile legt `licenses/` nach `/usr/share/licenses/todo-app`.
+- Nachweise: Skript rot bei altem Pin (2.37.5, Exit 1), gruen beim neuen (Exit 0), rot bei veraendertem Lizenztext. Voller `swift test` auf c6921d5: 669 Tests, 20 uebersprungen, 0 Fehler, Exit 0. CI auf 443d2e7 gruen (Backend inkl. Notices-Schritt, PWA), Docker publish gruen (amd64, arm64, merge).
+- Image-Inhalt: `ghcr.io/magicalwig34653/todo-backend:sha-443d2e7` (= `edge`), je Architektur (arm64 `3e734c75d51c`, amd64 `460430cbb3aa`) enthaelt `/usr/share/licenses/todo-app/` mit neun Dateien; SHA-256 identisch zu `licenses/` (BoringSSL-LICENSE `827c8d8f...`).
+- Zuordnung veroeffentlichter Images (147 Tags, Stand 20.11.): `sha-<commit>`-Tags bis einschliesslich `sha-e77338c` (145 Stueck) tragen swift-nio-ssl 2.37.5 (BoringSSL `817ab07e`, Altlizenz), ohne Lizenzverzeichnis; `edge` und `sha-443d2e7` tragen 2.37.6 mit Lizenzverzeichnis. Zuordnung ueber das Label `org.opencontainers.image.revision` und `Package.resolved` des jeweiligen Commits. Welches Tag live laeuft, ist hier nicht belegt (Deploy und Live-System bleiben bei Lino); wer ein Image mit 2.37.5 live hat, bekommt die Aenderung erst mit einem Wechsel auf ein Tag ab `sha-443d2e7`.
+- Grenzen: Lizenztexte sind von boringssl.googlesource.com bei den gepinnten Revisionen geholt, nicht aus den Paketen (die Pakete enthalten keine LICENSE-Datei fuer BoringSSL); `THIRD-PARTY-NOTICES.md` deckt nur BoringSSL und die beiden Pakete ab, kein vollstaendiges Inventar aller Abhaengigkeiten; keine rechtliche Bewertung. Die Zeile "error ... no such table: sync_mutations" im Testlog ist ein Scheduler-Log nach Testende, kein Fehlschlag.
+
 ## Nachtrag 19.11.2026: Kommentarvergleich, Bug-Karte `DA09D11A` (nur Test, keine Ursache, nicht reproduziert)
 
 - Auftrag: Kurze und mehrzeilige Texte mit Listenstrichen im normalen Kommentarformular vergleichen, Speichern und Neuladen pruefen, Rueckmeldung und tatsaechlich gespeicherten Kommentar belegen.
