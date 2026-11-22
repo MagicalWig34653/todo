@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 22.11.2026: Abgleich nach Linos Review-Annahmen (Board, Repos, CI), kein Deploy
+
+- Angenommen (Board, 22.11. ca. 09:20): Glow-up W2 (Unterhaltung, Agentenstatus), W3 (Funktionsluecken), iOS-Absturz bei Benachrichtigung, Board einmal laden, Repository-Anzeige (A9796ED2, jetzt auf done gesetzt), Browser-Matrix. Review-Warteschlange leer, eine offene Frage (DA09D11A, wartet auf Lino).
+- Repo-Stand: Hauptrepo main = origin/main `9cf5470`, CI, Pages und Docker publish gruen; Apple-main = origin/main `c7c7f66` (enthaelt glowup W2 bis W4, Review-Varianten, Rueckgaengig nach Neustart). Unmerged: Hauptrepo `agent/live-ansicht-backend` (Vorstufe, per Merge `506fcfd`/`4f85059` ersetzt, nicht loeschen ohne Lino), Apple `ui-audit` und `feature/*` (alt). Worktree `.claude/worktrees/agent-a7f11ed6c8a37aa9f` (Branch gemergt) hat uncommittete Aenderungen in STATUS.md und `repo-line-stability.spec.ts`: nicht angefasst, Lino/Brain entscheidet.
+- Board bereinigt: verwaiste Claims auf Glow-up-Hauptkarte und W4 freigegeben. W4-Rest: reales macOS-Hauptfenster ansehen und Previews je Screen; danach neues Review.
+- Bewusst nicht gemacht: TestFlight-Upload des aktuellen Apple-main (der Client setzt Server-Funktionen voraus, die live noch fehlen: Review-Varianten mit `undoUntil`, Live-Ansicht, Kalender; erst nach Linos Deploy), Server-Deploy, Branch-/Worktree-Loeschungen.
+- Prioritaeten: (1) Linos Deploy des Standes ab `9cf5470` (Kommentarlimit-Fix, Review-Bug 7a1261b, Anhaenge-Fix); danach 23 Alt-Reviews bereinigen (6515CAFA) und TestFlight; (2) DA09D11A: Lino nach dem Deploy mit langem Aufzaehlungskommentar in Firefox gegenpruefen; (3) 330C57F8: Browser-E2E fuer die Erstelldatum-Anzeige und Apple-Paritaet; (4) W4-Rest; (5) A7865053 stilles Nachladen der Repository-Zeile.
+
 ## Nachtrag 22.11.2026: Kommentarfehler `DA09D11A`, zwei reproduzierte Fehlerbilder bei langen Texten behoben (Firefox, kein Deploy)
 
 - Ausgangslage: Lino meldet Firefox, Kommentar "hat einfach nicht gespeichert", vermutlich viele Zeilenumbrueche/Aufzaehlungsstriche (Ergaenzung 22.11. ohne neue Fakten). Alle bisherigen Laeufe (Chromium, WebKit, Firefox 159, SQLite und MariaDB/nginx/HTTP2, Stand 1.28.0) waren gruen, aber keiner ging ueber 9 500 Zeichen: `comment-compare.spec.ts` endet dort, der Server erlaubt 10 000 (`CommentService.text`). Die Grenze wurde nie getestet.
