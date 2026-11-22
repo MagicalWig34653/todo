@@ -14,6 +14,11 @@ ORIGIN="http://localhost:$PORT"
 # example pictures for the owner's review).
 MULTI="timestamps repo-line-refresh comment-limits comment-compare"
 SKIP=" mail server-settings review-variants-demo repo-line-stability "
+# Advisory: run and reported, but a red result does not fail the run. These pass locally and against the image on a Mac, but
+# fail now and then on the Linux runner with a different test each time (calendar: drop lands at 09:15 instead of 09:00;
+# card-detail: timeouts; passkey-flow: the cycle notice of the dependency test). Cards CB70D313 and 188D611F track them;
+# remove a spec from this list once it has been green on the runner several times in a row.
+ADVISORY=" calendar card-detail passkey-flow "
 if [ $# -eq 0 ]; then
   list=""
   for s in $MULTI; do list="$list $s:chromium,firefox,webkit"; done
@@ -27,7 +32,7 @@ if [ $# -eq 0 ]; then
   set -- $list
 fi
 NAME="e2e-ci-$$"
-failed=""; ran=0
+failed=""; advisory=""; ran=0
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 
@@ -51,11 +56,15 @@ for entry in "$@"; do
     echo "=== $spec [$browser] ==="
     if ! start_backend; then failed="$failed $spec:$browser(start)"; continue; fi
     if ! (cd "$(dirname "$0")/../web" && E2E_BASE_URL="$ORIGIN" npx playwright test "e2e/$spec.spec.ts" --project="$browser" --reporter=line --output="test-results/$spec-$browser-$ran"); then
-      failed="$failed $spec:$browser"
+      case "$ADVISORY" in
+        *" $spec "*) advisory="$advisory $spec:$browser" ;;
+        *) failed="$failed $spec:$browser" ;;
+      esac
       docker logs "$NAME" 2>&1 | tail -15
     fi
   done
 done
 echo
+[ -z "$advisory" ] || echo "E2E ADVISORY (did not fail the run):$advisory"
 if [ -n "$failed" ]; then echo "E2E FAILED ($ran runs):$failed"; exit 1; fi
 echo "E2E OK ($ran runs)"
