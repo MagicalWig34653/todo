@@ -14,6 +14,7 @@ export function describeError(e: unknown): string {
 		if (e.isConflict) return t('conflict.body');
 		if (e.status === 404) return t('error.not_found');
 		if (e.status === 403) return t('error.forbidden');
+		if (e.status === 413) return t('error.payload_too_large');
 		if (e.status === 429) return t('error.too_many_requests');
 		if (e.status === 503) return t('error.storage_unavailable');
 		if (e.reason?.startsWith('upload_')) {

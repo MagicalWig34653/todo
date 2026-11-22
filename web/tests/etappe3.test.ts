@@ -137,4 +137,12 @@ describe('error texts', () => {
 		expect(describeError(new ApiError(422, 'Unprocessable Entity'))).toBe(de['error.unprocessable']);
 		expect(describeError(new ApiError(400, 'recurrence_requires_date'))).toBe(de['error.recurrence_requires_date']);
 	});
+
+	// Bug DA09D11A: a comment over the limit (400 invalid_text) or a request that is too big (413) only said "Etwas ist schiefgelaufen".
+	it('says that a text is too long instead of the generic error', () => {
+		expect(describeError(new ApiError(400, 'invalid_text'))).toBe(de['error.invalid_text']);
+		expect(describeError(new ApiError(413, 'Payload Too Large'))).toBe(de['error.payload_too_large']);
+		expect(de['error.invalid_text']).toContain('10 000');
+		expect(describeError(new ApiError(500, 'Internal Server Error'))).toBe(de['error.generic']);
+	});
 });

@@ -138,6 +138,35 @@ final class CollaborationTests: XCTestCase, @unchecked Sendable {
         } catch { XCTAssertEqual((error as? Abort)?.status, .notFound) }
     }
 
+    /// Bug DA09D11A: the in-memory tester does not enforce the request body limit, so a comment that is valid by character count
+    /// (10 000) but larger than Vapor's 16 kB default body (umlauts and emoji are 2 to 4 bytes) was rejected with 413 in
+    /// production only. This goes through a real HTTP server.
+    func testCommentWithinCharacterLimitIsNotRejectedForBodySize() async throws {
+        let f = try await fixture()
+        defer { Task { await f.test.shutdown() } }
+        let tester = try await f.test.app.testable(method: .running(hostname: "127.0.0.1", port: 0))
+        func post(_ text: String) async throws -> (HTTPStatus, String) {
+            var result: (HTTPStatus, String) = (.internalServerError, "")
+            try await tester.test(.POST, f.path + "/comments", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: f.token)
+                req.headers.contentType = .json
+                req.body = ByteBuffer(data: (try? JSONSerialization.data(withJSONObject: ["body": text])) ?? Data())
+            }, afterResponse: { res async in result = (res.status, String(buffer: res.body)) })
+            return result
+        }
+        // 1 250 bullet lines of 8 characters = 10 000 characters (the last line break is trimmed: 9 999), about 17 kB as UTF-8.
+        let multibyte = String(repeating: "- äöü 🍎\n", count: 1_250)
+        XCTAssertGreaterThan(multibyte.utf8.count, 16 * 1024)
+        let accepted = try await post(multibyte)
+        XCTAssertEqual(accepted.0, .created, accepted.1)
+        // 10 001 characters stay a clear 400 invalid_text; a body far above any valid comment stays 413.
+        let tooLong = try await post(String(repeating: "x", count: 10_001))
+        XCTAssertEqual(tooLong.0, .badRequest)
+        XCTAssertTrue(tooLong.1.contains("invalid_text"), tooLong.1)
+        let huge = try await post(String(repeating: "x", count: 600_000))
+        XCTAssertEqual(huge.0, .payloadTooLarge)
+    }
+
     func testMaximumLengthTextRoundTripsWithoutTruncation() async throws {
         let f = try await fixture()
         defer { Task { await f.test.shutdown() } }

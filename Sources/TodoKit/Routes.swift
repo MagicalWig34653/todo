@@ -14,6 +14,10 @@ struct HealthResponse: Content {
 }
 
 public func routes(_ app: Application) throws {
+    // Vapor's default collected body is 16 kB. Text fields allow up to 10 000 characters, which is 17 kB to 40 kB of UTF-8
+    // (umlauts 2 bytes, emoji 4 bytes; bug DA09D11A: a valid long comment failed with 413). 256 kB covers the worst case
+    // including JSON escapes; uploads and MCP (8 MB) set their own limits.
+    app.routes.defaultMaxBodySize = "256kb"
     try app.register(collection: OAuthController())
     try app.register(collection: AuthController())
     try registerIdentity(app)
