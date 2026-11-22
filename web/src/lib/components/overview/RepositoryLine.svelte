@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount, untrack } from 'svelte';
+	import { startLiveRefresh } from '#lib/liveRefresh.js';
 	import { api, type ProjectSync, type Role } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -49,6 +51,22 @@
 		);
 		return () => (current = false);
 	});
+
+	// Bindings change elsewhere too (an agent binds a repository, another tab removes one): follow them quietly. No loading state,
+	// open forms and their drafts stay untouched, an error keeps what is shown. Only a changed answer replaces the data.
+	async function reloadQuietly() {
+		const id = stableID;
+		if (untrack(() => phase) !== 'ready') return;
+		try {
+			const fresh = await api.getProjectSync(id);
+			if (id !== stableID || untrack(() => phase) !== 'ready') return;
+			if (JSON.stringify(untrack(() => sync)) !== JSON.stringify(fresh)) sync = fresh;
+			if (confirming && !bindingList(fresh).some((b) => b.repository === confirming)) confirming = null;
+		} catch {
+			/* keep the data on screen; the next live hint tries again */
+		}
+	}
+	onMount(() => startLiveRefresh(reloadQuietly));
 
 	const bindings = $derived(bindingList(sync));
 	const editable = $derived(canEditSync(role));

@@ -93,6 +93,28 @@ final class LiveRefreshTests: XCTestCase {
         XCTAssertEqual(again, last)
     }
 
+    /// Card A7865053: binding, re-binding with a threshold, and unbinding a repository move the live token, so an open repository
+    /// line refreshes on the hint (they were the only project writes without one, the line stayed stale until a reload).
+    func testTokenRisesForRepositoryBindingChanges() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        let a = try await account(t)
+        let project = try await t.json(.POST, "/v1/projects", ["name": "Bindungen"], token: a.token)
+        let projectID = try XCTUnwrap(project.body?["id"] as? String)
+        var last = try await token(t, a.token)
+        func step(_ what: String, _ method: HTTPMethod, _ path: String, _ body: [String: Any]? = nil) async throws {
+            let r = body == nil ? try await t.json(method, path, token: a.token) : try await t.json(method, path, body!, token: a.token)
+            XCTAssertTrue((200..<300).contains(Int(r.status.code)), "\(what): \(r.status)")
+            let now = try await token(t, a.token)
+            XCTAssertNotEqual(now, last, what)
+            last = now
+        }
+        try await step("repository bound", .PUT, "/v1/projects/\(projectID)/sync", ["repository": "github.com/example/eins"])
+        try await step("second repository bound", .PUT, "/v1/projects/\(projectID)/sync", ["repository": "github.com/example/zwei"])
+        try await step("threshold changed", .PUT, "/v1/projects/\(projectID)/sync", ["repository": "github.com/example/zwei", "staleAfterDays": 7])
+        try await step("repository unbound", .DELETE, "/v1/projects/\(projectID)/bindings?repository=github.com/example/eins")
+    }
+
     func testTokenRisesForTeamInvitationAndGrant() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }

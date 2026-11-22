@@ -72,6 +72,8 @@ func registerLiveMiddleware(_ app: Application) {
     use(TaskLiveSession.self); use(TaskLiveEvent.self); use(SessionStatus.self)
     // Sharing: invitations, membership changes, team projects and grants must reach the other account's open views.
     use(Team.self); use(TeamMembership.self); use(ProjectGrant.self)
+    // Repository bindings and their sync state (bind, unbind, threshold, record_sync): the open repository line and sync chip follow them.
+    use(ProjectRepositoryBinding.self)
 }
 
 enum LiveToken {
