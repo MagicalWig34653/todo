@@ -18,9 +18,12 @@
 	async function load() {
 		items = await api.milestones(projectID);
 	}
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	const taskKey = $derived(taskID);
+	const projectKey = $derived(projectID);
 	$effect(() => {
-		void taskID;
-		void projectID;
+		void taskKey;
+		void projectKey;
 		untrack(() => attempt(load));
 	});
 

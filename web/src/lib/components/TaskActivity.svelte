@@ -37,8 +37,10 @@
 		} else if (fresh.length > 0) items = [...fresh, ...items];
 	}
 	onMount(() => startLiveRefresh(refresh));
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	const taskKey = $derived(taskID);
 	$effect(() => {
-		void taskID;
+		void taskKey;
 		loaded = false;
 		void refreshKey;
 		untrack(() => attempt(() => load()));

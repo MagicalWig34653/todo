@@ -253,8 +253,9 @@ test('320 px: full-screen sheet without horizontal overflow; light and dark scre
 		await expect(dialog()).toBeVisible();
 		await expect(dialog().getByTestId('card-description')).toContainText(DESC_END);
 		const box = await dialog().boundingBox();
-		// The sheet fills the visible page width: 320 px with overlay scrollbars (macOS), 305 px beside a classic 15 px scrollbar (Linux CI).
-		const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+		// The sheet fills the page width minus the scrollbar gutter that html reserves (`scrollbar-gutter: stable`): 0 px with overlay
+		// scrollbars (macOS, 320 px), 15 px with classic ones (Linux, 305 px). documentElement.clientWidth ignores the gutter, body does not.
+		const pageWidth = await page.evaluate(() => document.body.clientWidth);
 		expect(box!.width).toBeLessThanOrEqual(pageWidth);
 		expect(box!.width).toBeGreaterThanOrEqual(pageWidth - 2);
 		expect(box!.height).toBeGreaterThanOrEqual(690);

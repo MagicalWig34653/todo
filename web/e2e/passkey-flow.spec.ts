@@ -361,7 +361,7 @@ test('recurrence, reminders, dependencies, milestones and filter changes', async
 	await setView('Liste');
 	const task = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
 	// The form adopts the stored planning when it arrives; selecting before that would be overwritten.
-	const planningLoaded = page.waitForResponse((r) => r.url().includes('/v1/planning/tasks/') && r.request().method() === 'GET');
+	const planningLoaded = page.waitForResponse((r) => /\/v1\/planning\/tasks\/[0-9A-Fa-f-]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET');
 	await task.getByRole('button', { name: 'Details' }).click();
 	await planningLoaded;
 	const detail = task.getByTestId('task-detail');
@@ -476,7 +476,15 @@ test('invited person: directory search, team invitation name, author and actor n
 		await expect(row).toContainText('Einladung offen');
 
 		// The invitee sees the team name, not just an ID.
-		await guest.getByRole('button', { name: 'Mehr', exact: true }).click().then(() => guest.getByRole('button', { name: 'Teams', exact: true }).click());
+		// "Mehr" is a toggle: open it only when "Teams" is not visible, and retry as a unit. The old chained click hung for 90 s in
+		// about 1 of 15 Linux runs (cause not proven: "Mehr" was closed before the click in all 15 diagnostic runs).
+		const guestTeams = guest.getByRole('button', { name: 'Teams', exact: true });
+		const guestMore = guest.getByRole('button', { name: 'Mehr', exact: true });
+		await expect(async () => {
+			if (!(await guestTeams.isVisible())) await guestMore.click();
+			await expect(guestTeams).toBeVisible({ timeout: 1500 });
+		}).toPass({ timeout: 20_000 });
+		await guestTeams.click();
 		await expect(guest.getByTestId('team-invitation')).toContainText('Einladung zum Team Familie');
 
 		// Now a relation exists: she is found by name and can be shared a project with.
@@ -689,8 +697,9 @@ test('sidebar order: drag and drop, move under a parent, menu alternatives, cycl
 	// Stale UI: Gamma and Alpha are still roots here. Dropping Gamma into Alpha would make Gamma its own descendant.
 	await dragProject(sidebarItem('Gamma'), sidebarItem('Alpha'), 0.5);
 	await expect(page.getByTestId('notice')).toContainText('nicht in sich selbst');
-	await page.getByTestId('notice').getByRole('button', { name: 'Abbrechen' }).click();
+	// Stop the aborting first: while /v1/projects and the live poll fail, every refresh rebuilds the banner and the click never finds a stable button.
 	await page.unroute(frozen);
+	await page.getByTestId('notice').getByRole('button', { name: 'Abbrechen' }).click({ timeout: 5000 }).catch(() => undefined);
 });
 
 test('project comments panel', async () => {
@@ -1378,7 +1387,8 @@ test('planning form merges changes of another client and reports conflicting edi
 	await openProject('Küche');
 	await setView('Liste');
 	const task = page.getByTestId('task-item').filter({ hasText: 'Putzen' });
-	const loaded = page.waitForResponse((r) => r.url().includes('/v1/planning/tasks/') && r.request().method() === 'GET');
+	// Exactly the planning document: `includes` also matched `.../dependencies`, fired in the same millisecond (1 in 20 Linux runs).
+	const loaded = page.waitForResponse((r) => /\/v1\/planning\/tasks\/[0-9A-Fa-f-]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET');
 	await task.getByRole('button', { name: 'Details' }).click();
 	const stored = await (await loaded).json();
 	const detail = task.getByTestId('task-detail');

@@ -97,8 +97,10 @@
 	}
 	// The chat lives in the card window (a dialog); it must keep refreshing there. Refresh never touches the draft.
 	onMount(() => startLiveRefresh(refresh, { allowInDialog: chat }));
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	const taskKey = $derived(taskID);
 	$effect(() => {
-		void taskID;
+		void taskKey;
 		void threadKey;
 		editingID = null;
 		loaded = false;

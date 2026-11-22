@@ -18,8 +18,10 @@
 	async function load() {
 		items = await api.listCriteria(taskID);
 	}
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	const taskKey = $derived(taskID);
 	$effect(() => {
-		void taskID;
+		void taskKey;
 		untrack(() => attempt(load));
 	});
 	onMount(() =>

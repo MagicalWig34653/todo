@@ -32,8 +32,22 @@ async function api<T>(method: 'post' | 'patch' | 'put' | 'get', path: string, da
 interface Planned { plannedAt?: string | null; plannedMinutes?: number | null; plannedAllDay?: boolean; task: { version: number } }
 const planning = (id: string) => api<Planned>('get', `/v1/planning/tasks/${id}`);
 const card = (title: string) => page.getByTestId('calendar-card').filter({ hasText: title });
+/** The week grid scrolls itself to 07:00 after loading; on Linux that scroll is animated (about half a second), on macOS it jumps.
+ *  A drop target measured while it still moves lands a slot too late (observed: 09:15 instead of 09:00, 1 in 8 Linux runs). */
+async function gridSettled() {
+	let last = -1;
+	await expect
+		.poll(async () => {
+			const now = await page.evaluate(() => (document.querySelector('[data-testid="calendar-week"]') as HTMLElement | null)?.scrollTop ?? 0);
+			const stable = now === last && now > 0;
+			last = now;
+			return stable;
+		}, { intervals: [120], timeout: 10_000 })
+		.toBe(true);
+}
 /** Real mouse drag with intermediate moves (the browser only starts a native drag after a few pixels). */
 async function drag(source: Locator, target: Locator, position?: { x: number; y: number }) {
+	await gridSettled();
 	await source.scrollIntoViewIfNeeded();
 	const from = (await source.boundingBox())!;
 	await page.mouse.move(from.x + 10, from.y + from.height / 2);
