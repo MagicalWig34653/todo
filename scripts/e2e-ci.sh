@@ -14,11 +14,11 @@ ORIGIN="http://localhost:$PORT"
 # example pictures for the owner's review).
 MULTI="timestamps repo-line-refresh comment-limits comment-compare"
 SKIP=" mail server-settings review-variants-demo repo-line-stability "
-# Advisory: run and reported, but a red result does not fail the run. These pass locally and against the image on a Mac, but
-# fail now and then on the Linux runner with a different test each time (calendar: drop lands at 09:15 instead of 09:00;
-# card-detail: timeouts; passkey-flow: the cycle notice of the dependency test). Cards CB70D313 and 188D611F track them;
-# remove a spec from this list once it has been green on the runner several times in a row.
-ADVISORY=" calendar card-detail passkey-flow "
+# Advisory: run and reported, but a red result does not fail the run. Only passkey-flow is left: its "invited person" test hangs
+# for 90 s in the guest browser in roughly 1 of 20 Linux runs (cause not proven, cards CB70D313 and 188D611F). calendar and
+# card-detail were removed again once their causes were proven and fixed (scroll animation, scrollbar gutter) and they stayed
+# green in bounded Linux loops and on the runner. Remove passkey-flow too once that hang is explained or has stayed green.
+ADVISORY=" passkey-flow "
 if [ $# -eq 0 ]; then
   list=""
   for s in $MULTI; do list="$list $s:chromium,firefox,webkit"; done
