@@ -138,6 +138,29 @@ final class CollaborationTests: XCTestCase, @unchecked Sendable {
         } catch { XCTAssertEqual((error as? Abort)?.status, .notFound) }
     }
 
+    /// Card 330C57F8: the PWA shows "erstellt" / "zuletzt geändert" for tasks from the plain task payload, in the card context,
+    /// in task lists and in subtasks. The payload used to carry neither field, so those lines silently never appeared.
+    func testTaskPayloadsCarryCreatedAndUpdatedAt() async throws {
+        let f = try await fixture()
+        defer { Task { await f.test.shutdown() } }
+        func instants(_ object: [String: Any], _ what: String) throws -> (Date, Date) {
+            let created = try XCTUnwrap(object["createdAt"] as? String, "\(what): createdAt missing")
+            let updated = try XCTUnwrap(object["updatedAt"] as? String, "\(what): updatedAt missing")
+            let parse = { (s: String) -> Date? in ISO8601DateFormatter().date(from: s) }
+            return (try XCTUnwrap(parse(created), "\(what): \(created)"), try XCTUnwrap(parse(updated), "\(what): \(updated)"))
+        }
+        let context = try await request(f.test, .GET, f.path + "/context", token: f.token)
+        XCTAssertEqual(context.status, .ok)
+        let (created, updated) = try instants(try XCTUnwrap(context.object["task"] as? [String: Any]), "context.task")
+        XCTAssertLessThanOrEqual(created, updated)
+        XCTAssertLessThan(abs(created.timeIntervalSinceNow), 60)
+
+        let list = try await request(f.test, .GET, "/v1/tasks", token: f.token)
+        let items = try XCTUnwrap(JSONSerialization.jsonObject(with: list.data) as? [[String: Any]])
+        XCTAssertFalse(items.isEmpty)
+        for item in items { _ = try instants(item, "GET /v1/tasks") }
+    }
+
     /// Bug DA09D11A: the in-memory tester does not enforce the request body limit, so a comment that is valid by character count
     /// (10 000) but larger than Vapor's 16 kB default body (umlauts and emoji are 2 to 4 bytes) was rejected with 413 in
     /// production only. This goes through a real HTTP server.

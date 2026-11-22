@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 22.11.2026: Erstelldatum, Browser-E2E und Apple-Paritaet, Luecke im Server geschlossen (Karte `330C57F8`, kein Deploy)
+
+- Abgleich: PWA-Anzeige (`72b5a6f`) war auf main, Browser-E2E und Apple-Paritaet offen; Zustaendigkeit lag bei der Hauptsession, kein Agent aktiv.
+- **Befund (echter Fehler, vom Browsertest gefunden):** Die PWA liest `task.createdAt`/`updatedAt`, aber `TaskDTO` lieferte beides nie (nur Kommando-Zentrale-Karten, Fragen, Reviews, Kommentare hatten Zeiten). Die vitest-Tests der Zeit-Komponente nutzten erfundene Daten und blieben gruen; im echten Betrieb fehlten "erstellt" auf Board-Karten und im Task-Detail sowie "zuletzt geaendert" still (kein Fehler, nur leere Zeilen). Fix: `TaskDTO.createdAt`/`updatedAt` (additiv, optional; `contracts/openapi.yaml` Task). Wirkt auch auf Listen, Kontext, Unteraufgaben und MCP-Ausgaben von Aufgaben.
+- Neu: `web/e2e/timestamps.spec.ts` (6 Tests: Aufgaben-Karte erstellt/zuletzt geaendert und Kommentarzeit, Frage gestellt/beantwortet, Review angefragt/entschieden, Board-Karte "erstellt" einzeilig, "Fuer dich" bei 320 px ohne Ueberlauf). Je `<time>`: `datetime` = exakter API-Zeitpunkt, relativer Text, Tooltip `dd.MM.yyyy, HH:mm:ss GMT+n` mit Berliner Wanduhr gegen den UTC-Zeitpunkt geprueft (unabhaengig von der Browserzone). Swift-Test `CollaborationTests.testTaskPayloadsCarryCreatedAndUpdatedAt` (Kontext und Liste).
+- Rot dann gruen: Swift-Test vor dem Fix rot (`createdAt` fehlt), danach gruen; Spec vor dem Fix im Setup rot (API-Feld `task` fehlt), danach Firefox, Chromium, WebKit je 6/6 gruen (frisches natives Backend auf SQLite, Ports 28098/25198). Gates: `swift test` 651 bestanden, 20 uebersprungen, 0 Fehler; vitest 512/512; `npm run check` 0 Fehler.
+- Apple (`todo-apple`, Branch `agent/apple-erstelldatum`, Details dort im STATUS): `TodoTask.createdAt/updatedAt`, `AuditTime.exact` (Berlin, gleiche Form wie PWA), `AuditTimeText` (relativ + genau per Tooltip, Langdruck, VoiceOver-Wert) an Karte, Frage, Review, Notiz, Kommentar; echter E2E gegen dieses Backend gruen.
+- Offen/Grenzen: "beantwortet" zeigt die App nirgends (beantwortete Fragen werden dort nicht aufgelistet); Chromium/Firefox/WebKit-Desktop, kein echtes Geraet; Live greift erst nach Linos Deploy (Server noetig, sonst fehlen die Zeilen weiter); die Spec laeuft nicht in der CI (wie die anderen Playwright-Specs).
+
 ## Nachtrag 22.11.2026: Abgleich nach Linos Review-Annahmen (Board, Repos, CI), kein Deploy
 
 - Angenommen (Board, 22.11. ca. 09:20): Glow-up W2 (Unterhaltung, Agentenstatus), W3 (Funktionsluecken), iOS-Absturz bei Benachrichtigung, Board einmal laden, Repository-Anzeige (A9796ED2, jetzt auf done gesetzt), Browser-Matrix. Review-Warteschlange leer, eine offene Frage (DA09D11A, wartet auf Lino).

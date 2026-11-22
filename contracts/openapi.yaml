@@ -997,6 +997,14 @@ components:
             - done
         version:
           type: integer
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation time (UTC). Additive since card 330C57F8; clients must tolerate its absence on older servers.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last change (UTC), same availability as createdAt.
         planning:
           $ref: '#/components/schemas/TaskPlanningSummary'
         labels:

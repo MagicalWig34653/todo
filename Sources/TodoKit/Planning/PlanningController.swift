@@ -66,6 +66,9 @@ struct TaskDTO: Content {
     /// Board column of the project (`null` = no column); position inside it.
     let columnID: UUID?
     let boardPosition: Int
+    /// Creation and last change of the task (the PWA and the app show them as "erstellt" / "zuletzt geändert").
+    let createdAt: Date?
+    let updatedAt: Date?
     /// Set by REST and MCP task lists; omitted from other responses.
     var planning: TaskPlanningSummary?
     /// Only set by the task list with `includeLabels=true`: names of the caller's own labels on the task.
@@ -82,6 +85,8 @@ struct TaskDTO: Content {
         version = t.version
         columnID = t.columnID
         boardPosition = t.boardPosition
+        createdAt = t.createdAt
+        updatedAt = t.updatedAt
     }
 }
 
