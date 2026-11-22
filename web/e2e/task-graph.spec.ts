@@ -2,13 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { signedInPage } from './support/session';
 import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
 //   npx playwright test e2e/task-graph.spec.ts --project=chromium
 // Optional: E2E_EDGE_SHIM=1 answers GET /v1/planning/dependencies from the per-task endpoints, for a backend binary
-// built before that route existed. Screenshots go to E2E_SHOTS (default /private/tmp/claude-501/task-graph).
+// built before that route existed. Screenshots go to E2E_SHOTS (default: task-graph in the system temp dir).
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
-const SHOTS = process.env.E2E_SHOTS ?? '/private/tmp/claude-501/task-graph';
+const SHOTS = process.env.E2E_SHOTS ?? join(tmpdir(), 'task-graph');
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };

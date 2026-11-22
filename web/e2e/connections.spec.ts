@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
@@ -7,7 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 // Covers named MCP connections, connections in the share dialog and the "connection wanted a project" notice (ADR 0028).
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 const ORIGIN = process.env.E2E_BASE_URL ?? 'http://localhost:25173';
-const SHOTS = process.env.SHOTS_DIR ?? '/private/tmp/claude-501/mcp-connections-shots';
+const SHOTS = process.env.SHOTS_DIR ?? join(tmpdir(), 'mcp-connections-shots');
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 let access = '';

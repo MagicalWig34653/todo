@@ -1,11 +1,13 @@
 import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
 //   npx playwright test e2e/detail-description-overlap.spec.ts --project=chromium
 // A long multi-line (bullet list) description must not run into the sections below it in the card detail.
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
-const SHOTS = process.env.SHOTS_DIR ?? '/private/tmp/claude-501/detail-overlap';
+const SHOTS = process.env.SHOTS_DIR ?? join(tmpdir(), 'detail-overlap');
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };

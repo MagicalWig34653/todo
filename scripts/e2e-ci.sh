@@ -50,7 +50,7 @@ for entry in "$@"; do
     ran=$((ran + 1))
     echo "=== $spec [$browser] ==="
     if ! start_backend; then failed="$failed $spec:$browser(start)"; continue; fi
-    if ! (cd "$(dirname "$0")/../web" && E2E_BASE_URL="$ORIGIN" npx playwright test "e2e/$spec.spec.ts" --project="$browser" --reporter=line); then
+    if ! (cd "$(dirname "$0")/../web" && E2E_BASE_URL="$ORIGIN" npx playwright test "e2e/$spec.spec.ts" --project="$browser" --reporter=line --output="test-results/$spec-$browser-$ran"); then
       failed="$failed $spec:$browser"
       docker logs "$NAME" 2>&1 | tail -15
     fi

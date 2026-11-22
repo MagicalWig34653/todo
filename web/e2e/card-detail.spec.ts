@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 // Needs a fresh backend database (bootstrap happens here). Run on its own:
@@ -7,7 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 // Covers the large card detail window: question, review, task/progress/screenshots and confirmation cards.
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 const ORIGIN = process.env.E2E_BASE_URL ?? 'http://localhost:25173';
-const SHOTS = '/private/tmp/claude-501/card-detail2';
+const SHOTS = join(process.env.SHOTS_DIR ?? tmpdir(), 'card-detail2');
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
