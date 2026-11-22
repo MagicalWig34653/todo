@@ -1,0 +1,76 @@
+name: E2E
+
+# Browser E2E (Playwright: Chromium, Firefox, WebKit) against the backend image that "Docker publish" just built from the same
+# commit, so the tests see exactly what would be deployed (production bundle, no extra Swift build). One fresh container and SQLite
+# database per spec and browser (scripts/e2e-ci.sh). Not a gate for the image: the image is already published; a red run here
+# means "do not deploy this tag". Cards D434B3FD, 330C57F8, A7865053, DA09D11A.
+on:
+  workflow_run:
+    workflows: ["Docker publish"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: Tag of ghcr.io/<repo>-backend to test (for example sha-5e609bd or edge)
+        default: edge
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: e2e-${{ github.event.workflow_run.head_sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright against the published image
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.HEAD_SHA }}
+      - name: Image under test
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then TAG="${{ inputs.image-tag }}"; else TAG="sha-${HEAD_SHA::7}"; fi
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-backend:${TAG}" >> "$GITHUB_ENV"
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull the image (must carry this commit)
+        run: |
+          docker pull "$IMAGE"
+          echo "revision: $(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run the specs (fresh database per spec and browser)
+        run: scripts/e2e-ci.sh "$IMAGE"
+      - name: Keep traces and screenshots of failed tests
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-test-results
+          path: web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
