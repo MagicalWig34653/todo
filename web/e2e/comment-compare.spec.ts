@@ -75,7 +75,8 @@ async function compare(thread: 'task' | 'review') {
 		await expect(page.getByText('Etwas ist schiefgelaufen')).toHaveCount(0).catch(() => problems.push('error message shown'));
 		if (consoleErrors.length > errorsBefore) problems.push(`console: ${consoleErrors.slice(errorsBefore).join(' | ')}`);
 		if (!res || status >= 300) { table.push(`${c.name}: ${problems.join('; ')}`); failures.push(`${c.name}: ${problems.join('; ')}`); continue; }
-		if ((await field.inputValue()) !== '') problems.push('field not cleared');
+		// The composer clears after the response has been handled by the page, so wait for it instead of reading once.
+		await expect(field).toHaveValue('', { timeout: 5_000 }).catch(() => problems.push('field not cleared'));
 		table.push(`${c.name} (${c.text.length} chars): ${problems.length ? problems.join('; ') : 'ok'}`);
 		if (problems.length) failures.push(`${c.name}: ${problems.join('; ')}`);
 	}
@@ -151,7 +152,7 @@ test('card chat: texts typed key by key with line breaks and bullets are saved (
 		else if (res.status() >= 300) problems.push(`POST ${res.status()} ${(await res.text().catch(() => '')).slice(0, 200)}`);
 		await expect(page.getByText('Etwas ist schiefgelaufen')).toHaveCount(0).catch(() => problems.push('error message shown'));
 		if (consoleErrors.length > errorsBefore) problems.push(`console: ${consoleErrors.slice(errorsBefore).join(' | ')}`);
-		if (res && res.status() < 300 && (await field.inputValue()) !== '') problems.push('field not cleared');
+		if (res && res.status() < 300) await expect(field).toHaveValue('', { timeout: 5_000 }).catch(() => problems.push('field not cleared'));
 		if (problems.length) failures.push(`${c.name}: ${problems.join('; ')}`);
 	}
 
