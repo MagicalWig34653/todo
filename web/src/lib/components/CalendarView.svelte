@@ -137,8 +137,9 @@
 			}
 			pending--;
 			if (pending === 0) {
-				versions.clear();
+				// Keep the new versions until the reload has brought them in: a key pressed meanwhile must not send the old one (409).
 				await load();
+				if (pending === 0) versions.clear();
 			}
 			void refocus(before.taskID);
 		});

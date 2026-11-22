@@ -72,7 +72,9 @@ test('hub: reachable from the user menu, groups and one description per entry', 
 	}
 	// Landing: every visible entry has a card with its description line.
 	const cards = admin.getByTestId('settings-landing').getByRole('link');
-	await expect(cards).toHaveCount(25);
+	// One card per navigation entry (the count follows settingsNav instead of a hard-coded number).
+	await expect(cards).toHaveCount(await nav.locator('[data-testid^="settings-link-"]').count());
+	expect(await cards.count()).toBeGreaterThan(20);
 	await expect(admin.getByTestId('settings-card-passkeys')).toContainText('Mit welchen Geräten und Schlüsseln du dich anmeldest.');
 	await shot(admin, 'einstellungen');
 	await nav.getByRole('link', { name: 'Passkeys' }).click();
@@ -232,7 +234,9 @@ test('non-admins see no administration, neither in menu, hub nor by URL', async 
 	await member.keyboard.press('Escape');
 	await member.goto('/settings');
 	await expect(member.getByRole('navigation', { name: 'Einstellungsbereiche' }).getByRole('heading', { name: 'Verwaltung' })).toHaveCount(0);
-	await expect(member.getByTestId('settings-landing').getByRole('link')).toHaveCount(12);
+	// Members get the same cards as the navigation lists for them, and none of the administration entries.
+	await expect(member.getByTestId('settings-landing').getByRole('link')).toHaveCount(await member.getByRole('navigation', { name: 'Einstellungsbereiche' }).locator('[data-testid^="settings-link-"]').count());
+	await expect(member.locator('[data-testid^="settings-link-verwaltung"]')).toHaveCount(0);
 	await member.goto('/settings/admin-invitations');
 	await expect(member.getByTestId('admin-denied')).toBeVisible();
 	await expect(member.getByTestId('invite-create')).toHaveCount(0);

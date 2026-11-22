@@ -47,6 +47,9 @@ async function expectContained(card: Locator) {
 		for (const child of el.querySelectorAll('*')) {
 			const r = child.getBoundingClientRect();
 			if (r.width === 0 && r.height === 0) continue;
+			// Text inside a `truncate` line (overflow hidden + ellipsis) is clipped on purpose; only the line itself has to fit.
+			const clip = child.parentElement?.closest('.truncate');
+			if (clip && el.contains(clip)) continue;
 			if (r.right > box.right + 0.5 || r.left < box.left - 0.5) offenders.push(`${child.tagName} ${String((child as HTMLElement).className).slice(0, 40)} ${Math.round(r.right)}>${Math.round(box.right)}`);
 		}
 		const doc = document.documentElement;

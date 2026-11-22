@@ -3,7 +3,9 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 
 // Serial tests share one page, so the passkey created in the first test is available to the later ones.
-test.describe.configure({ mode: 'serial' });
+// Several tests here walk through whole flows with a second browser context (invitation, OAuth consent, command center); the
+// default 30 s is too tight on a loaded runner and made "invited person" time out once in a full run.
+test.describe.configure({ mode: 'serial', timeout: 90_000 });
 let page: Page;
 
 /** Sidebar entry by name; entries under "Mehr" open that group first. Counts are part of the accessible name. */

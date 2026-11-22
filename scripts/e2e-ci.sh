@@ -8,10 +8,24 @@ set -u
 IMAGE="${1:?usage: e2e-ci.sh <image> [spec:browsers ...]}"; shift
 PORT="${E2E_PORT:-25173}"
 ORIGIN="http://localhost:$PORT"
-# Curated: specs verified in all three browsers (Chromium, Firefox, WebKit), each on its own database.
-DEFAULT_SPECS="timestamps:chromium,firefox,webkit repo-line-refresh:chromium,firefox,webkit comment-limits:chromium,firefox,webkit comment-compare:chromium,firefox,webkit repo-line-stability:chromium"
-# shellcheck disable=SC2086  # the list is meant to split into one entry per word
-[ $# -gt 0 ] || set -- $DEFAULT_SPECS
+# Default run: (1) specs verified stable in all three browsers (Chromium, Firefox, WebKit), (2) every other spec in Chromium (the
+# only browser the rest supports, see web/playwright.config.ts). New specs join (2) automatically; each run gets its own database.
+# Not run: mail and server-settings (need an SMTP sink and a specially configured backend), review-variants-demo (only produces
+# example pictures for the owner's review).
+MULTI="timestamps repo-line-refresh comment-limits comment-compare"
+SKIP=" mail server-settings review-variants-demo repo-line-stability "
+if [ $# -eq 0 ]; then
+  list=""
+  for s in $MULTI; do list="$list $s:chromium,firefox,webkit"; done
+  list="$list repo-line-stability:chromium"
+  for f in "$(dirname "$0")"/../web/e2e/*.spec.ts; do
+    s="$(basename "$f" .spec.ts)"
+    case " $MULTI $SKIP " in *" $s "*) continue ;; esac
+    list="$list $s:chromium"
+  done
+  # shellcheck disable=SC2086  # the list is meant to split into one entry per word
+  set -- $list
+fi
 NAME="e2e-ci-$$"
 failed=""; ran=0
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }

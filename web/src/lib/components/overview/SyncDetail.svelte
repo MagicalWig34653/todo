@@ -45,8 +45,11 @@
 		own = null;
 		attempt(load);
 	});
+	// Follow the server value only when it really changes: a quiet reload hands in a new object with the same number and must
+	// not wipe what the user is typing (the effect would otherwise depend on the object).
+	const serverDays = $derived(sync?.staleAfterDays);
 	$effect(() => {
-		if (sync) threshold = String(sync.staleAfterDays);
+		if (serverDays !== undefined) threshold = String(serverDays);
 	});
 
 	const editable = $derived(canEditSync(role));

@@ -1,5 +1,16 @@
 # Status
 
+## Nachtrag 22.11.2026 (spaet): E2E-Abdeckung ausgeweitet, drei echte Fehler gefunden (Karten CB70D313, 188D611F; kein Deploy)
+
+- Ziel: Die E2E-Suite soll komplett gegen das veroeffentlichte Image laufen (nicht nur die vier neuen Specs). Probelauf aller Specs einzeln in Chromium gegen `sha-9d93483` (frische DB je Spec): 32 von 34 gruen, danach alles mehrfach wiederholt.
+- Gefunden und behoben (je mit Beweis, vorher rot, nachher gruen):
+  - **Produktfehler Repository-/Sync-Detail:** `SyncDetail.svelte` setzte das Eingabefeld "veraltet nach (Tage)" bei jedem stillen Nachladen auf den Serverwert zurueck und loeschte eine gerade getippte Eingabe. Ausloeser war mein stilles Nachladen (5e609bd), der Effekt haengt jetzt am Zahlenwert (`serverDays`) statt am Objekt. Neuer Test in `repo-line-refresh.spec.ts` (rot: "9" wurde zu "3"). Erklaert den Restflake in `passkey-flow` "sync freshness chips" (4 von 25 Laeufen rot, nach dem Fix 0).
+  - **Produktfehler Kalender:** `CalendarView.svelte` leerte die Versionstabelle, bevor das Neuladen fertig war; eine zweite Pfeiltaste in diesem Fenster sendete die alte Version (409, Karte bewegte sich nicht). Jetzt wird erst nach dem Laden geleert. Neuer deterministischer Test (Neuladen 2 s verzoegert; vorher rot) und `unrouteAll` im `afterAll` gegen "route.fetch: Test ended".
+  - **Veraltete Specs:** `settings-hub` (festes 25/12 Karten, jetzt aus der Navigation gezaehlt, Brain-Vollmacht-Eintrag war dazugekommen), `question-overflow` (Zeitzeile mit `truncate` wurde als Ueberlauf gezaehlt), `passkey-flow` Timeout 30 s auf 90 s.
+- Wiederholungen lokal (Chromium, frische DB je Lauf): `calendar` 20/20 gruen, `passkey-flow` 24/25 (der eine rote Lauf lief parallel zu svelte-check und vitest), `repo-line-refresh` 3/3. `svelte-check` 0 Fehler, `vitest` 512 gruen.
+- `scripts/e2e-ci.sh` ohne Argumente: die vier Mehrbrowser-Specs (Chromium, Firefox, WebKit) plus `repo-line-stability` und jede weitere Spec in Chromium, automatisch aus `web/e2e/*.spec.ts` ermittelt (neue Specs laufen ohne Pflege mit). Nicht dabei: `mail`, `server-settings` (brauchen SMTP-Senke und Sonderkonfiguration), `review-variants-demo` (erzeugt nur Bilder). Workflow-Limit 60 min.
+- Offen: Lauf des erweiterten Workflows auf GitHub abwarten; einmaliger Hänger in `passkey-flow` "labels, planning" (Kriterium-Checkbox erschien nicht) unter Last, nicht reproduziert. `mail`/`server-settings` in der CI braucht SMTP-Senke als Service (eigene Karte). Volle MariaDB-Suite (D434B3FD) bleibt separat (Docker-VM-Platz).
+
 ## Nachtrag 22.11.2026: Playwright-E2E in der CI (Karten D434B3FD, 330C57F8, A7865053, DA09D11A; kein Deploy)
 
 - Luecke: Die Playwright-Specs liefen in keinem Workflow (`ci.yml` nannte es nur im Kommentar); auch die neuen Specs `timestamps`, `repo-line-refresh`, `comment-limits`, `comment-compare` waren nur lokal belegt.

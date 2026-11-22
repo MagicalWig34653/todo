@@ -49,6 +49,11 @@ async function drag(source: Locator, target: Locator, position?: { x: number; y:
 }
 const column = () => page.locator(`[data-testid="calendar-day"][data-day="${berlinToday()}"]`);
 
+test.afterAll(async () => {
+	// A live refresh may still be inside the route handler when the last test ends ("route.fetch: Test ended" outside any test).
+	await page?.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 test.beforeAll(async ({ browser }) => {
 	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
 	page = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'de-DE', timezoneId: 'Europe/Berlin' })).newPage();
@@ -158,6 +163,31 @@ test('keyboard: arrows move by 15 minutes, Shift changes the duration, Enter ope
 	await expect(column().getByTestId('calendar-card').filter({ hasText: 'Geplante Karte' })).toBeFocused();
 	await page.keyboard.press('Shift+ArrowDown');
 	await expect.poll(async () => (await planning(ids.planned)).plannedMinutes).toBe(75);
+});
+
+test('keyboard: a key pressed while the reload after the previous move is still running uses the new version', async () => {
+	// Regression (flaky "keyboard" test): the version table was emptied before the reload finished, so a quick second key
+	// sent the stale version and got a 409. The schedule reload is held back for 2 s to make the window deterministic.
+	const block = () => column().getByTestId('calendar-card').filter({ hasText: 'Geplante Karte' });
+	await expect(block()).toBeVisible();
+	const before = berlinHM((await planning(ids.planned)).plannedAt!);
+	let hold = true;
+	await page.route('**/planning/schedule*', async (route) => {
+		if (hold) await new Promise((r) => setTimeout(r, 2000));
+		await route.continue();
+	});
+	try {
+		await block().focus();
+		await page.keyboard.press('ArrowDown');
+		await expect.poll(async () => berlinHM((await planning(ids.planned)).plannedAt!)).not.toBe(before);
+		const first = berlinHM((await planning(ids.planned)).plannedAt!);
+		await page.keyboard.press('ArrowDown');
+		await expect.poll(async () => berlinHM((await planning(ids.planned)).plannedAt!), { timeout: 8000 }).not.toBe(first);
+		await expect(page.getByTestId('calendar-error')).toHaveCount(0);
+	} finally {
+		hold = false;
+		await page.unroute('**/planning/schedule*');
+	}
 });
 
 test('version conflict (409) shows a German message and reloads', async () => {

@@ -61,3 +61,18 @@ test('an open "add repository" form and its text survive a quiet refresh', async
 	await expect(head.getByTestId('repo-row')).toHaveCount(2, { timeout: 20_000 });
 	await expect(field, 'draft kept while the list refreshed').toHaveValue('github.com/example/entwurf');
 });
+
+test('a stale-threshold value being typed survives a quiet refresh of the sync data', async () => {
+	// Regression (flaky "sync freshness chips" test in passkey-flow): the refresh replaced the sync object and the effect in
+	// SyncDetail reset the input to the server value, wiping what was just typed.
+	const head = page.getByTestId('cc-sync-head');
+	await head.getByTestId('repo-add-input').fill('');
+	await page.keyboard.press('Escape');
+	await head.getByTestId('cc-sync-toggle').click();
+	const field = page.getByTestId('sync-threshold');
+	await expect(field).toBeEnabled();
+	await field.fill('9');
+	expect((await page.request.put(`/v1/projects/${projectID}/sync`, { ...json, data: { repository: 'github.com/example/vier' } })).ok()).toBeTruthy();
+	await expect(head.getByTestId('repo-row')).toHaveCount(3, { timeout: 20_000 });
+	await expect(field, 'typed value kept while the data refreshed').toHaveValue('9');
+});
