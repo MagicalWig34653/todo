@@ -74,7 +74,7 @@
 	</form>
 	{#if onopen}
 		<div class="-mx-2.5 -mb-2.5 flex border-t px-1.5 py-1">
-			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}>{t('cc.card.open')}<ChevronRight class="size-4" aria-hidden="true" /></Button>
+			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-w-full min-w-0 max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}><span class="min-w-0 truncate">{t('cc.card.open')}</span><ChevronRight class="size-4 shrink-0" aria-hidden="true" /></Button>
 		</div>
 	{/if}
 </div>
