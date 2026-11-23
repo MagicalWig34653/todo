@@ -313,6 +313,10 @@ Gleicher Fachpfad für REST (Lesen) und MCP (Melden, Lesen): `LiveSessionService
 
 Rolle `voice` mit `audio/mp4` und `audio/wav` (Vertrag `contracts/attachments.yaml` 1.1.0) gibt es bewusst nur im REST-Anhangsweg für die App. Die MCP-Werkzeuge `begin_task_upload`/`add_attachment` bieten Rolle und Medientypen weiter nur wie bisher an (Schema-Enum unverändert); Agenten lesen Sprachanhänge später über den Kanal #brain (T1 Schritt 2). Fachregeln (Magic Bytes, 5 MiB, 120 s aus dem Container) liegen in `AttachmentService`, nicht im Controller.
 
+## Ausgehender Webhook (ADR 0035, Handbuch 1.38.0): bewusst ohne MCP
+
+Es gibt kein MCP-Werkzeug zum Lesen, Setzen oder Aendern des Webhooks und keinen MCP-Scope dafuer. Verwaltung nur per REST mit Personen-Sitzung (`/v1/settings/webhook*`, Vertrag `contracts/webhook.yaml`); OAuth-Tokens erhalten 401. Aktionen ueber MCP loesen den Webhook nie aus (der MCP-Endpunkt markiert den Request, Test `testActionsOfIntegrationsNeverWakeTheWebhook`). Gruende wie bei der Brain-Vollmacht: ein Agent darf sich keinen Weckruf einrichten oder umlenken.
+
 ## Brain-Vollmacht (ADR 0032, Handbuch 1.29.0, je Verbindung seit 1.37.0)
 
 - Mandat verwalten gibt es bewusst nur als REST mit Personen-Sitzung (`GET/PUT/DELETE /v1/settings/brain-mandate`, `DELETE .../{grantID}`, `GET .../audit`, Vertrag `contracts/connections.yaml` 1.2.0; eine Vollmacht je Verbindung, Nachtrag 23.11.2026), kein MCP-Schreibwerkzeug und kein neuer Scope: Ein Agent darf sich keine Vollmacht geben. MCP kennt nur das lesende `get_connection.brainMandate`.
