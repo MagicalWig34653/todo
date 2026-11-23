@@ -185,7 +185,7 @@ Ungültige Werte verhindern den Start. Beide Variablen stehen in `deploy/swarm/s
 - **Prüfen:** `GET /v1/admin/health` (nur Administratoren; `/health/ready` zeigt anonym nur `status`) enthält `maintenance: {enabled, lastRunAt, lastStatus}` (`ok`, `error`, `never`). Das Feld ist rein informativ; ein Fehler ändert den Readiness-Status nie. Details in den Logs (`cleanup scheduler: …`) und in `maintenance_leases.last_message`.
 - **Deaktivieren:** `CLEANUP_INTERVAL_MINUTES=0` und neu deployen. Rein die Sync-Aufbewahrung abschalten: `SYNC_RETENTION_DAYS=0`.
 - **Manuell:** `App cleanup-expired [--sync-retention-days N] [--grace-seconds N] [--batch-size N]` (Standardwerte aus der Umgebung); parallel zu laufenden Replikaten gefahrlos.
-- **Konto löschen:** `App delete-account <user-id> --yes` (kein Selbstbedienungsweg). Andere Konten erhalten Tombstones für alles, was sie dadurch nicht mehr sehen; gelingt etwas nicht (z. B. Agentendaten), wird alles zurückgerollt. Vorher sichern.
+- **Konto löschen:** `App delete-account <user-id> --yes` (kein Selbstbedienungsweg). Andere Konten erhalten Tombstones für alles, was sie dadurch nicht mehr sehen; gelingt etwas nicht (z. B. Agentendaten), wird alles zurückgerollt. Unterprojekte anderer Personen unter einem gelöschten Projekt bleiben erhalten (sie wandern auf den nächsten bleibenden Elternknoten oder die oberste Ebene). Ist das Konto Team-Gründer, geht die Rolle an das erste verbleibende akzeptierte Mitglied (Admins zuerst, das Mitglied wird Admin); ein Team ohne weiteres Mitglied wird samt Freigaben entfernt, seine Projekte fallen an den Ersteller zurück. Vorher sichern.
 
 ## Push-Benachrichtigungen (APNs, 31.10.2026, ADR 0021)
 
