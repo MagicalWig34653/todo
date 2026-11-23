@@ -17,7 +17,12 @@ struct MCPController: RouteCollection {
         if let origin = req.headers.first(name: .origin),
            origin != req.application.settings.relyingPartyOrigin && origin != req.application.settings.oauthIssuer { throw Abort(.forbidden) }
     }
+    /// Everything an MCP connection does counts as agent work for the outgoing webhook (ADR 0035), even where the shared write
+    /// path records the person as actor.
     @Sendable func handle(_ req: Request) async throws -> Response {
+        try await WebhookAgentContext.$isAgentRequest.withValue(true) { try await handleCall(req) }
+    }
+    func handleCall(_ req: Request) async throws -> Response {
         try Self.validateOrigin(req)
         guard let raw = req.headers.bearerAuthorization?.token,
               let secret = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(raw)).first(),

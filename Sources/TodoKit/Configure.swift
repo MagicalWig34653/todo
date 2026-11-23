@@ -44,6 +44,7 @@ public func configure(_ app: Application) async throws {
     configureMaintenanceScheduler(app)
     try configurePushWorker(app)
     try configureMailWorker(app)
+    configureWebhookWorker(app)
 }
 
 public func configureDatabase(_ app: Application, settings: DatabaseSettings) throws {
@@ -65,6 +66,8 @@ public func configureDatabase(_ app: Application, settings: DatabaseSettings) th
     app.databases.middleware.use(SyncLabelMiddleware())
     app.databases.middleware.use(SyncLabelLinkMiddleware())
     registerLiveMiddleware(app)
+    // Outgoing webhook (ADR 0035): person actions bundle into the delivery buffer inside the writer's transaction.
+    app.databases.middleware.use(WebhookTriggerMiddleware())
 }
 
 /// Migrations are registered but never run on `serve`; run `App migrate --yes` once per deployment.
@@ -112,6 +115,7 @@ public func configureMigrations(_ app: Application) {
     configureVoice(app)
     configureLiveSessions(app)
     configureSessionStatuses(app)
+    configureWebhook(app)
     app.migrations.add(AddAccountLock())
     app.migrations.add(AddPerformanceIndexes())
     app.migrations.add(AddSignOfLifeIndexes())
