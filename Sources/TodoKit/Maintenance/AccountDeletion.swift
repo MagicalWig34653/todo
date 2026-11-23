@@ -10,7 +10,7 @@ import Vapor
 /// visibility diff of the whole sharing graph is recorded (e.g. access that only existed through the account's
 /// team memberships). All in one transaction under the sharing-graph lock.
 struct AccountDeletion: Sendable {
-    struct Report: Sendable, Equatable { var projects = 0, tasks = 0, grants = 0 }
+    struct Report: Sendable, Equatable { var projects = 0, tasks = 0, grants = 0, teams = 0 }
 
     @discardableResult static func delete(userID: UUID, on database: any Database) async throws -> Report {
         try await database.transaction { db in
@@ -36,8 +36,29 @@ struct AccountDeletion: Sendable {
                     .filter(\.$accepted == true).filter(\.$userID != userID).sort(\.$isAdmin, .descending).sort(\.$id).all()
                 return members.first?.userID
             }
-            var keptSuccessors: [UUID: UUID] = [:]
             let overlayOwned = overlays.values.filter { $0.ownerType == "person" && $0.ownerID == userID }.map(\.projectID)
+            /// Deleted with the account: created or owned by it and nobody takes it over (mirrors the loop below).
+            func isDoomed(_ p: Project) async throws -> Bool {
+                let id = try p.requireID()
+                guard p.ownerID == userID || overlayOwned.contains(id) else { return false }
+                if try ownedByDeparting(p) { return true }
+                let heir = try await successor(of: p)
+                return heir == nil
+            }
+            /// Projects of other accounts below a project that is about to go must not cascade away with it: they move
+            /// to `newParent` (the deleted project's parent; the chain repeats if that goes too), keeping their own subtree.
+            func liftSurvivors(below project: Project, to newParent: UUID?) async throws {
+                for child in try await Project.query(on: db).filter(\.$parentID == (try project.requireID())).sort(\.$id).all() {
+                    if try await isDoomed(child) {
+                        try await liftSurvivors(below: child, to: newParent)
+                    } else {
+                        child.parentID = newParent
+                        child.version += 1
+                        try await child.save(on: db)
+                    }
+                }
+            }
+            var keptSuccessors: [UUID: UUID] = [:]
             var candidates = try await Project.query(on: db).filter(\.$ownerID == userID).all()
             if !overlayOwned.isEmpty { candidates += try await Project.query(on: db).filter(\.$id ~~ overlayOwned).all() }
             var seen = Set<UUID>()
@@ -45,6 +66,7 @@ struct AccountDeletion: Sendable {
                 // A parent deleted earlier in this loop already removed its subtree.
                 guard let current = try await Project.find(try project.requireID(), on: db) else { continue }
                 if try ownedByDeparting(current) {
+                    try await liftSurvivors(below: current, to: current.parentID)
                     try await current.delete(on: db)
                     report.projects += 1
                 } else if let next = try await successor(of: current) {
@@ -53,6 +75,7 @@ struct AccountDeletion: Sendable {
                     try await current.save(on: db)
                     keptSuccessors[try current.requireID()] = next
                 } else {
+                    try await liftSurvivors(below: current, to: current.parentID)
                     try await current.delete(on: db)
                     report.projects += 1
                 }
@@ -67,6 +90,29 @@ struct AccountDeletion: Sendable {
                 }
                 task.ownerID = heir
                 try await task.save(on: db)
+            }
+            // teams.founder_id references the account: hand the role to a remaining member (accepted admins first;
+            // a founder is always an admin) or, with nobody left, remove the team and everything pointing at it.
+            for team in try await Team.query(on: db).filter(\.$founderID == userID).sort(\.$id).all() {
+                let teamID = try team.requireID()
+                let heir = try await TeamMembership.query(on: db).filter(\.$teamID == teamID).filter(\.$accepted == true)
+                    .filter(\.$userID != userID).sort(\.$isAdmin, .descending).sort(\.$id).first()
+                if let heir {
+                    heir.isAdmin = true
+                    try await heir.save(on: db)
+                    team.founderID = heir.userID
+                    try await team.save(on: db)
+                } else {
+                    // Projects still owned by this team fall back to their creator, who is a surviving account here.
+                    for row in try await ProjectSharing.query(on: db).filter(\.$ownerType == "team").filter(\.$ownerID == teamID).all() {
+                        guard let project = try await Project.find(row.projectID, on: db) else { continue }
+                        row.ownerType = "person"; row.ownerID = project.ownerID
+                        try await row.save(on: db)
+                    }
+                    try await ProjectGrant.query(on: db).filter(\.$principalType == "team").filter(\.$principalID == teamID).delete()
+                    try await team.delete(on: db)
+                }
+                report.teams += 1
             }
             try await TaskComment.query(on: db).filter(\.$authorID == userID).delete()
             try await ProjectComment.query(on: db).filter(\.$authorID == userID).delete()
@@ -102,6 +148,6 @@ struct DeleteAccountCommand: AsyncCommand {
         guard let id = UUID(uuidString: signature.userID) else { throw Abort(.badRequest, reason: "invalid_user_id") }
         guard signature.yes else { throw Abort(.badRequest, reason: "confirmation_required: pass --yes") }
         let r = try await AccountDeletion.delete(userID: id, on: context.application.db)
-        context.console.print("Deleted account \(id): \(r.projects) owned projects, \(r.tasks) remaining owned tasks, \(r.grants) grants.")
+        context.console.print("Deleted account \(id): \(r.projects) owned projects, \(r.tasks) remaining owned tasks, \(r.grants) grants, \(r.teams) founded teams handed over or removed.")
     }
 }
