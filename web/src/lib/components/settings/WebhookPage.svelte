@@ -316,13 +316,14 @@
 				<Input
 					id="wh-url"
 					type="password"
-					autocomplete="off"
+					autocomplete="new-password"
 					autocapitalize="off"
 					spellcheck={false}
 					inputmode="url"
 					data-1p-ignore
 					data-lpignore="true"
 					data-bwignore
+					data-form-type="other"
 					aria-describedby="wh-url-hint"
 					bind:value={urlValue}
 					data-testid="wh-url-input"
@@ -363,12 +364,13 @@
 					<Input
 						id="wh-signing"
 						type="password"
-						autocomplete="off"
+						autocomplete="new-password"
 						autocapitalize="off"
 						spellcheck={false}
 						data-1p-ignore
 						data-lpignore="true"
 						data-bwignore
+						data-form-type="other"
 						aria-describedby="wh-signing-hint"
 						bind:value={signingValue}
 						data-testid="wh-signing-input"

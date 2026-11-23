@@ -181,7 +181,11 @@ test('the address field is masked and not remembered by the browser', async () =
 	await openPage();
 	const f = urlField();
 	await expect(f).toHaveAttribute('type', 'password');
-	await expect(f).toHaveAttribute('autocomplete', 'off');
+	// "new-password" plus the opt-outs of the common password managers: the address is a secret and must not be offered or saved.
+	await expect(f).toHaveAttribute('autocomplete', 'new-password');
+	await expect(f).toHaveAttribute('data-1p-ignore', '');
+	await expect(f).toHaveAttribute('data-lpignore', 'true');
+	await expect(f).toHaveAttribute('data-form-type', 'other');
 	await expect(f).toHaveAttribute('spellcheck', 'false');
 	await expect(f).toHaveAttribute('autocapitalize', 'off');
 	// The hint tells what happens with the address (secret, encrypted, never shown again).
@@ -194,7 +198,8 @@ test('without DNS the save fails with a clear message and nothing is stored (rep
 	await openPage();
 	await urlField().fill(URL_OK);
 	await page.getByTestId('wh-url-save').click();
-	await expect(err()).toContainText('keine gültige Adresse');
+	// An unresolvable name answers like a blocked one (no oracle for internal names).
+	await expect(err()).toContainText('nicht auflösen');
 	await expect(err()).not.toContainText(SECRET_PATH);
 	expect((await apiWebhook()).configured).toBe(false);
 	// After a refusal the masked field keeps what was typed (for a correction); everything else must be free of it.
@@ -342,7 +347,8 @@ test('signing secret: set, shown only as set, replaced, removed; too short is re
 	await expect(page.getByTestId('wh-signing-state')).toHaveText('Nicht gesetzt');
 	const field = page.getByLabel('Signaturgeheimnis', { exact: true });
 	await expect(field).toHaveAttribute('type', 'password');
-	await expect(field).toHaveAttribute('autocomplete', 'off');
+	await expect(field).toHaveAttribute('autocomplete', 'new-password');
+	await expect(field).toHaveAttribute('data-form-type', 'other');
 	await field.fill('kurz');
 	await page.getByTestId('wh-signing-save').click();
 	await expect(err()).toContainText('16 bis 256');

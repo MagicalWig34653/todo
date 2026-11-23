@@ -39,7 +39,7 @@ describe('API errors become clear German texts', () => {
 	it('translates every code of contracts/webhook.yaml', () => {
 		expect(text(400, 'webhook_url_not_https')).toBe('Nur https-Adressen sind erlaubt.');
 		expect(text(400, 'webhook_url_invalid')).toContain('keine gültige Adresse');
-		expect(text(400, 'webhook_url_blocked')).toBe('Diese Adresse ist nicht erlaubt (private oder lokale Ziele werden nicht aufgerufen).');
+		expect(text(400, 'webhook_url_blocked')).toBe('Diese Adresse ist nicht erlaubt oder der Name lässt sich nicht auflösen (private oder lokale Ziele werden nicht aufgerufen).');
 		expect(text(400, 'webhook_signing_secret_invalid')).toContain('16 bis 256');
 		expect(text(400, 'webhook_exclusions_invalid')).toContain('500');
 		expect(text(404)).toContain('Projekt');

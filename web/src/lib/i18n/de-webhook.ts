@@ -15,7 +15,7 @@ export const deWebhook = {
 
 	'webhook.url.title': 'Adresse',
 	'webhook.url.label': 'Webhook-Adresse (https)',
-	'webhook.url.hint': 'Die Adresse ist ein Geheimnis: Sie wird verschlüsselt gespeichert und nie wieder angezeigt, auch dir nicht. Gezeigt wird nur eine Kurzform. Erlaubt sind nur https-Adressen im öffentlichen Netz, keine privaten oder lokalen Ziele.',
+	'webhook.url.hint': 'Die Adresse ist ein Geheimnis: Sie wird verschlüsselt gespeichert und nie wieder angezeigt, auch dir nicht. Gezeigt wird nur eine Kurzform. Erlaubt sind nur https-Adressen auf Port 443 im öffentlichen Netz, keine privaten oder lokalen Ziele.',
 	'webhook.url.hintReplace': 'Zum Ersetzen die neue Adresse eingeben. Die gespeicherte bleibt, bis die neue angenommen wurde.',
 	'webhook.url.stored': 'Hinterlegt',
 	'webhook.url.storedNoMask': 'Eine Adresse ist hinterlegt.',
@@ -125,13 +125,13 @@ export const deWebhook = {
 	'webhook.error.unknownCode': 'Unbekannter Fehler beim Zustellen.',
 
 	'webhook.error.not_https': 'Nur https-Adressen sind erlaubt.',
-	'webhook.error.invalid': 'Das ist keine gültige Adresse (oder der Name lässt sich nicht auflösen). Zugangsdaten in der Adresse sind nicht erlaubt.',
-	'webhook.error.blocked': 'Diese Adresse ist nicht erlaubt (private oder lokale Ziele werden nicht aufgerufen).',
+	'webhook.error.invalid': 'Das ist keine gültige Adresse. Zugangsdaten in der Adresse und andere Ports als 443 sind nicht erlaubt.',
+	'webhook.error.blocked': 'Diese Adresse ist nicht erlaubt oder der Name lässt sich nicht auflösen (private oder lokale Ziele werden nicht aufgerufen).',
 	'webhook.error.signingInvalid': 'Das Signaturgeheimnis muss 16 bis 256 Zeichen lang sein.',
 	'webhook.error.exclusionsInvalid': 'Es sind höchstens 500 ausgeschlossene Projekte möglich.',
 	'webhook.error.projectGone': 'Ein gewähltes Projekt gibt es nicht mehr oder du kannst es nicht lesen. Die Liste wurde neu geladen.',
 	'webhook.error.noKey': 'Der Server hat keinen Verschlüsselungsschlüssel (Administrator).',
 	'webhook.error.notConfigured': 'Zuerst eine Adresse speichern.',
-	'webhook.error.rateLimited': 'Bitte warte 10 Sekunden, bevor du erneut einen Test sendest.',
+	'webhook.error.rateLimited': 'Zu viele Versuche. Bitte warte kurz: nach einem Test 10 Sekunden, nach vielen Speicherversuchen eine Minute.',
 	'webhook.error.session': 'Deine Sitzung ist abgelaufen. Bitte melde dich neu an.'
 } as const;
