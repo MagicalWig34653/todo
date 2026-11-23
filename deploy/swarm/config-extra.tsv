@@ -1,0 +1,34 @@
+# Handgepflegt: Deploy-Variablen, die der Server selbst nicht liest (Stack-Dateien und Skripte). Gleiches Format wie config-registry.tsv.
+# Nicht hier eintragen, was SettingsRegistry.definitions als ENV-Namen kennt; deren Tabelle erzeugt SettingsRegistryTSVTests.
+# Typen: int, number, bool, choice, secret, text:<Regel> (Regel mit ? am Ende = leer erlaubt). Default einer in stack.env.example aktiven Zeile: der Wert der Vorlage.
+#key	group	type	default	unit	min	max	choices	apply	secret	summary
+TODO_IMAGE_TAG	Image und Replikate	text:imagetag	edge			128		envOnly	0	Tag des Backend-Images (ghcr.io/magicalwig34653/todo-backend). Besser ein fester Tag (sha-<Commit>) als edge; update.sh setzt ihn.
+BACKEND_REPLICAS	Image und Replikate	int	3		1	50		envOnly	0	Anzahl der API-Replikate (stack.yaml).
+BACKEND_PORT	Image und Replikate	int	38080		1	65535		envOnly	0	Veröffentlichter Ingress-Port der API (davor gehört ein TLS-Reverse-Proxy).
+BACKEND_CPU_LIMIT	Image und Replikate	number	0	CPUs	0	256		envOnly	0	CPU-Limit je Replikat (0 = unbegrenzt).
+BACKEND_MEMORY_LIMIT	Image und Replikate	text:memlimit	0			16		envOnly	0	Speicher-Limit je Replikat, z. B. 512M (0 = unbegrenzt).
+TODO_STACK	Image und Replikate	text:stackname	todo			31		envOnly	0	Name des Swarm-Stacks (Dienste <name>_backend, <name>_migrate); setup.sh trägt ihn ein, update.sh liest ihn.
+DB_HOST	Datenbank	text:dbhost				253		envOnly	0	Host der externen MariaDB (von allen Swarm-Knoten erreichbar). Pflicht.
+DB_PORT	Datenbank	int	3306		1	65535		envOnly	0	Port der MariaDB.
+DB_NAME	Datenbank	text:dbident	todo			64		envOnly	0	Name der Datenbank.
+DB_USER	Datenbank	text:dbuser	todo			64		envOnly	0	Datenbank-Benutzer. Das Passwort liegt im Swarm-Secret, nie in dieser Datei.
+RP_ID	Anwendung	text:host	localhost			253		envOnly	0	WebAuthn-Domain (nackte Domain, ohne Schema und Port). Eine Änderung macht vorhandene Passkeys unbrauchbar.
+RP_ORIGIN	Anwendung	text:origin	http://localhost:38080			255		envOnly	0	Exakte Browser-Adresse (https://host[:port], ohne Pfad); muss zur Adresse im Browser passen.
+OAUTH_ISSUER	Anwendung	text:origin?				255		envOnly	0	Öffentliche Basis-Adresse für OAuth/MCP. Leer: der Server nimmt RP_ORIGIN.
+PUBLIC_DOMAIN	Anwendung	text:host?				253		envOnly	0	Öffentliche Domain; setup.sh nutzt sie als Vorgabe für RP_ID und RP_ORIGIN.
+PUBLIC_BASE_URL	Anwendung	text:httpurl?				255		envOnly	0	Adresse für den Bereitschaftstest von update.sh (leer: RP_ORIGIN).
+SETTINGS_KEY_ENABLED	Konfigurationsschlüssel	bool	false					envOnly	0	true bindet das Overlay stack.settings.yaml ein; ohne Schlüssel kann die PWA keine Geheimnisse speichern. Anlegen: settings.sh --generate SETTINGS_ENCRYPTION_KEY.
+SETTINGS_KEY_SECRET	Konfigurationsschlüssel	text:secretname	todo_settings_key			64		envOnly	0	Name des Swarm-Secrets mit dem Konfigurationsschlüssel (nicht der Schlüssel selbst).
+SETTINGS_KEY_PREVIOUS_SECRET	Konfigurationsschlüssel	text:secretname?				64		envOnly	0	Nur während einer Schlüssel-Rotation: Name des Secrets mit dem alten Schlüssel (Overlay stack.settings-previous.yaml).
+DB_PASSWORD_SECRET	Secret-Namen	text:secretname	todo_db_password			64		envOnly	0	Name des Swarm-Secrets mit dem DB-Passwort (nicht das Passwort).
+BOOTSTRAP_TOKEN_SECRET	Secret-Namen	text:secretname	todo_bootstrap_token			64		envOnly	0	Name des Swarm-Secrets mit dem Bootstrap-Token.
+SMTP_PASSWORD_SECRET	Secret-Namen	text:secretname	todo_smtp_password			64		envOnly	0	Name des Swarm-Secrets mit dem SMTP-Passwort (nur mit MAIL_ENABLED=true).
+APNS_KEY_SECRET	Secret-Namen	text:secretname	todo_apns_key			64		envOnly	0	Name des Swarm-Secrets mit dem APNs-Schlüssel (.p8; nur mit APNS_ENABLED=true).
+S3_ACCESS_KEY_SECRET	Secret-Namen	text:secretname	todo_s3_access_key			64		envOnly	0	Name des Swarm-Secrets mit dem S3-Access-Key (nur mit S3_ENDPOINT).
+S3_SECRET_KEY_SECRET	Secret-Namen	text:secretname	todo_s3_secret_key			64		envOnly	0	Name des Swarm-Secrets mit dem S3-Secret-Key (nur mit S3_ENDPOINT).
+PLACEMENT_CONSTRAINTS	Platzierung	text:free?				500		envOnly	0	Swarm-Constraints für backend und migrate, kommagetrennt, z. B. node.role==worker,node.labels.zone!=dev.
+PLACEMENT_PREFERENCES	Platzierung	text:free?				500		envOnly	0	Labels, über deren Werte die Replikate gleichmäßig verteilt werden, z. B. node.labels.zone.
+EXCLUDE_LABEL	Platzierung	text:free?				64		envOnly	0	Knoten mit <Label>=true bekommen keine backend/migrate-Tasks (gilt nicht für backend-pinned).
+PINNED_NODE	Platzierung	text:free?				253		envOnly	0	Hostname des Knotens, auf dem der Zusatzdienst backend-pinned läuft. Ohne Wert gibt es den Dienst nicht.
+PINNED_REPLICAS	Platzierung	int			0	50		envOnly	0	Replikate von backend-pinned (Standard 1, nur mit PINNED_NODE).
+BACKEND_PINNED_PORT	Platzierung	int			1	65535		envOnly	0	Zusätzlich veröffentlichter Port von backend-pinned (nur mit PINNED_NODE; ungleich BACKEND_PORT).

@@ -12,4 +12,5 @@ build/
 .swiftpm/
 deploy/swarm/stack.env
 deploy/swarm/stack.env.bak
+deploy/swarm/stack.env.bak.*
 __pycache__/

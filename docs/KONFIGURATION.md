@@ -54,6 +54,8 @@ Ohne Schlüssel kann die PWA **keine Geheimnisse speichern** (Meldung „Der Ser
 openssl rand -base64 32 | tr -d '\n' | docker secret create todo_settings_key -
 ```
 
+Oder mit dem Einstellungsprogramm (legt das Secret nur an, wenn es fehlt, und setzt das Flag; siehe [unten](#einstellungsprogramm-settingssh-env-datei-per-menü-oder-kommandozeile)): `deploy/swarm/settings.sh --generate SETTINGS_ENCRYPTION_KEY`.
+
 In `stack.env`: `SETTINGS_KEY_ENABLED=true` (optional `SETTINGS_KEY_SECRET=<anderer Name>`). `scripts/swarm-deploy.sh` bindet dann das Overlay `stack.settings.yaml` ein (`SETTINGS_ENCRYPTION_KEY_FILE=/run/secrets/settings_key`). Lokal/Entwicklung: `SETTINGS_ENCRYPTION_KEY` in `.env` (siehe `.env.example`). Format: 32 Zufallsbytes als Base64 (44 Zeichen) oder 64 Hex-Zeichen. Ein falsch geformter Schlüssel verhindert den Start (mit klarer Meldung).
 
 **Rotieren:**
@@ -66,6 +68,39 @@ In `stack.env`: `SETTINGS_KEY_ENABLED=true` (optional `SETTINGS_KEY_SECRET=<ande
 **Schlüssel verloren?** Die gespeicherten Geheimnisse sind dann unlesbar (Anzeige „nicht lesbar“). In der PWA „Zurücksetzen“ und neu eingeben; Nicht-Geheimnisse bleiben unberührt.
 
 **Backup-Hinweis:** Der Schlüssel gehört **nicht** in dasselbe Backup wie die Datenbank (sonst schützt die Verschlüsselung nichts). Sichere ihn getrennt (Passwortmanager, getrennter Tresor). Datenbank-Backups ohne Schlüssel sind für Geheimnisse wertlos, aber vollständig für alles andere; nach einer Wiederherstellung ohne Schlüssel gibst du die Geheimnisse neu ein.
+
+## Einstellungsprogramm `settings.sh` (Env-Datei per Menü oder Kommandozeile)
+
+`deploy/swarm/settings.sh` bearbeitet die Env-Datei (`deploy/swarm/stack.env`) geprüft statt von Hand: mit Menü (`whiptail` oder `dialog`, wie `raspi-config`) oder per Kommandozeile. Es braucht Bash 4.4 oder neuer (Linux-Server: Bash 5; macOS liefert 3.2, dort `brew install bash`). Es ändert **nur die Datei**; ausgerollt wird nichts, außer du bestätigst im Menü „Anwenden“.
+
+```sh
+deploy/swarm/settings.sh                          # Menü
+deploy/swarm/settings.sh --list                   # alle Variablen mit Wert, Default und Quelle
+deploy/swarm/settings.sh --get LIVE_POLL_MS       # einen Wert lesen (Geheimnisse nie)
+deploy/swarm/settings.sh --set SYNC_RETENTION_DAYS=30 --set CLEANUP_INTERVAL_MINUTES=120
+deploy/swarm/settings.sh --unset SYNC_RETENTION_DAYS   # zurück auf den Default (Zeile wird auskommentiert)
+deploy/swarm/settings.sh --info SETTINGS_KEY_ENABLED   # ausführliche Erklärung
+deploy/swarm/settings.sh --check                  # ganze Datei prüfen (Typ, Grenzen, Konflikte, unbekannte Variablen)
+deploy/swarm/settings.sh --generate SETTINGS_ENCRYPTION_KEY   # Konfigurationsschlüssel anlegen (siehe unten)
+deploy/swarm/settings.sh --env /secure/path/todo.env --check  # andere Datei
+```
+
+**Beispiele**
+
+- *Konfigurationsschlüssel erzeugen* (auf einem Swarm-Manager): `settings.sh --generate SETTINGS_ENCRYPTION_KEY`. Das Programm legt das Swarm-Secret (Name aus `SETTINGS_KEY_SECRET`, Standard `todo_settings_key`) mit `openssl rand -base64 32` **nur an, wenn es fehlt**, und setzt `SETTINGS_KEY_ENABLED=true` in der Datei. Gibt es das Secret schon, bleibt es unverändert (ein vorhandener Schlüssel wird nie ersetzt) und nur das Flag wird gesetzt. Der Wert wird nie angezeigt, nie in eine Datei geschrieben und nie als Argument übergeben (er geht über stdin an `docker secret create`).
+- *Wert setzen:* `settings.sh --set LIVE_POLL_MS=2000`. Ein Wert in der Datei **sperrt** die Einstellung in der PWA (siehe oben); wer sie in der PWA ändern lassen will, nimmt sie mit `--unset` heraus. Zusammengehörige Werte in **einem** Aufruf setzen (`--set MAIL_ENABLED=true --set SMTP_HOST=... --set SMTP_USER=... --set MAIL_FROM=...`): eine Änderung, die allein einen Fehler erzeugen würde, wird nicht gespeichert.
+- *Anwenden:* im Menü „Anwenden“. Es ruft nach einer Bestätigung (mit Hinweis auf die Datenbanksicherung) `deploy/swarm/update.sh --env-file <Datei> --tag <aktueller TODO_IMAGE_TAG> --force --yes` auf. Das ist derselbe Weg wie beim normalen Update (Migration, dann Rolling Update über `scripts/swarm-deploy.sh`, Warten auf den Rollout, Health-Check); nur der Image-Tag bleibt, es wird die Konfiguration ausgerollt. Ohne `TODO_IMAGE_TAG` in der Datei gilt der Stack-Standard `edge`. „Trockenlauf“ zeigt dasselbe mit `--dry-run`. Von Hand geht es genauso mit `deploy/swarm/update.sh --tag <Tag> --force`.
+
+**Woher die Angaben kommen:** `config-registry.tsv` wird aus `SettingsRegistry` erzeugt (Typen, Grenzen, Auswahl, Standardwerte der Server-Einstellungen); `SettingsRegistryTSVTests` schlägt fehl, wenn sie veraltet ist, neu erzeugen mit `UPDATE_CONFIG_TSV=1 swift test --filter SettingsRegistryTSV`. `config-extra.tsv` ist handgepflegt (Deploy-Variablen, die der Server nicht liest: Image-Tag, Replikate, Datenbank, Secret-Namen, Platzierung, `RP_ID`/`RP_ORIGIN`/`OAUTH_ISSUER`); der Test prüft, dass jede `${VARIABLE}` der Stack-Dateien dort oder im Register steht. `config-help.tsv` (optional) enthält ausführliche Erklärungen, `stack.env.example` liefert die Vorlagenwerte als Default der Deploy-Variablen. Die Gruppen des Menüs ergeben sich aus den Tabellen.
+
+**Sicherheitsregeln**
+
+- **Geheimnisse nie in der Datei, nie in der Ausgabe:** DB-Passwort, Bootstrap-Token, Konfigurationsschlüssel sowie SMTP-Passwort, APNs-Schlüssel und S3-Schlüssel sind Swarm-Secrets (oder PWA-Werte). `--set` lehnt sie ab und nennt das passende `docker secret create`; `--get` verweigert sie; `--list`, `--check` und das Menü zeigen höchstens `***`. Steht ein Geheimnis trotzdem in der Datei, meldet `--check` einen Fehler (ohne den Wert), und `--unset` löscht die Zeile (statt sie auszukommentieren).
+- **Speichern ist atomar:** neue Fassung in eine temporäre Datei im selben Verzeichnis (Modus 0600), Sicherung `<Datei>.bak.JJJJMMTT-HHMMSS` (Modus 0600), dann `mv`. Bricht etwas ab, bleibt die alte Datei unverändert. Die Sicherungen sind per `.gitignore` ausgenommen und enthalten wie die Datei selbst keine Geheimnisse; alte Sicherungen löschst du von Hand.
+- **Nichts wird ohne Bestätigung ausgerollt:** `--set`, `--unset` und `--generate` rufen weder `update.sh` noch `scripts/swarm-deploy.sh` auf. Im Menü rollt nur „Anwenden“ nach ausdrücklicher Bestätigung aus; ein Prüfungsfehler in der Datei verhindert es.
+- **Die Datei wird nie ausgeführt:** Werte mit `$`, Backtick, Backslash, Zeilenumbruch oder gemischten Anführungszeichen werden abgelehnt (`update.sh` liest die Datei mit `source`). Die Platzierungsangaben prüft dieselbe Funktion wie das Deploy-Skript (`placement.sh`).
+- Unbekannte Variablen sind eine Warnung, wenn sie harmlos aussehen, und ein Fehler, wenn der Name auf ein Geheimnis deutet (`…PASSWORD`, `…KEY`, `…SECRET`, `…TOKEN`).
+- `--check` fragt Docker nicht ab; ob die genannten Swarm-Secrets existieren, prüft `setup.sh` bzw. der Deploy.
 
 ## Mehrere Replikate
 
