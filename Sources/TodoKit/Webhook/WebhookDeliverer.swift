@@ -17,7 +17,6 @@ struct WebhookDeliverer: Sendable {
 
     /// One attempt without touching any row.
     func attempt(endpoint: WebhookEndpoint, payload: WebhookPayload, now: Date) async -> Verdict {
-        if true { return .failed(code: "not_implemented", status: nil) }
         let userID = endpoint.userID
         let ring: SettingsKeyRing
         do { ring = try app.requireSettingsRuntime().keyRing } catch { return .failed(code: "encryption_key_missing", status: nil) }

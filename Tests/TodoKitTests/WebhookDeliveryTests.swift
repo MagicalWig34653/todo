@@ -331,12 +331,12 @@ final class WebhookDeliveryTests: XCTestCase {
     func testSignatureHeadersMatchHmacOfTimestampAndBody() async throws {
         try await withWebhook { f in
             try await f.configure(["signingSecret": WebhookFixture.secretSigning])
-            let now = Date(timeIntervalSince1970: 1_800_000_123)
+            let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
             let row = try await f.bundleAndSend(at: now)
             XCTAssertEqual(row.state, "sent")
             let r = try request(f)
             let timestamp = try XCTUnwrap(f.transport.header("X-Todolino-Timestamp", in: r))
-            XCTAssertEqual(timestamp, "1800000123")
+            XCTAssertEqual(timestamp, String(Int(now.timeIntervalSince1970)))
             let signature = try XCTUnwrap(f.transport.header("X-Todolino-Signature", in: r))
             let mac = HMAC<SHA256>.authenticationCode(for: Data("\(timestamp).".utf8) + r.body, using: SymmetricKey(data: Data(WebhookFixture.secretSigning.utf8)))
             XCTAssertEqual(signature, "sha256=" + mac.map { String(format: "%02x", $0) }.joined())

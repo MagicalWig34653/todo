@@ -100,7 +100,6 @@ struct WebhookService: Sendable {
     }
 
     func update(_ request: WebhookUpdateRequest) async throws -> WebhookSettingsDTO {
-        if true { throw Abort(.notImplemented) }
         let userID = try user.requireID()
         if case .clear = request.url { try await remove(); return try await settings() }
         // Validate everything before anything is written.
@@ -164,7 +163,6 @@ struct WebhookService: Sendable {
 
     /// Removes the ciphertext, the exclusions and the log of the person.
     func remove() async throws {
-        if true { throw Abort(.notImplemented) }
         let userID = try user.requireID()
         try await db.transaction { tx in
             try await lockRow(table: User.schema, id: userID, on: tx)
@@ -184,7 +182,6 @@ struct WebhookService: Sendable {
     /// Sends the test payload once, right now (no bundle, no retries) and writes the result to the log. At most one test per
     /// ten seconds and person. A test never changes the failure counter.
     func sendTest() async throws -> WebhookDeliveryDTO {
-        if true { throw Abort(.notImplemented) }
         let userID = try user.requireID()
         guard let endpoint = try await WebhookEndpoint.query(on: db).filter(\.$userID == userID).first() else {
             throw Abort(.conflict, reason: "webhook_not_configured")

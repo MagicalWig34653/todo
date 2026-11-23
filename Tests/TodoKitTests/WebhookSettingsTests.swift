@@ -64,10 +64,13 @@ final class WebhookSettingsTests: XCTestCase {
             XCTAssertEqual(row.urlMask, "https://hooks.example.test")
             XCTAssertEqual(row.keyID, f.app.settingsRuntime?.keyRing.current?.id)
 
-            // Nothing in the server log (settings, test delivery, rejected URLs, worker run).
+            // Nothing in the server log (settings, test delivery, rejected URLs, worker run), not even at debug level where Fluent
+            // logs every query. The host is no secret (it is in the mask), but it stays out of the log at the default level.
             _ = try await f.bundleAndSend()
-            let logged = f.capture.lines.joined(separator: "\n")
-            for needle in ["SECRETPATH", "SECRETQUERY", "SECRETPASS", "SIGNING-SECRET", "hooks.example.test"] { XCTAssertFalse(logged.contains(needle), "\(needle) in the log") }
+            let everything = f.capture.lines.joined(separator: "\n")
+            for needle in ["SECRETPATH", "SECRETQUERY", "SECRETPASS", "SIGNING-SECRET"] { XCTAssertFalse(everything.contains(needle), "\(needle) in the log") }
+            let normal = f.capture.lines.filter { !$0.hasPrefix("trace") && !$0.hasPrefix("debug") }.joined(separator: "\n")
+            XCTAssertFalse(normal.contains("hooks.example.test"), "host in the log at the default level: \(normal)")
         }
     }
 

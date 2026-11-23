@@ -4,9 +4,13 @@ import Vapor
 
 /// Marks work done on behalf of an agent (MCP/OAuth). Some write paths shared by REST and MCP record their activity with the
 /// person as actor (the MCP caller acts as the person who granted the connection); those must not wake the webhook, or the
-/// listener would wake itself in a loop (ADR 0035, item 5). Set by the MCP endpoint around the whole request.
+/// listener would wake itself in a loop (ADR 0035, item 5). The MCP endpoint sets the mark on the request logger, which every
+/// `req.db` and every transaction handle derived from it carries (a task-local would be lost in Fluent's transaction closure,
+/// which runs on an event loop callback). The value is a fixed word, no data.
 enum WebhookAgentContext {
-    @TaskLocal static var isAgentRequest = false
+    static let key = "todolino.agent_request"
+    static func mark(_ req: Request) { req.logger[metadataKey: key] = "mcp" }
+    static func isMarked(_ db: any Database) -> Bool { db.logger[metadataKey: key] != nil }
 }
 
 /// ADR 0035: an `ActivityEvent` created by the webhook owner (actor type Person) with a whitelisted kind in a project that
@@ -17,7 +21,7 @@ struct WebhookTriggerMiddleware: AsyncModelMiddleware {
 
     func create(model: ActivityEvent, on db: any Database, next: any AnyAsyncModelResponder) async throws {
         try await next.create(model, on: db)
-        guard model.actorType == .person, !WebhookAgentContext.isAgentRequest, let mask = WebhookKinds.mask(model.kind),
+        guard model.actorType == .person, !WebhookAgentContext.isMarked(db), let mask = WebhookKinds.mask(model.kind),
               // Follow-up cards created by the system (recurrence) carry the source card as subject; nobody acted on them.
               !(model.kind == "task.created" && model.subjectID != nil)
         else { return }
@@ -41,7 +45,6 @@ enum WebhookBundler {
     /// of one person is sequential; inside, the merge is a single `UPDATE anzahl = anzahl + 1, kinds_mask = kinds_mask | m`.
     /// The unique key (user_id, open_marker) rejects a second open row; the loser retries and merges.
     static func bundle(userID: UUID, endpointID: UUID, mask: Int, now: Date, on db: any Database) async throws {
-        if true { return }
         try await db.transaction { tx in
             guard let sql = tx as? any SQLDatabase else { return }
             try await lockRow(table: WebhookEndpoint.schema, id: endpointID, on: tx)

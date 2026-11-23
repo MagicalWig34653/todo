@@ -145,6 +145,11 @@ struct WebhookFixture {
         return r
     }
 
+    func version(of task: String) async throws -> Int {
+        guard let t = try await TodoTask.find(UUID(uuidString: task), on: app.db) else { throw WebhookTestError(what: "no task") }
+        return t.version
+    }
+
     func rows() async throws -> [WebhookDelivery] {
         try await WebhookDelivery.query(on: app.db).sort(\.$createdAt).sort(\.$id).all()
     }

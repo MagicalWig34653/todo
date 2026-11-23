@@ -78,7 +78,6 @@ final class WebhookWorker: LifecycleHandler, @unchecked Sendable {
 
     func tick(now: Date = Date(), keepLease: (@Sendable () async -> Bool)? = nil) async throws -> Report {
         var report = Report()
-        if true { return report }
         let db = app.db
         let due = try await WebhookDelivery.query(on: db).filter(\.$state == "pending").filter(\.$nextAttemptAt <= now)
             .sort(\.$dueAt).sort(\.$id).limit(50).all()

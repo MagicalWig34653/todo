@@ -16,7 +16,6 @@ struct WebhookURL: Sendable {
     var mask: String { "https://" + (literalIP != nil && host.contains(":") ? "[\(host)]" : host) }
 
     static func parse(_ raw: String) throws -> WebhookURL {
-        if true { throw Abort(.notImplemented) }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= WebhookLimits.maxURLLength,
               text.unicodeScalars.allSatisfy({ $0.value >= 0x21 && $0.value <= 0x7e }), !text.contains("\\")
@@ -59,7 +58,7 @@ struct WebhookURL: Sendable {
                 // A name: letters, digits, dots and hyphens only (IDNs have to be given as punycode); no colon, bracket or percent sign.
                 let name = host.hasSuffix(".") ? String(host.dropLast()) : host
                 guard !name.isEmpty, name.utf8.count <= 253,
-                      !name.split(separator: ".", omittingEmptySubsequences: false).contains(where: \.isEmpty),
+                      !name.split(separator: ".", omittingEmptySubsequences: false).contains(where: { $0.isEmpty || $0.count > 63 || $0.hasPrefix("-") || $0.hasSuffix("-") }),
                       name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == ".") }),
                       name.contains(where: \.isLetter) || name.contains(".")
                 else { throw Abort(.badRequest, reason: "webhook_url_invalid") }

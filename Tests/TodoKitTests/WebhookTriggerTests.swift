@@ -52,8 +52,7 @@ final class WebhookTriggerTests: XCTestCase {
             XCTAssertEqual(changes.status, .ok, "\(changes.body ?? [:])")
             try await f.comment(t1)
             let created = try await f.newTask("New")
-            let fresh = try await f.test.json(.GET, "/v1/tasks/\(created)", token: f.session)
-            var version = try XCTUnwrap(fresh.body?["version"] as? Int)
+            var version = try await f.version(of: created)
             let status = try await f.test.json(.PATCH, "/v1/tasks/\(created)", ["version": version, "status": "in_progress"], token: f.session)
             XCTAssertEqual(status.status, .ok, "\(status.body ?? [:])")
             version = try XCTUnwrap(status.body?["version"] as? Int)
@@ -93,7 +92,7 @@ final class WebhookTriggerTests: XCTestCase {
             XCTAssertTrue(activity.contains { $0.kind == "task.created" }, "MCP create_task is recorded")
             // ... but did not enter the buffer.
             let rows = try await f.rows()
-            XCTAssertEqual(rows.count, 0)
+            XCTAssertEqual(rows.count, 0, "\(rows.map { WebhookKinds.kinds($0.kindsMask) })")
 
             // Control: the same person doing the same through the app does.
             _ = try await f.newTask("By person")
@@ -129,8 +128,7 @@ final class WebhookTriggerTests: XCTestCase {
         try await withWebhook { f in
             let task = try await f.existingTask("Title")
             try await f.configure()
-            let fetched = try await f.test.json(.GET, "/v1/tasks/\(task)", token: f.session)
-            let version = try XCTUnwrap(fetched.body?["version"] as? Int)
+            let version = try await f.version(of: task)
             let renamed = try await f.test.json(.PATCH, "/v1/tasks/\(task)", ["version": version, "title": "Renamed"], token: f.session)
             XCTAssertEqual(renamed.status, .ok, "\(renamed.body ?? [:])")
             let criterion = try await f.test.json(.POST, "/v1/tasks/\(task)/acceptance-criteria", ["text": "Works"], token: f.session)
@@ -271,8 +269,7 @@ final class WebhookTriggerTests: XCTestCase {
             try await f.configure()
             for _ in 0..<3 { try await f.comment(task) }
             _ = try await f.newTask()
-            let fetched = try await f.test.json(.GET, "/v1/tasks/\(task)", token: f.session)
-            let version = try XCTUnwrap(fetched.body?["version"] as? Int)
+            let version = try await f.version(of: task)
             let s = try await f.test.json(.PATCH, "/v1/tasks/\(task)", ["version": version, "status": "in_progress"], token: f.session)
             XCTAssertEqual(s.status, .ok, "\(s.body ?? [:])")
             let rows = try await f.rows()
@@ -303,7 +300,9 @@ final class WebhookTriggerTests: XCTestCase {
             XCTAssertEqual(new.openMarker, "open")
             XCTAssertGreaterThan(new.dueAt, Date().addingTimeInterval(30))
             // And another one after sending.
-            _ = try await f.worker().tick(now: Date())
+            try await f.makeDue()
+            let sent = try await f.worker().tick(now: Date())
+            XCTAssertEqual(sent.sent, 2)
             try await f.comment(task)
             let again = try await f.rows()
             XCTAssertEqual(again.count, 3)
@@ -350,18 +349,29 @@ final class WebhookTriggerTests: XCTestCase {
             try await f.configure()
             let session = f.session
             let path = "/v1/tasks/\(task)/comments"
-            let results = await withTaskGroup(of: HTTPStatus.self) { group in
-                for i in 0..<12 {
-                    let target = i.isMultiple(of: 2) ? f.test : replica
-                    group.addTask {
-                        (try? await target.rawStatus(.POST, path, body: Data(#"{"body":"concurrent"}"#.utf8), token: session)) ?? .internalServerError
-                    }
-                }
-                var all: [HTTPStatus] = []
-                for await s in group { all.append(s) }
-                return all
+            @Sendable func post(_ target: Application) async -> String {
+                var outcome = "no response"
+                try? await target.test(.POST, path, beforeRequest: { req in
+                    req.headers.bearerAuthorization = .init(token: session)
+                    req.headers.contentType = .json
+                    req.body = ByteBuffer(string: #"{"body":"concurrent"}"#)
+                }, afterResponse: { res async in outcome = "\(res.status.code) " + String(buffer: res.body).prefix(160) })
+                return outcome
             }
-            XCTAssertEqual(results.filter { $0 == .created }.count, 12, "\(results)")
+            var results: [String] = []
+            if TestApp.useMariaDB {
+                // Truly concurrent writers on both replicas (SQLite allows one writing process at a time: "database is locked").
+                let apps = [f.app, replica.app]
+                results = await withTaskGroup(of: String.self) { group in
+                    for i in 0..<12 { let target = apps[i % 2]; group.addTask { await post(target) } }
+                    var all: [String] = []
+                    for await s in group { all.append(s) }
+                    return all
+                }
+            } else {
+                for i in 0..<12 { results.append(await post(i.isMultiple(of: 2) ? f.app : replica.app)) }
+            }
+            XCTAssertEqual(results.filter { $0.hasPrefix("201") }.count, 12, "\(Set(results))")
             let rows = try await f.rows()
             XCTAssertEqual(rows.count, 1, "no duplicate open row across replicas")
             XCTAssertEqual(rows.first?.anzahl, 12, "no event is lost")
