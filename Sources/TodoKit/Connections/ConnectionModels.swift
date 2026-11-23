@@ -54,4 +54,5 @@ func configureConnections(_ app: Application) {
     app.migrations.add(AddOAuthGrantNameAndUsage())
     app.migrations.add(CreateConnectionAccessRequests())
     app.migrations.add(CreateBrainMandates())
+    app.migrations.add(BrainMandateGrantUnique())
 }

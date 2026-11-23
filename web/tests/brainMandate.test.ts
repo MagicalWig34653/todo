@@ -9,8 +9,9 @@ import {
 	eligibleGrants,
 	filterProjects,
 	mandateErrorKey,
+	mandateFor,
 	mandateStatus,
-	prefillForm,
+	prefillProjects,
 	projectLabels,
 	resolveScope,
 	saveKind,
@@ -113,18 +114,24 @@ describe('diff before replacing a mandate', () => {
 	});
 });
 
+describe('finding the mandate of one connection', () => {
+	const list = [mandate({ grantID: 'G1' }), mandate({ grantID: 'G2', projectIDs: ['P2'] })];
+	it('matches the connection case-insensitively and knows nothing about the others', () => {
+		expect(mandateFor(list, 'g2')?.projectIDs).toEqual(['P2']);
+		expect(mandateFor(list, 'G3')).toBeUndefined();
+		expect(mandateFor([], 'G1')).toBeUndefined();
+	});
+});
+
 describe('form prefill', () => {
-	it('starts empty (nothing preselected) without an active mandate', () => {
-		expect(prefillForm(null, [grant('G1')], projects)).toEqual({ grantID: '', projectIDs: [] });
-		expect(prefillForm(mandate({ active: false, revokedAt: '2026-11-19T09:00:00Z' }), [grant('G1')], projects)).toEqual({ grantID: '', projectIDs: [] });
-		expect(prefillForm(mandate({ active: false }), [grant('G1')], projects)).toEqual({ grantID: '', projectIDs: [] });
+	it('starts empty (nothing preselected) for a connection without an active mandate', () => {
+		expect(prefillProjects(undefined, projects)).toEqual([]);
+		expect(prefillProjects(mandate({ active: false, revokedAt: '2026-11-19T09:00:00Z' }), projects)).toEqual([]);
+		expect(prefillProjects(mandate({ active: false }), projects)).toEqual([]);
 	});
-	it('takes over the active mandate with the real ids of the lists, and drops unreadable projects', () => {
+	it('takes over the active mandate of that connection with the real ids of the lists, and drops unreadable projects', () => {
 		const m = mandate({ grantID: 'g1', projectIDs: ['p1', 'p3', 'GONE-0001'] });
-		expect(prefillForm(m, [grant('G1')], projects)).toEqual({ grantID: 'G1', projectIDs: ['P1', 'P3'] });
-	});
-	it('does not preselect a connection that is not selectable any more', () => {
-		expect(prefillForm(mandate(), [grant('G1', { revoked: true })], projects).grantID).toBe('');
+		expect(prefillProjects(m, projects)).toEqual(['P1', 'P3']);
 	});
 });
 
@@ -132,13 +139,14 @@ describe('how to save', () => {
 	const next = { grantID: 'G2', projectIDs: ['P2'] };
 	it('first grant without a mandate needs no confirmation step', () => {
 		expect(saveKind(null, next)).toBe('first');
+		expect(saveKind(undefined, next)).toBe('first');
 	});
 	it('a revoked or void mandate gives nobody power, so granting again is a plain save', () => {
 		expect(saveKind(mandate({ active: false, revokedAt: '2026-11-19T09:00:00Z' }), next)).toBe('first');
 		expect(saveKind(mandate({ active: false }), next)).toBe('first');
 	});
-	it('replacing an active mandate (connection and/or projects) needs the confirmation diff', () => {
-		expect(saveKind(mandate(), next)).toBe('replace');
+	it('changing the projects of an active mandate needs the confirmation diff (other connections are not touched)', () => {
+		expect(saveKind(mandate(), { grantID: 'G1', projectIDs: ['P2'] })).toBe('replace');
 		expect(saveKind(mandate(), { grantID: 'G1', projectIDs: ['P1', 'P2'] })).toBe('replace');
 	});
 	it('the very same active mandate is "unchanged"', () => {
@@ -193,12 +201,12 @@ describe('api', () => {
 		};
 		return { calls, api: createApi(fetchFn) };
 	}
-	it('reads the mandate (null without one)', async () => {
-		const none = recorder({ mandate: null });
-		expect(await none.api.getBrainMandate()).toBeNull();
+	it('reads the list of mandates (one per connection, empty without any)', async () => {
+		const none = recorder({ mandates: [] });
+		expect(await none.api.listBrainMandates()).toEqual([]);
 		expect(none.calls[0].url).toBe('/v1/settings/brain-mandate');
-		const some = recorder({ mandate: mandate() });
-		expect((await some.api.getBrainMandate())?.grantID).toBe('G1');
+		const some = recorder({ mandates: [mandate(), mandate({ grantID: 'G2' })] });
+		expect((await some.api.listBrainMandates()).map((m) => m.grantID)).toEqual(['G1', 'G2']);
 	});
 	it('puts exactly grantID and projectIDs', async () => {
 		const r = recorder(mandate());
@@ -207,10 +215,10 @@ describe('api', () => {
 		expect(r.calls[0].init?.method).toBe('PUT');
 		expect(JSON.parse(r.calls[0].init?.body as string)).toEqual({ grantID: 'G1', projectIDs: ['P1', 'P2'] });
 	});
-	it('revokes with DELETE and reads the audit items', async () => {
+	it('revokes exactly one connection with DELETE and reads the audit items', async () => {
 		const del = recorder(null, 204);
-		await del.api.revokeBrainMandate();
-		expect(del.calls[0]).toMatchObject({ url: '/v1/settings/brain-mandate', init: { method: 'DELETE' } });
+		await del.api.revokeBrainMandate('G 1/x');
+		expect(del.calls[0]).toMatchObject({ url: '/v1/settings/brain-mandate/G%201%2Fx', init: { method: 'DELETE' } });
 		const audit = recorder({ items: [{ id: 'a', kind: 'review.accepted' }] });
 		expect(await audit.api.listBrainAudit()).toHaveLength(1);
 		expect(audit.calls[0].url).toBe('/v1/settings/brain-mandate/audit');

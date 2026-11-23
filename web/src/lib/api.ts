@@ -1368,12 +1368,13 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		/** Replaces the projects of an existing connection (authorise and deauthorise afterwards); effective immediately. */
 		setOAuthGrantProjects: (id: string, projectIDs: string[]) => request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: projectIDs }),
 
-		// Brain mandate (contracts/connections.yaml 1.1.0, ADR 0032); person session only, OAuth tokens get 401.
-		/** `null` while the person never gave a mandate. After a revocation the mandate stays, with `active: false`. */
-		getBrainMandate: async () => (await request<{ mandate: BrainMandate | null }>('GET', '/settings/brain-mandate')).mandate,
-		/** Gives or overwrites the single mandate (400 invalid_projects, 404 unknown grant/project, 409 grant_revoked). */
+		// Brain mandates (contracts/connections.yaml 1.2.0, ADR 0032 addendum): one per connection; person session only, OAuth tokens get 401.
+		/** One entry per connection that ever got a mandate, newest first. After a revocation the entry stays, with `active: false`. */
+		listBrainMandates: async () => (await request<{ mandates: BrainMandate[] }>('GET', '/settings/brain-mandate')).mandates,
+		/** Gives or overwrites the mandate of that connection only (400 invalid_projects, 404 unknown grant/project, 409 grant_revoked). */
 		putBrainMandate: (grantID: string, projectIDs: string[]) => request<BrainMandate>('PUT', '/settings/brain-mandate', { grantID, projectIDs }),
-		revokeBrainMandate: () => request<void>('DELETE', '/settings/brain-mandate'),
+		/** Revokes the mandate of one connection at once; the others stay. Idempotent. */
+		revokeBrainMandate: (grantID: string) => request<void>('DELETE', `/settings/brain-mandate/${encodeURIComponent(grantID)}`),
 		/** Decisions made under the mandate, newest first (at most 200). */
 		listBrainAudit: async () => (await request<{ items: BrainAuditItem[] }>('GET', '/settings/brain-mandate/audit')).items
 	};

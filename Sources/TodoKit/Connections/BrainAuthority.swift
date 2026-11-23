@@ -20,6 +20,14 @@ func lockedFirst<M: Model>(_ type: M.Type, column: String, equals value: UUID, o
     return try row.decode(fluentModel: M.self)
 }
 
+/// The mandate of exactly this connection, read under `FOR UPDATE` (one mandate per person and connection).
+func lockedMandate(userID: UUID, grantID: UUID, on db: any Database) async throws -> BrainMandate? {
+    guard let sql = db as? any SQLDatabase else { throw Abort(.internalServerError) }
+    let lock = sql.dialect.name == "sqlite" ? "" : " FOR UPDATE"
+    guard let row = try await sql.raw("SELECT * FROM \(ident: BrainMandate.schema) WHERE \(ident: "user_id") = \(bind: userID) AND \(ident: "grant_id") = \(bind: grantID) LIMIT 1\(unsafeRaw: lock)").first() else { return nil }
+    return try row.decode(fluentModel: BrainMandate.self)
+}
+
 extension WorkflowService {
     /// nil for persons. For every other actor the check order of ADR 0032 applies (the own-request check comes before this
     /// one): no active mandate of this very connection -> `brain_mandate_required`; project not in the mandate ->
@@ -30,8 +38,8 @@ extension WorkflowService {
         let userID = try user.requireID()
         // Lock order everywhere: mandate row, then grant row (see BrainMandateService.grant).
         guard actor.type == .integration,
-              let mandate = try await lockedFirst(BrainMandate.self, column: "user_id", equals: userID, on: tx),
-              let mandateID = mandate.id, mandate.revokedAt == nil, mandate.grantID == actor.id,
+              let mandate = try await lockedMandate(userID: userID, grantID: actor.id, on: tx),
+              let mandateID = mandate.id, mandate.revokedAt == nil,
               let grant = try await lockedFirst(OAuthGrant.self, column: "id", equals: actor.id, on: tx),
               !grant.revoked, grant.userID == userID else {
             throw Abort(.forbidden, reason: "brain_mandate_required")

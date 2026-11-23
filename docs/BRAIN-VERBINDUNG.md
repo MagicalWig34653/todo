@@ -1,6 +1,6 @@
-# Brain-Verbindung: Vollmacht einrichten (ADR 0032)
+# Brain-Verbindung: Vollmacht einrichten (ADR 0032, Nachtrag 23.11.2026)
 
-Das Brain (Orchestrator) darf Reviews entscheiden und Fragen beantworten ("nimm das an", "antworte B"), aber nur mit einer eigenen MCP-Verbindung und einer Vollmacht, die Lino in den Einstellungen erteilt. Ohne Vollmacht entscheidet keine Verbindung fremde Reviews oder Fragen (`brain_mandate_required`).
+Das Brain (Orchestrator) und weitere Agenten wie Codex dürfen Reviews entscheiden und Fragen beantworten ("nimm das an", "antworte B"), aber nur mit einer eigenen MCP-Verbindung je Agent und einer Vollmacht, die Lino in den Einstellungen für genau diese Verbindung erteilt. Mehrere Verbindungen können gleichzeitig eine Vollmacht haben, jede mit eigener Projektliste. Ohne Vollmacht entscheidet keine Verbindung fremde Reviews oder Fragen (`brain_mandate_required`).
 
 ## 1. Eigene Verbindung anmelden
 
@@ -12,25 +12,27 @@ Das Brain (Orchestrator) darf Reviews entscheiden und Fragen beantworten ("nimm 
 
 ## 2. Vollmacht erteilen
 
-PWA: Einstellungen, "Brain-Vollmacht" (`/settings/brain-mandate`, Gruppe "Verbundene Apps & Agenten"): eigene, nicht widerrufene Verbindung wählen, Projekte ausdrücklich wählen (1 bis 200, Suche, keine "alle"-Abkürzung, nichts vorausgewählt), speichern. Wird eine aktive Vollmacht ersetzt (andere Verbindung und/oder andere Projekte), zeigt die Seite vorher einen Vorher/Nachher-Vergleich mit hinzugekommenen und entfallenen Projekten und dem Hinweis, dass die bisherige Verbindung die Vollmacht sofort verliert; erst "Vollmacht jetzt übertragen" speichert. Die Seite zeigt außerdem Status (aktiv, widerrufen, Verbindung selbst widerrufen = wirkungslos), Projekte im Umfang, erteilt/geändert/zuletzt benutzt und das Protokoll der letzten Entscheidungen mit Zitat und Link zur Karte. Screenshots: `docs/screenshots/brain-mandat/`. Dasselbe per REST mit Personen-Sitzung (OAuth-Token werden abgelehnt):
+PWA: Einstellungen, "Brain-Vollmacht" (`/settings/brain-mandate`, Gruppe "Verbundene Apps & Agenten"). Oben steht die Liste der Vollmachten (je Verbindung: Status, Projekte, erteilt/geändert/zuletzt benutzt), darunter das Formular "Vollmacht hinzufügen": eigene, nicht widerrufene Verbindung wählen, Projekte ausdrücklich wählen (1 bis 200, Suche, keine "alle"-Abkürzung, nichts vorausgewählt), speichern. Für eine zweite Verbindung (zum Beispiel Codex neben dem Brain) das Formular einfach noch einmal ausfüllen: die erste Vollmacht bleibt unverändert. Wählt man eine Verbindung, die schon eine aktive Vollmacht hat (oder "Projekte ändern" in ihrem Listeneintrag), zeigt das Formular deren Projekte; entfallen Projekte, zeigt die Seite vorher einen Vorher/Nachher-Vergleich mit hinzugekommenen und entfallenen Projekten, erst "Projektumfang jetzt ändern" speichert. Screenshots: `docs/screenshots/brain-mandat/`. Dasselbe per REST mit Personen-Sitzung (OAuth-Token werden abgelehnt):
 
 ```
-PUT /v1/settings/brain-mandate   {"grantID": "<Verbindung>", "projectIDs": ["<Projekt>", ...]}
-GET /v1/settings/brain-mandate
-GET /v1/settings/brain-mandate/audit
+PUT    /v1/settings/brain-mandate            {"grantID": "<Verbindung>", "projectIDs": ["<Projekt>", ...]}
+GET    /v1/settings/brain-mandate            -> {"mandates": [{grantID, grantName, projectIDs, active, ...}, ...]}
+GET    /v1/settings/brain-mandate/audit
 ```
 
-- Höchstens eine Vollmacht je Person; erneut erteilen überschreibt sie. Projekte gelten genau wie genannt, ohne Unterprojekte.
+- Höchstens eine Vollmacht je Verbindung; erneut erteilen für dieselbe Verbindung überschreibt nur deren Vollmacht. Projekte gelten genau wie genannt, ohne Unterprojekte, und je Verbindung getrennt: eine Verbindung entscheidet nie in Projekten, die nur in der Liste einer anderen stehen.
 - Der Grant muss Lino gehören und darf nicht widerrufen sein.
+- Nach dem Update (einmalig, Migration `BrainMandateGrantUnique`): die bisherige Vollmacht bleibt bestehen. Codex-Verbindung (eigener MCP-Eintrag, eigene Anmeldung, Projektliste der Verbindung enthält die gewünschten Projekte) anschließend in derselben Seite zusätzlich berechtigen.
 
 ## 3. Widerrufen
 
-`DELETE /v1/settings/brain-mandate` (oder in den Einstellungen "Vollmacht widerrufen", mit Bestätigung). Wirkt sofort für die nächste Entscheidung; ein widerrufener Grant macht die Vollmacht ebenfalls wirkungslos. Bereits getroffene Entscheidungen bleiben (Rücknahme wie bisher durch die Person).
+PWA: "Vollmacht widerrufen" im Eintrag der Verbindung (mit Bestätigung), oder per REST `DELETE /v1/settings/brain-mandate/<Verbindung>`; `DELETE /v1/settings/brain-mandate` ohne ID widerruft alle. Wirkt sofort für die nächste Entscheidung dieser Verbindung, die Vollmachten der anderen bleiben. Ein widerrufener Grant macht nur seine eigene Vollmacht wirkungslos. Bereits getroffene Entscheidungen bleiben (Rücknahme wie bisher durch die Person).
 
 ## 4. Was das Brain tun muss
 
 - `decide_review {taskID, decision, note?, quote}` und `answer_question {questionID, answer, quote}`: `quote` sind Linos eigene Worte (Pflicht, höchstens 2000 Zeichen). Ohne: `quote_required`.
 - Eigene Reviews/Fragen der Brain-Verbindung bleiben gesperrt.
 - Jede Entscheidung steht im Chat der Review/Frage als "Brain im Auftrag von <Name>: Entscheidung von <Name> (Zitat): ..." und im Protokoll (`GET /v1/settings/brain-mandate/audit`).
-- `get_connection.brainMandate {active, projectIDs}` zeigt dem Brain lesend, ob die Vollmacht gilt.
-- Die Markierung "Brain empfohlen" setzt nur ein Kommentar dieser Verbindung (`add_comment` mit `reviewID`) in einem Projekt der Vollmacht.
+- `get_connection.brainMandate {active, projectIDs}` zeigt der aufrufenden Verbindung lesend, ob ihre eigene Vollmacht gilt (und für welche Projekte).
+- Die Markierung "Brain empfohlen" setzt nur ein Kommentar einer Verbindung mit eigener Vollmacht (`add_comment` mit `reviewID`) in einem Projekt ihrer Vollmacht.
+- Fehler: `brain_mandate_required` heißt "diese Verbindung hat keine aktive Vollmacht" (die Vollmacht einer anderen Verbindung hilft nicht), `outside_brain_mandate` "das Projekt steht nicht in der Liste der eigenen Vollmacht".

@@ -13,13 +13,9 @@ struct BrainMandateDTO: Content {
     let lastUsedAt: Date?
 }
 
+/// One entry per connection that holds (or held) a mandate, most recently changed first; `[]` without any.
 struct BrainMandateResponse: Content {
-    let mandate: BrainMandateDTO?
-    /// Always present, `null` without a mandate.
-    func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(mandate, forKey: .mandate)
-    }
+    let mandates: [BrainMandateDTO]
 }
 
 struct BrainMandateRequest: Content {
@@ -51,10 +47,10 @@ enum BrainMandateLimits {
     static let auditLimit = 200
 }
 
-/// ADR 0032. The mandate is managed by the person only (REST with a session); agents may only read it.
+/// ADR 0032 and addendum 23.11.2026: one mandate per connection (grant). The mandate is managed by the person only (REST with a
+/// session); agents may only read it.
 enum BrainMandateService {
-    static func current(userID: UUID, db: any Database) async throws -> BrainMandateDTO? {
-        guard let m = try await BrainMandate.query(on: db).filter(\.$userID == userID).first() else { return nil }
+    private static func dto(_ m: BrainMandate, db: any Database) async throws -> BrainMandateDTO {
         let grant = try await OAuthGrant.find(m.grantID, on: db)
         var client: String?
         if let grant { client = try await OAuthClient.find(grant.clientID, on: db)?.name }
@@ -63,45 +59,66 @@ enum BrainMandateService {
             createdAt: m.createdAt, updatedAt: m.updatedAt, revokedAt: m.revokedAt, lastUsedAt: grant?.lastUsedAt)
     }
 
-    /// Gives (or overwrites) the person's single mandate. The grant must be the person's own and not revoked; every
-    /// project must be readable by the person now.
+    static func list(userID: UUID, db: any Database) async throws -> [BrainMandateDTO] {
+        let rows = try await BrainMandate.query(on: db).filter(\.$userID == userID).sort(\.$updatedAt, .descending).sort(\.$id, .descending).all()
+        var out: [BrainMandateDTO] = []
+        for m in rows { out.append(try await dto(m, db: db)) }
+        return out
+    }
+
+    /// Gives (or overwrites) the mandate of one connection; the person's other mandates stay as they are. The grant must be the
+    /// person's own and not revoked; every project must be readable by the person now.
     static func grant(_ request: BrainMandateRequest, user: User, db: any Database) async throws -> BrainMandateDTO {
         let userID = try user.requireID()
         let projects = Array(Set(request.projectIDs))
         guard !projects.isEmpty, projects.count <= BrainMandateLimits.maxProjects else { throw Abort(.badRequest, reason: "invalid_projects") }
-        try await db.transaction { tx in
+        let saved: BrainMandate = try await db.transaction { tx in
             try await lockSharingGraph(on: tx)
             try await lockRow(table: User.schema, id: userID, on: tx)
             // Same order as the decision check: mandate row first, then the grant row.
-            if let existing = try await BrainMandate.query(on: tx).filter(\.$userID == userID).first(), let id = existing.id {
-                try await lockRow(table: BrainMandate.schema, id: id, on: tx)
-            }
+            let existing = try await BrainMandate.query(on: tx).filter(\.$userID == userID).filter(\.$grantID == request.grantID).first()
+            if let id = existing?.id { try await lockRow(table: BrainMandate.schema, id: id, on: tx) }
             try await lockRow(table: OAuthGrant.schema, id: request.grantID, on: tx)
             guard let g = try await OAuthGrant.find(request.grantID, on: tx), g.userID == userID else { throw Abort(.notFound) }
             guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }
             let access = ProjectAccess(user: user, db: tx)
             for id in projects { _ = try await access.project(id) }
             let now = Date()
-            if let m = try await BrainMandate.query(on: tx).filter(\.$userID == userID).first() {
-                m.grantID = request.grantID; m.projects = projects.sorted { $0.uuidString < $1.uuidString }
-                m.revokedAt = nil; m.updatedAt = now
+            let sorted = projects.sorted { $0.uuidString < $1.uuidString }
+            if let m = existing {
+                m.projects = sorted; m.revokedAt = nil; m.updatedAt = now
                 try await m.save(on: tx)
-            } else {
-                try await BrainMandate(userID: userID, grantID: request.grantID, projects: projects.sorted { $0.uuidString < $1.uuidString }, now: now).save(on: tx)
+                return m
             }
+            let m = BrainMandate(userID: userID, grantID: request.grantID, projects: sorted, now: now)
+            try await m.save(on: tx)
+            return m
         }
-        guard let dto = try await current(userID: userID, db: db) else { throw Abort(.internalServerError) }
-        return dto
+        return try await dto(saved, db: db)
     }
 
-    /// Idempotent; takes effect for the next decision (decisions re-read the mandate under lock).
-    static func revoke(user: User, db: any Database) async throws {
+    /// Revokes the mandate of one connection; idempotent, nothing leaks about foreign or unknown grants. Takes effect for the
+    /// next decision (decisions re-read the mandate under lock).
+    static func revoke(grantID: UUID, user: User, db: any Database) async throws {
         let userID = try user.requireID()
         try await db.transaction { tx in
             try await lockRow(table: User.schema, id: userID, on: tx)
-            guard let m = try await BrainMandate.query(on: tx).filter(\.$userID == userID).first(), m.revokedAt == nil else { return }
+            guard let m = try await BrainMandate.query(on: tx).filter(\.$userID == userID).filter(\.$grantID == grantID).first(), m.revokedAt == nil else { return }
             m.revokedAt = Date(); m.updatedAt = m.revokedAt!
             try await m.save(on: tx)
+        }
+    }
+
+    /// Revokes every active mandate of the person at once.
+    static func revokeAll(user: User, db: any Database) async throws {
+        let userID = try user.requireID()
+        try await db.transaction { tx in
+            try await lockRow(table: User.schema, id: userID, on: tx)
+            let now = Date()
+            for m in try await BrainMandate.query(on: tx).filter(\.$userID == userID).filter(\.$revokedAt == .null).all() {
+                m.revokedAt = now; m.updatedAt = now
+                try await m.save(on: tx)
+            }
         }
     }
 
@@ -117,18 +134,26 @@ struct BrainMandateController: RouteCollection {
         let m = routes.grouped("v1", "settings", "brain-mandate")
         m.get(use: get)
         m.put(use: put)
-        m.delete(use: remove)
+        m.delete(use: removeAll)
+        m.delete(":grantID", use: remove)
         m.get("audit", use: audit)
     }
     @Sendable func get(_ req: Request) async throws -> BrainMandateResponse {
-        BrainMandateResponse(mandate: try await BrainMandateService.current(userID: req.requireUser().requireID(), db: req.db))
+        BrainMandateResponse(mandates: try await BrainMandateService.list(userID: req.requireUser().requireID(), db: req.db))
     }
     @Sendable func put(_ req: Request) async throws -> BrainMandateDTO {
         let user = try await req.requireUser()
         return try await BrainMandateService.grant(req.content.decode(BrainMandateRequest.self), user: user, db: req.db)
     }
+    /// Without an ID: revoke every mandate. With the grant ID: only that connection's.
+    @Sendable func removeAll(_ req: Request) async throws -> HTTPStatus {
+        try await BrainMandateService.revokeAll(user: req.requireUser(), db: req.db)
+        return .noContent
+    }
     @Sendable func remove(_ req: Request) async throws -> HTTPStatus {
-        try await BrainMandateService.revoke(user: req.requireUser(), db: req.db)
+        let user = try await req.requireUser()
+        guard let id = req.parameters.get("grantID", as: UUID.self) else { throw Abort(.badRequest, reason: "invalid_grant") }
+        try await BrainMandateService.revoke(grantID: id, user: user, db: req.db)
         return .noContent
     }
     @Sendable func audit(_ req: Request) async throws -> BrainAuditResponse {

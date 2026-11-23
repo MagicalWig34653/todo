@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 23.11.2026 (14:30): Brain-Vollmacht je Verbindung statt je Person (Karte 2280A2F1; kein Deploy)
+
+- Ausloeser (Lino): Codex und das Brain sollen beide eine Vollmacht bekommen; bisher `unique(user_id)` in `brain_mandates`, also eine Vollmacht je Person.
+- Umgesetzt: Migration `BrainMandateGrantUnique` (`unique(user_id, grant_id)`, bestehende Vollmacht bleibt; SQLite baut die Tabelle um, MariaDB legt den neuen Index vor dem Entfernen des alten an). REST: `GET` liefert `{mandates: [...]}`, `PUT` setzt je Verbindung, `DELETE /v1/settings/brain-mandate/{grantID}` widerruft eine, `DELETE` ohne Id widerruft alle. `brainAuthority` sperrt und prueft nur das Mandat der entscheidenden Verbindung (ADR 0032 unveraendert: eigene Reviews/Fragen gesperrt, Zeilensperre, Zitat, Audit). `brainRecommended` folgt allen Mandaten. PWA-Seite als Liste. Manual 1.37.0, Vertrag connections 1.2.0, ADR-Nachtrag, BRAIN-VERBINDUNG.md.
+- Beleg rot vor Fix: Stub-Migration, 12 Fehlschlaege (Migrationstest, Zwei-Verbindungen-Tests, Widerruf je Grant, Listenform); PWA 5 vitest rot. Danach gruen: Mandate-Tests 78 (2 uebersprungen), Migrationstests 2/2, vitest 514, svelte-check 0 Fehler, Chromium-E2E `brain-mandate` 10/10, Screenshots in `docs/screenshots/brain-mandat/` (hell/dunkel, Desktop/Handy, neu `*-zwei-vollmachten.png`) angesehen.
+- Grenzen: Migration nur gegen SQLite getestet (MariaDB-Pfad nicht gelaufen); GitHub Actions kontoweit gesperrt, daher keine CI. Das Altfeld `mandate` im GET entfaellt (Apple-Repo nutzt es nicht, per grep belegt).
+- Nach dem Deploy: `App migrate --yes`, dann in Einstellungen -> Brain-Vollmacht je Verbindung (Brain, Codex) eine Vollmacht mit eigener Projektliste erteilen; die bestehende bleibt.
+
 ## Nachtrag 23.11.2026 (10:50): Passkey-Haenger "invited person" belegt und behoben (Karte 188D611F; kein Deploy)
 
 - Ursache (Testfehler, kein Produktfehler): "Teams" steht in der Hauptliste der Seitenleiste (nicht unter "Mehr") und traegt ein Badge mit den offenen Einladungen, der Name lautet dann "Teams 1". Der Locator `name: 'Teams', exact: true` aus 43a9aea fand ihn nur, solange die Einladung noch nicht geladen war. Die Diagnose zeigte es: `moreExpanded` wechselt, `targetCount=0`, Pfad /for-you.

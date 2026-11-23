@@ -39,3 +39,19 @@ Umgesetzt: Audit-Felder `quote`/`note` als TEXT; Mandat und Grant werden unter `
 
 Bekannte Luecken (bewusst offen): Journal-Urteile (`review_decision`) und andere Planungsaktivitaeten laufen ausserhalb des Mandats bzw. werden als Person gebucht; Aktivitaets-Label der Mandatsentscheidung; PWA-Einstellungsseite; Passkey-Step-up beim Erteilen.
 
+
+## Nachtrag 23.11.2026: eine Vollmacht je Verbindung (Karte `2280A2F1`)
+
+Anlass (Lino 23.11.): „Lass mal prüfen warum man nur einen MCP eine Vollmacht geben kann. Ich möchte dass Codex und du die Vollmacht bekommen.“
+
+**Warum es nur eine gab:** Entscheidung 2 („höchstens ein Mandat je Person; neu erteilen überschreibt die Zeile“), umgesetzt als `unique(user_id)`. Grund war eine eindeutige Brain-Identität, keine technische Notwendigkeit: Die Prüfung (Entscheidung 4) vergleicht ohnehin die Grant-ID des Aufrufers mit dem Mandat, und Reviews/Fragen haben ihren Antragsteller als Grant.
+
+**Neu (ändert Entscheidung 2, 3 und 6; Rest unverändert):**
+
+- Eindeutigkeit je Verbindung: `unique(user_id, grant_id)`. Eine Person kann mehreren ihrer Verbindungen je ein Mandat geben (Brain und Codex), jedes mit eigener Projektliste. Erteilen für dieselbe Verbindung überschreibt nur deren Zeile und hebt ihren Widerruf auf. Migration `BrainMandateGrantUnique`: das bestehende Mandat bleibt unverändert erhalten (MariaDB: neuen Index anlegen, alten entfernen; SQLite: Tabelle neu aufbauen und Zeilen kopieren; Migrationstest mit Altstand). `revert` stellt die Eindeutigkeit je Person wieder her und schlägt fehl, solange eine Person mehrere Mandate hat.
+- REST: `GET /v1/settings/brain-mandate` liefert `{mandates: [...]}` (das Feld `mandate` entfällt), `PUT` setzt das Mandat der genannten Verbindung, `DELETE /v1/settings/brain-mandate/{grantID}` widerruft nur dieses, `DELETE` ohne ID widerruft alle. Weiter nur mit Personen-Sitzung; kein MCP-Schreibweg.
+- Prüfung (`WorkflowService.brainAuthority`): liest das Mandat genau der entscheidenden Verbindung (`user_id` + `grant_id`) unter `FOR UPDATE`, danach den Grant (Sperrreihenfolge Mandat, dann Grant, auch beim Erteilen). Die Mandate anderer Verbindungen werden nicht angesehen: Vollmacht einer Verbindung hilft einer anderen nicht, und `outside_brain_mandate` bezieht sich auf die Projektliste der eigenen Vollmacht. Reihenfolge der Fehler unverändert.
+- `brainRecommended`: Kommentar jeder Verbindung mit eigener aktiver Vollmacht für das Projekt der Karte (ab deren Erteilung, nie auf eigenen Reviews dieser Verbindung). `get_connection.brainMandate` beschreibt weiter nur die aufrufende Verbindung. Audit unverändert (`grant_id` je Zeile nennt die entscheidende Verbindung).
+- PWA: Einstellungen, „Brain-Vollmacht“ ist jetzt eine Liste der Vollmachten (Status, Projekte, zuletzt benutzt) mit „Projekte ändern“ und „Vollmacht widerrufen“ je Eintrag und einem Formular „Vollmacht hinzufügen“; die Übertragen-Bestätigung entfällt, die Änderung des Projektumfangs zeigt weiter den Vorher/Nachher-Vergleich.
+
+**Sicherheit unverändert:** kein MCP-Schreibweg, eigene Reviews/Fragen bleiben gesperrt (Prüfung vor dem Mandat), Widerruf sofort unter Zeilensperre, Zitat-Pflicht, Audit mit Zitat. Verbleibende Fläche: Je Verbindung mehr Vollmacht heißt mehr Verbindungen, deren Token Entscheidungen treffen können; die PWA zeigt je Verbindung Name, letzte Nutzung und Projekte, und jede lässt sich einzeln widerrufen. Die Mandate summieren sich nicht: eine Verbindung entscheidet nie in Projekten, die nur eine andere Verbindung in ihrer Liste hat.

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino MCP-Verbindungen im Teilen-Fenster
-  version: 1.1.0
+  version: 1.2.0
   description: 'ADR 0028. Eine MCP-Verbindung (OAuth-Grant) ist ein eigener Beteiligter eines Projekts neben Personen und Teams. Ihr Zugriff ist durch
     die Rechte der Person (wirksame Rolle) UND die Projektliste/Scopes des Grants begrenzt, nie größer als der Besitzer; es gibt keine eigene Rolle.
     Das Feld role der Antwort ist die aktuelle Rolle des Besitzers im Projekt. Name der Verbindung: Feld name von GET /oauth/grants
@@ -11,6 +11,7 @@ info:
     GET /v1/command-center summary.pendingAccessRequests. Erlauben fügt das Projekt dem Grant hinzu (Klick des Kontoinhabers ist die Bestätigung),
     Ignorieren schaltet den Hinweis still. Entschiedene Hinweise räumt cleanup-expired nach 7 Tagen auf, offene nach 30 Tagen ohne Wiederholung.
     1.1.0 (Brain-Vollmacht, ADR 0032): /v1/settings/brain-mandate. Die Person gibt höchstens einer ihrer Verbindungen eine Vollmacht für genau die genannten Projekte (keine Vererbung auf Unterprojekte); nur diese Verbindung darf mit decide_review/answer_question als Agent entscheiden. Verwaltung ausschließlich mit Personen-Sitzung, OAuth-Tokens erhalten 401; es gibt keinen MCP-Schreibweg.'
+    1.2.0 (ADR 0032 Nachtrag 23.11.2026, Karte 2280A2F1): eine Vollmacht je Verbindung statt einer je Person. GET liefert {mandates: [...]} (Liste, zuletzt geändert zuerst; das bisherige Feld mandate entfällt), PUT erteilt/überschreibt die Vollmacht genau der genannten Verbindung und lässt die übrigen unberührt, DELETE /v1/settings/brain-mandate/{grantID} widerruft nur diese Verbindung, DELETE ohne ID widerruft alle. Sicherheitsregeln unverändert (kein MCP-Schreibweg, eigene Reviews/Fragen gesperrt, Widerruf sofort, Zitat-Pflicht, Audit).
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -80,15 +81,15 @@ paths:
   /v1/settings/brain-mandate:
     get:
       operationId: getBrainMandate
-      summary: Eigene Brain-Vollmacht lesen
-      description: 'Antwort {mandate: null | {grantID, grantName, projectIDs[], active, createdAt, updatedAt, revokedAt, lastUsedAt}}. active ist false nach Widerruf oder wenn der Grant selbst widerrufen wurde.'
+      summary: Eigene Brain-Vollmachten lesen
+      description: 'Antwort {mandates: [{grantID, grantName, projectIDs[], active, createdAt, updatedAt, revokedAt, lastUsedAt}]}, eine Zeile je Verbindung, zuletzt geändert zuerst, leer ohne Vollmacht. active ist false nach Widerruf oder wenn der Grant selbst widerrufen wurde.'
       responses:
         '200': {description: BrainMandateResponse}
         '401': {description: keine Personen-Sitzung (auch OAuth-Tokens)}
     put:
       operationId: putBrainMandate
-      summary: Vollmacht erteilen oder überschreiben
-      description: 'Höchstens ein Mandat je Person; erneutes Erteilen überschreibt Verbindung und Projekte und hebt einen Widerruf auf. Der Grant muss der Person gehören und darf nicht widerrufen sein; jedes Projekt muss die Person lesen können.'
+      summary: Vollmacht einer Verbindung erteilen oder überschreiben
+      description: 'Höchstens ein Mandat je Verbindung (Grant); eine Person kann mehreren Verbindungen je eine geben. Erneutes Erteilen für dieselbe Verbindung überschreibt deren Projekte und hebt einen Widerruf auf; Vollmachten anderer Verbindungen bleiben unberührt. Der Grant muss der Person gehören und darf nicht widerrufen sein; jedes Projekt muss die Person lesen können.'
       requestBody:
         required: true
         content:
@@ -101,16 +102,27 @@ paths:
         '404': {description: fremder oder unbekannter Grant, Projekt nicht zugänglich}
         '409': {description: grant_revoked}
     delete:
-      operationId: revokeBrainMandate
-      summary: Vollmacht widerrufen
-      description: 'Wirkt sofort für die nächste Entscheidung (die Prüfung liest das Mandat unter Zeilensperre neu). Idempotent. Bereits getroffene Entscheidungen bleiben.'
+      operationId: revokeAllBrainMandates
+      summary: Alle Vollmachten widerrufen
+      description: 'Widerruft jede aktive Vollmacht der Person auf einmal. Idempotent.'
       responses:
         '204': {description: widerrufen}
+        '401': {description: keine Personen-Sitzung}
+  /v1/settings/brain-mandate/{grantID}:
+    delete:
+      operationId: revokeBrainMandate
+      summary: Vollmacht einer Verbindung widerrufen
+      description: 'Wirkt sofort für die nächste Entscheidung dieser Verbindung (die Prüfung liest das Mandat unter Zeilensperre neu); die Vollmachten anderer Verbindungen bleiben. Idempotent, auch für unbekannte oder fremde IDs (204, nichts wird verraten). Bereits getroffene Entscheidungen bleiben.'
+      parameters:
+      - {name: grantID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: widerrufen}
+        '400': {description: invalid_grant}
         '401': {description: keine Personen-Sitzung}
   /v1/settings/brain-mandate/audit:
     get:
       operationId: listBrainDecisionAudit
-      summary: Protokoll der Entscheidungen unter der Vollmacht
+      summary: Protokoll der Entscheidungen unter allen Vollmachten
       description: 'Neueste zuerst, höchstens 200. Antwort {items: [{id, kind review.accepted|review.changes_requested|question.answered, taskID, projectID, subjectID, grantID, quote, note, createdAt}]}. Das Protokoll hat keine Fremdschlüssel auf Karte oder Verbindung und überdauert deren Löschung.'
       responses:
         '200': {description: BrainAuditResponse}

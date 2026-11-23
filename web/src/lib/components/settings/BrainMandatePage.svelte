@@ -11,8 +11,9 @@
 		eligibleGrants,
 		filterProjects,
 		mandateErrorKey,
+		mandateFor,
 		mandateStatus,
-		prefillForm,
+		prefillProjects,
 		projectLabels,
 		resolveScope,
 		saveKind,
@@ -31,7 +32,10 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 
-	/** Settings page "Brain-Vollmacht" (ADR 0032): one connection of the person may decide reviews and questions on their behalf. */
+	/**
+	 * Settings page "Brain-Vollmacht" (ADR 0032 and addendum): every connection of the person can hold its own mandate with its own
+	 * project list; the list shows them all, each can be changed or revoked on its own.
+	 */
 	let { onopen }: { onopen: (id: string) => void } = $props();
 
 	const AUDIT_PREVIEW = 5;
@@ -39,59 +43,61 @@
 
 	let loaded = $state(false);
 	let loadError = $state<string | null>(null);
-	let mandate = $state<BrainMandate | null>(null);
+	let mandates = $state<BrainMandate[]>([]);
 	let grants = $state<OAuthGrant[]>([]);
 	let projects = $state<Project[]>([]);
 	let audit = $state<BrainAuditItem[]>([]);
 
-	// Form: nothing is preselected unless an active mandate exists (then it is the starting point of the change).
+	// Form: nothing is preselected unless the chosen connection already holds an active mandate (then it is the starting point of the change).
 	let grantID = $state('');
 	let selected = $state<Set<string>>(new Set());
 	let query = $state('');
 	let confirming = $state(false);
-	let revokeAsk = $state(false);
+	/** Connection whose revocation waits for confirmation. */
+	let revokeFor = $state<string | null>(null);
 	let showAllAudit = $state(false);
 	let busy = $state(false);
 	let message = $state('');
 	let error = $state<string | null>(null);
 	let inFlight = false;
 
-	let currentHeading = $state<HTMLElement | null>(null);
+	let listEl = $state<HTMLElement | null>(null);
+	let formHeading = $state<HTMLElement | null>(null);
 	let saveButton = $state<HTMLButtonElement | null>(null);
 	let confirmBox = $state<HTMLElement | null>(null);
-	let revokeButton = $state<HTMLButtonElement | null>(null);
-	let revokeBox = $state<HTMLElement | null>(null);
 
 	const labels = $derived(projectLabels(projects));
 	const eligible = $derived(eligibleGrants(grants));
-	const status = $derived(mandate ? mandateStatus(mandate) : null);
-	const scope = $derived(mandate ? resolveScope(mandate.projectIDs, projects) : []);
-	const holderID = $derived(status === 'active' && mandate ? mandate.grantID.toLowerCase() : '');
+	const activeIDs = $derived(new Set(mandates.filter((m) => mandateStatus(m) === 'active').map((m) => m.grantID.toLowerCase())));
+	const chosenMandate = $derived(grantID ? mandateFor(mandates, grantID) : undefined);
 	const visibleProjects = $derived(filterProjects(projects, query));
 	const next = $derived({ grantID, projectIDs: [...selected] });
 	const problem = $derived(selectionProblem(grantID, selected));
-	const kind = $derived(problem ? null : saveKind(mandate, next));
-	const diff = $derived(kind === 'replace' && mandate ? diffMandate(mandate, next, projects) : null);
+	const kind = $derived(problem ? null : saveKind(chosenMandate, next));
+	const diff = $derived(kind === 'replace' && chosenMandate ? diffMandate(chosenMandate, next, projects) : null);
 	const chosenName = $derived(nameOfGrant(grantID));
+	const changing = $derived(!!chosenMandate && mandateStatus(chosenMandate) === 'active');
 	const shownAudit = $derived(showAllAudit ? audit : audit.slice(0, AUDIT_PREVIEW));
 
 	function nameOfGrant(id: string | null | undefined, fallback?: string | null): string {
 		const g = id ? grants.find((x) => x.id.toLowerCase() === id.toLowerCase()) : undefined;
 		return g ? connectionName(g) : fallback?.trim() || t('brainMandate.unknownConnection');
 	}
-	const currentName = $derived(mandate ? nameOfGrant(mandate.grantID, mandate.grantName) : '');
 	function projectName(id: string): string {
 		return labels.get(id.toLowerCase()) ?? t('brainMandate.project.inaccessible', { id: id.slice(0, 8).toLowerCase() });
 	}
 	const listOf = (ids: string[]) => ids.map((id) => projectName(id)).join(', ');
 	const lastUsed = (g: OAuthGrant) => (g.last_used_at ? t('brainMandate.form.lastUsed', { when: formatWhen(g.last_used_at) }) : t('brainMandate.form.neverUsed'));
 
-	function resetForm() {
-		const start = prefillForm(mandate, grants, projects);
-		grantID = start.grantID;
-		selected = new Set(start.projectIDs);
+	/** Chooses a connection for the form: its own active mandate (if any) is the starting point, otherwise nothing is selected. */
+	function pick(id: string) {
+		grantID = id;
+		selected = new Set(prefillProjects(mandateFor(mandates, id), projects));
 		query = '';
 		confirming = false;
+	}
+	function resetForm() {
+		pick('');
 	}
 	/** After a reload that changed lists (a connection or project vanished): keep the person's choices where they still exist. */
 	function sanitizeForm() {
@@ -99,12 +105,13 @@
 		selected = new Set([...selected].filter((id) => ids.has(id)));
 		if (!eligible.some((g) => g.id === grantID)) grantID = '';
 		confirming = false;
+		if (revokeFor && !mandateFor(mandates, revokeFor)) revokeFor = null;
 	}
 	async function load(keepForm = false) {
 		const current = latest.begin();
-		const [m, g, p, a] = await Promise.all([api.getBrainMandate(), api.listOAuthGrants(), api.listProjects(), api.listBrainAudit()]);
+		const [m, g, p, a] = await Promise.all([api.listBrainMandates(), api.listOAuthGrants(), api.listProjects(), api.listBrainAudit()]);
 		if (!current()) return;
-		mandate = m;
+		mandates = m;
 		grants = g;
 		projects = p;
 		audit = a;
@@ -142,6 +149,16 @@
 	function toggle(id: string) {
 		selected = toggleProject(selected, id);
 	}
+	/** "Projekte ändern" / "Erneut erteilen" on a list entry: that connection goes into the form. */
+	async function edit(id: string) {
+		message = '';
+		error = null;
+		revokeFor = null;
+		pick(id);
+		await tick();
+		formHeading?.focus();
+		formHeading?.scrollIntoView({ block: 'start' });
+	}
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		if (busy || !kind) return;
@@ -169,14 +186,17 @@
 		message = '';
 		try {
 			const saved = await api.putBrainMandate(grantID, [...selected]);
-			mandate = saved;
 			const name = nameOfGrant(saved.grantID, saved.grantName);
 			message = t(k === 'replace' ? 'brainMandate.form.savedChange' : 'brainMandate.form.saved', { name });
-			revokeAsk = false;
-			await Promise.all([api.listOAuthGrants().then((g) => (grants = g)), api.listBrainAudit().then((a) => (audit = a))]).catch(() => undefined);
+			revokeFor = null;
+			await Promise.all([
+				api.listBrainMandates().then((m) => (mandates = m)),
+				api.listOAuthGrants().then((g) => (grants = g)),
+				api.listBrainAudit().then((a) => (audit = a))
+			]).catch(() => undefined);
 			resetForm();
 			await tick();
-			currentHeading?.focus();
+			listEl?.focus();
 		} catch (e) {
 			await failure(e);
 		} finally {
@@ -184,33 +204,36 @@
 			busy = false;
 		}
 	}
-	async function askRevoke() {
-		revokeAsk = true;
+	const itemOf = (id: string) => [...(listEl?.querySelectorAll<HTMLElement>('[data-testid="bm-mandate"]') ?? [])].find((n) => n.dataset.grantId === id.toLowerCase());
+	async function askRevoke(id: string) {
+		revokeFor = id.toLowerCase();
 		message = '';
 		error = null;
 		await tick();
-		revokeBox?.focus();
+		itemOf(id)?.querySelector<HTMLElement>('[data-testid="bm-revoke-confirm"]')?.focus();
 	}
-	async function cancelRevoke() {
-		revokeAsk = false;
+	async function cancelRevoke(id: string) {
+		revokeFor = null;
 		await tick();
-		revokeButton?.focus();
+		itemOf(id)?.querySelector<HTMLElement>('[data-testid="bm-revoke"]')?.focus();
 	}
-	async function revoke() {
+	async function revoke(id: string) {
 		if (inFlight) return;
 		inFlight = true;
 		busy = true;
 		error = null;
+		const name = nameOfGrant(id, mandateFor(mandates, id)?.grantName);
 		try {
-			await api.revokeBrainMandate();
-			revokeAsk = false;
-			mandate = (await api.getBrainMandate()) ?? null;
-			message = t('brainMandate.revoke.done');
-			resetForm();
+			await api.revokeBrainMandate(id);
+			revokeFor = null;
+			mandates = await api.listBrainMandates();
+			message = t('brainMandate.revoke.done', { name });
+			// The revoked connection in the form starts empty again; a connection the person is editing elsewhere stays as it is.
+			if (grantID.toLowerCase() === id.toLowerCase()) pick(grantID);
 			await tick();
-			currentHeading?.focus();
+			listEl?.focus();
 		} catch (e) {
-			revokeAsk = false;
+			revokeFor = null;
 			await failure(e);
 		} finally {
 			inFlight = false;
@@ -252,66 +275,78 @@
 			<div><Button size="sm" variant="outline" onclick={init}>{t('brainMandate.retry')}</Button></div>
 		</div>
 	{:else}
-		<section class={card} aria-labelledby="bm-current-title" data-testid="bm-current" data-status={status ?? 'none'}>
-			<h3 id="bm-current-title" class={heading} tabindex="-1" bind:this={currentHeading} data-testid="bm-current-title">{t('brainMandate.current.title')}</h3>
-			{#if !mandate || status === 'revoked'}
+		<section class={card} aria-labelledby="bm-list-title" data-testid="bm-list" data-count={mandates.length} tabindex="-1" bind:this={listEl}>
+			<h3 id="bm-list-title" class={heading} data-testid="bm-list-title">{t('brainMandate.list.title')}</h3>
+			{#if mandates.length === 0}
 				<div class="text-muted-foreground flex flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-8 text-center text-sm" data-testid="bm-empty">
 					<p class="text-foreground font-medium">{t('brainMandate.current.empty.title')}</p>
 					<p>{t('brainMandate.current.empty.text')}</p>
-					{#if mandate?.revokedAt}
-						<p data-testid="bm-was-revoked">{t('brainMandate.current.wasRevoked', { name: currentName, when: formatWhen(mandate.revokedAt) })}</p>
-					{/if}
 				</div>
 			{:else}
-				{#if status === 'grant_revoked'}
-					<p class="bg-warning-soft text-warning rounded-lg px-3 py-2 text-sm" data-testid="bm-void">{t('brainMandate.status.grantRevoked.text', { name: currentName })}</p>
-				{/if}
-				<dl class="grid grid-cols-1 gap-x-4 gap-y-2.5 text-sm sm:grid-cols-[11rem_minmax(0,1fr)]">
-					<dt class="text-muted-foreground">{t('brainMandate.current.connection')}</dt>
-					<dd class="font-medium break-words" data-testid="bm-grant-name">{currentName}</dd>
-					<dt class="text-muted-foreground">{t('brainMandate.current.status')}</dt>
-					<dd>
-						<Badge variant={status === 'active' ? 'success' : 'warning'} data-testid="bm-status">{status === 'active' ? t('brainMandate.status.active') : t('brainMandate.status.grantRevoked')}</Badge>
-					</dd>
-					<dt class="text-muted-foreground">{t('brainMandate.current.projects')}</dt>
-					<dd>
-						<ul class="flex flex-col gap-1" data-testid="bm-scope">
-							{#each scope as p (p.id)}
-								<li class={p.accessible ? '' : 'text-muted-foreground italic'} data-accessible={p.accessible} data-testid="bm-scope-project">
-									{p.accessible ? p.label : t('brainMandate.project.inaccessible', { id: p.label })}
-								</li>
-							{/each}
-						</ul>
-						<p class="text-muted-foreground mt-1 text-xs">{t('brainMandate.current.noInherit')}</p>
-					</dd>
-					<dt class="text-muted-foreground">{t('brainMandate.current.granted')}</dt>
-					<dd data-testid="bm-granted">{formatWhen(mandate.createdAt)}</dd>
-					{#if mandate.updatedAt !== mandate.createdAt}
-						<dt class="text-muted-foreground">{t('brainMandate.current.updated')}</dt>
-						<dd data-testid="bm-updated">{formatWhen(mandate.updatedAt)}</dd>
-					{/if}
-					<dt class="text-muted-foreground">{t('brainMandate.current.lastUsed')}</dt>
-					<dd data-testid="bm-used">{mandate.lastUsedAt ? formatWhen(mandate.lastUsedAt) : t('brainMandate.current.neverUsed')}</dd>
-				</dl>
-				{#if revokeAsk}
-					<div class="border-destructive/40 bg-destructive/5 flex flex-col gap-2 rounded-lg border p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50" role="alertdialog" aria-labelledby="bm-revoke-title" tabindex="-1" bind:this={revokeBox} onkeydown={(e) => onEscape(e, cancelRevoke)} data-testid="bm-revoke-confirm">
-						<p id="bm-revoke-title" class="font-semibold">{t('brainMandate.revoke.title')}</p>
-						<p>{t('brainMandate.revoke.text')}</p>
-						<div class="flex flex-wrap gap-2">
-							<Button size="sm" variant="ghost" type="button" onclick={cancelRevoke} disabled={busy} data-testid="bm-revoke-cancel">{t('common.cancel')}</Button>
-							<Button size="sm" variant="destructive" type="button" onclick={revoke} disabled={busy} data-testid="bm-revoke-go">{t('brainMandate.revoke.go')}</Button>
-						</div>
-					</div>
-				{:else}
-					<div>
-						<Button size="sm" variant="destructive" type="button" bind:ref={revokeButton} onclick={askRevoke} disabled={busy} data-testid="bm-revoke">{t('brainMandate.revoke.button')}</Button>
-					</div>
-				{/if}
+				<ul class="flex flex-col gap-3">
+					{#each mandates as m (m.grantID)}
+						{@const st = mandateStatus(m)}
+						{@const name = nameOfGrant(m.grantID, m.grantName)}
+						{@const scope = resolveScope(m.projectIDs, projects)}
+						<li class="flex flex-col gap-3 rounded-lg border p-3 sm:p-4" class:opacity-80={st !== 'active'} data-testid="bm-mandate" data-grant-id={m.grantID.toLowerCase()} data-status={st}>
+							<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+								<h4 class="min-w-0 text-sm font-semibold break-words" data-testid="bm-grant-name">{name}</h4>
+								<Badge variant={st === 'active' ? 'success' : st === 'revoked' ? 'outline' : 'warning'} data-testid="bm-status">{st === 'active' ? t('brainMandate.status.active') : st === 'revoked' ? t('brainMandate.status.revoked') : t('brainMandate.status.grantRevoked')}</Badge>
+							</div>
+							{#if st === 'grant_revoked'}
+								<p class="bg-warning-soft text-warning rounded-lg px-3 py-2 text-sm" data-testid="bm-void">{t('brainMandate.status.grantRevoked.text', { name })}</p>
+							{/if}
+							{#if st === 'revoked' && m.revokedAt}
+								<p class={muted} data-testid="bm-was-revoked">{t('brainMandate.current.wasRevoked', { name, when: formatWhen(m.revokedAt) })}</p>
+							{/if}
+							<dl class="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[11rem_minmax(0,1fr)]">
+								<dt class="text-muted-foreground">{t('brainMandate.current.projects')}</dt>
+								<dd>
+									<ul class="flex flex-col gap-1" data-testid="bm-scope">
+										{#each scope as p (p.id)}
+											<li class={p.accessible ? '' : 'text-muted-foreground italic'} data-accessible={p.accessible} data-testid="bm-scope-project">
+												{p.accessible ? p.label : t('brainMandate.project.inaccessible', { id: p.label })}
+											</li>
+										{/each}
+									</ul>
+									{#if st === 'active'}<p class="text-muted-foreground mt-1 text-xs">{t('brainMandate.current.noInherit')}</p>{/if}
+								</dd>
+								<dt class="text-muted-foreground">{t('brainMandate.current.granted')}</dt>
+								<dd data-testid="bm-granted">{formatWhen(m.createdAt)}</dd>
+								{#if m.updatedAt !== m.createdAt}
+									<dt class="text-muted-foreground">{t('brainMandate.current.updated')}</dt>
+									<dd data-testid="bm-updated">{formatWhen(m.updatedAt)}</dd>
+								{/if}
+								<dt class="text-muted-foreground">{t('brainMandate.current.lastUsed')}</dt>
+								<dd data-testid="bm-used">{m.lastUsedAt ? formatWhen(m.lastUsedAt) : t('brainMandate.current.neverUsed')}</dd>
+							</dl>
+							{#if revokeFor === m.grantID.toLowerCase()}
+								<div class="border-destructive/40 bg-destructive/5 flex flex-col gap-2 rounded-lg border p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50" role="alertdialog" aria-labelledby="bm-revoke-title-{m.grantID}" tabindex="-1" onkeydown={(e) => onEscape(e, () => cancelRevoke(m.grantID))} data-testid="bm-revoke-confirm">
+									<p id="bm-revoke-title-{m.grantID}" class="font-semibold">{t('brainMandate.revoke.title', { name })}</p>
+									<p>{t('brainMandate.revoke.text')}</p>
+									<div class="flex flex-wrap gap-2">
+										<Button size="sm" variant="ghost" type="button" onclick={() => cancelRevoke(m.grantID)} disabled={busy} data-testid="bm-revoke-cancel">{t('common.cancel')}</Button>
+										<Button size="sm" variant="destructive" type="button" onclick={() => revoke(m.grantID)} disabled={busy} data-testid="bm-revoke-go">{t('brainMandate.revoke.go')}</Button>
+									</div>
+								</div>
+							{:else}
+								<div class="flex flex-wrap gap-2">
+									{#if st === 'active'}
+										<Button size="sm" variant="outline" type="button" onclick={() => edit(m.grantID)} disabled={busy} aria-label={t('brainMandate.current.editFor', { name })} data-testid="bm-edit">{t('brainMandate.current.edit')}</Button>
+										<Button size="sm" variant="destructive" type="button" onclick={() => askRevoke(m.grantID)} disabled={busy} aria-label={t('brainMandate.revoke.buttonFor', { name })} data-testid="bm-revoke">{t('brainMandate.revoke.button')}</Button>
+									{:else if eligible.some((g) => g.id.toLowerCase() === m.grantID.toLowerCase())}
+										<Button size="sm" variant="outline" type="button" onclick={() => edit(m.grantID)} disabled={busy} aria-label={t('brainMandate.current.regrantFor', { name })} data-testid="bm-regrant">{t('brainMandate.current.regrant')}</Button>
+									{/if}
+								</div>
+							{/if}
+						</li>
+					{/each}
+				</ul>
 			{/if}
 		</section>
 
 		<section class={card} aria-labelledby="bm-form-title" data-testid="bm-form-card">
-			<h3 id="bm-form-title" class={heading}>{status === 'active' ? t('brainMandate.form.titleChange') : t('brainMandate.form.titleGrant')}</h3>
+			<h3 id="bm-form-title" class={heading} tabindex="-1" bind:this={formHeading} data-testid="bm-form-title">{changing ? t('brainMandate.form.titleChange', { name: chosenName }) : t('brainMandate.form.titleGrant')}</h3>
 			<form class="flex flex-col gap-4" onsubmit={submit} data-testid="bm-form" novalidate>
 				<fieldset class="flex min-w-0 flex-col gap-2" disabled={busy || confirming}>
 					<legend class="text-sm font-medium">{t('brainMandate.form.connection')}</legend>
@@ -325,9 +360,9 @@
 					<div class="flex flex-col gap-2" role="radiogroup" aria-label={t('brainMandate.form.connection')} data-testid="bm-grants">
 						{#each eligible as g (g.id)}
 							<label class="hover:bg-muted/50 has-[:checked]:border-ui-accent has-[:checked]:bg-ui-accent-soft has-[:focus-visible]:ring-ring/50 flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border p-3 has-[:focus-visible]:ring-2" data-testid="bm-grant-option" data-grant-id={g.id}>
-								<input type="radio" name="bm-grant" class="accent-ui-accent mt-0.5 size-[18px] shrink-0" value={g.id} checked={grantID === g.id} onchange={() => (grantID = g.id)} />
+								<input type="radio" name="bm-grant" class="accent-ui-accent mt-0.5 size-[18px] shrink-0" value={g.id} checked={grantID === g.id} onchange={() => pick(g.id)} />
 								<span class="flex min-w-0 flex-1 flex-col text-sm">
-									<span class="font-medium break-words">{connectionName(g)}{#if g.id.toLowerCase() === holderID} <Badge variant="accent" class="ml-1 align-middle">{t('brainMandate.form.holder')}</Badge>{/if}</span>
+									<span class="font-medium break-words">{connectionName(g)}{#if activeIDs.has(g.id.toLowerCase())} <Badge variant="accent" class="ml-1 align-middle">{t('brainMandate.form.holder')}</Badge>{/if}</span>
 									<span class="text-muted-foreground text-xs break-words">{#if g.client_name && g.client_name !== connectionName(g)}{g.client_name} · {/if}{lastUsed(g)}</span>
 								</span>
 							</label>
@@ -359,15 +394,14 @@
 					</div>
 				</fieldset>
 
-				{#if confirming && diff && mandate}
-					{@const connectionChanged = diff.grantChanged}
+				{#if confirming && diff && chosenMandate}
 					<div class="border-warning/50 bg-warning-soft/60 flex flex-col gap-3 rounded-lg border p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50" role="alertdialog" aria-labelledby="bm-confirm-title" tabindex="-1" bind:this={confirmBox} onkeydown={(e) => onEscape(e, cancelConfirm)} data-testid="bm-confirm">
-						<h4 id="bm-confirm-title" class="font-semibold">{connectionChanged ? t('brainMandate.confirm.titleConnection') : t('brainMandate.confirm.titleScope')}</h4>
+						<h4 id="bm-confirm-title" class="font-semibold">{t('brainMandate.confirm.titleScope', { name: chosenName })}</h4>
 						<div class="grid gap-2 sm:grid-cols-2">
 							<div class="bg-card rounded-lg border p-3" data-testid="bm-diff-before">
 								<p class="text-muted-foreground text-xs font-semibold uppercase">{t('brainMandate.confirm.before')}</p>
-								<p class="font-medium break-words">{t(mandate.projectIDs.length === 1 ? 'brainMandate.confirm.lineOne' : 'brainMandate.confirm.lineMany', { name: currentName, count: mandate.projectIDs.length })}</p>
-								<p class="text-muted-foreground mt-1 text-xs break-words">{listOf(mandate.projectIDs)}</p>
+								<p class="font-medium break-words">{t(chosenMandate.projectIDs.length === 1 ? 'brainMandate.confirm.lineOne' : 'brainMandate.confirm.lineMany', { name: chosenName, count: chosenMandate.projectIDs.length })}</p>
+								<p class="text-muted-foreground mt-1 text-xs break-words">{listOf(chosenMandate.projectIDs)}</p>
 							</div>
 							<div class="bg-card rounded-lg border p-3" data-testid="bm-diff-after">
 								<p class="text-muted-foreground text-xs font-semibold uppercase">{t('brainMandate.confirm.after')}</p>
@@ -383,14 +417,13 @@
 							<dt class="text-muted-foreground font-medium">{t('brainMandate.confirm.kept')}</dt>
 							<dd data-testid="bm-diff-kept">{diff.kept.length ? diff.kept.map((p) => p.label).join(', ') : t('brainMandate.confirm.nothing')}</dd>
 						</dl>
-						{#if connectionChanged}
-							<p class="font-medium" data-testid="bm-diff-warning">{t('brainMandate.confirm.lostConnection', { name: currentName })}</p>
-						{:else if diff.removed.length}
-							<p class="font-medium" data-testid="bm-diff-warning">{t('brainMandate.confirm.lostScope', { name: currentName })}</p>
+						{#if diff.removed.length}
+							<p class="font-medium" data-testid="bm-diff-warning">{t('brainMandate.confirm.lostScope', { name: chosenName })}</p>
 						{/if}
+						<p class={muted} data-testid="bm-diff-others">{t('brainMandate.confirm.othersStay')}</p>
 						<div class="flex flex-wrap gap-2">
 							<Button size="sm" variant="ghost" type="button" onclick={cancelConfirm} disabled={busy} data-testid="bm-confirm-cancel">{t('common.cancel')}</Button>
-							<Button size="sm" type="button" onclick={save} disabled={busy} data-testid="bm-confirm-go">{busy ? t('brainMandate.form.saving') : connectionChanged ? t('brainMandate.confirm.goConnection') : t('brainMandate.confirm.goScope')}</Button>
+							<Button size="sm" type="button" onclick={save} disabled={busy} data-testid="bm-confirm-go">{busy ? t('brainMandate.form.saving') : t('brainMandate.confirm.goScope')}</Button>
 						</div>
 					</div>
 				{:else}
@@ -416,7 +449,7 @@
 			</form>
 		</section>
 
-		{#if audit.length > 0 || mandate}
+		{#if audit.length > 0 || mandates.length > 0}
 			<section class={card} aria-labelledby="bm-audit-title" data-testid="bm-audit">
 				<div>
 					<h3 id="bm-audit-title" class={heading}>{t('brainMandate.audit.title')}</h3>
@@ -427,12 +460,12 @@
 				{:else}
 					<ul class="flex flex-col gap-2">
 						{#each shownAudit as a (a.id)}
-							{@const via = mandate && a.grantID.toLowerCase() !== mandate.grantID.toLowerCase() ? nameOfGrant(a.grantID) : null}
+							{@const via = nameOfGrant(a.grantID, mandateFor(mandates, a.grantID)?.grantName)}
 							<li class="flex flex-col gap-1 rounded-lg border p-3 text-sm" data-testid="bm-audit-item" data-kind={a.kind}>
 								<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
 									<strong>{t(auditKindKey(a.kind))}</strong>
 									<span class="text-muted-foreground text-xs">{formatWhen(a.createdAt)}</span>
-									{#if via}<span class="text-muted-foreground text-xs">{t('brainMandate.audit.via', { name: via })}</span>{/if}
+									<span class="text-muted-foreground text-xs" data-testid="bm-audit-via">{t('brainMandate.audit.via', { name: via })}</span>
 								</div>
 								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}</p>
 								<blockquote class="border-l-2 pl-2 break-words whitespace-pre-wrap" aria-label={t('brainMandate.audit.quote')}>{a.quote}</blockquote>

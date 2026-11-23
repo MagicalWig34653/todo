@@ -1,4 +1,4 @@
-/** Brain mandate (ADR 0032, card 11DA4A38): types of `/v1/settings/brain-mandate` and the pure rules of the settings page. No DOM. */
+/** Brain mandate (ADR 0032 and addendum 23.11.2026, cards 11DA4A38 and 2280A2F1): types of `/v1/settings/brain-mandate` and the pure rules of the settings page. One mandate per connection. No DOM. */
 
 import { ApiError, type OAuthGrant, type Project } from './api.js';
 import type { MessageKey } from './i18n/index.js';
@@ -141,27 +141,31 @@ export function diffMandate(before: MandateScope, after: MandateScope, projects:
 	return { grantChanged, added, removed, kept, changed: grantChanged || added.length > 0 || removed.length > 0 };
 }
 
+/** The mandate of one connection (ids compared case-insensitively), or `undefined`: every connection has its own. */
+export function mandateFor(mandates: readonly BrainMandate[], grantID: string): BrainMandate | undefined {
+	return mandates.find((m) => sameID(m.grantID, grantID));
+}
+
 /**
- * How a save goes: `first` (no mandate, or one that gives nobody power: revoked or void) is a plain save with a summary;
- * `replace` (an active mandate gets another connection and/or other projects) needs the confirmation diff, because rights
- * are taken away; `unchanged` has nothing to save.
+ * How a save goes for the chosen connection's own mandate: `first` (none yet, or one that gives nobody power: revoked or
+ * void) is a plain save with a summary; `replace` (an active mandate gets other projects) needs the confirmation diff,
+ * because rights are taken away; `unchanged` has nothing to save. Other connections' mandates are never touched.
  */
 export type SaveKind = 'first' | 'replace' | 'unchanged';
 
-export function saveKind(current: BrainMandate | null, next: MandateScope): SaveKind {
+export function saveKind(current: BrainMandate | null | undefined, next: MandateScope): SaveKind {
 	if (!current || mandateStatus(current) !== 'active') return 'first';
 	return diffMandate(current, next, []).changed ? 'replace' : 'unchanged';
 }
 
 /**
- * Starting values of the form: nothing preselected without an active mandate; with one, its connection and the projects
- * the person can still read (as the ids of the lists, so the picker and the PUT use the ids of the project list).
+ * Starting projects of the form for the chosen connection: nothing preselected without an active mandate of that connection;
+ * with one, the projects the person can still read (as the ids of the project list, so picker and PUT use the same ids).
  */
-export function prefillForm(mandate: BrainMandate | null, grants: readonly OAuthGrant[], projects: readonly Project[]): { grantID: string; projectIDs: string[] } {
-	if (!mandate || mandateStatus(mandate) !== 'active') return { grantID: '', projectIDs: [] };
-	const grant = eligibleGrants(grants).find((g) => sameID(g.id, mandate.grantID));
+export function prefillProjects(mandate: BrainMandate | null | undefined, projects: readonly Project[]): string[] {
+	if (!mandate || mandateStatus(mandate) !== 'active') return [];
 	const inMandate = new Set(mandate.projectIDs.map(key));
-	return { grantID: grant?.id ?? '', projectIDs: projects.filter((p) => inMandate.has(key(p.id))).map((p) => p.id) };
+	return projects.filter((p) => inMandate.has(key(p.id))).map((p) => p.id);
 }
 
 /** Message key for the documented answers of the mandate endpoints; `null` = use the generic error mapping. */

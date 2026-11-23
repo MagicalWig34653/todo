@@ -285,7 +285,7 @@ final class BrainMandateTests: XCTestCase {
             // Nothing yet.
             let empty = try await e.f.test.json(.GET, "/v1/settings/brain-mandate", token: e.f.session)
             XCTAssertEqual(empty.status, .ok)
-            XCTAssertTrue(empty.body?["mandate"] is NSNull, "\(empty.body ?? [:])")
+            XCTAssertEqual((empty.body?["mandates"] as? [Any])?.count, 0, "\(empty.body ?? [:])")
             // Foreign grant.
             let stranger = User(displayName: "Stranger", isAdmin: false); try await stranger.save(on: db)
             let foreign = OAuthGrant(userID: try stranger.requireID(), clientID: UUID(uuidString: e.f.clientID)!, resource: "r", scopes: [], projects: [], name: "x")
@@ -304,17 +304,20 @@ final class BrainMandateTests: XCTestCase {
             XCTAssertEqual(r3.status, .notFound)
             let r4 = try await mandate(e, projects: [])
             XCTAssertEqual(r4.status, .badRequest)
-            // Valid, then read back; a second PUT overwrites (one mandate per person).
+            // Valid, then read back; a PUT for another connection adds a second mandate (one per connection, ADR 0032 addendum).
             let ok = try await mandate(e)
             XCTAssertEqual(ok.status, .ok, "\(ok.body ?? [:])")
             let got = try await e.f.test.json(.GET, "/v1/settings/brain-mandate", token: e.f.session)
-            let m = try XCTUnwrap(got.body?["mandate"] as? [String: Any])
+            let m = try XCTUnwrap((got.body?["mandates"] as? [[String: Any]])?.first)
             XCTAssertEqual(m["grantID"] as? String, e.brainGrant.uuidString)
             XCTAssertEqual(m["projectIDs"] as? [String], [e.pid])
             XCTAssertEqual(m["active"] as? Bool, true)
             let again = try await mandate(e, grant: e.agentGrant, projects: [e.pid, try e.f.other.requireID().uuidString])
             XCTAssertEqual(again.status, .ok)
-            try await assertEqual(try await BrainMandate.query(on: db).count(), 1)
+            try await assertEqual(try await BrainMandate.query(on: db).count(), 2)
+            // The same connection again overwrites its own mandate instead of adding one.
+            _ = try await mandate(e, grant: e.agentGrant, projects: [e.pid])
+            try await assertEqual(try await BrainMandate.query(on: db).count(), 2)
             // OAuth bearer tokens never manage mandates.
             for (method, path) in [(HTTPMethod.GET, "/v1/settings/brain-mandate"), (.PUT, "/v1/settings/brain-mandate"),
                                    (.DELETE, "/v1/settings/brain-mandate"), (.GET, "/v1/settings/brain-mandate/audit")] {
@@ -478,6 +481,153 @@ final class BrainMandateTests: XCTestCase {
             m.updatedAt = Date().addingTimeInterval(60); try await m.save(on: e.f.test.app.db)
             f = try await flags()
             XCTAssertEqual(f[reviewed], false)
+        }
+    }
+
+    // MARK: Several connections (ADR 0032 addendum): one mandate per OAuth grant
+
+    /// A third connection ("codex") of the same person, with access to both fixture projects.
+    private func codex(_ e: Env) async throws -> (token: String, grant: UUID) {
+        let c = try await e.f.tokens(scope: CommandCenterTests.scopes)
+        let grant = try unwrap(try await OAuthGrant.query(on: e.f.test.app.db).filter(\.$id != e.agentGrant).filter(\.$id != e.brainGrant).first())
+        for g in [e.agentGrant, e.brainGrant] {
+            let row = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
+            if !row.projects.contains(try e.f.other.requireID()) { row.projects.append(try e.f.other.requireID()); try await row.save(on: e.f.test.app.db) }
+        }
+        grant.projects = [try e.f.project.requireID(), try e.f.other.requireID()]; try await grant.save(on: e.f.test.app.db)
+        return (c.access, try grant.requireID())
+    }
+
+    func testTwoConnectionsHoldMandatesAtTheSameTimeAndDecideOnlyInTheirOwnProjects() async throws {
+        try await run { e in
+            let c = try await codex(e)
+            let other = try e.f.other.requireID().uuidString
+            let a = try await mandate(e, grant: e.brainGrant, projects: [e.pid])
+            let b = try await mandate(e, grant: c.grant, projects: [other])
+            XCTAssertEqual(a.status, .ok, "\(a.body ?? [:])"); XCTAssertEqual(b.status, .ok, "\(b.body ?? [:])")
+            try await assertEqual(try await BrainMandate.query(on: e.f.test.app.db).filter(\.$revokedAt == .null).count(), 2)
+            let inA = try await review(e), inB = try await review(e, project: e.f.other)
+            // Each connection decides in its own project ...
+            let ok1 = try await call(e, e.brain, "decide_review", ["taskID": inA, "decision": "accept", "quote": "Lino: ja"])
+            XCTAssertFalse(ok1.isError, ok1.text)
+            let ok2 = try await call(e, c.token, "decide_review", ["taskID": inB, "decision": "accept", "quote": "Lino: ja"])
+            XCTAssertFalse(ok2.isError, ok2.text)
+            // ... and not in the other's.
+            let inA2 = try await review(e), inB2 = try await review(e, project: e.f.other)
+            let no1 = try await call(e, e.brain, "decide_review", ["taskID": inB2, "decision": "accept", "quote": "ja"])
+            XCTAssertEqual(no1.text, "outside_brain_mandate")
+            let no2 = try await call(e, c.token, "decide_review", ["taskID": inA2, "decision": "accept", "quote": "ja"])
+            XCTAssertEqual(no2.text, "outside_brain_mandate")
+            // The connection without a mandate still decides nothing; own reviews stay locked even with a mandate.
+            let foreignToAgent = try await review(e, by: e.brain)
+            let plain = try await call(e, e.agent, "decide_review", ["taskID": foreignToAgent, "decision": "accept", "quote": "ja"])
+            XCTAssertEqual(plain.text, "brain_mandate_required")
+            let own = try await review(e, by: c.token, project: e.f.other)
+            let ownDecision = try await call(e, c.token, "decide_review", ["taskID": own, "decision": "accept", "quote": "ja"])
+            XCTAssertEqual(ownDecision.text, "cannot_decide_own_review")
+            // Questions follow the same rule per connection.
+            let q = try await question(e)
+            let qNo = try await call(e, c.token, "answer_question", ["questionID": q.id, "answer": "A", "quote": "ja"])
+            XCTAssertEqual(qNo.text, "outside_brain_mandate")
+            let qOk = try await call(e, e.brain, "answer_question", ["questionID": q.id, "answer": "A", "quote": "ja"])
+            XCTAssertFalse(qOk.isError, qOk.text)
+            // The audit names the deciding connection.
+            let rows = try await audit(e)
+            XCTAssertEqual(Set(rows.compactMap { $0["grantID"] as? String }), [e.brainGrant.uuidString, c.grant.uuidString])
+            XCTAssertEqual(rows.filter { $0["grantID"] as? String == c.grant.uuidString }.compactMap { $0["taskID"] as? String }, [inB])
+        }
+    }
+
+    func testRevokingOneConnectionsMandateLeavesTheOtherInPlace() async throws {
+        try await run { e in
+            let c = try await codex(e)
+            try await mandate(e, grant: e.brainGrant, projects: [e.pid])
+            try await mandate(e, grant: c.grant, projects: [e.pid])
+            let list = try await e.f.test.json(.GET, "/v1/settings/brain-mandate", token: e.f.session)
+            let mandates = try XCTUnwrap(list.body?["mandates"] as? [[String: Any]])
+            XCTAssertEqual(Set(mandates.compactMap { $0["grantID"] as? String }), [e.brainGrant.uuidString, c.grant.uuidString])
+            XCTAssertEqual(mandates.compactMap { $0["active"] as? Bool }, [true, true])
+            let del = try await e.f.test.json(.DELETE, "/v1/settings/brain-mandate/\(e.brainGrant.uuidString)", token: e.f.session)
+            XCTAssertEqual(del.status, .noContent)
+            let t1 = try await review(e)
+            let gone = try await call(e, e.brain, "decide_review", ["taskID": t1, "decision": "accept", "quote": "ja"])
+            XCTAssertEqual(gone.text, "brain_mandate_required")
+            let stays = try await call(e, c.token, "decide_review", ["taskID": t1, "decision": "accept", "quote": "ja"])
+            XCTAssertFalse(stays.isError, stays.text)
+            let after = try await e.f.test.json(.GET, "/v1/settings/brain-mandate", token: e.f.session)
+            let byGrant = Dictionary(uniqueKeysWithValues: try XCTUnwrap(after.body?["mandates"] as? [[String: Any]]).map { ($0["grantID"] as! String, $0["active"] as? Bool) })
+            XCTAssertEqual(byGrant[e.brainGrant.uuidString], false)
+            XCTAssertEqual(byGrant[c.grant.uuidString], true)
+            // Revoking again, an unknown grant and a stranger's grant are all no-ops (idempotent, nothing leaks).
+            for id in [e.brainGrant, UUID()] {
+                let again = try await e.f.test.json(.DELETE, "/v1/settings/brain-mandate/\(id.uuidString)", token: e.f.session)
+                XCTAssertEqual(again.status, .noContent)
+            }
+            // Granting the revoked connection again reactivates only that one; OAuth tokens cannot revoke.
+            let viaToken = try await e.f.test.json(.DELETE, "/v1/settings/brain-mandate/\(c.grant.uuidString)", token: c.token)
+            XCTAssertEqual(viaToken.status, .unauthorized)
+            try await mandate(e, grant: e.brainGrant, projects: [e.pid])
+            let t2 = try await review(e)
+            let back = try await call(e, e.brain, "decide_review", ["taskID": t2, "decision": "accept", "quote": "ja"])
+            XCTAssertFalse(back.isError, back.text)
+            // Revoking everything at once stays possible.
+            let all = try await e.f.test.json(.DELETE, "/v1/settings/brain-mandate", token: e.f.session)
+            XCTAssertEqual(all.status, .noContent)
+            try await assertEqual(try await BrainMandate.query(on: e.f.test.app.db).filter(\.$revokedAt == .null).count(), 0)
+        }
+    }
+
+    func testRevokingTheGrantOfOneConnectionDoesNotAffectTheOthersMandate() async throws {
+        try await run { e in
+            let c = try await codex(e)
+            try await mandate(e, grant: e.brainGrant, projects: [e.pid])
+            try await mandate(e, grant: c.grant, projects: [e.pid])
+            let grant = try unwrap(try await OAuthGrant.find(e.brainGrant, on: e.f.test.app.db))
+            grant.revoked = true; try await grant.save(on: e.f.test.app.db)
+            let t = try await review(e)
+            let ok = try await call(e, c.token, "decide_review", ["taskID": t, "decision": "accept", "quote": "ja"])
+            XCTAssertFalse(ok.isError, ok.text)
+            let list = try await e.f.test.json(.GET, "/v1/settings/brain-mandate", token: e.f.session)
+            let byGrant = Dictionary(uniqueKeysWithValues: try XCTUnwrap(list.body?["mandates"] as? [[String: Any]]).map { ($0["grantID"] as! String, $0["active"] as? Bool) })
+            XCTAssertEqual(byGrant[e.brainGrant.uuidString], false, "the connection itself was revoked: its mandate is void")
+            XCTAssertEqual(byGrant[c.grant.uuidString], true)
+        }
+    }
+
+    func testBrainRecommendedFollowsEveryMandatedConnectionInItsProjects() async throws {
+        try await run { e in
+            let c = try await codex(e)
+            let other = try e.f.other.requireID().uuidString
+            try await mandate(e, grant: e.brainGrant, projects: [e.pid])
+            try await mandate(e, grant: c.grant, projects: [other])
+            let inA = try await review(e), inB = try await review(e, project: e.f.other), wrongA = try await review(e)
+            _ = try await call(e, e.brain, "add_comment", ["taskID": inA, "body": "Empfehlung", "reviewID": try await reviewID(e, inA)])
+            _ = try await call(e, c.token, "add_comment", ["taskID": inB, "body": "Empfehlung", "reviewID": try await reviewID(e, inB)])
+            // Codex recommends in a project outside its mandate: does not count.
+            _ = try await call(e, c.token, "add_comment", ["taskID": wrongA, "body": "Empfehlung", "reviewID": try await reviewID(e, wrongA)])
+            let list = try await e.f.test.json(.GET, "/v1/reviews", token: e.f.session)
+            let flags = Dictionary(uniqueKeysWithValues: try XCTUnwrap(list.list).map { ($0["taskID"] as! String, $0["brainRecommended"] as? Bool ?? false) })
+            XCTAssertEqual(flags[inA], true)
+            XCTAssertEqual(flags[inB], true)
+            XCTAssertEqual(flags[wrongA], false)
+            // Revoking one connection removes only its markers.
+            _ = try await e.f.test.json(.DELETE, "/v1/settings/brain-mandate/\(e.brainGrant.uuidString)", token: e.f.session)
+            let after = try await e.f.test.json(.GET, "/v1/reviews?brainRecommended=true", token: e.f.session)
+            XCTAssertEqual(after.list?.compactMap { $0["taskID"] as? String }, [inB])
+        }
+    }
+
+    func testGetConnectionReportsOnlyItsOwnMandateWithSeveralMandates() async throws {
+        try await run { e in
+            let c = try await codex(e)
+            try await mandate(e, grant: e.brainGrant, projects: [e.pid])
+            try await mandate(e, grant: c.grant, projects: [try e.f.other.requireID().uuidString])
+            let mine = try await call(e, c.token, "get_connection", [:])
+            let m = try XCTUnwrap(mine.json?["brainMandate"] as? [String: Any])
+            XCTAssertEqual(m["active"] as? Bool, true)
+            XCTAssertEqual(m["projectIDs"] as? [String], [try e.f.other.requireID().uuidString])
+            let none = try await call(e, e.agent, "get_connection", [:])
+            XCTAssertEqual((none.json?["brainMandate"] as? [String: Any])?["active"] as? Bool, false)
         }
     }
 
