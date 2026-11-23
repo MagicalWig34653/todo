@@ -379,6 +379,53 @@ final class WebhookTriggerTests: XCTestCase {
             XCTAssertEqual(rows.first?.anzahl, count, "no event is lost")
         }
     }
+
+    /// Bundling takes no lock on the webhook row any more: events that arrive while the worker closes and sends the bundle must be
+    /// neither lost nor counted twice, and there is never more than one open bundle.
+    func testEventsRacingWithTheWorkerAreNeitherLostNorCountedTwice() async throws {
+        try await withWebhook { f in
+            let task = try await f.existingTask()
+            try await f.configure()
+            try await f.comment(task)
+            try await f.makeDue()
+            let session = f.session
+            let path = "/v1/tasks/\(task)/comments"
+            @Sendable func post(_ target: Application) async -> Bool {
+                var created = false
+                try? await target.test(.POST, path, beforeRequest: { req in
+                    req.headers.bearerAuthorization = .init(token: session)
+                    req.headers.contentType = .json
+                    req.body = ByteBuffer(string: #"{"body":"racing"}"#)
+                }, afterResponse: { res async in created = res.status == .created })
+                return created
+            }
+            let count = TestApp.useMariaDB ? 30 : 8
+            let app = f.app, worker = f.worker()
+            var created = 0
+            if TestApp.useMariaDB {
+                created = await withTaskGroup(of: Int.self) { group in
+                    for _ in 0..<count { group.addTask { await post(app) ? 1 : 0 } }
+                    group.addTask { _ = try? await worker.tick(now: Date().addingTimeInterval(1)); return 0 }
+                    var n = 0
+                    for await v in group { n += v }
+                    return n
+                }
+            } else {
+                for i in 0..<count {
+                    if await post(app) { created += 1 }
+                    if i == count / 2 { _ = try await worker.tick(now: Date().addingTimeInterval(1)) }
+                }
+            }
+            XCTAssertEqual(created, count)
+            let rows = try await f.rows()
+            XCTAssertEqual(rows.reduce(0) { $0 + $1.anzahl }, count + 1, "every event is in exactly one bundle: \(rows.map(\.anzahl))")
+            XCTAssertLessThanOrEqual(rows.filter { $0.openMarker != nil }.count, 1, "never two open bundles")
+            // What was sent carries exactly what the closed bundles counted.
+            let sent = rows.filter { $0.state == "sent" }
+            XCTAssertEqual(f.transport.requests.count, sent.count)
+            XCTAssertFalse(sent.isEmpty)
+        }
+    }
 }
 
 private extension String {

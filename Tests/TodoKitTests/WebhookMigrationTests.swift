@@ -64,7 +64,7 @@ final class WebhookMigrationTests: XCTestCase {
         let e = endpoint(userID); try await e.create(on: db)
         let now = Date()
         for kind in ["comment.created", "task.created", "comment.created", "review.accepted", "task.created"] {
-            try await WebhookBundler.bundle(userID: userID, endpointID: try e.requireID(), mask: try XCTUnwrap(WebhookKinds.mask(kind)), now: now, on: db)
+            try await WebhookBundler.bundle(userID: userID, mask: try XCTUnwrap(WebhookKinds.mask(kind)), now: now, on: db)
         }
         let rows = try await WebhookDelivery.query(on: db).all()
         XCTAssertEqual(rows.count, 1)

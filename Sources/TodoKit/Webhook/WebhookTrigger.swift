@@ -42,39 +42,34 @@ enum WebhookBundler {
     /// an enabled webhook cost one indexed read.
     static func record(userID: UUID, taskID: UUID, mask: Int, now: Date = Date(), on db: any Database) async throws {
         guard let endpoint = try await WebhookEndpoint.query(on: db).filter(\.$userID == userID).first(), endpoint.enabled,
-              let endpointID = endpoint.id, db is any SQLDatabase else { return }
+              db is any SQLDatabase else { return }
         guard let task = try await TodoTask.find(taskID, on: db) else { return }
         if try await WebhookExclusion.query(on: db).filter(\.$userID == userID).filter(\.$projectID == task.projectID).count() > 0 { return }
-        try await bundle(userID: userID, endpointID: endpointID, mask: mask, now: now, on: db)
+        try await bundle(userID: userID, mask: mask, now: now, on: db)
     }
 
-    /// Atomic across replicas. The webhook row is locked first (MariaDB: `FOR UPDATE`; SQLite serialises writers), so bundling
-    /// of one person is sequential; inside, the merge is a single `UPDATE anzahl = anzahl + 1, kinds_mask = kinds_mask | m`.
-    /// The unique key (user_id, open_marker) rejects a second open row; the loser retries and merges.
-    static func bundle(userID: UUID, endpointID: UUID, mask: Int, now: Date, on db: any Database) async throws {
-        try await db.transaction { tx in
-            guard let sql = tx as? any SQLDatabase else { return }
-            try await lockRow(table: WebhookEndpoint.schema, id: endpointID, on: tx)
-            // A bundle past its due time no longer takes events (the worker may not have picked it up yet).
-            try await WebhookDelivery.query(on: tx).filter(\.$userID == userID).filter(\.$openMarker == WebhookDelivery.openValue)
-                .filter(\.$dueAt <= now).set(\.$openMarker, to: nil).update()
-            var lastError: (any Error)?
-            for _ in 0..<4 {
-                // Locking read on MariaDB: it must see the latest committed row, not the snapshot of the surrounding transaction.
-                let suffix = sql.dialect.name == "sqlite" ? "" : " FOR UPDATE"
-                let open = try await sql.raw("SELECT id FROM webhook_deliveries WHERE user_id = \(bind: userID) AND open_marker = \(bind: WebhookDelivery.openValue)\(unsafeRaw: suffix)").first()
-                if let open {
-                    let id = try open.decode(column: "id", as: UUID.self)
-                    try await sql.raw("UPDATE webhook_deliveries SET anzahl = anzahl + 1, kinds_mask = kinds_mask | \(bind: mask) WHERE id = \(bind: id) AND open_marker = \(bind: WebhookDelivery.openValue)").run()
-                    return
-                }
-                do {
-                    try await WebhookDelivery(userID: userID, event: "person_action", anzahl: 1, kindsMask: mask,
-                                              due: now.addingTimeInterval(WebhookLimits.bundleWindow), open: true, now: now).create(on: tx)
-                    return
-                } catch { lastError = error }  // lost the race for the open slot: merge into the winner's row
-            }
-            if let lastError { throw lastError }
+    /// Atomic across replicas without locking the webhook row: the merge is one upsert on the unique key (user_id, open_marker),
+    /// `INSERT ... ON DUPLICATE KEY UPDATE` (MariaDB) or `ON CONFLICT DO UPDATE` (SQLite). It either creates the open bundle or adds
+    /// to it (`anzahl + 1`, `kinds_mask | m`) in one statement: no read-then-write window and never a second open row. Only the
+    /// open bundle row is locked, and only until the surrounding transaction ends; the webhook row is not touched, so a person's
+    /// requests do not queue up on it or deadlock over it (the former `FOR UPDATE` on `webhook_endpoints` lived as long as the
+    /// request transaction). A bundle past its due time no longer takes events: it is closed first, by primary key, after a plain
+    /// read; an `UPDATE` that matches nothing would take gap locks on MariaDB, and two writers doing that and then inserting deadlock.
+    static func bundle(userID: UUID, mask: Int, now: Date, on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase else { return }
+        let open = WebhookDelivery.openValue
+        if let overdue = try await sql.raw("SELECT id FROM webhook_deliveries WHERE user_id = \(bind: userID) AND open_marker = \(bind: open) AND due_at <= \(bind: now)").first() {
+            let id = try overdue.decode(column: "id", as: UUID.self)
+            try await sql.raw("UPDATE webhook_deliveries SET open_marker = NULL WHERE id = \(bind: id) AND open_marker = \(bind: open)").run()
         }
+        let due = now.addingTimeInterval(WebhookLimits.bundleWindow)
+        let merge = sql.dialect.name == "sqlite"
+            ? "ON CONFLICT (user_id, open_marker) DO UPDATE SET anzahl = anzahl + 1, kinds_mask = kinds_mask | \(mask)"
+            : "ON DUPLICATE KEY UPDATE anzahl = anzahl + 1, kinds_mask = kinds_mask | \(mask)"
+        try await sql.raw("""
+            INSERT INTO webhook_deliveries (id, user_id, state, event, anzahl, kinds_mask, attempts, next_attempt_at, due_at, open_marker, created_at)
+            VALUES (\(bind: UUID()), \(bind: userID), 'pending', 'person_action', 1, \(bind: mask), 0, \(bind: due), \(bind: due), \(bind: open), \(bind: now))
+            \(unsafeRaw: merge)
+            """).run()
     }
 }

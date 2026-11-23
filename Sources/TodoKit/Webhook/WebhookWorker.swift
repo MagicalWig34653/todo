@@ -129,12 +129,10 @@ final class WebhookWorker: LifecycleHandler, @unchecked Sendable {
         let id = try candidate.requireID()
         let endpoint = try await WebhookEndpoint.query(on: db).filter(\.$userID == candidate.userID).first()
         if candidate.openMarker != nil {
-            // Same lock as the trigger: after this transaction a concurrent event starts a new bundle instead of joining this one.
-            try await db.transaction { tx in
-                if let endpointID = endpoint?.id { try await lockRow(table: WebhookEndpoint.schema, id: endpointID, on: tx) }
-                try await WebhookDelivery.query(on: tx).filter(\.$id == id).filter(\.$openMarker == WebhookDelivery.openValue)
-                    .set(\.$openMarker, to: nil).update()
-            }
+            // One update by primary key. An event that is merging into this bundle right now holds the row until its transaction
+            // ends (this waits for it, so the re-read below includes it); an event after the update starts a new bundle.
+            try await WebhookDelivery.query(on: db).filter(\.$id == id).filter(\.$openMarker == WebhookDelivery.openValue)
+                .set(\.$openMarker, to: nil).update()
         }
         guard let row = try await WebhookDelivery.find(id, on: db), row.state == "pending" else { return nil }
         guard let endpoint, endpoint.enabled else {
