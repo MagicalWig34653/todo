@@ -23,8 +23,58 @@ struct SystemWebhookResolver: WebhookResolver {
     }
 }
 
+/// The name resolution took longer than the limit. Carries nothing.
+struct WebhookResolveTimedOut: Error, Sendable {}
+
+/// Name resolution with an upper bound that does not depend on the resolver cooperating: the resolver runs in a detached task
+/// (`getaddrinfo` blocks its thread) and races a timer; whoever finishes first resumes the caller. A resolver that is still
+/// busy when the timer wins is cancelled and left to finish on its own, so a slow or hostile name server cannot hold the
+/// request (or the worker) longer than `timeout`.
+enum WebhookResolution {
+    static func resolve(_ resolver: any WebhookResolver, host: String, port: Int, timeout: TimeInterval) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, any Error>) in
+            let gate = Gate(continuation)
+            gate.add(Task.detached {
+                do { gate.finish(.success(try await resolver.resolve(host: host, port: port))) }
+                catch { gate.finish(.failure(error)) }
+            })
+            gate.add(Task.detached {
+                try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
+                gate.finish(.failure(WebhookResolveTimedOut()))
+            })
+        }
+    }
+
+    /// Resumes the continuation exactly once and cancels the other task.
+    private final class Gate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<String, any Error>?
+        private var tasks: [Task<Void, Never>] = []
+        init(_ continuation: CheckedContinuation<String, any Error>) { self.continuation = continuation }
+
+        func add(_ task: Task<Void, Never>) {
+            lock.lock()
+            let done = continuation == nil
+            if !done { tasks.append(task) }
+            lock.unlock()
+            if done { task.cancel() }
+        }
+
+        func finish(_ result: Result<String, any Error>) {
+            lock.lock()
+            let c = continuation, pending = tasks
+            continuation = nil; tasks = []
+            lock.unlock()
+            guard let c else { return }
+            c.resume(with: result)
+            for task in pending { task.cancel() }
+        }
+    }
+}
+
 /// What goes on the wire: the URL, the address to connect to (already checked) and the body. The transport must connect to
-/// `address` only and must not follow redirects.
+/// `address` only and must not follow redirects. `url` is built from the parsed parts (`WebhookURL.requestURL`), so its host is
+/// `host` spelled the same way; the transport verifies that before it sends anything.
 struct WebhookWireRequest: Sendable {
     let url: String
     let host: String
@@ -51,11 +101,15 @@ protocol WebhookTransport: Sendable {
 
 /// One short-lived `HTTPClient` per request, configured for exactly this target:
 /// - `dnsOverride` maps the host name to the checked address, so no second lookup happens (DNS rebinding between check and
-///   connection is closed); SNI and certificate validation still use the host name;
+///   connection is closed); SNI and certificate validation still use the host name. The client looks the override up by the host
+///   of the request URL, exactly as spelled: before sending, the transport checks that this host is the override key and
+///   refuses (`targetBlocked`) otherwise, so a differently spelled URL can never fall back to a normal lookup;
 /// - redirects are not followed (a 3xx is returned as status and counts as an error), no proxy, no cookies, no credentials;
 /// - connect and total time are limited; the response body is discarded chunk by chunk.
 struct AsyncHTTPWebhookTransport: WebhookTransport {
     var timeout: TimeInterval = WebhookLimits.timeout
+    /// Time to establish the connection; a target that does not answer the SYN must not hold a delivery for the whole `timeout`.
+    var connectTimeout: TimeInterval = WebhookLimits.connectTimeout
     /// Lets tests trust a local certificate; never set in production.
     var tls: TLSConfiguration?
 
@@ -64,21 +118,26 @@ struct AsyncHTTPWebhookTransport: WebhookTransport {
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
         config.proxy = nil
-        config.timeout = .init(connect: .milliseconds(Int64(timeout * 1000)), read: .milliseconds(Int64(timeout * 1000)))
+        config.timeout = .init(connect: .milliseconds(Int64(min(connectTimeout, timeout) * 1000)), read: .milliseconds(Int64(timeout * 1000)))
         if let tls { config.tlsConfiguration = tls }
         if address != host { config.dnsOverride = [host: address] }
         return config
     }
 
     func post(_ r: WebhookWireRequest) async -> WebhookSendResult {
-        let config = configuration(host: r.host, address: r.address)
-        let client = HTTPClient(eventLoopGroupProvider: .shared(MultiThreadedEventLoopGroup.singleton), configuration: config)
+        var headers = HTTPHeaders()
+        for (name, value) in r.headers { headers.add(name: name, value: value) }
+        let request: HTTPClient.Request
+        do { request = try HTTPClient.Request(url: r.url, method: .POST, headers: headers, body: .data(r.body)) }
+        catch { return .networkError }
+        // Fail closed: the host that the client will look up is what the pinning table is keyed by, byte for byte.
+        // (The client writes an IPv6 literal with brackets, like in a Host header.)
+        guard request.host == (r.host.contains(":") ? "[\(r.host)]" : r.host) else { return .targetBlocked }
+        let client = HTTPClient(eventLoopGroupProvider: .shared(MultiThreadedEventLoopGroup.singleton),
+                                configuration: configuration(host: r.host, address: r.address))
         let delegate = StatusOnlyDelegate()
         let result: WebhookSendResult
         do {
-            var headers = HTTPHeaders()
-            for (name, value) in r.headers { headers.add(name: name, value: value) }
-            let request = try HTTPClient.Request(url: r.url, method: .POST, headers: headers, body: .data(r.body))
             let status = try await client.execute(request: request, delegate: delegate,
                                                   deadline: .now() + .milliseconds(Int64(timeout * 1000))).get()
             result = .status(status)

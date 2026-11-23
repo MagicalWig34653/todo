@@ -251,6 +251,13 @@ struct WebhookFixture {
         }.joined(separator: "\n")
     }
 
+    /// A database handle as `requireUser` leaves it for a person session of `user` (default: the fixture person).
+    func personDatabase(_ user: UUID? = nil) throws -> any Database {
+        var logger = app.logger
+        logger[metadataKey: WebhookAgentContext.personKey] = .string((user ?? userID).uuidString)
+        return try XCTUnwrap(app.databases.database(logger: logger, on: app.eventLoopGroup.next()))
+    }
+
     func shutdown() async { await test.shutdown() }
 }
 

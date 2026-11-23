@@ -92,6 +92,19 @@ final class WebhookSecurityReviewTests: XCTestCase {
         XCTAssertEqual(server.connections, 1)
     }
 
+    func testIPLiteralHostsPassTheHostCheck() async throws {
+        let server = LocalHTTPServer(response: okResponse)
+        try await server.start()
+        defer { Task { await server.stop() } }
+        let v4 = WebhookWireRequest(url: "http://127.0.0.1:\(server.port)/x", host: "127.0.0.1", address: "127.0.0.1", headers: [], body: Data("{}".utf8))
+        let ok = await AsyncHTTPWebhookTransport(timeout: 5).post(v4)
+        XCTAssertEqual(ok, .status(200))
+        // The server listens on IPv4 only: the connection to ::1 fails, but not at the host check.
+        let v6 = WebhookWireRequest(url: "http://[::1]:\(server.port)/x", host: "::1", address: "::1", headers: [], body: Data("{}".utf8))
+        let refused = await AsyncHTTPWebhookTransport(timeout: 5).post(v6)
+        XCTAssertNotEqual(refused, .targetBlocked)
+    }
+
     func testBlockedResultOfTheTransportIsAPermanentTargetBlockedFailure() async throws {
         XCTAssertEqual(WebhookDeliverer.verdict(.targetBlocked), .failed(code: "target_blocked", status: nil))
         try await withWebhook { f in
@@ -133,8 +146,8 @@ final class WebhookSecurityReviewTests: XCTestCase {
 
     func testDisguisedAAAAAnswersAreRejectedAtSaveAndDelivery() async throws {
         try await withWebhook { f in
-            f.resolver.set("aaaa.example.test", "::ffff:0.0.0.0")
-            for ip in Self.disguised {
+            // Five name saves stay within the budget of ten per minute (the delivery check below does not resolve at save time).
+            for ip in ["::ffff:0.0.0.0", "::ffff:0:0", "::ffff:0:a00:1", "100::1", "2001:db8::1"] {
                 f.resolver.set("aaaa.example.test", ip)
                 let r = try await f.put(["url": "https://aaaa.example.test/x"])
                 XCTAssertEqual(r.body?["reason"] as? String, "webhook_url_blocked", "save: \(ip)")
@@ -142,7 +155,7 @@ final class WebhookSecurityReviewTests: XCTestCase {
             try await f.configure()
             for ip in Self.disguised {
                 f.resolver.set("hooks.example.test", ip)
-                let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test, now: Date())
+                let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test)
                 XCTAssertEqual(attempt, .failed(code: "target_blocked", status: nil), "delivery: \(ip)")
             }
             XCTAssertTrue(f.transport.requests.isEmpty)
@@ -296,10 +309,26 @@ final class WebhookSecurityReviewTests: XCTestCase {
             }
             let rows = try await f.rows()
             XCTAssertEqual(rows.count, 0, "no mark, no trigger")
-            // Control: the same person through the app (session) does wake it.
+            // The mark of another person's session does not count for this actor either.
+            let other = try await PushTests.account(f.test, "Other")
+            let foreignMark = ActivityEvent()
+            foreignMark.taskID = UUID(uuidString: task)!; foreignMark.sequence = top + 2000; foreignMark.actorType = .person
+            foreignMark.actorID = f.userID; foreignMark.kind = "comment.created"
+            try await foreignMark.create(on: try f.personDatabase(other.id))
+            let foreign = try await f.rows()
+            XCTAssertEqual(foreign.count, 0)
+            // Control 1: the mark that `requireUser` sets for exactly this person does wake it.
+            let marked = ActivityEvent()
+            marked.taskID = UUID(uuidString: task)!; marked.sequence = top + 3000; marked.actorType = .person
+            marked.actorID = f.userID; marked.kind = "comment.created"
+            try await marked.create(on: try f.personDatabase())
+            let one = try await f.rows()
+            XCTAssertEqual(one.count, 1)
+            // Control 2: the same person through the app (session) does wake it (joins the bundle).
             try await f.comment(task)
             let after = try await f.rows()
             XCTAssertEqual(after.count, 1)
+            XCTAssertEqual(after.first?.anzahl, 2)
         }
     }
 

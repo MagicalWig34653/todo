@@ -15,8 +15,8 @@ struct WebhookDeliverer: Sendable {
         case failed(code: String, status: Int?)
     }
 
-    /// One attempt without touching any row.
-    func attempt(endpoint: WebhookEndpoint, payload: WebhookPayload, now: Date) async -> Verdict {
+    /// One attempt without touching any row. The signature carries the time of sending, not of the start of a (long) run.
+    func attempt(endpoint: WebhookEndpoint, payload: WebhookPayload) async -> Verdict {
         let userID = endpoint.userID
         let ring: SettingsKeyRing
         do { ring = try app.requireSettingsRuntime().keyRing } catch { return .failed(code: "encryption_key_missing", status: nil) }
@@ -37,7 +37,7 @@ struct WebhookDeliverer: Sendable {
         if let literal = url.literalIP {
             address = literal
         } else {
-            do { address = try await app.webhookResolver.resolve(host: url.host, port: url.port) }
+            do { address = try await WebhookResolution.resolve(app.webhookResolver, host: url.host, port: url.port, timeout: app.webhookResolveTimeout) }
             catch is OutboundBlocked { return .failed(code: "target_blocked", status: nil) }
             catch { return .retry(code: "dns_error", status: nil) }
         }
@@ -46,8 +46,9 @@ struct WebhookDeliverer: Sendable {
         let body: Data
         do { body = try payload.encoded() } catch { return .failed(code: "internal_error", status: nil) }
         var headers: [(String, String)] = [("Content-Type", "application/json"), ("User-Agent", "Todolino-Webhook/1")]
-        if let secret { headers += WebhookSignature.headers(secret: secret, body: body, now: now) }
-        let result = await app.webhookTransport.post(WebhookWireRequest(url: url.absolute, host: url.host, address: address, headers: headers, body: body))
+        if let secret { headers += WebhookSignature.headers(secret: secret, body: body, now: Date()) }
+        // The URL is rebuilt from the parsed parts (lower-case host, no trailing dot) so that the pinned address applies to it.
+        let result = await app.webhookTransport.post(WebhookWireRequest(url: url.requestURL(), host: url.host, address: address, headers: headers, body: body))
         return Self.verdict(result)
     }
 
@@ -56,7 +57,7 @@ struct WebhookDeliverer: Sendable {
         case .timeout: return .retry(code: "timeout", status: nil)
         case .tlsError: return .retry(code: "tls_error", status: nil)
         case .networkError: return .retry(code: "network_error", status: nil)
-        case .targetBlocked: return .retry(code: "network_error", status: nil)  // scaffold
+        case .targetBlocked: return .failed(code: "target_blocked", status: nil)
         case .status(let s):
             switch s {
             case 200...299: return .sent(status: s)

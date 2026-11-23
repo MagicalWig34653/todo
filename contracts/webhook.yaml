@@ -17,21 +17,25 @@ info:
     Auslöser: ActivityEvent mit actorType Person und actorId = Webhook-Besitzer, kind aus der festen Liste question.answered, review.accepted,
     review.changes_requested, comment.created, task.created, task.moved, task.status_changed, im Projekt der Karte nicht in excludedProjectIDs.
     Aktionen von Integrationen (MCP, OAuth-Verbindungen, Brain-Vollmacht, Runner) lösen nie aus, auch dann nicht, wenn ein gemeinsamer Schreibpfad die
-    Aktion unter dem Namen der Person bucht. Von Personen angelegte Folgekarten (Wiederholung) zählen nicht. Unterprojekte erben Ausschlüsse nicht.
+    Aktion unter dem Namen der Person bucht. Der Auslöser ist fail-closed: er greift nur bei Anfragen, die als Personen-Sitzung (requireUser) erkannt
+    wurden; fehlt diese Markierung (Hintergrundjob, neuer Einstiegspunkt), löst nichts aus. Von Personen angelegte Folgekarten (Wiederholung) zählen nicht. Unterprojekte erben Ausschlüsse nicht.
     Ein Fehler im Auslöser lässt die Anfrage der Person nie scheitern.
 
     Bündeln: Ereignisse derselben Person innerhalb von 60 Sekunden nach dem ersten ergeben einen Aufruf (anzahl, kinds als sortierte Menge); danach
     beginnt ein neues Bündel. Auch mit mehreren Server-Replikaten gibt es nie zwei offene Bündel je Person.
 
-    Zustellung (Worker mit Lease, ein Replikat je Lauf): nur https; SSRF-Schutz immer Stufe strict (keine Loopback-, privaten, Link-Local-, CGNAT-,
-    Metadaten-, Multicast- und reservierten Adressen, IPv4-mapped/-kompatibles IPv6, NAT64 und 6to4 nach der eingebetteten Adresse), unabhängig von
+    Zustellung (Worker mit Lease, ein Replikat je Lauf; fällige Bündel parallel, höchstens 8 gleichzeitig und höchstens eines je Ziel-Host, Lease wird vor jedem
+    Start erneuert): nur https und nur Port 443 (ein ausdrückliches :443 ist erlaubt); SSRF-Schutz immer Stufe strict (keine Loopback-, privaten, Link-Local-, CGNAT-,
+    Metadaten-, Multicast- und reservierten Adressen, der gesamte IPv4-mapped-Bereich ::ffff:0:0/96 und SIIT ::ffff:0:0:0/96, IPv4-kompatibles IPv6, NAT64 und 6to4
+    nach der eingebetteten Adresse, Discard 100::/64 und Dokumentation 2001:db8::/32), unabhängig von
     der Server-Einstellung für SMTP/S3, beim Speichern (IP-Literal und Namensauflösung) und bei jeder Zustellung; die Verbindung geht nur zur geprüften
-    Adresse (kein zweiter DNS-Lookup). Keine Weiterleitungen (3xx ist ein Fehler), Gesamt-Timeout 10 s, der Antworttext wird nicht gelesen, kein
+    Adresse (kein zweiter DNS-Lookup): die Anfrage-URL wird aus den geparsten Teilen gebaut (Host kleingeschrieben, ohne Punkt am Ende), und vor dem Senden prüft
+    der Sender, dass der Host der Anfrage dem Schlüssel der festgenagelten Adresse entspricht (sonst target_blocked, nichts wird gesendet). Keine Weiterleitungen (3xx ist ein Fehler), Verbindungs-Timeout 3 s, Gesamt-Timeout 10 s, der Antworttext wird nicht gelesen, kein
     Authorization-Header, keine Cookies, kein Proxy, keine Zugangsdaten in der URL.
 
     Nutzlast (JSON, vom Encoder erzeugt, Schlüssel alphabetisch): {"anzahl":n,"event":"person_action","kinds":[...sortiert...]}; Test: {"anzahl":0,"event":"test","kinds":[]}.
     Header Content-Type application/json, User-Agent Todolino-Webhook/1. Mit Signaturgeheimnis zusätzlich X-Todolino-Timestamp (Unix-Sekunden) und
-    X-Todolino-Signature: sha256=<hex> = HMAC-SHA256(Geheimnis, "<timestamp>.<body>").
+    X-Todolino-Signature: sha256=<hex> = HMAC-SHA256(Geheimnis, "<timestamp>.<body>"); der Zeitstempel ist der Sendezeitpunkt dieses Versuchs.
 
     Wiederholung: Netzfehler, Timeout, 408, 425, 429 und 5xx bis zu 6 Versuche mit 30 s, 2 min, 10 min, 30 min, 2 h Abstand (+-10 %), danach failed.
     Andere 4xx, 3xx, gesperrte Ziele und ein nicht entschlüsselbares Geheimnis sind sofort failed. Nach 10 aufeinanderfolgenden fehlgeschlagenen Bündeln
@@ -54,7 +58,10 @@ paths:
       summary: Webhook einrichten oder teilweise ändern
       description: 'Felder, die fehlen, bleiben unverändert. url null löscht den Webhook samt Ausschlüssen und Protokoll (wie DELETE); signingSecret null entfernt
         das Geheimnis. Ohne gespeicherten Webhook ist url Pflicht (sonst 409 webhook_not_configured). Alles wird vor dem Schreiben geprüft: schlägt eine
-        Prüfung fehl, bleibt der Bestand unverändert. url wird nie zurückgegeben und nie in einem Fehlertext wiederholt. Ein neuer Wert für url setzt
+        Prüfung fehl, bleibt der Bestand unverändert. Der Schlüssel (SETTINGS_ENCRYPTION_KEY) wird nur gebraucht, wenn url oder signingSecret geschrieben werden;
+        enabled, excludedProjectIDs und signingSecret null gehen auch ohne. Jede Anfrage mit einer url, die einen Hostnamen auflösen lässt, zählt gegen ein Budget von
+        10 je Minute und Konto (429 rate_limited, Retry-After 60); IP-Literale und Syntaxfehler lösen nichts auf und zählen nicht. Die Auflösung ist auf 5 Sekunden begrenzt.
+        url wird nie zurückgegeben und nie in einem Fehlertext wiederholt. Ein neuer Wert für url setzt
         den Fehlerzähler zurück; enabled true nach automatischer Abschaltung ebenfalls.'
       requestBody:
         required: true
@@ -63,10 +70,11 @@ paths:
             schema: {$ref: '#/components/schemas/UpdateWebhook'}
       responses:
         '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/WebhookSettings'}}}}
-        '400': {description: 'reason webhook_url_invalid (Syntax, Zugangsdaten, Länge, Port, Host), webhook_url_not_https, webhook_url_blocked (IP-Literal oder Auflösung in gesperrten Adressraum), webhook_signing_secret_invalid (16 bis 256 Byte), webhook_exclusions_invalid (mehr als 500)'}
+        '400': {description: 'reason webhook_url_invalid (Syntax, Zugangsdaten, Länge, Host; Port nur 443), webhook_url_not_https, webhook_url_blocked (IP-Literal, Auflösung in gesperrten Adressraum, nicht auflösbarer Name oder Zeitüberschreitung der Auflösung: bewusst derselbe Code, damit die Antwort nichts über interne Namen verrät), webhook_signing_secret_invalid (16 bis 256 Byte), webhook_exclusions_invalid (mehr als 500)'}
         '401': {description: Nicht angemeldet oder OAuth-Token statt Sitzung}
         '404': {description: 'Ein Projekt in excludedProjectIDs existiert nicht oder ist für die Person nicht lesbar (beides gleich)'}
-        '409': {description: 'reason encryption_key_missing (Server ohne SETTINGS_ENCRYPTION_KEY) oder webhook_not_configured'}
+        '409': {description: 'reason encryption_key_missing (Server ohne SETTINGS_ENCRYPTION_KEY, nur beim Schreiben von url oder signingSecret) oder webhook_not_configured'}
+        '429': {description: 'reason rate_limited, Retry-After 60 (zu viele Speicherversuche mit Hostnamen)'}
     delete:
       operationId: deleteWebhook
       summary: Webhook löschen (Chiffretext, Ausschlüsse, Protokoll)
@@ -111,7 +119,7 @@ components:
     UpdateWebhook:
       type: object
       properties:
-        url: {type: [string, 'null'], description: 'https-Adresse (höchstens 2048 Zeichen, ohne Zugangsdaten). null löscht den Webhook.'}
+        url: {type: [string, 'null'], description: 'https-Adresse (höchstens 2048 Zeichen, ohne Zugangsdaten, Port nur 443). null löscht den Webhook.'}
         signingSecret: {type: [string, 'null'], description: '16 bis 256 Byte; schaltet die HMAC-Signatur ein. null entfernt sie. Wird nie ausgegeben.'}
         enabled: {type: boolean}
         excludedProjectIDs: {type: array, maxItems: 500, items: {type: string, format: uuid}, description: 'Ersetzt die Liste; nur eigene lesbare Projekte'}

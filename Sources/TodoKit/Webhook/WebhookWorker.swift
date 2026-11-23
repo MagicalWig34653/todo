@@ -82,18 +82,40 @@ final class WebhookWorker: LifecycleHandler, @unchecked Sendable {
         let due = try await WebhookDelivery.query(on: db).filter(\.$state == "pending").filter(\.$nextAttemptAt <= now)
             .sort(\.$dueAt).sort(\.$id).limit(50).all()
         let deliverer = WebhookDeliverer(app: app)
-        for candidate in due {
-            if let keepLease, !(await keepLease()) { break }
-            do {
-                switch try await deliver(candidate, with: deliverer, now: now) {
-                case .sent: report.sent += 1
-                case .retry: report.retried += 1
-                case .failed: report.failed += 1
-                case nil: report.skipped += 1
+        // The target host of a row is the host of the mask of its webhook (`https://host`, no secret part), so no decryption is needed here.
+        let masks = Dictionary(try await WebhookEndpoint.query(on: db).filter(\.$userID ~~ Set(due.map(\.userID))).all().map { ($0.userID, $0.urlMask.lowercased()) },
+                               uniquingKeysWith: { first, _ in first })
+        var waiting = due.map { (row: $0, host: masks[$0.userID] ?? "user:\($0.userID.uuidString)") }
+        var busyHosts = Set<String>()
+        var stopped = false
+        // A tarpit target must not hold up the others: up to `maxConcurrentDeliveries` at once, but never two for one host
+        // (rows of one host, also of different people, go one after the other). Everything is started and collected from this
+        // task, so the report and the sets need no locking.
+        await withTaskGroup(of: (host: String, outcome: Result<WebhookDeliverer.Verdict?, any Error>).self) { group in
+            var active = 0
+            while true {
+                while !stopped, active < WebhookLimits.maxConcurrentDeliveries,
+                      let index = waiting.firstIndex(where: { !busyHosts.contains($0.host) }) {
+                    // Renewed before every start: a run of many slow targets keeps its lease, a lost lease stops the run.
+                    if let keepLease, !(await keepLease()) { stopped = true; break }
+                    let entry = waiting.remove(at: index)
+                    busyHosts.insert(entry.host); active += 1
+                    group.addTask { [self] in
+                        do { return (entry.host, .success(try await deliver(entry.row, with: deliverer, now: now))) }
+                        catch { return (entry.host, .failure(error)) }
+                    }
                 }
-            } catch {
-                app.logger.error("webhook worker: delivery step failed (\(type(of: error)))")
-                report.skipped += 1
+                guard active > 0, let finished = await group.next() else { break }
+                active -= 1; busyHosts.remove(finished.host)
+                switch finished.outcome {
+                case .success(.sent?): report.sent += 1
+                case .success(.retry?): report.retried += 1
+                case .success(.failed?): report.failed += 1
+                case .success(nil): report.skipped += 1
+                case .failure(let error):
+                    app.logger.error("webhook worker: delivery step failed (\(type(of: error)))")
+                    report.skipped += 1
+                }
             }
         }
         report.purged = try await purge(now: now)
@@ -122,7 +144,7 @@ final class WebhookWorker: LifecycleHandler, @unchecked Sendable {
             return verdict
         }
         let payload = row.event == "test" ? WebhookPayload.test : WebhookPayload.person(count: row.anzahl, mask: row.kindsMask)
-        let verdict = await deliverer.attempt(endpoint: endpoint, payload: payload, now: now)
+        let verdict = await deliverer.attempt(endpoint: endpoint, payload: payload)
         try await deliverer.record(verdict, on: row, now: now)
         if case .failed(let code, _) = verdict { app.logger.error("webhook worker: bundle failed code=\(code)") }
         return verdict

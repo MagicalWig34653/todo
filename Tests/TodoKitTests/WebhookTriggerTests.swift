@@ -149,12 +149,13 @@ final class WebhookTriggerTests: XCTestCase {
             // The system creates the next occurrence with the owner as actor and the source card as subject.
             let task = try await f.existingTask()
             try await f.configure()
-            try await f.app.db.transaction { tx in
+            let personDB = try f.personDatabase()
+            try await personDB.transaction { tx in
                 try await appendLockedActivity(taskID: task.uuid, actorType: .person, actorID: f.userID, kind: "task.created", subjectID: UUID(), on: tx)
             }
             let none = try await f.rows()
             XCTAssertEqual(none.count, 0)
-            try await f.app.db.transaction { tx in
+            try await personDB.transaction { tx in
                 try await appendLockedActivity(taskID: task.uuid, actorType: .person, actorID: f.userID, kind: "task.created", subjectID: nil, on: tx)
             }
             let one = try await f.rows()

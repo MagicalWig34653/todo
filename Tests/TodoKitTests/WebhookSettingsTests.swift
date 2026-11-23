@@ -77,9 +77,9 @@ final class WebhookSettingsTests: XCTestCase {
     func testMaskShowsSchemeAndHostOnly() async throws {
         try await withWebhook { f in
             for (url, mask) in [("https://hooks.example.test/a/b?c=d#e", "https://hooks.example.test/…"),
-                                ("HTTPS://Hooks.Example.Test:8443/x", "https://hooks.example.test/…"),
+                                ("HTTPS://Hooks.Example.Test:443/x", "https://hooks.example.test/…"),
                                 ("https://203.0.113.7/secret", "https://203.0.113.7/…"),
-                                ("https://[2001:db8::7]/secret", "https://[2001:db8::7]/…")] {
+                                ("https://[2001:4860:4860::8888]/secret", "https://[2001:4860:4860::8888]/…")] {
                 let r = try await f.configure(url: url)
                 XCTAssertEqual(r.body?["maskedURL"] as? String, mask, url)
             }
@@ -122,15 +122,15 @@ final class WebhookSettingsTests: XCTestCase {
             }
             let stored = try await f.endpoint()
             XCTAssertNil(stored, "a rejected URL leaves nothing behind")
-            // An explicit port is fine.
-            let ok = try await f.put(["url": "https://hooks.example.test:8443/x"])
+            // Port 443 may be written out; any other port is not accepted (finding 7).
+            let ok = try await f.put(["url": "https://hooks.example.test:443/x"])
             XCTAssertEqual(ok.status, .ok)
         }
     }
 
     func testLiteralPrivateAndLocalAddressesAreRejectedAtSave() async throws {
         try await withWebhook { f in
-            let blocked = ["https://127.0.0.1/x", "https://127.1.2.3:8443/x", "https://10.0.0.5/x", "https://192.168.1.10/x", "https://172.16.0.1/x",
+            let blocked = ["https://127.0.0.1/x", "https://127.1.2.3:443/x", "https://10.0.0.5/x", "https://192.168.1.10/x", "https://172.16.0.1/x",
                            "https://169.254.169.254/latest/meta-data", "https://100.64.0.1/x", "https://0.0.0.0/x",
                            "https://[::1]/x", "https://[fd00::1]/x", "https://[fe80::1]/x", "https://[::ffff:10.0.0.1]/x", "https://[::ffff:127.0.0.1]/x", "https://[fd00:ec2::254]/x",
                            // Transition mechanisms that embed an internal IPv4 address, multicast and reserved ranges.
@@ -166,10 +166,10 @@ final class WebhookSettingsTests: XCTestCase {
             f.app.webhookResolver = SystemWebhookResolver()
             let local = try await f.put(["url": "https://localhost/x"])
             XCTAssertEqual(local.body?["reason"] as? String, "webhook_url_blocked")
-            // A name that does not resolve at all is invalid.
+            // A name that does not resolve at all answers like a blocked one.
             f.app.webhookResolver = FixedWebhookResolver(fallback: nil)
             let unknown = try await f.put(["url": "https://nowhere.example.test/x"])
-            XCTAssertEqual(unknown.body?["reason"] as? String, "webhook_url_invalid")
+            XCTAssertEqual(unknown.body?["reason"] as? String, "webhook_url_blocked", "no oracle: same code as a blocked name")
         }
     }
 
@@ -259,11 +259,11 @@ final class WebhookSettingsTests: XCTestCase {
             copy.userID = other.id; copy.urlCiphertext = stolen.urlCiphertext; copy.keyID = stolen.keyID; copy.urlMask = stolen.urlMask
             copy.enabled = true; copy.consecutiveFailures = 0; copy.createdAt = Date(); copy.updatedAt = Date()
             try await copy.create(on: f.app.db)
-            let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: copy, payload: .test, now: Date())
+            let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: copy, payload: .test)
             XCTAssertEqual(attempt, .failed(code: "encryption_key_unreadable", status: nil))
             XCTAssertTrue(f.transport.requests.isEmpty)
             // The owner's own row still decrypts.
-            let own = await WebhookDeliverer(app: f.app).attempt(endpoint: stolen, payload: .test, now: Date())
+            let own = await WebhookDeliverer(app: f.app).attempt(endpoint: stolen, payload: .test)
             XCTAssertEqual(own, .sent(status: 200))
         }
     }

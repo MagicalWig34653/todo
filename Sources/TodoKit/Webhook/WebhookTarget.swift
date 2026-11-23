@@ -11,6 +11,14 @@ enum WebhookTarget {
         guard let bytes = octets(ip) else { return true }  // unparseable: fail closed
         if bytes.count == 4 { return isBlockedIPv4(bytes) }
         guard bytes.count == 16 else { return true }
+        // The whole IPv4-mapped range ::ffff:0:0/96 is refused, not judged by the embedded address: `OutboundGuard` lets
+        // ::ffff:0.0.0.0 pass its mapped rule, and a webhook has no reason to be reached through a mapped address.
+        if bytes[0..<10].allSatisfy({ $0 == 0 }), bytes[10] == 0xff, bytes[11] == 0xff { return true }
+        // SIIT / IPv4-translated (::ffff:0:0:0/96): the last 32 bits are an IPv4 address behind a translator.
+        if bytes[0..<8].allSatisfy({ $0 == 0 }), bytes[8] == 0xff, bytes[9] == 0xff, bytes[10] == 0, bytes[11] == 0 { return true }
+        // Discard-only prefix 100::/64 and documentation prefix 2001:db8::/32: never a real web server.
+        if bytes[0] == 0x01, bytes[1..<8].allSatisfy({ $0 == 0 }) { return true }
+        if bytes[0] == 0x20, bytes[1] == 0x01, bytes[2] == 0x0d, bytes[3] == 0xb8 { return true }
         // IPv4-compatible (::a.b.c.d, deprecated), NAT64 well-known prefix (64:ff9b::/96) and 6to4 (2002::/16): judged by the embedded IPv4.
         if bytes[0..<12].allSatisfy({ $0 == 0 }) { return OutboundGuard.isBlocked(bytes: Array(bytes[12...15]), .strict) || isBlockedIPv4(Array(bytes[12...15])) }
         if bytes[0] == 0x00, bytes[1] == 0x64, bytes[2] == 0xff, bytes[3] == 0x9b, bytes[4..<12].allSatisfy({ $0 == 0 }) {

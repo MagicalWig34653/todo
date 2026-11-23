@@ -87,15 +87,23 @@ struct WebhookService: Sendable {
     }
 
     /// Checks the target at save time: https, no credentials, literal IPs and the resolved address at level strict.
+    /// A name that does not resolve, resolves into a blocked range or does not resolve in time all answer `webhook_url_blocked`:
+    /// the answer must not tell whether a name exists (otherwise the save form is a lookup tool for internal names).
     func validate(_ url: WebhookURL) async throws {
         if let literal = url.literalIP {
             guard !WebhookTarget.isBlocked(literal) else { throw Abort(.badRequest, reason: "webhook_url_blocked") }
             return
         }
+        // Every request that makes the server resolve a name counts; the budget is per account.
+        let userID = try user.requireID()
+        guard try await IdentityRateLimit.take(scope: "webhook-put", subject: "user:\(userID)", limit: WebhookLimits.putPerMinute, window: 60, on: db) else {
+            var headers = HTTPHeaders()
+            headers.add(name: "Retry-After", value: "60")
+            throw Abort(.tooManyRequests, headers: headers, reason: "rate_limited")
+        }
         let address: String
-        do { address = try await app.webhookResolver.resolve(host: url.host, port: url.port) }
-        catch is OutboundBlocked { throw Abort(.badRequest, reason: "webhook_url_blocked") }
-        catch { throw Abort(.badRequest, reason: "webhook_url_invalid") }
+        do { address = try await WebhookResolution.resolve(app.webhookResolver, host: url.host, port: url.port, timeout: app.webhookResolveTimeout) }
+        catch { throw Abort(.badRequest, reason: "webhook_url_blocked") }
         guard !WebhookTarget.isBlocked(address) else { throw Abort(.badRequest, reason: "webhook_url_blocked") }
     }
 
@@ -123,9 +131,14 @@ struct WebhookService: Sendable {
             for id in unique { _ = try await access.project(id) }
             projects = unique
         } else { projects = nil }
-        let ring = try app.requireSettingsRuntime().keyRing
-        let sealedURL = try newURL.map { try ring.sealWebhook($0.absolute, userID: userID, field: .url) }
-        let sealedSecret = try newSecret.map { try ring.sealWebhook($0, userID: userID, field: .signing) }
+        // The key is needed only to write the address or the signing secret; switching, exclusions and removing the secret work without it.
+        var urlBlob: (blob: String, keyID: String)?, secretBlob: (blob: String, keyID: String)?
+        if newURL != nil || newSecret != nil {
+            let ring = try app.requireSettingsRuntime().keyRing
+            urlBlob = try newURL.map { try ring.sealWebhook($0.absolute, userID: userID, field: .url) }
+            secretBlob = try newSecret.map { try ring.sealWebhook($0, userID: userID, field: .signing) }
+        }
+        let sealedURL = urlBlob, sealedSecret = secretBlob
 
         try await db.transaction { tx in
             try await lockRow(table: User.schema, id: userID, on: tx)
@@ -201,7 +214,7 @@ struct WebhookService: Sendable {
         let row = WebhookDelivery(userID: userID, event: "test", anzahl: 0, kindsMask: 0, due: now, open: false, now: now)
         try await row.create(on: db)
         let deliverer = WebhookDeliverer(app: app)
-        let verdict = await deliverer.attempt(endpoint: endpoint, payload: .test, now: now)
+        let verdict = await deliverer.attempt(endpoint: endpoint, payload: .test)
         try await deliverer.record(verdict, on: row, now: Date(), single: true)
         return try WebhookDeliveryDTO(row)
     }

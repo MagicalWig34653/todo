@@ -2,15 +2,22 @@ import Fluent
 import SQLKit
 import Vapor
 
-/// Marks work done on behalf of an agent (MCP/OAuth). Some write paths shared by REST and MCP record their activity with the
-/// person as actor (the MCP caller acts as the person who granted the connection); those must not wake the webhook, or the
-/// listener would wake itself in a loop (ADR 0035, item 5). The MCP endpoint sets the mark on the request logger, which every
-/// `req.db` and every transaction handle derived from it carries (a task-local would be lost in Fluent's transaction closure,
-/// which runs on an event loop callback). The value is a fixed word, no data.
+/// What the trigger knows about who is acting. Some write paths shared by REST and MCP record their activity with the person as
+/// actor (the MCP caller acts as the person who granted the connection); those must not wake the webhook, or the listener would
+/// wake itself in a loop (ADR 0035, item 5). The guard is fail-closed: an event only counts when the request was authenticated
+/// as a person session (`requireUser` sets `personKey` to the user id after it verified the session). A write path without the
+/// mark (background job, new entry point) wakes nothing: the worst case is a missed wake-up, never a loop. The MCP endpoint
+/// additionally sets `key`, which vetoes everything. Both marks live on the request logger, which every `req.db` and every
+/// transaction handle derived from it carries (a task-local would be lost in Fluent's transaction closure, which runs on an
+/// event loop callback). The values are a fixed word and the user id, no card data.
 enum WebhookAgentContext {
     static let key = "todolino.agent_request"
+    static let personKey = "todolino.person_session"
     static func mark(_ req: Request) { req.logger[metadataKey: key] = "mcp" }
+    static func markPersonSession(_ req: Request, userID: UUID) { req.logger[metadataKey: personKey] = .string(userID.uuidString) }
     static func isMarked(_ db: any Database) -> Bool { db.logger[metadataKey: key] != nil }
+    /// True when the handle belongs to a request that `requireUser` accepted for exactly this person.
+    static func isPersonSession(_ db: any Database, userID: UUID) -> Bool { db.logger[metadataKey: personKey] == .string(userID.uuidString) }
 }
 
 /// ADR 0035: an `ActivityEvent` created by the webhook owner (actor type Person) with a whitelisted kind in a project that
@@ -21,7 +28,7 @@ struct WebhookTriggerMiddleware: AsyncModelMiddleware {
 
     func create(model: ActivityEvent, on db: any Database, next: any AnyAsyncModelResponder) async throws {
         try await next.create(model, on: db)
-        guard model.actorType == .person, !WebhookAgentContext.isMarked(db), let mask = WebhookKinds.mask(model.kind),
+        guard model.actorType == .person, WebhookAgentContext.isPersonSession(db, userID: model.actorID), !WebhookAgentContext.isMarked(db), let mask = WebhookKinds.mask(model.kind),
               // Follow-up cards created by the system (recurrence) carry the source card as subject; nobody acted on them.
               !(model.kind == "task.created" && model.subjectID != nil)
         else { return }

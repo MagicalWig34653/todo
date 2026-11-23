@@ -77,6 +77,8 @@ extension Request {
             let user = try await User.find(session.$user.id, on: db)
         else { throw Abort(.unauthorized) }
         if user.isLocked { throw Abort(.unauthorized, reason: "account_disabled") }
+        // Person session verified: from here on the database handles of this request may wake the outgoing webhook (ADR 0035).
+        WebhookAgentContext.markPersonSession(self, userID: try user.requireID())
         return user
     }
 

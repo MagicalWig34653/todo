@@ -255,7 +255,7 @@ final class WebhookDeliveryTests: XCTestCase {
             // A resolver that wrongly hands out a blocked address is caught by the service as well.
             for blocked in ["127.0.0.1", "169.254.169.254", "::1", "fd00::1", "::ffff:10.0.0.1", "100.64.1.1", "64:ff9b::a00:1", "2002:c0a8:1::", "224.0.0.1"] {
                 f.resolver.set("hooks.example.test", blocked)
-                let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test, now: Date())
+                let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test)
                 XCTAssertEqual(attempt, .failed(code: "target_blocked", status: nil), blocked)
             }
             XCTAssertTrue(f.transport.requests.isEmpty)
@@ -321,7 +321,7 @@ final class WebhookDeliveryTests: XCTestCase {
             // Rotation: the old key as PREVIOUS keeps it readable.
             let both = ["SETTINGS_ENCRYPTION_KEY": other, "SETTINGS_ENCRYPTION_KEY_PREVIOUS": WebhookFixture.keyBase64]
             f.app.settingsRuntime = SettingsRuntime(app: f.app, env: { both[$0] }, keyRing: try .fromEnvironment(get: { both[$0] }), pollInterval: 1)
-            let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test, now: Date())
+            let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test)
             XCTAssertEqual(attempt, .sent(status: 200))
         }
     }
@@ -331,12 +331,15 @@ final class WebhookDeliveryTests: XCTestCase {
     func testSignatureHeadersMatchHmacOfTimestampAndBody() async throws {
         try await withWebhook { f in
             try await f.configure(["signingSecret": WebhookFixture.secretSigning])
-            let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
-            let row = try await f.bundleAndSend(at: now)
+            let before = Date()
+            let row = try await f.bundleAndSend()
             XCTAssertEqual(row.state, "sent")
             let r = try request(f)
             let timestamp = try XCTUnwrap(f.transport.header("X-Todolino-Timestamp", in: r))
-            XCTAssertEqual(timestamp, String(Int(now.timeIntervalSince1970)))
+            // The stamp is the time of sending (Unix seconds), so it lies between the start of the test and now.
+            let stamp = try XCTUnwrap(Int(timestamp))
+            XCTAssertGreaterThanOrEqual(stamp, Int(before.timeIntervalSince1970))
+            XCTAssertLessThanOrEqual(stamp, Int(Date().timeIntervalSince1970))
             let signature = try XCTUnwrap(f.transport.header("X-Todolino-Signature", in: r))
             let mac = HMAC<SHA256>.authenticationCode(for: Data("\(timestamp).".utf8) + r.body, using: SymmetricKey(data: Data(WebhookFixture.secretSigning.utf8)))
             XCTAssertEqual(signature, "sha256=" + mac.map { String(format: "%02x", $0) }.joined())
