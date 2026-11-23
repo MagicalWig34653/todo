@@ -79,8 +79,13 @@ struct BrainMandateGrantUnique: AsyncMigration {
         if sql.dialect.name == "sqlite" {
             try await rebuild(sql: sql, db: db) { $0.unique(on: "user_id", "grant_id") }
         } else {
-            try await db.schema(BrainMandate.schema).unique(on: "user_id", "grant_id").update()
-            try await sql.raw("ALTER TABLE \(ident: BrainMandate.schema) DROP INDEX \(ident: "uq:brain_mandates.user_id")").run()
+            // Idempotent: a half-applied run (MariaDB DDL is not transactional) must be repairable by running it again.
+            if try await Self.uniqueIndex(on: ["user_id", "grant_id"], sql: sql) == nil {
+                try await db.schema(BrainMandate.schema).unique(on: "user_id", "grant_id").update()
+            }
+            if let old = try await Self.uniqueIndex(on: ["user_id"], sql: sql) {
+                try await sql.raw("ALTER TABLE \(ident: BrainMandate.schema) DROP INDEX \(ident: old)").run()
+            }
         }
     }
 
@@ -90,9 +95,24 @@ struct BrainMandateGrantUnique: AsyncMigration {
         if sql.dialect.name == "sqlite" {
             try await rebuild(sql: sql, db: db) { $0.unique(on: "user_id") }
         } else {
-            try await db.schema(BrainMandate.schema).unique(on: "user_id").update()
-            try await sql.raw("ALTER TABLE \(ident: BrainMandate.schema) DROP INDEX \(ident: "uq:brain_mandates.user_id+grant_id")").run()
+            if try await Self.uniqueIndex(on: ["user_id"], sql: sql) == nil {
+                try await db.schema(BrainMandate.schema).unique(on: "user_id").update()
+            }
+            if let composite = try await Self.uniqueIndex(on: ["user_id", "grant_id"], sql: sql) {
+                try await sql.raw("ALTER TABLE \(ident: BrainMandate.schema) DROP INDEX \(ident: composite)").run()
+            }
         }
+    }
+
+    /// The real name of the unique index over exactly `columns` (in this order). Fluent's MySQL driver hashes constraint
+    /// names, so the name `uq:brain_mandates.user_id` does not exist in MariaDB; it has to be looked up.
+    private static func uniqueIndex(on columns: [String], sql: any SQLDatabase) async throws -> String? {
+        let rows = try await sql.raw("""
+            SELECT index_name AS idx FROM information_schema.statistics
+            WHERE table_schema = DATABASE() AND table_name = \(literal: BrainMandate.schema) AND non_unique = 0 AND index_name <> 'PRIMARY'
+            GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ',') = \(literal: columns.joined(separator: ","))
+            """).all()
+        return try rows.first?.decode(column: "idx", as: String.self)
     }
 
     private func rebuild(sql: any SQLDatabase, db: any Database, constraint: (SchemaBuilder) -> SchemaBuilder) async throws {
