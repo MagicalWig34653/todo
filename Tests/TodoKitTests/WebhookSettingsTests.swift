@@ -100,6 +100,66 @@ final class WebhookSettingsTests: XCTestCase {
         }
     }
 
+    // MARK: Card F5D261AF: the page learns whether saving can work at all
+
+    /// The settings say whether the server has a current key, so the page can show the next step before a save fails.
+    func testSettingsReportThatTheServerHasAnEncryptionKey() async throws {
+        try await withWebhook { f in
+            let before = try await f.get()
+            XCTAssertEqual(before.body?["encryptionKeyAvailable"] as? Bool, true)
+            let put = try await f.configure(["signingSecret": WebhookFixture.secretSigning])
+            XCTAssertEqual(put.body?["encryptionKeyAvailable"] as? Bool, true, "the answer of PUT is the same document")
+            let after = try await f.get()
+            XCTAssertEqual(after.body?["encryptionKeyAvailable"] as? Bool, true)
+        }
+    }
+
+    func testSettingsReportThatTheServerHasNoEncryptionKey() async throws {
+        try await withWebhook(key: false) { f in
+            let state = try await f.get()
+            XCTAssertEqual(state.status, .ok)
+            XCTAssertEqual(state.body?["encryptionKeyAvailable"] as? Bool, false)
+            XCTAssertEqual(state.body?["configured"] as? Bool, false)
+            // The same server refuses the save, which is exactly what the flag announces.
+            let refused = try await f.put(["url": WebhookFixture.secretURL])
+            XCTAssertEqual(refused.body?["reason"] as? String, "encryption_key_missing")
+            // Settings that need no key still work, and the flag stays false.
+            let again = try await f.get()
+            XCTAssertEqual(again.body?["encryptionKeyAvailable"] as? Bool, false)
+        }
+    }
+
+    func testAKeyRingWithOnlyAPreviousKeyCannotEncryptAndSaysSo() async throws {
+        try await withWebhook { f in
+            let env = ["SETTINGS_ENCRYPTION_KEY_PREVIOUS": WebhookFixture.keyBase64]
+            f.app.settingsRuntime = SettingsRuntime(app: f.app, env: { env[$0] }, keyRing: try SettingsKeyRing.fromEnvironment(get: { env[$0] }), pollInterval: 1)
+            let state = try await f.get()
+            XCTAssertEqual(state.body?["encryptionKeyAvailable"] as? Bool, false, "a previous key only reads, it does not write")
+            let refused = try await f.put(["url": WebhookFixture.secretURL])
+            XCTAssertEqual(refused.body?["reason"] as? String, "encryption_key_missing")
+        }
+    }
+
+    /// The flag is all the API says about the key: no value, no id, no fingerprint, no other field.
+    func testTheKeyItselfNeverAppearsInAnyWebhookAnswer() async throws {
+        try await withWebhook { f in
+            let put = try await f.configure(["signingSecret": WebhookFixture.secretSigning])
+            let test = try await f.sendTest()
+            var answers = [jsonString(put.body), jsonString(try await f.get().body), jsonString(test.body), jsonString(try await f.deliveries().body)]
+            let bad = try await f.put(["url": "http://hooks.example.test/x"])
+            answers.append(jsonString(bad.body))
+            let keyID = try XCTUnwrap(f.app.settingsRuntime?.keyRing.current?.id)
+            let raw = Data(repeating: 7, count: 32).map { String(format: "%02x", $0) }.joined()
+            for text in answers {
+                for needle in [WebhookFixture.keyBase64, keyID, raw] { XCTAssertFalse(text.contains(needle), "key material in \(text)") }
+            }
+            let known: Set<String> = ["configured", "maskedURL", "enabled", "signingConfigured", "excludedProjectIDs", "consecutiveFailures", "lastDelivery", "encryptionKeyAvailable"]
+            let keys = Set((try await f.get().body ?? [:]).keys)
+            XCTAssertTrue(keys.isSubset(of: known), "unexpected fields: \(keys.subtracting(known))")
+            XCTAssertTrue(keys.contains("encryptionKeyAvailable"))
+        }
+    }
+
     // MARK: Item 8: URL rules at save time
 
     func testHttpCredentialsAndMalformedUrlsAreRejected() async throws {

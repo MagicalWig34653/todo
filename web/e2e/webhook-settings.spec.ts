@@ -12,7 +12,9 @@ import { signedInPage } from './support/session';
 // The address is a secret: the spec saves https://example.com/<random path> (reserved example domain, no real secret), then
 // proves the random path appears nowhere (DOM text, attributes, input values, storage, console, API answers). The server
 // resolves the host when saving; without DNS the saving error case is checked instead and reported (never a silent skip).
-// Screenshots (docs/screenshots/webhook-einstellungen-*.png) are written by the Chromium run only.
+// Screenshots (docs/screenshots/webhook-einstellungen-*.png and webhook-seite-<state>-*.png) are written by the Chromium run only.
+// Card F5D261AF: the page must be easy to find and to finish. Three states, one test each: "no key" (the server flag is faked for
+// that view, because the shared test server has a key; the real case is proven by WebhookSettingsTests), "no address", "set up".
 const SHOTS = resolve(dirname(fileURLToPath(import.meta.url)), '../../docs/screenshots');
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
@@ -34,7 +36,7 @@ const err = () => page.getByTestId('wh-error');
 // One live region that is empty most of the time: the one with text is the message.
 const msg = () => page.getByTestId('wh-message').filter({ hasText: /\S/ });
 
-interface ApiWebhook { configured: boolean; maskedURL?: string; enabled: boolean; signingConfigured: boolean; excludedProjectIDs: string[]; consecutiveFailures: number }
+interface ApiWebhook { configured: boolean; maskedURL?: string; enabled: boolean; signingConfigured: boolean; excludedProjectIDs: string[]; consecutiveFailures: number; encryptionKeyAvailable?: boolean }
 const apiWebhook = async () => (await (await page.request.get('/v1/settings/webhook')).json()) as ApiWebhook;
 async function createProject(name: string, parentID: string | null = null) {
 	const r = await page.request.post('/v1/projects', { ...json, data: { name, parentID } });
@@ -67,6 +69,32 @@ async function noOverflow(label: string) {
 	const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }));
 	expect(w.doc, `${label}: page overflows horizontally`).toBeLessThanOrEqual(w.inner);
 }
+/** No element sticks out of a 320 px wide viewport (clipped text on the right edge). */
+async function noWide(label: string) {
+	const wide = await page.evaluate(() => [...document.querySelectorAll('[data-testid="webhook-page"] *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1).map((e) => e.tagName + '.' + String(e.className).slice(0, 40)));
+	expect(wide, `elements wider than the viewport (${label})`).toEqual([]);
+}
+/** Light, dark and 320 px (and 320 px dark when asked) screenshots of one state; leaves the page light at 1280 px. */
+async function shootState(state: string, extra: { dark320?: boolean } = {}) {
+	for (const [mode, suffix] of [['light', 'hell'], ['dark', 'dunkel']] as const) {
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await theme(mode);
+		await noOverflow(`${state} desktop ${mode}`);
+		await shot(`webhook-seite-${state}-${suffix}`);
+	}
+	await page.setViewportSize({ width: 320, height: 700 });
+	for (const mode of extra.dark320 ? (['light', 'dark'] as const) : (['light'] as const)) {
+		await theme(mode);
+		await noOverflow(`${state} 320 px ${mode}`);
+		await noWide(`${state} 320 px ${mode}`);
+		await shot(mode === 'light' ? `webhook-seite-${state}-320` : `webhook-seite-${state}-320-dunkel`);
+	}
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await theme('light');
+}
+const KEY_ROUTE = '**/v1/settings/webhook';
+const KEY_COMMAND = 'deploy/swarm/settings.sh --generate SETTINGS_ENCRYPTION_KEY';
+const KONFIGURATION_URL = 'https://github.com/MagicalWig34653/todo/blob/main/docs/KONFIGURATION.md#einstellungsprogramm-settingssh-env-datei-per-menü-oder-kommandozeile';
 const backdrop = () =>
 	page.evaluate(() => {
 		const ctx = document.createElement('canvas').getContext('2d')!;
@@ -142,12 +170,80 @@ test('landing card and area: nothing is set up yet, the rest waits for an addres
 	await expect(page.getByTestId('wh-status')).toHaveText('Nicht eingerichtet');
 	await expect(page.getByTestId('wh-masked')).toHaveCount(0);
 	await expect(page.getByTestId('wh-exclusions')).toHaveCount(0);
-	await expect(page.getByTestId('wh-test')).toHaveCount(0);
+	// Card F5D261AF: the test area is always there; without an address its button is disabled and says why.
+	await expect(page.getByTestId('wh-test')).toBeDisabled();
+	await expect(page.getByTestId('wh-test-needs-url')).toBeVisible();
 	await expect(page.getByTestId('wh-deliveries-empty')).toBeVisible();
 	await expect(page.getByTestId('wh-delivery')).toHaveCount(0);
 	await noOverflow('empty page');
 	// The settings menu lists the area in the group of the connections.
 	await expect(page.getByTestId('settings-group-connected').getByTestId('settings-link-webhook')).toBeVisible();
+});
+
+test('state "no key": the server cannot store secrets, so the page says what to do and blocks saving (flag faked for this view)', async () => {
+	// The shared test server has a key. The real case (no key on the server -> encryptionKeyAvailable false) is covered by
+	// WebhookSettingsTests; here only the answer of GET is replaced, the page and everything else is real.
+	expect(await apiWebhook()).toMatchObject({ encryptionKeyAvailable: true });
+	await openPage();
+	await expect(page.getByTestId('wh-nokey')).toHaveCount(0);
+	await page.route(KEY_ROUTE, async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		const real = await route.fetch();
+		await route.fulfill({ response: real, json: { ...(await real.json()), encryptionKeyAvailable: false } });
+	});
+	try {
+		await openPage();
+		// The hint is the first thing on the page (first card), with the concrete step and the way to the documentation.
+		const note = page.getByTestId('wh-intro').getByTestId('wh-nokey');
+		await expect(note).toBeVisible();
+		await expect(note).toContainText(KEY_COMMAND);
+		await expect(note).toContainText('todo_settings_key');
+		await expect(note).toContainText('SETTINGS_KEY_ENABLED=true');
+		await expect(note).toContainText('neu ausrollen');
+		const link = note.getByRole('link', { name: /Dokumentation/ });
+		await expect(link).toHaveAttribute('href', KONFIGURATION_URL);
+		await expect(link).toHaveAttribute('target', '_blank');
+		await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+		// Saving is blocked with a reason that assistive technology reads with the button; typing does not change that.
+		const save = page.getByTestId('wh-url-save');
+		await expect(save).toBeDisabled();
+		await expect(save).toHaveAttribute('aria-describedby', 'wh-url-nokey-reason');
+		await expect(page.locator('#wh-url-nokey-reason')).toContainText('Verschlüsselungsschlüssel');
+		await urlField().fill('https://example.com/not-saved');
+		await expect(save).toBeDisabled();
+		await urlField().press('Enter');
+		await expect(err()).toHaveCount(0);
+		expect((await apiWebhook()).configured).toBe(false);
+		await urlField().fill('');
+		// The test area is there and says that the address comes first.
+		await expect(page.getByTestId('wh-test')).toBeDisabled();
+		await expect(page.getByTestId('wh-test-needs-url')).toBeVisible();
+		await noOverflow('no key');
+		await shootState('kein-schluessel');
+	} finally {
+		await page.unroute(KEY_ROUTE);
+	}
+	await openPage();
+	await expect(page.getByTestId('wh-nokey')).toHaveCount(0);
+});
+
+test('state "no address": the test area is visible right below the address, disabled, and says why', async () => {
+	await openPage();
+	await expect(page.getByTestId('wh-nokey')).toHaveCount(0);
+	await expect(page.getByTestId('wh-status')).toHaveText('Nicht eingerichtet');
+	await expect(page.getByTestId('wh-last-test')).toHaveText(/Letzter Testaufruf:\s*Noch kein Testaufruf/);
+	await expect(page.getByTestId('wh-test-card')).toBeVisible();
+	// Directly below the address card, before signature and exclusions.
+	expect(await page.getByTestId('wh-url-card').evaluate((el) => el.nextElementSibling?.getAttribute('data-testid'))).toBe('wh-test-card');
+	const button = page.getByTestId('wh-test');
+	await expect(button).toBeDisabled();
+	await expect(button).toHaveAttribute('aria-describedby', 'wh-test-needs-url');
+	await expect(page.getByTestId('wh-test-needs-url')).toHaveText('Erst die Adresse speichern.');
+	// The test button next to "Adresse speichern" is disabled for the same reason.
+	await expect(page.getByTestId('wh-test-inline')).toBeDisabled();
+	await expect(page.getByTestId('wh-url-save')).toBeDisabled();
+	await noOverflow('no address');
+	await shootState('keine-adresse');
 });
 
 test('rejects http, private and malformed addresses with clear messages and stores nothing', async () => {
@@ -220,6 +316,9 @@ test('saves a public address and never shows it again, only the mask', async () 
 	await page.keyboard.type(URL_OK);
 	await page.keyboard.press('Enter');
 	await expect(msg()).toContainText('Adresse gespeichert');
+	// Right after saving the next step is shown next to its button: send a test call.
+	await expect(page.getByTestId('wh-saved-next')).toContainText('Gespeichert. Jetzt Testaufruf senden');
+	await expect(page.getByTestId('wh-test-inline')).toBeEnabled();
 	await expect(page.getByTestId('wh-status')).toHaveText('Aktiv');
 	await expect(page.getByTestId('wh-masked')).toHaveText('https://example.com/…');
 	await expect(page.getByTestId('wh-hinterlegt')).toContainText('Hinterlegt');
@@ -320,6 +419,10 @@ test('send a test call: the result is shown clearly and the protocol gets an ent
 	// example.com answers 4xx for an unknown path, or the network is closed: both end as sent or failed, which is all that is asserted.
 	await expect(result).toContainText(/Testaufruf (zugestellt|fehlgeschlagen)/, { timeout: 30_000 });
 	const took = Date.now() - started;
+	// The same outcome is on top of the page (own line, with the time).
+	await expect(page.getByTestId('wh-last-test')).toHaveText(/Letzter Testaufruf:\s*(Zugestellt|Fehlgeschlagen)/);
+	await expect(page.getByTestId('wh-last-test').locator('time')).toHaveCount(1);
+	await expect(page.getByTestId('wh-saved-next')).toHaveCount(0);
 	const item = page.getByTestId('wh-delivery').first();
 	await expect(item).toBeVisible();
 	await expect(item).toContainText('Testaufruf');
@@ -339,6 +442,38 @@ test('send a test call: the result is shown clearly and the protocol gets an ent
 	await page.getByTestId('wh-refresh').click();
 	await expect(page.getByTestId('wh-delivery')).toHaveCount(1);
 	await noOverflow('protocol');
+});
+
+test('state "set up": test next to save, result of the last test on top, test area active (also after reloading)', async () => {
+	test.skip(!hasDNS, 'no DNS in this run (reported by an earlier test): no address could be saved, so this state cannot be reached');
+	await openPage();
+	await expect(page.getByTestId('wh-status')).toHaveText('Aktiv');
+	await expect(page.getByTestId('wh-nokey')).toHaveCount(0);
+	// The previous test sent a call: the protocol knows it, so the top line shows it after a reload as well.
+	const top = page.getByTestId('wh-last-test');
+	await expect(top).toHaveText(/Letzter Testaufruf:\s*(Zugestellt|Fehlgeschlagen)/);
+	await expect(top.locator('time')).toHaveCount(1);
+	await expect(top).not.toContainText('Noch kein Testaufruf');
+	// Test button right next to "Adresse ersetzen": same row, active.
+	const inline = page.getByTestId('wh-test-inline');
+	await expect(inline).toBeEnabled();
+	await expect(inline).toHaveText('Test senden');
+	const save = await page.getByTestId('wh-url-save').boundingBox();
+	const next = await inline.boundingBox();
+	expect(Math.abs(save!.y - next!.y), 'test button is in the row of the save button').toBeLessThan(8);
+	// The test area is active, directly below the address card and before signature and exclusions.
+	await expect(page.getByTestId('wh-test')).toBeEnabled();
+	await expect(page.getByTestId('wh-test-needs-url')).toHaveCount(0);
+	expect(await page.getByTestId('wh-url-card').evaluate((el) => el.nextElementSibling?.getAttribute('data-testid'))).toBe('wh-test-card');
+	const order = await page.evaluate(() => ['wh-test-card', 'wh-signing-card', 'wh-exclusions'].map((id) => document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect().top));
+	expect(order[0]).toBeLessThan(order[1]);
+	expect(order[1]).toBeLessThan(order[2]);
+	// The button of the address card works like the one of the test area (one handler): a result, or the 10-second answer.
+	await inline.click();
+	await expect(page.getByTestId('wh-test-result').filter({ hasText: /Testaufruf/ }).or(err())).toBeVisible({ timeout: 30_000 });
+	await expectNoSecret('set up state');
+	await noOverflow('set up');
+	await shootState('eingerichtet', { dark320: true });
 });
 
 test('signing secret: set, shown only as set, replaced, removed; too short is refused', async () => {
@@ -417,6 +552,10 @@ test('removing needs a confirmation and deletes address, exclusions and protocol
 	await expect(page.getByTestId('wh-exclusions')).toHaveCount(0);
 	await expect(page.getByTestId('wh-delivery')).toHaveCount(0);
 	await expect(page.getByTestId('wh-deliveries-empty')).toBeVisible();
+	// Back to the state without an address: the test area stays, disabled, and no last test is shown.
+	await expect(page.getByTestId('wh-test')).toBeDisabled();
+	await expect(page.getByTestId('wh-test-needs-url')).toBeVisible();
+	await expect(page.getByTestId('wh-last-test')).toHaveText(/Noch kein Testaufruf/);
 	const state = await apiWebhook();
 	expect(state).toMatchObject({ configured: false, signingConfigured: false, excludedProjectIDs: [] });
 	const protocol = (await (await page.request.get('/v1/settings/webhook/deliveries')).json()) as { items: unknown[] };

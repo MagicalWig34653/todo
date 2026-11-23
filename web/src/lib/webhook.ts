@@ -40,6 +40,8 @@ export interface WebhookSettings {
 	excludedProjectIDs: string[];
 	consecutiveFailures: number;
 	lastDelivery?: WebhookDelivery;
+	/** `false` when the server has no usable encryption key (nothing can be saved); absent on servers older than contract 1.1.0. */
+	encryptionKeyAvailable?: boolean;
 }
 
 /** Body of `PUT /v1/settings/webhook`: fields that are missing stay as they are, `null` deletes. */
@@ -303,4 +305,19 @@ export function exclusionsChanged(saved: readonly string[], selected: ReadonlySe
 	const was = new Set(saved.map(key));
 	const will = new Set([...selected].map(key));
 	return was.size !== will.size || [...was].some((id) => !will.has(id));
+}
+
+/** The command that creates the server's encryption key (docs/KONFIGURATION.md, "Einstellungsprogramm settings.sh"). */
+export const KEY_COMMAND = 'deploy/swarm/settings.sh --generate SETTINGS_ENCRYPTION_KEY';
+
+export type WebhookSetup = 'nokey' | 'nourl' | 'ready';
+
+/** STUB (card F5D261AF, red state). */
+export function webhookSetup(_s: WebhookSettings | null | undefined): WebhookSetup {
+	return 'ready';
+}
+
+/** STUB (card F5D261AF, red state). */
+export function lastTestDelivery(_list: readonly (WebhookDelivery | null | undefined)[]): WebhookDelivery | null {
+	return null;
 }

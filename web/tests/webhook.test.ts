@@ -8,7 +8,9 @@ import {
 	deliveryErrorText,
 	deliveryRow,
 	descendantIDs,
+	KEY_COMMAND,
 	exclusionsChanged,
+	lastTestDelivery,
 	orderedProjects,
 	prefillExclusions,
 	safeMask,
@@ -17,12 +19,15 @@ import {
 	toggleExclusion,
 	urlInput,
 	webhookErrorKey,
+	webhookSetup,
 	webhookStatus,
 	type WebhookDelivery,
 	type WebhookSettings
 } from '../src/lib/webhook';
 import { findEntry, normalizeArea, searchSettings, settingsPath, visibleGroups } from '../src/lib/settingsNav';
 import { t } from '../src/lib/i18n/index';
+import { KONFIGURATION_URL } from '../src/lib/helpNav';
+import { readFileSync } from 'node:fs';
 
 const project = (id: string, name: string, parentID: string | null = null, extra: Partial<Project> = {}): Project => ({ id, name, parentID, version: 1, ...extra });
 const delivery = (over: Partial<WebhookDelivery> = {}): WebhookDelivery => ({
@@ -320,5 +325,77 @@ describe('settings entry', () => {
 		expect(findEntry('webhook')?.adminOnly).toBeFalsy();
 		const groups = visibleGroups(false);
 		for (const word of ['webhook', 'weckruf', 'signatur', 'zustellung']) expect(searchSettings(groups, word, t).map((x) => x.id)).toContain('webhook');
+	});
+});
+
+// Card F5D261AF: the page must be easy to find and to finish (key hint, test area always there, last test on top).
+describe('setup state of the page', () => {
+	it('is "nokey" as soon as the server says it has no usable key, whatever else is set', () => {
+		expect(webhookSetup(settings({ configured: false, maskedURL: undefined, encryptionKeyAvailable: false }))).toBe('nokey');
+		expect(webhookSetup(settings({ encryptionKeyAvailable: false }))).toBe('nokey');
+	});
+	it('is "nourl" without a stored address and "ready" with one', () => {
+		expect(webhookSetup(settings({ configured: false, maskedURL: undefined, encryptionKeyAvailable: true }))).toBe('nourl');
+		expect(webhookSetup(settings({ encryptionKeyAvailable: true }))).toBe('ready');
+	});
+	it('treats a server that does not send the field (older than contract 1.1.0) as having a key', () => {
+		expect(webhookSetup(settings({ configured: false, maskedURL: undefined }))).toBe('nourl');
+		expect(webhookSetup(settings())).toBe('ready');
+	});
+	it('is "nourl" while nothing is loaded', () => {
+		expect(webhookSetup(null)).toBe('nourl');
+		expect(webhookSetup(undefined)).toBe('nourl');
+	});
+});
+
+describe('last test call', () => {
+	const test = (id: string, createdAt: string, over: Partial<WebhookDelivery> = {}) => delivery({ id, event: 'test', anzahl: 0, kinds: [], createdAt, ...over });
+	it('is the newest delivery with event "test", ignoring person actions that are newer', () => {
+		const list = [delivery({ id: 'P', createdAt: '2026-11-23T12:00:00Z' }), test('T2', '2026-11-23T11:00:00Z'), test('T1', '2026-11-23T10:00:00Z')];
+		expect(lastTestDelivery(list)?.id).toBe('T2');
+	});
+	it('does not depend on the order of the list', () => {
+		expect(lastTestDelivery([test('T1', '2026-11-23T10:00:00Z'), test('T3', '2026-11-23T11:30:00Z'), test('T2', '2026-11-23T11:00:00Z')])?.id).toBe('T3');
+	});
+	it('is null without any test (empty, only person actions, nothing)', () => {
+		expect(lastTestDelivery([])).toBeNull();
+		expect(lastTestDelivery([delivery()])).toBeNull();
+		expect(lastTestDelivery([null, undefined])).toBeNull();
+	});
+	it('also takes the lastDelivery of the settings and a fresh result when the protocol could not be loaded', () => {
+		const fresh = test('FRESH', '2026-11-23T13:00:00Z', { state: 'failed', errorCode: 'http_404', httpStatus: 404 });
+		expect(lastTestDelivery([fresh])?.id).toBe('FRESH');
+		expect(lastTestDelivery([test('OLD', '2026-11-23T09:00:00Z'), fresh, delivery({ id: 'P', createdAt: '2026-11-23T14:00:00Z' })])?.id).toBe('FRESH');
+	});
+	it('puts a broken timestamp behind a valid one and keeps the first of equal ones', () => {
+		expect(lastTestDelivery([test('BAD', 'not-a-date'), test('GOOD', '2026-11-23T10:00:00Z')])?.id).toBe('GOOD');
+		expect(lastTestDelivery([test('A', '2026-11-23T10:00:00Z'), test('B', '2026-11-23T10:00:00Z')])?.id).toBe('A');
+	});
+	it('is shown with fixed German texts only (state label, reason), never raw server data', () => {
+		const row = deliveryRow(lastTestDelivery([test('T', '2026-11-23T10:00:00Z', { state: 'failed', errorCode: 'http_404', httpStatus: 404 })])!);
+		expect(row.stateLabel).toBe('Fehlgeschlagen');
+		expect(row.resultLabel).toBe('Der Empfänger antwortete mit HTTP 404.');
+		const ok = deliveryRow(lastTestDelivery([test('T', '2026-11-23T10:00:00Z')])!);
+		expect(ok.stateLabel).toBe('Zugestellt');
+	});
+});
+
+describe('hint "no encryption key"', () => {
+	const doc = readFileSync(new URL('../../docs/KONFIGURATION.md', import.meta.url), 'utf8');
+	it('names the command that the documentation names', () => {
+		expect(KEY_COMMAND).toBe('deploy/swarm/settings.sh --generate SETTINGS_ENCRYPTION_KEY');
+		expect(doc).toContain(`\`${KEY_COMMAND}\``);
+	});
+	it('links to the documentation section that exists (anchor of the heading "Einstellungsprogramm settings.sh")', () => {
+		const url = new URL(KONFIGURATION_URL);
+		expect(url.protocol).toBe('https:');
+		expect(url.origin + url.pathname).toBe('https://github.com/MagicalWig34653/todo/blob/main/docs/KONFIGURATION.md');
+		expect(decodeURIComponent(url.hash)).toBe('#einstellungsprogramm-settingssh-env-datei-per-menü-oder-kommandozeile');
+		expect(doc).toContain('## Einstellungsprogramm `settings.sh` (Env-Datei per Menü oder Kommandozeile)');
+	});
+	it('has fixed German texts for key, command step, reasons and the last-test line', () => {
+		for (const k of ['webhook.nokey.title', 'webhook.nokey.step', 'webhook.nokey.after', 'webhook.nokey.docs', 'webhook.url.nokeyReason', 'webhook.test.needsUrl', 'webhook.lastTest.label', 'webhook.lastTest.none', 'webhook.url.savedNext'] as const) {
+			expect(de[k as keyof typeof de], k).toBeTruthy();
+		}
 	});
 });
