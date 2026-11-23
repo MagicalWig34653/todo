@@ -57,6 +57,7 @@ class Workspace {
 		this.#prefsAt = 0;
 		this.#imported = false;
 		this.#saving.clear();
+		this.#wroteAt.clear();
 		this.#inflight = 0;
 	}
 
@@ -155,9 +156,11 @@ class Workspace {
 		if (this.#inflight > 0) return;
 		const gen = this.#gen;
 		try {
+			const startedAt = this.#writeSeq;
 			const { items } = await api.listProjectPrefs(true);
 			if (this.#inflight > 0 || gen !== this.#gen) return;
 			const next = Object.fromEntries(items.map((p) => [p.projectID, p]));
+			for (const [id, seq] of this.#wroteAt) if (seq > startedAt && this.prefs[id]) next[id] = this.prefs[id];
 			if (JSON.stringify(next) !== JSON.stringify(this.prefs)) this.prefs = next;
 		} catch {
 			/* keep the cached prefs */
@@ -175,9 +178,14 @@ class Workspace {
 	}
 	async reloadPrefs() {
 		const gen = this.#gen;
+		const startedAt = this.#writeSeq;
 		const { items } = await api.listProjectPrefs(true);
 		if (gen !== this.#gen) return;
-		this.prefs = Object.fromEntries(items.map((p) => [p.projectID, p]));
+		const next = Object.fromEntries(items.map((p) => [p.projectID, p]));
+		// A project written locally after this read started: the answer may predate that write (the server handles both at once),
+		// so keep the optimistic entry. Everything else is taken over.
+		for (const [id, seq] of this.#wroteAt) if (seq > startedAt && this.prefs[id]) next[id] = this.prefs[id];
+		this.prefs = next;
 		this.prefsLoaded = true;
 		this.#prefsAt = Date.now();
 	}
@@ -250,7 +258,11 @@ class Workspace {
 	}
 	#inflight = 0;
 	#prefsAt = 0;
+	/** Counts local preference writes; `#wroteAt` remembers the last one per project (see `reloadPrefs`). */
+	#writeSeq = 0;
+	#wroteAt = new Map<string, number>();
 	async setPrefs(id: string, change: ProjectPrefsChange) {
+		this.#wroteAt.set(id, ++this.#writeSeq);
 		this.prefs = { ...this.prefs, [id]: applyPrefsChange(this.prefs[id] ?? defaultPrefs(id), change) };
 		const gen = this.#gen;
 		const run = async () => {

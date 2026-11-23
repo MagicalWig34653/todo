@@ -3,6 +3,7 @@
 # one fresh backend and database per run, fixed number of repetitions, one log file per run.
 # Usage: scripts/e2e-linux.sh <image> <spec> <runs> [logdir]     e.g. scripts/e2e-linux.sh ghcr.io/magicalwig34653/todo-backend:sha-b64438b calendar 6
 # Optional: PW_ARGS="--trace=retain-on-failure" adds Playwright arguments (the trace ends up in results-<spec>-<n>/).
+# Optional: PW_CPUS=1 limits the browser container (the CI runner is slower than a Mac and shows races earlier).
 # Needs Docker with the log directory (default ~/.cache/e2e-linux) shared into the VM (about 3.6 GB for the Playwright image). Chromium only. Note: on an Apple Silicon Mac this is Linux/arm64
 # with the VM's CPUs, CI is Linux/amd64; timing differs, the Linux-specific rendering and scrollbars are the same.
 set -u
@@ -23,7 +24,7 @@ for i in $(seq 1 "$RUNS"); do
     -e RP_ORIGIN=http://localhost:8080 -e OAUTH_ISSUER=http://localhost:8080 -e BOOTSTRAP_TOKEN=dev-bootstrap-only \
     --entrypoint sh "$IMAGE" -c 'todo-app migrate --yes && exec todo-app serve --env production --hostname 0.0.0.0 --port 8080' >/dev/null
   # Playwright shares the backend's network namespace, so "localhost:8080" is the backend for the browser too.
-  docker run --rm --network "container:$NAME" -v "$WORK:/work" -w /work -e E2E_BASE_URL=http://localhost:8080 "$PW" sh -c '
+  docker run --rm ${PW_CPUS:+--cpus "$PW_CPUS"} --network "container:$NAME" -v "$WORK:/work" -w /work -e E2E_BASE_URL=http://localhost:8080 "$PW" sh -c '
     n=0; until curl -fsS -o /dev/null http://localhost:8080/health/live; do n=$((n+1)); [ $n -gt 60 ] && exit 3; sleep 1; done
     npx playwright test e2e/'"$SPEC"'.spec.ts --project=chromium --reporter=line --output=test-results/run '"${PW_ARGS:-}" >"$LOGDIR/$SPEC-$i.log" 2>&1
   rc=$?

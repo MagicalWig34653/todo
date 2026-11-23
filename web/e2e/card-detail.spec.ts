@@ -507,11 +507,11 @@ test('composer: send button is always in the field, disabled when empty, Ctrl+En
 	// The overview card: the link to the detail is a button inside the card, not floating below it.
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto(`/project/${ids.project}`);
-	if (!(await page.getByTestId('project-tabs').isVisible())) {
-		await page.getByTestId('display-menu').click();
-		await page.getByTestId('mode-management').click();
-		await page.keyboard.press('Escape');
-	}
+	// Always switch explicitly: `isVisible()` is a snapshot, and until the preferences have loaded the app shows the management view
+	// that it then leaves again for a classic project (the tabs vanished after the check, 3 of 12 CPU-limited Linux runs).
+	await page.getByTestId('display-menu').click();
+	await page.getByTestId('mode-management').click();
+	await page.keyboard.press('Escape');
 	await expect(page.getByTestId('project-tabs')).toBeVisible();
 	await page.setViewportSize({ width: 390, height: 800 });
 	await page.goto('/overview');
