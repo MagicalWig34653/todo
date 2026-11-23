@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: Todolino – Ausgehender Webhook für Personenaktionen
+  version: 1.0.0
+  description: 'ADR 0035 (Karte 06EB19A3). Ein Webhook je Person: Todolino ruft eine vom Menschen gesetzte https-Adresse auf, sobald die Person selbst
+    etwas tut (Antwort auf eine Frage, Entscheidung über ein Review, Kommentar, Aufgabe angelegt/verschoben/Status geändert), damit ein wartender Empfänger
+    (z. B. ein Orchestrator) nachsieht. Der Aufruf trägt keinen Text: nur eine Anzahl und die Art der Aktionen.
+
+    Verwaltung ausschließlich mit Personen-Sitzung (Bearer-Sitzungstoken oder Cookie todo_session, requireUser). OAuth-Access-Tokens von MCP-Verbindungen
+    erhalten 401; es gibt kein MCP-Werkzeug zum Lesen oder Ändern. Wie bei der Brain-Vollmacht (contracts/connections.yaml) kann sich ein Agent den
+    Webhook nicht selbst einrichten oder umlenken.
+
+    Die URL ist ein Geheimnis. Sie wird nur als AES-256-GCM-Chiffretext gespeichert (Schlüsselring SETTINGS_ENCRYPTION_KEY, Zusatzdaten
+    todolino.webhook.v1:<userID>:url bzw. :signing) und von keiner Antwort, keinem Protokoll, keinem Fehlertext und keinem Log ausgegeben. Die API nennt nur
+    eine Maske (Schema und Host, Pfad und Query nie) und die Flags configured und signingConfigured. Ohne Schlüssel am Server: 409 encryption_key_missing.
+
+    Auslöser: ActivityEvent mit actorType Person und actorId = Webhook-Besitzer, kind aus der festen Liste question.answered, review.accepted,
+    review.changes_requested, comment.created, task.created, task.moved, task.status_changed, im Projekt der Karte nicht in excludedProjectIDs.
+    Aktionen von Integrationen (MCP, OAuth-Verbindungen, Brain-Vollmacht, Runner) lösen nie aus, auch dann nicht, wenn ein gemeinsamer Schreibpfad die
+    Aktion unter dem Namen der Person bucht. Von Personen angelegte Folgekarten (Wiederholung) zählen nicht. Unterprojekte erben Ausschlüsse nicht.
+    Ein Fehler im Auslöser lässt die Anfrage der Person nie scheitern.
+
+    Bündeln: Ereignisse derselben Person innerhalb von 60 Sekunden nach dem ersten ergeben einen Aufruf (anzahl, kinds als sortierte Menge); danach
+    beginnt ein neues Bündel. Auch mit mehreren Server-Replikaten gibt es nie zwei offene Bündel je Person.
+
+    Zustellung (Worker mit Lease, ein Replikat je Lauf): nur https; SSRF-Schutz immer Stufe strict (keine Loopback-, privaten, Link-Local-, CGNAT-,
+    Metadaten-, Multicast- und reservierten Adressen, IPv4-mapped/-kompatibles IPv6, NAT64 und 6to4 nach der eingebetteten Adresse), unabhängig von
+    der Server-Einstellung für SMTP/S3, beim Speichern (IP-Literal und Namensauflösung) und bei jeder Zustellung; die Verbindung geht nur zur geprüften
+    Adresse (kein zweiter DNS-Lookup). Keine Weiterleitungen (3xx ist ein Fehler), Gesamt-Timeout 10 s, der Antworttext wird nicht gelesen, kein
+    Authorization-Header, keine Cookies, kein Proxy, keine Zugangsdaten in der URL.
+
+    Nutzlast (JSON, vom Encoder erzeugt, Schlüssel alphabetisch): {"anzahl":n,"event":"person_action","kinds":[...sortiert...]}; Test: {"anzahl":0,"event":"test","kinds":[]}.
+    Header Content-Type application/json, User-Agent Todolino-Webhook/1. Mit Signaturgeheimnis zusätzlich X-Todolino-Timestamp (Unix-Sekunden) und
+    X-Todolino-Signature: sha256=<hex> = HMAC-SHA256(Geheimnis, "<timestamp>.<body>").
+
+    Wiederholung: Netzfehler, Timeout, 408, 425, 429 und 5xx bis zu 6 Versuche mit 30 s, 2 min, 10 min, 30 min, 2 h Abstand (+-10 %), danach failed.
+    Andere 4xx, 3xx, gesperrte Ziele und ein nicht entschlüsselbares Geheimnis sind sofort failed. Nach 10 aufeinanderfolgenden fehlgeschlagenen Bündeln
+    schaltet der Server den Webhook ab (enabled false); die Person schaltet ihn wieder ein (PUT enabled true setzt den Zähler zurück).
+    Fehlercodes in Protokoll und Antworten sind Kurzcodes ohne Host oder Adresse: timeout, network_error, tls_error, dns_error, http_<status>,
+    redirect_not_followed, target_blocked, webhook_url_invalid, webhook_url_not_https, webhook_disabled, encryption_key_missing, encryption_key_unreadable, http_unexpected.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/settings/webhook:
+    get:
+      operationId: getWebhook
+      summary: Eigener Webhook (ohne URL)
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {$ref: '#/components/schemas/WebhookSettings'}}}}
+        '401': {description: Nicht angemeldet oder OAuth-Token statt Sitzung}
+    put:
+      operationId: updateWebhook
+      summary: Webhook einrichten oder teilweise ändern
+      description: 'Felder, die fehlen, bleiben unverändert. url null löscht den Webhook samt Ausschlüssen und Protokoll (wie DELETE); signingSecret null entfernt
+        das Geheimnis. Ohne gespeicherten Webhook ist url Pflicht (sonst 409 webhook_not_configured). Alles wird vor dem Schreiben geprüft: schlägt eine
+        Prüfung fehl, bleibt der Bestand unverändert. url wird nie zurückgegeben und nie in einem Fehlertext wiederholt. Ein neuer Wert für url setzt
+        den Fehlerzähler zurück; enabled true nach automatischer Abschaltung ebenfalls.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateWebhook'}
+      responses:
+        '200': {description: Neuer Stand, content: {application/json: {schema: {$ref: '#/components/schemas/WebhookSettings'}}}}
+        '400': {description: 'reason webhook_url_invalid (Syntax, Zugangsdaten, Länge, Port, Host), webhook_url_not_https, webhook_url_blocked (IP-Literal oder Auflösung in gesperrten Adressraum), webhook_signing_secret_invalid (16 bis 256 Byte), webhook_exclusions_invalid (mehr als 500)'}
+        '401': {description: Nicht angemeldet oder OAuth-Token statt Sitzung}
+        '404': {description: 'Ein Projekt in excludedProjectIDs existiert nicht oder ist für die Person nicht lesbar (beides gleich)'}
+        '409': {description: 'reason encryption_key_missing (Server ohne SETTINGS_ENCRYPTION_KEY) oder webhook_not_configured'}
+    delete:
+      operationId: deleteWebhook
+      summary: Webhook löschen (Chiffretext, Ausschlüsse, Protokoll)
+      responses:
+        '204': {description: Gelöscht (auch wenn keiner eingerichtet war)}
+        '401': {description: Nicht angemeldet oder OAuth-Token statt Sitzung}
+  /v1/settings/webhook/test:
+    post:
+      operationId: testWebhook
+      summary: Testaufruf sofort senden
+      description: 'Stellt sofort einen Aufruf mit event test zu (ein Versuch, kein Puffer, keine Wiederholung) und trägt das Ergebnis ins Protokoll ein.
+        Auch bei enabled false erlaubt. Zählt nicht als fehlgeschlagenes Bündel. Höchstens ein Test je 10 Sekunden und Person.'
+      responses:
+        '200': {description: 'Ergebnis; state sent oder failed (errorCode nennt den Grund)', content: {application/json: {schema: {$ref: '#/components/schemas/WebhookDelivery'}}}}
+        '401': {description: Nicht angemeldet oder OAuth-Token statt Sitzung}
+        '409': {description: 'reason webhook_not_configured'}
+        '429': {description: 'reason rate_limited, Retry-After 10'}
+  /v1/settings/webhook/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      summary: Zustellprotokoll (letzte 50, neueste zuerst)
+      description: 'Nur das eigene Konto. Keine URL, keine Host-Angabe, kein Antworttext. Aufbewahrung 14 Tage (Aufräumen im Worker).'
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {$ref: '#/components/schemas/WebhookDeliveries'}}}}
+        '401': {description: Nicht angemeldet oder OAuth-Token statt Sitzung}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    WebhookSettings:
+      type: object
+      required: [configured, enabled, signingConfigured, excludedProjectIDs, consecutiveFailures]
+      properties:
+        configured: {type: boolean}
+        maskedURL: {type: string, description: 'Nur wenn configured: https://host/… (Schema und Host; Pfad, Query und Port nie)'}
+        enabled: {type: boolean, description: 'false, wenn die Person ausgeschaltet hat oder der Server nach 10 fehlgeschlagenen Bündeln in Folge abgeschaltet hat (dann consecutiveFailures 10)'}
+        signingConfigured: {type: boolean}
+        excludedProjectIDs: {type: array, items: {type: string, format: uuid}, description: 'Genau diese Projekte, keine Vererbung auf Unterprojekte'}
+        consecutiveFailures: {type: integer, minimum: 0, description: 'Fehlgeschlagene Bündel seit dem letzten Erfolg'}
+        lastDelivery: {$ref: '#/components/schemas/WebhookDelivery'}
+    UpdateWebhook:
+      type: object
+      properties:
+        url: {type: [string, 'null'], description: 'https-Adresse (höchstens 2048 Zeichen, ohne Zugangsdaten). null löscht den Webhook.'}
+        signingSecret: {type: [string, 'null'], description: '16 bis 256 Byte; schaltet die HMAC-Signatur ein. null entfernt sie. Wird nie ausgegeben.'}
+        enabled: {type: boolean}
+        excludedProjectIDs: {type: array, maxItems: 500, items: {type: string, format: uuid}, description: 'Ersetzt die Liste; nur eigene lesbare Projekte'}
+    WebhookDelivery:
+      type: object
+      required: [id, event, state, attempts, anzahl, kinds, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        event: {type: string, enum: [person_action, test]}
+        state: {type: string, enum: [pending, sent, failed]}
+        attempts: {type: integer}
+        httpStatus: {type: [integer, 'null'], description: 'Statuscode der letzten Antwort, falls es eine gab'}
+        errorCode: {type: [string, 'null'], description: 'Kurzcode des letzten Fehlers (siehe Beschreibung oben); nie Host, Adresse oder Antworttext'}
+        anzahl: {type: integer, description: 'Anzahl der gebündelten Aktionen (0 beim Test)'}
+        kinds:
+          type: array
+          items: {type: string, enum: [question.answered, review.accepted, review.changes_requested, comment.created, task.created, task.moved, task.status_changed]}
+          description: 'Sortierte Menge'
+        createdAt: {type: string, format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time}
+        nextAttemptAt: {type: [string, 'null'], format: date-time, description: 'Nur bei state pending'}
+    WebhookDeliveries:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/WebhookDelivery'}}

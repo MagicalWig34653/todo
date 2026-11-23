@@ -41,7 +41,7 @@ struct WebhookDeliverer: Sendable {
             catch is OutboundBlocked { return .failed(code: "target_blocked", status: nil) }
             catch { return .retry(code: "dns_error", status: nil) }
         }
-        guard !OutboundGuard.isBlocked(address, .strict) else { return .failed(code: "target_blocked", status: nil) }
+        guard !WebhookTarget.isBlocked(address) else { return .failed(code: "target_blocked", status: nil) }
 
         let body: Data
         do { body = try payload.encoded() } catch { return .failed(code: "internal_error", status: nil) }

@@ -89,14 +89,14 @@ struct WebhookService: Sendable {
     /// Checks the target at save time: https, no credentials, literal IPs and the resolved address at level strict.
     func validate(_ url: WebhookURL) async throws {
         if let literal = url.literalIP {
-            guard !OutboundGuard.isBlocked(literal, .strict) else { throw Abort(.badRequest, reason: "webhook_url_blocked") }
+            guard !WebhookTarget.isBlocked(literal) else { throw Abort(.badRequest, reason: "webhook_url_blocked") }
             return
         }
         let address: String
         do { address = try await app.webhookResolver.resolve(host: url.host, port: url.port) }
         catch is OutboundBlocked { throw Abort(.badRequest, reason: "webhook_url_blocked") }
         catch { throw Abort(.badRequest, reason: "webhook_url_invalid") }
-        guard !OutboundGuard.isBlocked(address, .strict) else { throw Abort(.badRequest, reason: "webhook_url_blocked") }
+        guard !WebhookTarget.isBlocked(address) else { throw Abort(.badRequest, reason: "webhook_url_blocked") }
     }
 
     func update(_ request: WebhookUpdateRequest) async throws -> WebhookSettingsDTO {

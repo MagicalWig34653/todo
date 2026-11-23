@@ -253,7 +253,7 @@ final class WebhookDeliveryTests: XCTestCase {
             let again = try await f.worker().tick(now: Date().addingTimeInterval(86_400))
             XCTAssertEqual(again.retried, 0)
             // A resolver that wrongly hands out a blocked address is caught by the service as well.
-            for blocked in ["127.0.0.1", "169.254.169.254", "::1", "fd00::1", "::ffff:10.0.0.1", "100.64.1.1"] {
+            for blocked in ["127.0.0.1", "169.254.169.254", "::1", "fd00::1", "::ffff:10.0.0.1", "100.64.1.1", "64:ff9b::a00:1", "2002:c0a8:1::", "224.0.0.1"] {
                 f.resolver.set("hooks.example.test", blocked)
                 let attempt = await WebhookDeliverer(app: f.app).attempt(endpoint: try await f.ep(), payload: .test, now: Date())
                 XCTAssertEqual(attempt, .failed(code: "target_blocked", status: nil), blocked)

@@ -132,7 +132,11 @@ final class WebhookSettingsTests: XCTestCase {
         try await withWebhook { f in
             let blocked = ["https://127.0.0.1/x", "https://127.1.2.3:8443/x", "https://10.0.0.5/x", "https://192.168.1.10/x", "https://172.16.0.1/x",
                            "https://169.254.169.254/latest/meta-data", "https://100.64.0.1/x", "https://0.0.0.0/x",
-                           "https://[::1]/x", "https://[fd00::1]/x", "https://[fe80::1]/x", "https://[::ffff:10.0.0.1]/x", "https://[::ffff:127.0.0.1]/x", "https://[fd00:ec2::254]/x"]
+                           "https://[::1]/x", "https://[fd00::1]/x", "https://[fe80::1]/x", "https://[::ffff:10.0.0.1]/x", "https://[::ffff:127.0.0.1]/x", "https://[fd00:ec2::254]/x",
+                           // Transition mechanisms that embed an internal IPv4 address, multicast and reserved ranges.
+                           "https://[64:ff9b::a00:1]/x", "https://[2002:a00:1::]/x", "https://[::10.0.0.1]/x", "https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/x",
+                           "https://[64:ff9b:1::1]/x", "https://[ff02::1]/x", "https://[fec0::1]/x", "https://224.0.0.1/x", "https://240.0.0.1/x",
+                           "https://198.18.0.1/x", "https://192.0.0.8/x"]
             for url in blocked {
                 let r = try await f.put(["url": url])
                 XCTAssertEqual(r.status, .badRequest, url)

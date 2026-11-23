@@ -358,23 +358,24 @@ final class WebhookTriggerTests: XCTestCase {
                 }, afterResponse: { res async in outcome = "\(res.status.code) " + String(buffer: res.body).prefix(160) })
                 return outcome
             }
+            let count = TestApp.useMariaDB ? 40 : 12
             var results: [String] = []
             if TestApp.useMariaDB {
                 // Truly concurrent writers on both replicas (SQLite allows one writing process at a time: "database is locked").
                 let apps = [f.app, replica.app]
                 results = await withTaskGroup(of: String.self) { group in
-                    for i in 0..<12 { let target = apps[i % 2]; group.addTask { await post(target) } }
+                    for i in 0..<count { let target = apps[i % 2]; group.addTask { await post(target) } }
                     var all: [String] = []
                     for await s in group { all.append(s) }
                     return all
                 }
             } else {
-                for i in 0..<12 { results.append(await post(i.isMultiple(of: 2) ? f.app : replica.app)) }
+                for i in 0..<count { results.append(await post(i.isMultiple(of: 2) ? f.app : replica.app)) }
             }
-            XCTAssertEqual(results.filter { $0.hasPrefix("201") }.count, 12, "\(Set(results))")
+            XCTAssertEqual(results.filter { $0.hasPrefix("201") }.count, count, "\(Set(results))")
             let rows = try await f.rows()
             XCTAssertEqual(rows.count, 1, "no duplicate open row across replicas")
-            XCTAssertEqual(rows.first?.anzahl, 12, "no event is lost")
+            XCTAssertEqual(rows.first?.anzahl, count, "no event is lost")
         }
     }
 }
