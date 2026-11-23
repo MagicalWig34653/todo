@@ -146,7 +146,11 @@ struct DeleteAccountCommand: AsyncCommand {
     let help = "Delete an account including everything it owns; other accounts receive sync tombstones for objects they lose."
     func run(using context: CommandContext, signature: Signature) async throws {
         guard let id = UUID(uuidString: signature.userID) else { throw Abort(.badRequest, reason: "invalid_user_id") }
-        guard signature.yes else { throw Abort(.badRequest, reason: "confirmation_required: pass --yes") }
+        // ConsoleKit consumes `--yes`/`-y` itself (it answers confirmations) and hands it over as `confirmOverride`,
+        // so the command's own flag only ever sees `true` if the framework stops doing that.
+        guard signature.yes || context.console.confirmOverride == true else {
+            throw Abort(.badRequest, reason: "confirmation_required: pass --yes")
+        }
         let r = try await AccountDeletion.delete(userID: id, on: context.application.db)
         context.console.print("Deleted account \(id): \(r.projects) owned projects, \(r.tasks) remaining owned tasks, \(r.grants) grants, \(r.teams) founded teams handed over or removed.")
     }

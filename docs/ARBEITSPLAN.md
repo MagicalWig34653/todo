@@ -175,6 +175,7 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 - [x] Kontolöschung mit Tombstones (`App delete-account`), Tests SQLite
 - [x] `CleanupScheduler` mit `maintenance_leases` (`CLEANUP_INTERVAL_MINUTES`, 360, 0 = aus), `/health/ready` informativ
 - [x] (31.10.2026 MariaDB-Volllauf grün, Rest siehe Text) MariaDB-Läufe der neuen Tests (`SyncRetentionTests`) nachholen, falls im Checkpoint offen; Client-Seite (PWA/Apple): 410 `cursor_expired` behandeln = lokalen Cache des Kontos verwerfen, ab `c0` neu laden
+- [x] Kontolöschung: fremde Unterprojekte unter gelöschtem Projekt bleiben erhalten (Karte BCA27B3D), Team-Gründer blockiert die Löschung nicht mehr (Karte 69439B31); Tests SQLite und MariaDB, E2E `scripts/account-deletion-e2e.sh` (23.11.2026)
 - [ ] Selbstbedienungs-Route zur Kontolöschung (bisher nur CLI)
 
 ## Checkpoint 31.10.2026 (Dokumentation und Projektseite konsolidiert)

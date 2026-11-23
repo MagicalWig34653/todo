@@ -25,6 +25,11 @@ jobs:
         run: scripts/check-third-party-notices.sh
       - name: Test (SQLite; MariaDB-only tests are skipped)
         run: swift test
+      # Real backend + operator command `delete-account` (cards BCA27B3D, 69439B31); the scratch SQLite lives in RUNNER_TEMP.
+      - name: Account deletion E2E (native backend, REST, delete-account)
+        run: |
+          apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
+          scripts/account-deletion-e2e.sh "$RUNNER_TEMP/account-deletion-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)

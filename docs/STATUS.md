@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 24.11.2026 (00:20): Kontolöschung: fremde Unterprojekte und Team-Gründer (Karten BCA27B3D, 69439B31; kein Deploy)
+
+- Ziel: `App delete-account` darf keine Unterprojekte anderer Konten mitlöschen und nicht an `sharing_teams.founder_id` scheitern (Funde aus dem Gegenlesen der Karte 5C41205D).
+- Umgesetzt (`Sources/TodoKit/Maintenance/AccountDeletion.swift`): Vor dem Löschen eines Projekts hängt `liftSurvivors` alle bleibenden Kinder (auch über gelöschte Zwischenprojekte hinweg, mit eigenem Teilbaum, Version +1) auf das Elternprojekt des gelöschten; bei Kettenlöschung wandern sie in der nächsten Runde weiter, sonst auf die oberste Ebene. Teams mit dem Konto als Gründer: Gründerrolle an das erste akzeptierte Mitglied (Admins zuerst, dann Id), das Mitglied wird Admin; ohne weiteres akzeptiertes Mitglied wird das Team samt Grants entfernt, Projekte mit Team-Eigentum fallen auf den Ersteller zurück. Ausgabe nennt `teams`.
+- Zusatzfund und Fix: ConsoleKit verbraucht `--yes`/`-y` selbst (setzt nur `console.confirmOverride`), das eigene `@Flag(name: "yes")` sah nie `true`; `delete-account --yes` brach daher immer mit `confirmation_required` ab. Jetzt `signature.yes || confirmOverride == true`. Gleicher Fehler bei `settings rotate-key` und dem Push-Testbefehl: eigene Karte 300B3A20 (nicht behoben).
+- Tests: rot 18b987d (SQLite: FOREIGN KEY constraint failed bzw. Unterprojekt fehlt; MariaDB: "Cannot delete or update a parent row" bzw. dasselbe), grün 6a2d62a (`AccountDeletionTests` 3/3 SQLite und MariaDB). E2E `scripts/account-deletion-e2e.sh` (echtes Backend, Scratch-SQLite, drei Konten, REST und echter `delete-account --yes`): 13 Prüfungen grün; ohne die beiden Fixes rot (Löschung bricht mit FOREIGN KEY ab). Als Schritt "Account deletion E2E" im CI-Job `backend`. `swift test` SQLite 770 Tests, 20 uebersprungen, 0 Fehler.
+- Entscheidungen (am Board protokolliert): fremde Unterprojekte werden umgehängt statt übertragen; neuer Gründer wird immer Admin (ein Gründer ist nicht entfernbar und Admin); verwaiste Teams werden gelöscht.
+- Grenzen: Der E2E laeuft nur gegen SQLite (MariaDB ueber die Swift-Tests); die CI-Variante im Linux-Container (apt-Pakete) ist erst mit dem Push belegt. Eine Selbstbedienungsroute zur Kontolöschung gibt es weiterhin nicht (bleibt offen in ARBEITSPLAN).
+
 ## Nachtrag 23.11.2026 (19:35): Ausgehender Webhook fuer Personenaktionen (Karte 06EB19A3; kein Deploy)
 
 - Ziel: Todolino ruft serverseitig die von der Person hinterlegte https-Adresse auf, wenn die Person selbst handelt (Frage beantwortet, Review entschieden, Kommentar, Karte angelegt/verschoben/Status), fuer alle ihre Projekte ausser den ausgeschlossenen; Nutzlast nur `{event, anzahl, kinds}`. Damit kann der Waechter-Weckruf nach dem Deploy abgeschaltet werden.
