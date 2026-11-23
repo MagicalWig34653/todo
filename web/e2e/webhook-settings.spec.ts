@@ -183,7 +183,7 @@ test('the address field is masked and not remembered by the browser', async () =
 	await expect(f).toHaveAttribute('type', 'password');
 	// "new-password" plus the opt-outs of the common password managers: the address is a secret and must not be offered or saved.
 	await expect(f).toHaveAttribute('autocomplete', 'new-password');
-	await expect(f).toHaveAttribute('data-1p-ignore', '');
+	await expect(f).toHaveAttribute('data-1p-ignore', 'true');
 	await expect(f).toHaveAttribute('data-lpignore', 'true');
 	await expect(f).toHaveAttribute('data-form-type', 'other');
 	await expect(f).toHaveAttribute('spellcheck', 'false');
