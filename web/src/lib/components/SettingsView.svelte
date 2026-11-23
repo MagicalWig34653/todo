@@ -16,6 +16,7 @@
 	import RecoveryPage from './settings/RecoveryPage.svelte';
 	import ConnectionsPage from './settings/ConnectionsPage.svelte';
 	import BrainMandatePage from './settings/BrainMandatePage.svelte';
+	import WebhookPage from './settings/WebhookPage.svelte';
 	import RunnerPage from './settings/RunnerPage.svelte';
 	import DataPage from './settings/DataPage.svelte';
 	import AdminAccounts from './settings/AdminAccounts.svelte';
@@ -138,6 +139,8 @@
 				<ConnectionsPage onopen={onarea} />
 			{:else if id === 'brain-vollmacht'}
 				<BrainMandatePage onopen={onarea} />
+			{:else if id === 'webhook'}
+				<WebhookPage />
 			{:else if id === 'runner'}
 				<RunnerPage onagents={() => onnav('agents')} />
 			{:else if id === 'mcp'}

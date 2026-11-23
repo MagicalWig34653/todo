@@ -36,11 +36,14 @@ failed=""; advisory=""; ran=0
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 
+# The webhook spec saves an address, which needs the server's settings encryption key (ADR 0035). A throwaway key per run, only
+# in the container environment, never written anywhere.
+ENC_KEY="$(head -c 32 /dev/urandom | base64)"
 start_backend() {
   cleanup
   docker run -d --rm --name "$NAME" -p "127.0.0.1:$PORT:8080" \
     -e DATABASE_DRIVER=sqlite -e DB_NAME=/tmp/e2e.sqlite \
-    -e RP_ID=localhost -e RP_NAME=Todolino -e RP_ORIGIN="$ORIGIN" -e OAUTH_ISSUER="$ORIGIN" -e BOOTSTRAP_TOKEN=dev-bootstrap-only \
+    -e RP_ID=localhost -e RP_NAME=Todolino -e RP_ORIGIN="$ORIGIN" -e OAUTH_ISSUER="$ORIGIN" -e BOOTSTRAP_TOKEN=dev-bootstrap-only -e SETTINGS_ENCRYPTION_KEY="$ENC_KEY" \
     --entrypoint sh "$IMAGE" -c 'todo-app migrate --yes && exec todo-app serve --env production --hostname 0.0.0.0 --port 8080' >/dev/null || return 1
   i=0
   until curl -fsS -o /dev/null "$ORIGIN/health/live" 2>/dev/null; do

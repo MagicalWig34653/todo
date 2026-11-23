@@ -5,6 +5,7 @@ import { deAdminSettings } from './de-admin-settings.js';
 import { deAutoStart } from './de-autostart.js';
 import { deNow } from './de-now.js';
 import { deBrainMandate } from './de-brain-mandate.js';
+import { deWebhook } from './de-webhook.js';
 
 export const de = {
 	...deNotify,
@@ -13,6 +14,7 @@ export const de = {
 	...deAutoStart,
 	...deNow,
 	...deBrainMandate,
+	...deWebhook,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',

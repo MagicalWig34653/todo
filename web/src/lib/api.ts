@@ -3,6 +3,7 @@ import type { ActionRequest, ForYouPage } from './forYou.js';
 import type { BatchResponse } from './reviewBulk.js';
 import type { ReviewVariant } from './reviewVariants.js';
 import type { BrainAuditItem, BrainMandate } from './brainMandate.js';
+import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -1376,7 +1377,17 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		/** Revokes the mandate of one connection at once; the others stay. Idempotent. */
 		revokeBrainMandate: (grantID: string) => request<void>('DELETE', `/settings/brain-mandate/${encodeURIComponent(grantID)}`),
 		/** Decisions made under the mandate, newest first (at most 200). */
-		listBrainAudit: async () => (await request<{ items: BrainAuditItem[] }>('GET', '/settings/brain-mandate/audit')).items
+		listBrainAudit: async () => (await request<{ items: BrainAuditItem[] }>('GET', '/settings/brain-mandate/audit')).items,
+
+		// Outgoing webhook (contracts/webhook.yaml, ADR 0035): person session only. The API never returns the address, only a mask.
+		getWebhook: () => request<WebhookSettings>('GET', '/settings/webhook'),
+		/** Fields that are left out stay as they are; `url: null` deletes the webhook. Errors: 400 webhook_*, 404 project, 409 encryption_key_missing / webhook_not_configured. */
+		updateWebhook: (body: UpdateWebhook) => request<WebhookSettings>('PUT', '/settings/webhook', body),
+		deleteWebhook: () => request<void>('DELETE', '/settings/webhook'),
+		/** Sends a test call at once and returns its protocol entry (429 rate_limited: one per 10 s). */
+		testWebhook: () => request<WebhookDelivery>('POST', '/settings/webhook/test', {}),
+		/** The last 50 deliveries, newest first. */
+		listWebhookDeliveries: async () => (await request<{ items: WebhookDelivery[] }>('GET', '/settings/webhook/deliveries')).items
 	};
 }
 
