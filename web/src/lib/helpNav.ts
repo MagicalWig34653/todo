@@ -16,7 +16,7 @@ export const HELP_PAGES: HelpPage[] = [
 export const DOCS_URL = 'https://magicalwig34653.github.io/todo/';
 export const ISSUES_URL = 'https://github.com/MagicalWig34653/todo/issues';
 /** Server configuration guide, section "Einstellungsprogramm settings.sh" (used by the webhook page when the server has no encryption key). */
-export const KONFIGURATION_URL = 'STUB';
+export const KONFIGURATION_URL = 'https://github.com/MagicalWig34653/todo/blob/main/docs/KONFIGURATION.md#einstellungsprogramm-settingssh-env-datei-per-menü-oder-kommandozeile';
 export const CHANGELOG_URL = 'https://github.com/MagicalWig34653/todo/commits/main';
 
 /** Page id -> English URL slug (`/help/<slug>`); other ids are their own slug. */

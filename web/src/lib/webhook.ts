@@ -312,12 +312,29 @@ export const KEY_COMMAND = 'deploy/swarm/settings.sh --generate SETTINGS_ENCRYPT
 
 export type WebhookSetup = 'nokey' | 'nourl' | 'ready';
 
-/** STUB (card F5D261AF, red state). */
-export function webhookSetup(_s: WebhookSettings | null | undefined): WebhookSetup {
-	return 'ready';
+/**
+ * What the page has to lead with: no usable server key (nothing can be saved), no stored address yet, or ready. A server that does
+ * not send `encryptionKeyAvailable` (older than contract 1.1.0) counts as having a key; the save then answers for itself.
+ */
+export function webhookSetup(s: WebhookSettings | null | undefined): WebhookSetup {
+	if (s?.encryptionKeyAvailable === false) return 'nokey';
+	return s?.configured ? 'ready' : 'nourl';
 }
 
-/** STUB (card F5D261AF, red state). */
-export function lastTestDelivery(_list: readonly (WebhookDelivery | null | undefined)[]): WebhookDelivery | null {
-	return null;
+const timeOf = (d: WebhookDelivery) => {
+	const ms = Date.parse(d.createdAt);
+	return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+};
+
+/**
+ * The newest delivery with event `test` among the given ones (protocol, `lastDelivery` of the settings, a fresh result), or null.
+ * Order of the input does not matter; of equal times the first wins; an unreadable time loses against a readable one.
+ */
+export function lastTestDelivery(list: readonly (WebhookDelivery | null | undefined)[]): WebhookDelivery | null {
+	let best: WebhookDelivery | null = null;
+	for (const d of list) {
+		if (!d || d.event !== 'test') continue;
+		if (!best || timeOf(d) > timeOf(best)) best = d;
+	}
+	return best;
 }

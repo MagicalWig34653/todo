@@ -40,6 +40,9 @@ struct WebhookSettingsDTO: Content {
     /// Failed bundles in a row; at 10 the server switches the webhook off (`enabled` false).
     let consecutiveFailures: Int
     let lastDelivery: WebhookDeliveryDTO?
+    /// Whether the server has a current encryption key, i.e. whether saving the address or the signing secret can work at all.
+    /// Only this flag: never the key, its id or anything derived from it (card F5D261AF).
+    let encryptionKeyAvailable: Bool
 }
 
 /// `url` and `signingSecret`: absent = unchanged, `null` = delete, string = set. Hence the manual decoding.
@@ -83,7 +86,8 @@ struct WebhookService: Sendable {
         return WebhookSettingsDTO(
             configured: endpoint != nil, maskedURL: endpoint.map { $0.urlMask + "/…" }, enabled: endpoint?.enabled ?? false,
             signingConfigured: endpoint?.signingCiphertext != nil, excludedProjectIDs: excluded,
-            consecutiveFailures: endpoint?.consecutiveFailures ?? 0, lastDelivery: try last.map(WebhookDeliveryDTO.init))
+            consecutiveFailures: endpoint?.consecutiveFailures ?? 0, lastDelivery: try last.map(WebhookDeliveryDTO.init),
+            encryptionKeyAvailable: (try? app.requireSettingsRuntime().keyRing.canEncrypt) ?? false)
     }
 
     /// Checks the target at save time: https, no credentials, literal IPs and the resolved address at level strict.

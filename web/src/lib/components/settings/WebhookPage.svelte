@@ -5,11 +5,14 @@
 	import { describeError } from '#lib/errors.js';
 	import { t } from '#lib/i18n/index.js';
 	import { createLatest } from '#lib/serial.js';
+	import { KONFIGURATION_URL } from '#lib/helpNav.js';
 	import {
 		AUTO_DISABLE_FAILURES,
+		KEY_COMMAND,
 		MAX_EXCLUSIONS,
 		deliveryRow,
 		exclusionsChanged,
+		lastTestDelivery,
 		orderedProjects,
 		prefillExclusions,
 		safeMask,
@@ -18,6 +21,7 @@
 		toggleExclusion,
 		urlInput,
 		webhookErrorKey,
+		webhookSetup,
 		webhookStatus,
 		type WebhookDelivery,
 		type WebhookSettings
@@ -27,6 +31,7 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import Timestamp from '../Timestamp.svelte';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 
 	/**
 	 * Settings page "Webhook" (ADR 0035): one outgoing wake-up call per person. The address is a secret: it is typed into a masked
@@ -50,6 +55,9 @@
 	let withChildren = $state(false);
 	let confirmingRemove = $state(false);
 	let testResult = $state<{ ok: boolean; text: string } | null>(null);
+	// The result of the test sent in this view (kept when the protocol cannot be loaded) and the hint right after saving the address.
+	let freshTest = $state<WebhookDelivery | null>(null);
+	let justSaved = $state(false);
 	let busy = $state<Section | null>(null);
 	let message = $state('');
 	let error = $state<{ section: Section; text: string } | null>(null);
@@ -60,6 +68,10 @@
 	let removeButton = $state<HTMLButtonElement | null>(null);
 
 	const status = $derived(webhookStatus(settings));
+	const setup = $derived(webhookSetup(settings));
+	const noKey = $derived(setup === 'nokey');
+	const lastTest = $derived(lastTestDelivery([...deliveries, settings?.lastDelivery, freshTest]));
+	const lastTestRow = $derived(lastTest ? deliveryRow(lastTest) : null);
 	const configured = $derived(status !== 'none');
 	const mask = $derived(safeMask(settings?.maskedURL));
 	const rows = $derived(orderedProjects(projects));
@@ -136,7 +148,8 @@
 	async function saveURL(ev: SubmitEvent) {
 		ev.preventDefault();
 		const value = url;
-		if (!value || busy) return;
+		if (!value || busy || noKey) return;
+		justSaved = false;
 		const ok = await act('url', async () => {
 			settings = await api.updateWebhook({ url: value });
 			urlValue = '';
@@ -144,6 +157,7 @@
 			message = t('webhook.url.saved');
 		});
 		if (ok) {
+			justSaved = true;
 			await tick();
 			focusField('wh-url');
 		}
@@ -215,6 +229,8 @@
 			urlValue = '';
 			signingValue = '';
 			testResult = null;
+			freshTest = null;
+			justSaved = false;
 			await load();
 			message = t('webhook.remove.done');
 		});
@@ -223,10 +239,14 @@
 			focusField('wh-url');
 		} else confirmingRemove = false;
 	}
+	/** The one handler of every "Test senden" button (address card and test area). */
 	async function sendTest() {
+		if (!configured) return;
 		testResult = null;
+		justSaved = false;
 		await act('test', async () => {
 			const result = await api.testWebhook();
+			freshTest = result;
 			testResult = testOutcome(result);
 			await Promise.all([refreshDeliveries(), refreshSettings()]);
 		});
@@ -260,8 +280,34 @@
 
 <div class="flex max-w-3xl flex-col gap-4" data-testid="webhook-page">
 	<section class={card} data-testid="wh-intro">
+		{#if loaded && !loadError && noKey}
+			<div class="bg-warning-soft text-warning flex flex-col gap-2 {noteClass}" role="note" aria-labelledby="wh-nokey-title" data-testid="wh-nokey">
+				<p id="wh-nokey-title" class="font-semibold">{t('webhook.nokey.title')}</p>
+				<p>{t('webhook.nokey.text')}</p>
+				<p>{t('webhook.nokey.step')}</p>
+				<p><code class="bg-background text-foreground block rounded-md border px-2 py-1.5 font-mono text-xs break-all select-all" data-testid="wh-nokey-command">{KEY_COMMAND}</code></p>
+				<p>{t('webhook.nokey.after')}</p>
+				<p>
+					<a class="focus-visible:ring-ring/50 inline-flex items-center gap-1 rounded font-medium underline underline-offset-2 outline-none focus-visible:ring-2" href={KONFIGURATION_URL} target="_blank" rel="noopener noreferrer"
+						>{t('webhook.nokey.docs')}<ExternalLink class="size-3.5" aria-hidden="true" /><span class="sr-only">{t('webhook.nokey.newTab')}</span></a
+					>
+				</p>
+			</div>
+		{/if}
 		<p class="text-sm">{t('webhook.intro.what')}</p>
 		<p class="text-sm">{t('webhook.intro.limits')}</p>
+		{#if loaded && !loadError}
+			<p class="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-3 text-sm" data-testid="wh-last-test">
+				<span class="font-medium">{t('webhook.lastTest.label')}</span>
+				{#if lastTest && lastTestRow}
+					<Badge variant={lastTestRow.tone}>{lastTestRow.stateLabel}</Badge>
+					<Timestamp value={lastTest.createdAt} />
+					{#if lastTestRow.state === 'failed' && lastTestRow.resultLabel}<span class="text-muted-foreground min-w-0 text-xs break-words">{lastTestRow.resultLabel}</span>{/if}
+				{:else}
+					<span class="text-muted-foreground">{t('webhook.lastTest.none')}</span>
+				{/if}
+			</p>
+		{/if}
 	</section>
 
 	<div role="status" aria-live="polite" class={message ? 'bg-success-soft text-success {noteClass}' : 'sr-only'} data-testid="wh-message">{message}</div>
@@ -330,12 +376,24 @@
 				/>
 				<p class="text-muted-foreground text-xs" id="wh-url-hint">{t('webhook.url.hint')}{#if configured}{' '}{t('webhook.url.hintReplace')}{/if}</p>
 				{@render notice('url')}
-				<div class="flex flex-wrap gap-2">
-					<Button type="submit" disabled={!!busy || !url} data-testid="wh-url-save">{busy === 'url' ? t('webhook.url.saving') : configured ? t('webhook.url.replace') : t('webhook.url.save')}</Button>
+				{#if justSaved && configured}
+					<p class="bg-success-soft text-success {noteClass}" id="wh-saved-next" data-testid="wh-saved-next">{t('webhook.url.savedNext')}</p>
+				{/if}
+				<div class="flex flex-wrap gap-2" data-testid="wh-url-actions">
+					<Button type="submit" disabled={!!busy || !url || noKey} aria-describedby={noKey ? 'wh-url-nokey-reason' : undefined} data-testid="wh-url-save">{busy === 'url' ? t('webhook.url.saving') : configured ? t('webhook.url.replace') : t('webhook.url.save')}</Button>
+					<Button
+						type="button"
+						variant={justSaved ? 'default' : 'outline'}
+						onclick={sendTest}
+						disabled={!!busy || !configured}
+						aria-describedby={!configured ? 'wh-test-needs-url' : justSaved ? 'wh-saved-next' : undefined}
+						data-testid="wh-test-inline">{busy === 'test' ? t('webhook.test.sending') : t('webhook.test.button')}</Button
+					>
 					{#if configured && !confirmingRemove}
 						<Button type="button" variant="destructive" bind:ref={removeButton} onclick={askRemove} disabled={!!busy} data-testid="wh-remove">{t('webhook.remove.button')}</Button>
 					{/if}
 				</div>
+				{#if noKey}<p class={muted} id="wh-url-nokey-reason" data-testid="wh-url-nokey-reason">{t('webhook.url.nokeyReason')}</p>{/if}
 				{#if !configured}<p class={muted} data-testid="wh-needs-url">{t('webhook.exclusions.needsUrl')}</p>{/if}
 			</form>
 
@@ -350,6 +408,19 @@
 				</div>
 			{/if}
 			{@render notice('remove')}
+		</section>
+
+		<section class={card} aria-labelledby="wh-test-title" data-testid="wh-test-card">
+			<div>
+				<h3 id="wh-test-title" class={heading}>{t('webhook.test.title')}</h3>
+				<p class="text-muted-foreground mt-1 text-xs">{t('webhook.test.hint')}</p>
+			</div>
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+				<Button variant="outline" onclick={sendTest} disabled={!!busy || !configured} aria-describedby={configured ? undefined : 'wh-test-needs-url'} data-testid="wh-test">{busy === 'test' ? t('webhook.test.sending') : t('webhook.test.button')}</Button>
+				{#if !configured}<p class="text-muted-foreground text-sm" id="wh-test-needs-url" data-testid="wh-test-needs-url">{t('webhook.test.needsUrl')}</p>{/if}
+			</div>
+			<div role="status" aria-live="polite" class={testResult ? (testResult.ok ? 'bg-success-soft text-success' : 'bg-destructive/10 text-destructive') + ' ' + noteClass : 'sr-only'} data-testid="wh-test-result">{testResult?.text ?? ''}</div>
+			{@render notice('test')}
 		</section>
 
 		{#if configured}
@@ -426,18 +497,6 @@
 						<Button type="submit" disabled={!!busy || !changed} data-testid="wh-exclusions-save">{t('webhook.exclusions.save')}</Button>
 					</div>
 				</form>
-			</section>
-
-			<section class={card} aria-labelledby="wh-test-title" data-testid="wh-test-card">
-				<div>
-					<h3 id="wh-test-title" class={heading}>{t('webhook.test.title')}</h3>
-					<p class="text-muted-foreground mt-1 text-xs">{t('webhook.test.hint')}</p>
-				</div>
-				<div>
-					<Button variant="outline" onclick={sendTest} disabled={!!busy} data-testid="wh-test">{busy === 'test' ? t('webhook.test.sending') : t('webhook.test.button')}</Button>
-				</div>
-				<div role="status" aria-live="polite" class={testResult ? (testResult.ok ? 'bg-success-soft text-success' : 'bg-destructive/10 text-destructive') + ' ' + noteClass : 'sr-only'} data-testid="wh-test-result">{testResult?.text ?? ''}</div>
-				{@render notice('test')}
 			</section>
 		{/if}
 

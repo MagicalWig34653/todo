@@ -25,6 +25,18 @@ export const deWebhook = {
 	'webhook.url.saved': 'Adresse gespeichert.',
 	'webhook.url.required': 'Gib zuerst eine Adresse ein.',
 	'webhook.url.lastDelivery': 'Letzte Zustellung',
+	'webhook.url.savedNext': 'Gespeichert. Jetzt Testaufruf senden',
+	'webhook.url.nokeyReason': 'Speichern geht erst, wenn der Server einen Verschlüsselungsschlüssel hat. Das Vorgehen steht oben auf der Seite.',
+
+	'webhook.nokey.title': 'Dem Server fehlt der Verschlüsselungsschlüssel',
+	'webhook.nokey.text': 'Ohne ihn kann Todolino keine Adresse und kein Signaturgeheimnis speichern. Alles andere funktioniert.',
+	'webhook.nokey.step': 'Auf dem Server ausführen:',
+	'webhook.nokey.after': 'Das legt das Swarm-Secret todo_settings_key an (nur, wenn es fehlt) und setzt SETTINGS_KEY_ENABLED=true. Danach neu ausrollen und diese Seite neu laden.',
+	'webhook.nokey.docs': 'Anleitung in der Dokumentation',
+	'webhook.nokey.newTab': '(öffnet in neuem Tab)',
+
+	'webhook.lastTest.label': 'Letzter Testaufruf:',
+	'webhook.lastTest.none': 'Noch kein Testaufruf',
 
 	'webhook.remove.button': 'Webhook entfernen',
 	'webhook.remove.title': 'Webhook wirklich entfernen?',
@@ -66,11 +78,12 @@ export const deWebhook = {
 	'webhook.exclusions.clear': 'Alle abwählen',
 	'webhook.exclusions.save': 'Ausschlüsse speichern',
 	'webhook.exclusions.saved': 'Ausschlüsse gespeichert.',
-	'webhook.exclusions.needsUrl': 'Signatur, Ausschlüsse und Testaufruf erscheinen, sobald eine Adresse hinterlegt ist.',
+	'webhook.exclusions.needsUrl': 'Signatur und Ausschlüsse erscheinen, sobald eine Adresse hinterlegt ist.',
 
 	'webhook.test.title': 'Testaufruf',
 	'webhook.test.hint': 'Sendet sofort einen Aufruf ohne Aktionen, um Adresse und Empfänger zu prüfen. Höchstens einer alle 10 Sekunden.',
 	'webhook.test.button': 'Test senden',
+	'webhook.test.needsUrl': 'Erst die Adresse speichern.',
 	'webhook.test.sending': 'Wird gesendet …',
 	'webhook.test.sent': 'Testaufruf zugestellt.',
 	'webhook.test.sentHttp': 'Testaufruf zugestellt (HTTP {status}).',

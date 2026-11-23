@@ -471,6 +471,8 @@ test('state "set up": test next to save, result of the last test on top, test ar
 	// The button of the address card works like the one of the test area (one handler): a result, or the 10-second answer.
 	await inline.click();
 	await expect(page.getByTestId('wh-test-result').filter({ hasText: /Testaufruf/ }).or(err())).toBeVisible({ timeout: 30_000 });
+	// The request is over (buttons are enabled again) before the next test starts.
+	await expect(inline).toBeEnabled({ timeout: 30_000 });
 	await expectNoSecret('set up state');
 	await noOverflow('set up');
 	await shootState('eingerichtet', { dark320: true });

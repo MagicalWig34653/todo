@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Ausgehender Webhook für Personenaktionen
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0035 (Karte 06EB19A3). Ein Webhook je Person: Todolino ruft eine vom Menschen gesetzte https-Adresse auf, sobald die Person selbst
     etwas tut (Antwort auf eine Frage, Entscheidung über ein Review, Kommentar, Aufgabe angelegt/verschoben/Status geändert), damit ein wartender Empfänger
     (z. B. ein Orchestrator) nachsieht. Der Aufruf trägt keinen Text: nur eine Anzahl und die Art der Aktionen.
@@ -107,7 +107,7 @@ components:
   schemas:
     WebhookSettings:
       type: object
-      required: [configured, enabled, signingConfigured, excludedProjectIDs, consecutiveFailures]
+      required: [configured, enabled, signingConfigured, excludedProjectIDs, consecutiveFailures, encryptionKeyAvailable]
       properties:
         configured: {type: boolean}
         maskedURL: {type: string, description: 'Nur wenn configured: https://host/… (Schema und Host; Pfad, Query und Port nie)'}
@@ -116,6 +116,7 @@ components:
         excludedProjectIDs: {type: array, items: {type: string, format: uuid}, description: 'Genau diese Projekte, keine Vererbung auf Unterprojekte'}
         consecutiveFailures: {type: integer, minimum: 0, description: 'Fehlgeschlagene Bündel seit dem letzten Erfolg'}
         lastDelivery: {$ref: '#/components/schemas/WebhookDelivery'}
+        encryptionKeyAvailable: {type: boolean, description: 'Seit 1.1.0 (Karte F5D261AF). true, wenn der Server einen aktuellen Verschlüsselungsschlüssel hat und lesen kann (SETTINGS_ENCRYPTION_KEY); false, wenn url und signingSecret deshalb nicht gespeichert werden können (PUT: 409 encryption_key_missing). Nur dieses Flag: nie der Schlüssel, seine Kennung oder etwas daraus Abgeleitetes. Ältere Server senden das Feld nicht; Clients behandeln das Fehlen als true.'}
     UpdateWebhook:
       type: object
       properties:
