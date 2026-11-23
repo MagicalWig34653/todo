@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 23.11.2026 (10:50): Passkey-Haenger "invited person" belegt und behoben (Karte 188D611F; kein Deploy)
+
+- Ursache (Testfehler, kein Produktfehler): "Teams" steht in der Hauptliste der Seitenleiste (nicht unter "Mehr") und traegt ein Badge mit den offenen Einladungen, der Name lautet dann "Teams 1". Der Locator `name: 'Teams', exact: true` aus 43a9aea fand ihn nur, solange die Einladung noch nicht geladen war. Die Diagnose zeigte es: `moreExpanded` wechselt, `targetCount=0`, Pfad /for-you.
+- Beleg: 20 Linux-Laeufe passkey-flow (Image sha-43a9aea, `PW_CPUS=1`, Trace bei Fehler): 9 gruen, 11 rot; davon 5x genau dieser Schritt. Mit Fix (Regex `/^Teams( \d+)?$/`, wie `nav`): 12 Laeufe, 11 gruen, 0x dieser Schritt.
+- Rest unter CPU=1: je ein anderer Test mit dem 5-s-Expect-Timeout (u. a. Test 7 einmal: der `PUT` der Meilenstein-Zuordnung dauerte 5125 ms laut Trace, danach lief die UI korrekt weiter; Last, keine Logik). Auf dem CI-Runner bisher 50/50 gruen. Keine Timeouts erhoeht, um nichts kuenstlich gruen zu machen.
+- `passkey-flow` bleibt beratend bis mehrere Runner-Laeufe in Folge gruen sind.
+
 ## Nachtrag 23.11.2026 (spaeter): Diagnose fuer den Passkey-Haenger (Karte 188D611F; kein Deploy)
 
 - Umgesetzt: `web/e2e/support/sidebarStep.ts` (`openViaMore`, `sidebarState`). Der Schritt "Mehr" -> "Teams" im Gast-Browser von `passkey-flow` nutzt ihn. Bei einem Fehlschlag nennt die Fehlermeldung je Versuch (letzte 5) und am Ende: Pfad (ids durch `:id` ersetzt, ohne Query), Viewport, Anzahl/`aria-expanded`/Enabled von "Mehr", Anzahl/Sichtbarkeit von "Teams", Zahl der Navigationen, offenen Dialoge, `aria-busy`-Elemente, `readyState`, Zeit seit Start. Nur Zahlen, Flags und Pfad: keine Texte, Namen, Tokens oder ids.

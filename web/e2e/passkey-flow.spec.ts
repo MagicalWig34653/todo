@@ -477,9 +477,11 @@ test('invited person: directory search, team invitation name, author and actor n
 		await expect(row).toContainText('Einladung offen');
 
 		// The invitee sees the team name, not just an ID.
-		// "Mehr" is a toggle; the step hung for 90 s in about 2 of 55 Linux runs without saying why. `openViaMore` retries as a unit and
-		// names the state of the page (counts and flags only) in its error, see e2e/support/sidebarStep.ts (card 188D611F).
-		await openViaMore(guest, guest.getByRole('button', { name: 'Mehr', exact: true }), guest.getByRole('button', { name: 'Teams', exact: true }));
+		// "Teams" sits in the main list and carries a badge with the open invitations, so its accessible name is "Teams 1" once the
+		// invitation has arrived: the name must allow the badge (same pattern as `nav`). An exact "Teams" matched only before the
+		// badge appeared and hung 20-90 s otherwise (card 188D611F: 5 of 20 CPU-limited Linux runs, state "targetCount=0" with "Mehr" open).
+		// `openViaMore` still names the page state in its error, see e2e/support/sidebarStep.ts.
+		await openViaMore(guest, guest.getByRole('button', { name: 'Mehr', exact: true }), guest.getByRole('button', { name: /^Teams( \d+)?$/ }));
 		await expect(guest.getByTestId('team-invitation')).toContainText('Einladung zum Team Familie');
 
 		// Now a relation exists: she is found by name and can be shared a project with.
