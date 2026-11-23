@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 23.11.2026 (spaeter): Diagnose fuer den Passkey-Haenger (Karte 188D611F; kein Deploy)
+
+- Umgesetzt: `web/e2e/support/sidebarStep.ts` (`openViaMore`, `sidebarState`). Der Schritt "Mehr" -> "Teams" im Gast-Browser von `passkey-flow` nutzt ihn. Bei einem Fehlschlag nennt die Fehlermeldung je Versuch (letzte 5) und am Ende: Pfad (ids durch `:id` ersetzt, ohne Query), Viewport, Anzahl/`aria-expanded`/Enabled von "Mehr", Anzahl/Sichtbarkeit von "Teams", Zahl der Navigationen, offenen Dialoge, `aria-busy`-Elemente, `readyState`, Zeit seit Start. Nur Zahlen, Flags und Pfad: keine Texte, Namen, Tokens oder ids.
+- Nachweis: neue Spec `sidebar-diagnostics.spec.ts` (Erfolgsfall; Fehlerfall mit absichtlich fehlendem Ziel: Felder in jedem Versuch vorhanden, kein Anzeigename, keine ids in der Meldung). 2/2 Laeufe gruen, `passkey-flow` lokal gruen, svelte-check 0 Fehler. Die Spec laeuft in der CI automatisch in Chromium mit.
+- Erster Nutzen schon im Probelauf: im ersten Versuch war die Seitenleiste noch gar nicht gerendert (`moreCount=0 navs=0`, `readyState=complete`); der alte Code klickte dann bis zum Timeout auf ein nicht vorhandenes Element. Das ist ein plausibler Kandidat fuer den Haenger, aber kein Beweis: erst die naechste Fehlermeldung aus der CI bestaetigt oder widerlegt ihn.
+- `passkey-flow` bleibt beratend (`ADVISORY` in `scripts/e2e-ci.sh`), bis es ueber mehrere CI-Laeufe in Folge gruen war oder die Ursache aus einer Fehlermeldung belegt ist. Keine Endlosschleife: kein weiterer Schleifenlauf noetig, die Diagnose wartet auf den naechsten natuerlichen Fehlschlag.
+
 ## Nachtrag 23.11.2026: card-detail-Race behoben, Passkey-Hänger nicht gefangen (Karte 188D611F; kein Deploy)
 
 - Ausgangslage: E2E auf dem Runner fuer b613bbc rot (`card-detail`); meine Rueckstufung von `card-detail` auf "hart" am 22.11. war zu frueh (1 gruener Runner-Lauf reichte nicht, die Rate liegt unter Last bei etwa 1 von 3). VM-Platz vorher: 12,2 GB frei (von 58,9 GB), nichts geloescht; Linux-Logs/Traces unter `~/.cache/e2e-linux` (152 MB).

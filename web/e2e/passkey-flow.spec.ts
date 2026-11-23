@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { openViaMore } from './support/sidebarStep';
 
 const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
 
@@ -476,15 +477,9 @@ test('invited person: directory search, team invitation name, author and actor n
 		await expect(row).toContainText('Einladung offen');
 
 		// The invitee sees the team name, not just an ID.
-		// "Mehr" is a toggle: open it only when "Teams" is not visible, and retry as a unit. The old chained click hung for 90 s in
-		// about 1 of 15 Linux runs (cause not proven: "Mehr" was closed before the click in all 15 diagnostic runs).
-		const guestTeams = guest.getByRole('button', { name: 'Teams', exact: true });
-		const guestMore = guest.getByRole('button', { name: 'Mehr', exact: true });
-		await expect(async () => {
-			if (!(await guestTeams.isVisible())) await guestMore.click();
-			await expect(guestTeams).toBeVisible({ timeout: 1500 });
-		}).toPass({ timeout: 20_000 });
-		await guestTeams.click();
+		// "Mehr" is a toggle; the step hung for 90 s in about 2 of 55 Linux runs without saying why. `openViaMore` retries as a unit and
+		// names the state of the page (counts and flags only) in its error, see e2e/support/sidebarStep.ts (card 188D611F).
+		await openViaMore(guest, guest.getByRole('button', { name: 'Mehr', exact: true }), guest.getByRole('button', { name: 'Teams', exact: true }));
 		await expect(guest.getByTestId('team-invitation')).toContainText('Einladung zum Team Familie');
 
 		// Now a relation exists: she is found by name and can be shared a project with.
