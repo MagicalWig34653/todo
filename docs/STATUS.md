@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 23.11.2026 (19:35): Ausgehender Webhook fuer Personenaktionen (Karte 06EB19A3; kein Deploy)
+
+- Ziel: Todolino ruft serverseitig die von der Person hinterlegte https-Adresse auf, wenn die Person selbst handelt (Frage beantwortet, Review entschieden, Kommentar, Karte angelegt/verschoben/Status), fuer alle ihre Projekte ausser den ausgeschlossenen; Nutzlast nur `{event, anzahl, kinds}`. Damit kann der Waechter-Weckruf nach dem Deploy abgeschaltet werden.
+- Umgesetzt: ADR 0035 (12cd57c); Server `Sources/TodoKit/Webhook` + Vertrag `contracts/webhook.yaml` 1.0.0 (da36fcb rot 51 von 60, 55f3bd3, 2697c0f); PWA Einstellungen -> Webhook (711da7d, Screenshots `docs/screenshots/webhook-einstellungen-{hell,dunkel,320}.png` angesehen); Handbuch 1.38.0 + MCP-Paritaet (49f13b0); Security-Review `docs/SECURITY-REVIEW-WEBHOOK.md` mit Behebung (0e1a3d5 rot 18 von 78, 46f66ee, b3fb178, 81743ab).
+- Eckpunkte: nur REST mit Personen-Sitzung (kein MCP-Weg); Adresse und Signaturgeheimnis AES-GCM, nie ausgegeben, nur Maske; nur https, nur Port 443, SSRF-Schutz strict beim Speichern und bei jeder Zustellung, Adresse festgenagelt, keine Weiterleitungen, 10 s; Buendeln 60 s ohne Sperre; Backoff, Abschaltung nach 10 Fehlbuendeln; Protokoll, Test senden; Ausschlussliste.
+- Tests (selbst nachgelaufen, main 81743ab): `swift test` SQLite 759 Tests, 20 uebersprungen, 0 Fehler; `TODO_TEST_DB=todo_test_wh4 swift test --no-parallel --filter Webhook` MariaDB 80/80; Worker meldet MariaDB-Gesamtsuite 759/0 Fehler; vitest 549, svelte-check siehe Karte. CI auf 711da7d: CI, Docker, E2E "OK (51 runs)" (webhook-settings 12/12); Pages rot = bekannter GitHub-Fehler.
+- Nach dem Deploy: `App migrate --yes`, `SETTINGS_ENCRYPTION_KEY` muss gesetzt sein, dann in Einstellungen -> Webhook die T3-Adresse hinterlegen, "Test senden", danach den Waechter-Weckruf abschalten. Offen: echtes TLS gegen den echten Empfaenger erst live belegbar; ob T3 die Signatur prueft, unbekannt.
+
 ## Nachtrag 23.11.2026 (14:30): Brain-Vollmacht je Verbindung statt je Person (Karte 2280A2F1; kein Deploy)
 
 - Ausloeser (Lino): Codex und das Brain sollen beide eine Vollmacht bekommen; bisher `unique(user_id)` in `brain_mandates`, also eine Vollmacht je Person.
