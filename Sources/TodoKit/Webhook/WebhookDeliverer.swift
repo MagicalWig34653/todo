@@ -56,6 +56,7 @@ struct WebhookDeliverer: Sendable {
         case .timeout: return .retry(code: "timeout", status: nil)
         case .tlsError: return .retry(code: "tls_error", status: nil)
         case .networkError: return .retry(code: "network_error", status: nil)
+        case .targetBlocked: return .retry(code: "network_error", status: nil)  // scaffold
         case .status(let s):
             switch s {
             case 200...299: return .sent(status: s)

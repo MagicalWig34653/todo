@@ -104,6 +104,13 @@ enum WebhookLimits {
     static let backoff: [TimeInterval] = [30, 120, 600, 1800, 7200]
     static let disableAfterFailures = 10
     static let timeout: TimeInterval = 10
+    static let connectTimeout: TimeInterval = 3
+    /// Name resolution at save time and delivery.
+    static let resolveTimeout: TimeInterval = 5
+    /// At most this many deliveries run at the same time, and at most one per target host.
+    static let maxConcurrentDeliveries = 8
+    /// `PUT` with a host name resolves it: per account and minute.
+    static let putPerMinute = 10
     static let testInterval = 10
     static let listLimit = 50
     static let retention: TimeInterval = 14 * 86_400

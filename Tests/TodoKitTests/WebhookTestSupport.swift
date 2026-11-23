@@ -8,22 +8,45 @@ import XCTVapor
 
 struct WebhookTestError: Error { let what: String }
 
-/// Transport double: records every request and answers with a scripted result. No network is involved.
+/// Transport double: records every request and answers with a scripted result. No network is involved. With `delay` it keeps
+/// a request "in flight" for that long and tracks how many ran at the same time (overall and per host).
 final class RecordingWebhookTransport: WebhookTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var _requests: [WebhookWireRequest] = []
     private var _handler: @Sendable (WebhookWireRequest) -> WebhookSendResult = { _ in .status(200) }
+    private var _delay: TimeInterval = 0
+    private var inFlight = 0, _maxInFlight = 0
+    private var perHost: [String: Int] = [:], _maxPerHost = 0
     var requests: [WebhookWireRequest] { lock.lock(); defer { lock.unlock() }; return _requests }
     var handler: @Sendable (WebhookWireRequest) -> WebhookSendResult {
         get { lock.lock(); defer { lock.unlock() }; return _handler }
         set { lock.lock(); defer { lock.unlock() }; _handler = newValue }
     }
-    private func record(_ request: WebhookWireRequest) -> WebhookSendResult {
+    var delay: TimeInterval {
+        get { lock.lock(); defer { lock.unlock() }; return _delay }
+        set { lock.lock(); defer { lock.unlock() }; _delay = newValue }
+    }
+    /// Highest number of requests that were in flight at the same time.
+    var maxInFlight: Int { lock.lock(); defer { lock.unlock() }; return _maxInFlight }
+    /// Highest number of requests to one host (`WebhookWireRequest.host`) that were in flight at the same time.
+    var maxInFlightPerHost: Int { lock.lock(); defer { lock.unlock() }; return _maxPerHost }
+    private func begin(_ request: WebhookWireRequest) -> (WebhookSendResult, TimeInterval) {
         lock.lock(); defer { lock.unlock() }
         _requests.append(request)
-        return _handler(request)
+        inFlight += 1; _maxInFlight = max(_maxInFlight, inFlight)
+        perHost[request.host, default: 0] += 1; _maxPerHost = max(_maxPerHost, perHost[request.host] ?? 0)
+        return (_handler(request), _delay)
     }
-    func post(_ request: WebhookWireRequest) async -> WebhookSendResult { record(request) }
+    private func end(_ request: WebhookWireRequest) {
+        lock.lock(); defer { lock.unlock() }
+        inFlight -= 1; perHost[request.host, default: 1] -= 1
+    }
+    func post(_ request: WebhookWireRequest) async -> WebhookSendResult {
+        let (result, delay) = begin(request)
+        if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        end(request)
+        return result
+    }
     func header(_ name: String, in request: WebhookWireRequest) -> String? { request.headers.first { $0.0.lowercased() == name.lowercased() }?.1 }
 }
 
@@ -42,6 +65,34 @@ final class FixedWebhookResolver: WebhookResolver, @unchecked Sendable {
         guard let address = lookup(host) else { throw OutboundUnresolvable() }
         return address
     }
+}
+
+/// Answers with `first` on the first call and with `later` on every further call (a name that changes its answer, DNS rebinding).
+final class FlippingWebhookResolver: WebhookResolver, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _calls = 0
+    private var _hosts: [String] = []
+    let first: String, later: String
+    init(first: String, later: String) { self.first = first; self.later = later }
+    var calls: Int { lock.lock(); defer { lock.unlock() }; return _calls }
+    var hosts: [String] { lock.lock(); defer { lock.unlock() }; return _hosts }
+    private func next(_ host: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        _calls += 1; _hosts.append(host)
+        return _calls == 1 ? first : later
+    }
+    func resolve(host: String, port: Int) async throws -> String { next(host) }
+}
+
+/// A resolver that takes `delay` seconds. `blocking` sleeps the thread (like `getaddrinfo`), otherwise it suspends.
+struct SlowWebhookResolver: WebhookResolver {
+    let delay: TimeInterval
+    var blocking = false
+    func resolve(host: String, port: Int) async throws -> String {
+        if blocking { Self.blockThread(delay) } else { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        return "203.0.113.10"
+    }
+    private static func blockThread(_ seconds: TimeInterval) { Thread.sleep(forTimeInterval: seconds) }
 }
 
 final class LogCapture: @unchecked Sendable {

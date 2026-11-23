@@ -38,6 +38,8 @@ enum WebhookSendResult: Equatable, Sendable {
     case timeout
     case tlsError
     case networkError
+    /// The request URL does not name the host the address was checked for (the pinning would not apply): nothing was sent.
+    case targetBlocked
 }
 
 protocol WebhookTransport: Sendable {
@@ -57,13 +59,19 @@ struct AsyncHTTPWebhookTransport: WebhookTransport {
     /// Lets tests trust a local certificate; never set in production.
     var tls: TLSConfiguration?
 
-    func post(_ r: WebhookWireRequest) async -> WebhookSendResult {
+    /// The client configuration for exactly one target (see the type comment).
+    func configuration(host: String, address: String) -> HTTPClient.Configuration {
         var config = HTTPClient.Configuration()
         config.redirectConfiguration = .disallow
         config.proxy = nil
         config.timeout = .init(connect: .milliseconds(Int64(timeout * 1000)), read: .milliseconds(Int64(timeout * 1000)))
         if let tls { config.tlsConfiguration = tls }
-        if r.address != r.host { config.dnsOverride = [r.host: r.address] }
+        if address != host { config.dnsOverride = [host: address] }
+        return config
+    }
+
+    func post(_ r: WebhookWireRequest) async -> WebhookSendResult {
+        let config = configuration(host: r.host, address: r.address)
         let client = HTTPClient(eventLoopGroupProvider: .shared(MultiThreadedEventLoopGroup.singleton), configuration: config)
         let delegate = StatusOnlyDelegate()
         let result: WebhookSendResult
@@ -131,5 +139,13 @@ extension Application {
     var webhookResolver: any WebhookResolver {
         get { storage[WebhookResolverKey.self] ?? SystemWebhookResolver() }
         set { storage[WebhookResolverKey.self] = newValue }
+    }
+
+    private struct WebhookResolveTimeoutKey: StorageKey { typealias Value = TimeInterval }
+
+    /// Upper bound for one name resolution (save and delivery). Tests shorten it.
+    var webhookResolveTimeout: TimeInterval {
+        get { storage[WebhookResolveTimeoutKey.self] ?? WebhookLimits.resolveTimeout }
+        set { storage[WebhookResolveTimeoutKey.self] = newValue }
     }
 }

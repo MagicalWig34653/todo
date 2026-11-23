@@ -15,6 +15,9 @@ struct WebhookURL: Sendable {
     /// `https://host` (IPv6 in brackets). Shown in the API as `https://host/…`; path and query are never part of it.
     var mask: String { "https://" + (literalIP != nil && host.contains(":") ? "[\(host)]" : host) }
 
+    /// Scaffold (review fix, finding 1): not built from the parsed parts yet.
+    func requestURL(scheme: String = "https", port: Int? = nil) -> String { absolute }
+
     static func parse(_ raw: String) throws -> WebhookURL {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= WebhookLimits.maxURLLength,
