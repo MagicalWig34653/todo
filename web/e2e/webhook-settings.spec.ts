@@ -307,7 +307,8 @@ test('saves a public address and never shows it again, only the mask', async () 
 	test.skip(!hasDNS, 'no DNS in this run (reported by the previous test): the server cannot resolve example.com');
 	await openPage();
 	// Keyboard: Tab reaches the field with a visible focus ring, Enter in the field submits the form.
-	for (let i = 0; i < 60; i++) {
+	// The sidebar (open on the settings page) sits before the field; its length changes with every new entry, so the search is generous.
+	for (let i = 0; i < 120; i++) {
 		if (await urlField().evaluate((el) => el === document.activeElement)) break;
 		await page.keyboard.press('Tab');
 	}
