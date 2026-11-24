@@ -303,6 +303,37 @@ final class AccountLockTests: XCTestCase {
         })
     }
 
+    /// Card 3C2E7F9D: comments are exported by authorship, so access that was lost since must hide them as well
+    /// (task and project comments in a project without a grant), while comments in a still readable project stay.
+    func testExportOmitsCommentsWithoutCurrentAccess() async throws {
+        let f = try await fixture(); defer { Task { await f.t.shutdown() } }
+        let db = f.t.app.db
+        // Access revoked: project of the admin without a grant for A; A once commented on a task and on the project.
+        let foreign = Project(ownerID: f.admin.id, parentID: nil, name: "Entzogen-Projekt")
+        try await foreign.save(on: db)
+        let foreignTask = TodoTask(ownerID: f.admin.id, projectID: try foreign.requireID(), title: "Entzogen-Aufgabe")
+        try await foreignTask.save(on: db)
+        try await TaskComment(taskID: try foreignTask.requireID(), authorID: f.user.id, body: "Entzogen-Aufgabenkommentar").save(on: db)
+        try await ProjectComment(projectID: try foreign.requireID(), authorID: f.user.id, body: "Entzogen-Projektkommentar").save(on: db)
+        // Still granted: comments in a project shared with A stay exportable.
+        let shared = Project(ownerID: f.admin.id, parentID: nil, name: "Geteilt-Projekt")
+        try await shared.save(on: db)
+        try await ProjectGrant(projectID: try shared.requireID(), principalType: "person", principalID: f.user.id, role: .edit).save(on: db)
+        let sharedTask = TodoTask(ownerID: f.admin.id, projectID: try shared.requireID(), title: "Geteilt-Aufgabe")
+        try await sharedTask.save(on: db)
+        try await TaskComment(taskID: try sharedTask.requireID(), authorID: f.user.id, body: "Geteilt-Aufgabenkommentar").save(on: db)
+        try await ProjectComment(projectID: try shared.requireID(), authorID: f.user.id, body: "Geteilt-Projektkommentar").save(on: db)
+
+        try await f.t.app.test(.GET, "/v1/me/export", beforeRequest: { $0.headers.bearerAuthorization = .init(token: f.user.token) }, afterResponse: { res async in
+            XCTAssertEqual(res.status, .ok)
+            let text = String(decoding: res.body.readableBytesView, as: UTF8.self)
+            XCTAssertTrue(text.contains("Geteilt-Aufgabenkommentar")); XCTAssertTrue(text.contains("Geteilt-Projektkommentar"))
+            for forbidden in ["Entzogen-Aufgabenkommentar", "Entzogen-Projektkommentar"] {
+                XCTAssertFalse(text.contains(forbidden), forbidden)
+            }
+        })
+    }
+
 }
 
 func XCTUnwrapAsync<T>(_ value: @autoclosure () async throws -> T?, file: StaticString = #filePath, line: UInt = #line) async throws -> T {
