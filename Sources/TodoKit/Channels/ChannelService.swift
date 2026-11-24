@@ -162,6 +162,22 @@ struct ChannelService {
             guard body.attachmentID == nil else { throw Abort(.badRequest, reason: "attachment_not_allowed") }
         }
         let userID = try user.requireID()
+
+        func replay(_ channelID: UUID) async throws -> ChannelMessageDTO? {
+            guard let key = body.clientUUID,
+                  let existing = try await ChannelMessage.query(on: db).filter(\.$channelID == channelID).filter(\.$clientUUID == key).first() else { return nil }
+            // A transcript may have filled the text of a voice_in message since; a retry without text is still the same post.
+            let sameText = existing.text == text || (kind == "voice_in" && text == nil)
+            // The recording may be gone since (processed, failed or past retention, ADR 0030 step 7); the post stays the same one.
+            let sameAttachment = existing.attachmentID == body.attachmentID || (kind == "voice_in" && existing.attachmentID == nil)
+            guard existing.kind == kind, existing.author == author.rawValue, sameText, sameAttachment else {
+                throw Abort(.conflict, reason: "client_uuid_conflict")
+            }
+            return try ChannelMessageDTO(existing)
+        }
+        // Before the attachment check: a retry of an accepted post is answered even when its recording was deleted meanwhile.
+        if body.clientUUID != nil, let known = try await existingChannel(), let existing = try await replay(try known.requireID()) { return (existing, false) }
+
         if let id = body.attachmentID {
             // Another account's attachment is indistinguishable from a missing one.
             guard let a = try await Attachment.find(id, on: db), a.ownerID == userID else { throw Abort(.notFound) }
@@ -170,18 +186,7 @@ struct ChannelService {
         }
         let channel = try await channel()
         let channelID = try channel.requireID()
-
-        func replay() async throws -> ChannelMessageDTO? {
-            guard let key = body.clientUUID,
-                  let existing = try await ChannelMessage.query(on: db).filter(\.$channelID == channelID).filter(\.$clientUUID == key).first() else { return nil }
-            // A transcript may have filled the text of a voice_in message since; a retry without text is still the same post.
-            let sameText = existing.text == text || (kind == "voice_in" && text == nil)
-            guard existing.kind == kind, existing.author == author.rawValue, sameText, existing.attachmentID == body.attachmentID else {
-                throw Abort(.conflict, reason: "client_uuid_conflict")
-            }
-            return try ChannelMessageDTO(existing)
-        }
-        if let existing = try await replay() { return (existing, false) }
+        if let existing = try await replay(channelID) { return (existing, false) }
 
         let startsJob = kind == "voice_in"
         if startsJob { try await VoiceService.expireDue(owner: userID, db: db) }
@@ -206,7 +211,7 @@ struct ChannelService {
             }
         } catch {
             // A parallel post with the same client UUID won the unique key: answer with that one.
-            if let existing = try await replay() { return (existing, false) }
+            if let existing = try await replay(channelID) { return (existing, false) }
             throw error
         }
         return (try ChannelMessageDTO(m), true)

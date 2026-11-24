@@ -773,7 +773,7 @@ extension VoiceJobTests {
 
             // Texts and transcripts stay; the messages no longer point to deleted audio.
             let list = try await messages(s)
-            XCTAssertEqual(list.compactMap { $0["text"] as? String }, ["Hallo", "Hi."])
+            XCTAssertEqual(list.filter { $0["kind"] as? String != "status" }.compactMap { $0["text"] as? String }, ["Hallo", "Hi."])
             XCTAssertTrue(list.allSatisfy { $0["attachmentID"] == nil || $0["attachmentID"] is NSNull }, "\(list)")
             try await eq(try await ChannelMessage.query(on: db).count(), list.count, "no message is deleted")
         }

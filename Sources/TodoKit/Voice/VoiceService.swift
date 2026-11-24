@@ -124,6 +124,8 @@ enum VoiceService {
         if let reply = job.replyAttachmentID { try await deleteAttachment(reply, db: db) }
         guard let user = try await User.find(job.ownerID, on: db) else { return }
         let message = try await ChannelMessage.find(job.messageID, on: db)
+        // The recording is gone: the message must not point to it any more.
+        if let message, message.attachmentID != nil { message.attachmentID = nil; try await message.save(on: db) }
         try await ChannelService(user: user, db: db).appendBrainMessage(kind: "status", text: statusText, notBefore: message?.createdAt)
     }
 
@@ -352,6 +354,9 @@ enum VoiceService {
                                                  notBefore: original?.createdAt)
             job.state = "done"; job.leaseUntil = nil; job.endedAt = Date(); job.resultHash = hash
             try await job.save(on: tx)
+            // Retention (ADR 0030 step 7): the recording goes as soon as it is processed; transcript and reply stay.
+            try await deleteAttachment(job.attachmentID, db: tx)
+            if let original { original.attachmentID = nil; try await original.save(on: tx) }
             return try VoiceJobDTO(job)
         }
     }

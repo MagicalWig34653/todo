@@ -119,6 +119,7 @@ final class VoiceExpiryWorker: LifecycleHandler, @unchecked Sendable {
     let interval: TimeInterval
     private let lock = NSLock()
     private var task: Task<Void, Never>?
+    let retentionEvery: TimeInterval = 300
 
     init(app: Application, interval: TimeInterval = 30) { self.app = app; self.interval = interval }
 
@@ -127,12 +128,19 @@ final class VoiceExpiryWorker: LifecycleHandler, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard task == nil else { return }
         task = Task.detached { [self] in
+            var lastRetention = Date.distantPast
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval * Double.random(in: 0.9...1.1) * 1_000_000_000))
                 // `app.db` traps once the application is shut down (tests do not cancel lifecycle tasks); ask for the database instead.
                 guard !Task.isCancelled, let db = app.databases.database(logger: app.logger, on: app.eventLoopGroup.any()) else { continue }
                 do { try await VoiceService.expireDue(owner: nil, db: db) }
                 catch { app.logger.warning("voice expiry sweep failed (\(type(of: error)))") }
+                // Retention of audio (24 h / 7 days) is due only every few minutes; the sweep is idempotent on every replica.
+                if Date().timeIntervalSince(lastRetention) >= retentionEvery {
+                    lastRetention = Date()
+                    do { try await VoiceRetention.sweep(db: db, service: AttachmentService(settings: app.settings)) }
+                    catch { app.logger.warning("voice retention sweep failed (\(type(of: error)))") }
+                }
             }
         }
     }
