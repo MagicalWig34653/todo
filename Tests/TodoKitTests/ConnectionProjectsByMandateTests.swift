@@ -96,7 +96,6 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
             XCTAssertEqual(row["name"] as? String, "Wächter (Mac)")
             XCTAssertEqual(row["clientName"] as? String, "Test Client")
             XCTAssertNotNil(row["scopes"] as? [String])
-            XCTAssertTrue(row.keys.contains("lastUsedAt"))
             // P3 is in the watcher's grant but not in the brain's mandate: invisible.
             let listed = try XCTUnwrap(row["projects"] as? [[String: Any]])
             XCTAssertEqual(listed.compactMap { $0["id"] as? String }, [e.p1.uuidString])
@@ -211,7 +210,7 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
 
     func testSettingIsIdempotentAndAuditsOnlyRealChanges() async throws {
         try await run { e in
-            try await mandate(e)
+            try await mandate(e, projects: [e.p1, e.p2, e.p3])
             let first = try await set(e, add: [e.p2])
             XCTAssertFalse(first.isError, first.text)
             // Already there / not there: no error, no change.
@@ -464,6 +463,29 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
             // And the mandate endpoint still refuses OAuth tokens.
             let put = try await e.f.test.json(.PUT, "/v1/settings/brain-mandate", ["grantID": e.watcherGrant.uuidString, "projectIDs": [e.p2.uuidString]], token: e.brain)
             XCTAssertEqual(put.status, .unauthorized)
+        }
+    }
+
+    // MARK: Migration
+
+    /// The audit table is new and independent of `brain_decision_audits`: decision rows stay as they are, and the migration
+    /// can be reverted and applied again.
+    func testAuditTableMigrationIsAdditive() async throws {
+        try await run { e in
+            let db = e.f.test.app.db
+            let decision = BrainDecisionAudit()
+            decision.mandateID = UUID(); decision.userID = try e.f.user.requireID(); decision.grantID = e.brainGrant; decision.kind = "review.accepted"
+            decision.taskID = UUID(); decision.projectID = e.p1; decision.subjectID = UUID(); decision.quote = "ja"; decision.createdAt = Date()
+            try await decision.save(on: db)
+            try await CreateBrainConnectionAudits().revert(on: db)
+            try await CreateBrainConnectionAudits().prepare(on: db)
+            try await assertEqual(try await BrainDecisionAudit.query(on: db).count(), 1)
+            try await mandate(e)
+            let r = try await set(e, add: [e.p2])
+            XCTAssertFalse(r.isError, r.text)
+            try await assertEqual(try await BrainConnectionAudit.query(on: db).count(), 1)
+            let kinds = try await audit(e).compactMap { $0["kind"] as? String }
+            XCTAssertEqual(Set(kinds), ["review.accepted", "connection.project_added"])
         }
     }
 

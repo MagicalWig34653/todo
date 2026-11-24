@@ -8,6 +8,8 @@ struct BrainAuthority: Sendable {
     let mandateID: UUID
     let grantID: UUID
     let quote: String
+    /// The projects of the mandate as read under lock (callers that change several projects need them).
+    let mandateProjects: [UUID]
 }
 
 /// Reads a row with `SELECT ... FOR UPDATE` and decodes the model from that very result. A plain read after `lockRow` would
@@ -28,27 +30,42 @@ func lockedMandate(userID: UUID, grantID: UUID, on db: any Database) async throw
     return try row.decode(fluentModel: BrainMandate.self)
 }
 
+/// The check of ADR 0032 for one or several projects, shared by agent decisions (`WorkflowService.brainAuthority`) and by
+/// `set_connection_projects` (addendum 24.11.2026). Order: no active mandate of this very connection ->
+/// `brain_mandate_required`; a project not in the mandate -> `outside_brain_mandate`; no or oversized quote ->
+/// `quote_required` / `invalid_quote`. Lock order: the mandate row, then the grant rows (the caller's and every one in
+/// `alsoLocking`, in ascending id order so two calls in opposite directions cannot deadlock). All rows are read under
+/// `FOR UPDATE`, so a concurrent revoke wins.
+///
+/// `afterLock` runs once the rows are locked and before the mandate itself is judged: it lets a caller reject problems of the
+/// locked target grants first (they must not depend on whether a mandate exists).
+func lockedBrainAuthority(userID: UUID, grantID: UUID, projectIDs: [UUID], quote rawQuote: String?, alsoLocking others: [UUID] = [],
+                          afterLock: ([UUID: OAuthGrant]) throws -> Void = { _ in },
+                          on tx: any Database) async throws -> (authority: BrainAuthority, grants: [UUID: OAuthGrant]) {
+    let mandate = try await lockedMandate(userID: userID, grantID: grantID, on: tx)
+    var locked: [UUID: OAuthGrant] = [:]
+    for id in Set([grantID] + others).sorted(by: { $0.uuidString < $1.uuidString }) {
+        if let g = try await lockedFirst(OAuthGrant.self, column: "id", equals: id, on: tx) { locked[id] = g }
+    }
+    try afterLock(locked)
+    guard let mandate, let mandateID = mandate.id, mandate.revokedAt == nil,
+          let own = locked[grantID], !own.revoked, own.userID == userID else {
+        throw Abort(.forbidden, reason: "brain_mandate_required")
+    }
+    guard projectIDs.allSatisfy({ mandate.projects.contains($0) }) else { throw Abort(.forbidden, reason: "outside_brain_mandate") }
+    let quote = (rawQuote ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !quote.isEmpty else { throw Abort(.badRequest, reason: "quote_required") }
+    guard quote.count <= BrainMandateLimits.maxQuote else { throw Abort(.badRequest, reason: "invalid_quote") }
+    return (BrainAuthority(mandateID: mandateID, grantID: grantID, quote: quote, mandateProjects: mandate.projects), locked)
+}
+
 extension WorkflowService {
     /// nil for persons. For every other actor the check order of ADR 0032 applies (the own-request check comes before this
-    /// one): no active mandate of this very connection -> `brain_mandate_required`; project not in the mandate ->
-    /// `outside_brain_mandate`; no or oversized quote -> `quote_required` / `invalid_quote`. The mandate row is locked and
-    /// re-read, so a concurrent revoke wins.
+    /// one), see `lockedBrainAuthority`.
     func brainAuthority(for actor: WorkflowActor, projectID: UUID, quote rawQuote: String?, on tx: any Database) async throws -> BrainAuthority? {
         guard actor.type != .person else { return nil }
-        let userID = try user.requireID()
-        // Lock order everywhere: mandate row, then grant row (see BrainMandateService.grant).
-        guard actor.type == .integration,
-              let mandate = try await lockedMandate(userID: userID, grantID: actor.id, on: tx),
-              let mandateID = mandate.id, mandate.revokedAt == nil,
-              let grant = try await lockedFirst(OAuthGrant.self, column: "id", equals: actor.id, on: tx),
-              !grant.revoked, grant.userID == userID else {
-            throw Abort(.forbidden, reason: "brain_mandate_required")
-        }
-        guard mandate.projects.contains(projectID) else { throw Abort(.forbidden, reason: "outside_brain_mandate") }
-        let quote = (rawQuote ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !quote.isEmpty else { throw Abort(.badRequest, reason: "quote_required") }
-        guard quote.count <= BrainMandateLimits.maxQuote else { throw Abort(.badRequest, reason: "invalid_quote") }
-        return BrainAuthority(mandateID: mandateID, grantID: actor.id, quote: quote)
+        guard actor.type == .integration else { throw Abort(.forbidden, reason: "brain_mandate_required") }
+        return try await lockedBrainAuthority(userID: user.requireID(), grantID: actor.id, projectIDs: [projectID], quote: rawQuote, on: tx).authority
     }
 
     static func brainLabel(_ user: User) -> String { "Brain im Auftrag von \(String(user.displayName.prefix(60)))" }

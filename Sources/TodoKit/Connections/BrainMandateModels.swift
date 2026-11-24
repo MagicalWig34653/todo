@@ -42,6 +42,40 @@ final class BrainDecisionAudit: Model, @unchecked Sendable {
     init() {}
 }
 
+/// Card E71B0FF1 (ADR 0032 addendum 24.11.2026): one row per project that a mandated connection added to or removed from
+/// another connection's grant. A separate table instead of `brain_decision_audits` because those rows are about a card
+/// (`task_id` is NOT NULL there, and SQLite cannot relax a column without rebuilding the table). Same rules otherwise: no
+/// foreign keys except the cascading owner, the quote is mandatory. `GET /v1/settings/brain-mandate/audit` merges both tables.
+final class BrainConnectionAudit: Model, @unchecked Sendable {
+    static let schema = "brain_connection_audits"
+    @ID(key: .id) var id: UUID?
+    @Field(key: "mandate_id") var mandateID: UUID
+    @Field(key: "user_id") var userID: UUID
+    /// The acting connection (holder of the mandate).
+    @Field(key: "grant_id") var grantID: UUID
+    /// The connection whose project list changed.
+    @Field(key: "target_grant_id") var targetGrantID: UUID
+    /// `connection.project_added` | `connection.project_removed`
+    @Field(key: "kind") var kind: String
+    @Field(key: "project_id") var projectID: UUID
+    @Field(key: "quote") var quote: String
+    @Field(key: "created_at") var createdAt: Date
+    init() {}
+}
+
+struct CreateBrainConnectionAudits: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(BrainConnectionAudit.schema).id()
+            .field("mandate_id", .uuid, .required)
+            .field("user_id", .uuid, .required, .references("users", "id", onDelete: .cascade))
+            .field("grant_id", .uuid, .required).field("target_grant_id", .uuid, .required)
+            .field("kind", .string, .required).field("project_id", .uuid, .required)
+            .field("quote", .sql(raw: "TEXT"), .required)
+            .field("created_at", .datetime, .required).create()
+    }
+    func revert(on db: any Database) async throws { try await db.schema(BrainConnectionAudit.schema).delete() }
+}
+
 struct CreateBrainMandates: AsyncMigration {
     func prepare(on db: any Database) async throws {
         try await db.schema(BrainMandate.schema).id()

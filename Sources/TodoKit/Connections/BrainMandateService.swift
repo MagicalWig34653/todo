@@ -26,9 +26,12 @@ struct BrainMandateRequest: Content {
 struct BrainAuditDTO: Content {
     let id: UUID
     let kind: String
-    let taskID: UUID
+    /// nil for `connection.*` kinds (no card involved).
+    let taskID: UUID?
     let projectID: UUID
+    /// Review or question id; for `connection.*` kinds the id of the connection whose project list changed.
     let subjectID: UUID
+    /// The deciding or acting connection.
     let grantID: UUID
     let quote: String
     let note: String?
@@ -36,6 +39,10 @@ struct BrainAuditDTO: Content {
     init(_ a: BrainDecisionAudit) throws {
         id = try a.requireID(); kind = a.kind; taskID = a.taskID; projectID = a.projectID; subjectID = a.subjectID
         grantID = a.grantID; quote = a.quote; note = a.note; createdAt = a.createdAt
+    }
+    init(_ a: BrainConnectionAudit) throws {
+        id = try a.requireID(); kind = a.kind; taskID = nil; projectID = a.projectID; subjectID = a.targetGrantID
+        grantID = a.grantID; quote = a.quote; note = nil; createdAt = a.createdAt
     }
 }
 
@@ -123,9 +130,14 @@ enum BrainMandateService {
     }
 
     static func audit(userID: UUID, db: any Database) async throws -> BrainAuditResponse {
-        let rows = try await BrainDecisionAudit.query(on: db).filter(\.$userID == userID)
+        let decisions = try await BrainDecisionAudit.query(on: db).filter(\.$userID == userID)
             .sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(BrainMandateLimits.auditLimit).all()
-        return BrainAuditResponse(items: try rows.map(BrainAuditDTO.init))
+        let changes = try await BrainConnectionAudit.query(on: db).filter(\.$userID == userID)
+            .sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(BrainMandateLimits.auditLimit).all()
+        // Both tables are cut at the limit first, so the merged newest entries are complete.
+        let items = try (decisions.map(BrainAuditDTO.init) + changes.map(BrainAuditDTO.init))
+            .sorted { ($0.createdAt ?? .distantPast, $0.id.uuidString) > ($1.createdAt ?? .distantPast, $1.id.uuidString) }
+        return BrainAuditResponse(items: Array(items.prefix(BrainMandateLimits.auditLimit)))
     }
 }
 
