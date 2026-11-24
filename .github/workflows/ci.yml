@@ -40,6 +40,11 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
           scripts/connection-projects-e2e.sh "$RUNNER_TEMP/connection-projects-e2e"
+      # Overview block now, compact answer and ending a session status (card 692891DF): real backend, REST + MCP with an OAuth token, time shift via sqlite3.
+      - name: Overview now E2E (now block, compact, ended sessions)
+        run: |
+          apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
+          scripts/overview-now-e2e.sh "$RUNNER_TEMP/overview-now-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)
