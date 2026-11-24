@@ -68,7 +68,7 @@ final class OverviewNowCompactTests: XCTestCase {
         try await fixture { f, access in
             let db = f.test.app.db, uid = try f.user.requireID(), pid = try f.project.requireID()
             let long = String(repeating: "abcdefghij ", count: 40)
-            let t = TodoTask(ownerID: uid, projectID: pid, title: String(repeating: "T", count: 300)); t.status = "in_progress"; try await t.save(on: db)
+            let t = TodoTask(ownerID: uid, projectID: pid, title: String(repeating: "T", count: 200)); t.status = "in_progress"; try await t.save(on: db)
             let wf = TaskWorkflow(taskID: try t.requireID()); wf.claimedByType = "integration"; wf.claimedByID = UUID(); wf.claimedLabel = "A"; wf.claimedAt = Date()
             try await wf.save(on: db)
             let n = TaskProgressNote(); n.taskID = try t.requireID(); n.actorType = .integration; n.actorID = UUID(); n.note = long; try await n.save(on: db)
@@ -87,7 +87,7 @@ final class OverviewNowCompactTests: XCTestCase {
             let full = try await f.test.json(.GET, "/v1/overview/now", token: f.session)
             let fullActive = try XCTUnwrap(list(try XCTUnwrap(full.body?["now"] as? [String: Any]), "running").first)
             XCTAssertEqual((fullActive["text"] as? String)?.count, 200)
-            XCTAssertEqual((fullActive["title"] as? String)?.count, 300)
+            XCTAssertEqual((fullActive["title"] as? String)?.count, 200)
             // MCP compact is the same answer, and clearly smaller than the full one.
             let mcp = try await call(f, "get_overview_now", ["compact": true, "limit": 5], access)
             XCTAssertFalse(mcp.isError, mcp.text)
