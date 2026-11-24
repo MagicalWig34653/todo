@@ -26,9 +26,30 @@ Entscheidung des Orchestrators: `register_build` (und REST `POST /v1/builds`, de
 
 `OverviewNow.Event` bekommt optional `label`, `platform`, `status`, nur fuer `build.added` und `build.status_changed` (aus dem `BuildArtifact` ueber `subjectID`; es ist der aktuelle Stand des Builds, nicht der zum Ereigniszeitpunkt). Der Feed (`FeedService`) liefert `build.status_changed` jetzt als Post kind `build` mit `text` = Label (sonst Build-ID), `status`, `platform` (additive Felder in `FeedPostDTO`, nil fehlt im JSON). Je Statuswechsel ein eigener Post ohne Bilder; keine Zusammenfassung mit `build.added`. Keine Migration. Der Satz "Der Feed zeigt build.status_changed nicht" im Nachtrag davor gilt damit nur fuer 1.2.0. Grenze: da der Status der aktuelle ist, zeigen aeltere Statusereignisse desselben Builds denselben (neuesten) Status.
 
+## Nachtrag 24.11.2026: Block "now", kompakte Antwort, Sitzung beenden, Aufräumen (Vertrag 1.4.0, Handbuch 1.40.0, Karte 692891DF)
+
+Ziel: Agenten und die PWA sollen mit einem Aufruf sehen, was gerade läuft, worauf gewartet wird und was erledigt ist, ohne die große Projektliste zu lesen. Alles additiv, keine Migration.
+
+**Block `now`** (`OverviewNow.now`, immer gefüllt in REST und MCP, in der vollen Antwort höchstens 100 Einträge je Liste, `counts` sind die Gesamtzahlen vor dem Kürzen):
+
+- `running`: Karten mit Status `in_progress` und Lebenszeichen höchstens 30 Minuten sowie Sitzungsstatus mit `updatedAt` höchstens 30 Minuten. `silent`: Karten in Arbeit ohne Lebenszeichen der letzten 30 Minuten und Sitzungen von 30 Minuten bis 24 Stunden Alter. Beide Listen: jüngstes Lebenszeichen zuerst (bei Gleichstand nach Titel).
+- Lebenszeichen einer Karte: dieselbe Berechnung wie das Verwaist-Kennzeichen (`ClaimLiveness.lastSignOfLife`: Claim, Fortschrittsnotiz, Kommentar, Aktivitätsereignis, Runner-Ereignis) plus `last_seen_at` der Live-Ansicht der Karte (ADR 0031). Eine Karte in Arbeit ganz ohne Lebenszeichen ist `silent`; als `lastSignAt` steht dann der Beginn des Claims bzw. die letzte Änderung der Karte.
+- Sitzungen, deren `activity` (nach Trim, ohne Beachtung der Groß-/Kleinschreibung) mit "Beendet" beginnt, erscheinen weder in `running` noch in `silent`. `projects[].sessions` bleibt unverändert (zeigt sie weiter, verwaist nach 30 Minuten, ausgeblendet nach 24 Stunden).
+- `waiting`: offene Fragen (`open`) und ausstehende Reviews (`pending`) aller lesbaren Projekte, neueste zuerst, Text einzeilig und höchstens 200 Zeichen. Wie bei `openQuestions`/`pendingReviews` ohne Filter auf erledigte Karten.
+- `recentlyDone`: Karten mit Status `done`, deren Zeitpunkt der letzten Änderung (`updated_at`) höchstens 6 Stunden zurückliegt, neueste zuerst. Es gibt kein eigenes Erledigt-Datum und kein Aktivitätsereignis mit dem Zielstatus (`task.status_changed` nennt ihn nicht); die Quelle ist dieselbe wie bei der Erledigt-Spalte der Steuerzentrale. Grenze: Wird eine erledigte Karte später bearbeitet (Titel, Beschreibung, Spalte), rückt `doneAt` nach vorn; eine wieder geöffnete Karte fällt heraus.
+- Rechte unverändert: `ProjectAccess.visibleProjects`, bei MCP geschnitten mit dem Grant. Fremdes bleibt unsichtbar.
+
+**Kompakt:** REST `GET /v1/overview/now?compact=true&limit=N` und MCP `get_overview_now {compact, limit}` liefern nur `{serverTime, now}` (ohne `projects`; die Abfragen für Aufträge, Builds und Aktivität entfallen), jede Liste auf `limit` gekürzt (Standard 10, 1 bis 50, sonst 400 `invalid_limit`, auch ohne `compact` geprüft), Texte, Titel und Projektnamen auf 140 Zeichen mit "…". Das Handbuch empfiehlt `compact=true` für Agenten.
+
+**Sitzung beenden:** `ended: true` an `PUT /v1/projects/{id}/session-status` und `report_session_status` löscht die Zeile (Modell-Löschung, also meldet die Live-Middleware den Projekt-Hinweis und ändert das Live-Token wie bei einer Meldung; wurde nichts gelöscht, bleibt das Token). Idempotent (unbekannter Name 200), kein 10-s-Limit, gleiche Rechte wie das Melden (edit, Grant; 404/403 wie sonst), Antwort mit `ended: true` und leerem `activity`; `activity` ist dann nicht nötig, ohne `ended` weiter Pflicht (400 `invalid_activity`). Das Löschen schafft Platz gegen `too_many_sessions`. Gelöscht wird nur die eigene Zeile (Schlüssel Konto, Projekt, Name).
+
+**Aufräumen:** `ExpiredCleanup` (`cleanup-expired`, Scheduler) löscht Zeilen mit `updated_at` höchstens 24 Stunden vor dem Lauf, genau die in der Übersicht ausgeblendeten (`Report.sessionStatuses`).
+
+**Grenzen:** (1) `silent` und `running` lesen bis zu 1000 Karten in Arbeit (die `runningTasks` je Projekt wie bisher 300); darüber fehlen die ältesten. Fortschrittsnotizen werden für Text und Prozent aus den neuesten 2000 Notizen gelesen (wie schon `runningTasks`). (2) `counts.waiting` und `counts.recentlyDone` kommen aus eigenen Zählabfragen, `counts.running`/`silent` aus den geladenen Karten und höchstens 500 Sitzungen. (3) Der Block kennt keine Teams oder Rollen über die Lesbarkeit hinaus; Sitzungen anderer Personen in geteilten Projekten erscheinen wie bisher mit. (4) Ein Agent, der abstürzt, beendet seine Sitzung nicht; sie wird nach 30 Minuten `silent`, nach 24 Stunden unsichtbar und gelöscht.
+
 ## Folgen und Grenzen
 
-- Aufbewahrung: Zeilen werden nicht aktiv gelöscht; nach 24 h sind sie in der Übersicht unsichtbar, Projekt-/Kontolöschung löscht per Kaskade. Ein Aufräumschritt im `ExpiredCleanup` ist nicht Teil von Stufe 1.
+- Aufbewahrung: nach 24 h sind Zeilen in der Übersicht unsichtbar; Projekt-/Kontolöschung löscht per Kaskade. Stufe 1 löschte sie nicht aktiv, seit dem Nachtrag 24.11.2026 tut es `ExpiredCleanup`; eine Sitzung lässt sich mit `ended: true` sofort beenden.
 - Der Melder selbst erhält über `wait_for_events` ebenfalls den Projekt-Hinweis zu seiner eigenen Meldung (die Hinweiszeile kennt keinen Absender); das Live-Token ändert sich ohnehin bei jeder Meldung. Ein Absenderfilter bräuchte eine Spalte in `live_events`.
 - Die Übersicht lädt je Projekt zwei begrenzte Abfragen (Builds, Aktivität); bei sehr vielen Projekten ist das N+1 und müsste später gebündelt werden.
 - Migration `CreateSessionStatuses` ist additiv.
