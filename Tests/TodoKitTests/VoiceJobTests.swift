@@ -803,3 +803,55 @@ extension VoiceJobTests {
         }
     }
 }
+
+// MARK: Logs (ADR 0030 step 7): no transcripts, reply texts or audio content in the server log
+
+extension VoiceJobTests {
+    /// Sample at the level a production server runs (`info`): the whole voice life cycle with recognizable secrets. The log
+    /// may say that something happened, never what was said. Not covered on purpose: at `debug` the SQLite and MariaDB
+    /// drivers log SQL with its bound values (seen in this very sample: transcript, reply and text appear), so production
+    /// must never run with LOG_LEVEL=debug or trace while voice is in use (docs/BETRIEB.md).
+    func testServerLogCarriesNoTranscriptReplyTextOrAudioContent() async throws {
+        for level in [Logger.Level.info] {
+            let s = try await make()
+            let capture = LogCapture()
+            s.t.app.logger = Logger(label: "voice-privacy-sample") { _ in var h = CaptureLogHandler(capture: capture); h.logLevel = level; return h }
+            s.t.app.logger.logLevel = level
+            let secrets = ["GEHEIM-TRANSKRIPT-\(level)", "GEHEIME-ANTWORT-\(level)", "GEHEIMER-TEXT-\(level)", "GEHEIMER-FEHLERTEXT-\(level)"]
+            try await run(s) {
+                _ = try await heartbeat(s, s.runner1)
+                // Done job: transcript, reply text and reply audio.
+                let memo = try await uploadMemo(s)
+                _ = try await speak(s, memo: memo)
+                let job = try await unwrap(try await claim(s, s.runner1).body?["id"] as? String)
+                _ = try await download(s, s.runner1, job, generation: 1)
+                _ = try await putReply(s, s.runner1, job, generation: 1, data: AudioFixtures.m4a(duration: 1000))
+                // A rejected text (too long) logs the reason only.
+                let tooLong = try await jobCommand(s, s.runner1, job, "result", ["generation": 1, "transcript": secrets[3] + String(repeating: "x", count: 4100), "replyText": "x"])
+                XCTAssertEqual(tooLong.status, .badRequest)
+                let done = try await jobCommand(s, s.runner1, job, "result", ["generation": 1, "transcript": secrets[0], "replyText": secrets[1]])
+                XCTAssertEqual(done.status, .ok)
+                // A person's plain text message, the history, the export and a retention sweep.
+                let text = try await s.t.json(.POST, "/v1/channels/brain/messages", ["kind": "text", "text": secrets[2]], token: s.human)
+                XCTAssertEqual(text.status, .created)
+                _ = try await messages(s)
+                try await s.t.app.test(.GET, "/v1/me/export", beforeRequest: { $0.headers.bearerAuthorization = .init(token: s.human) }, afterResponse: { res async in
+                    XCTAssertEqual(res.status, .ok)
+                })
+                _ = try await VoiceRetention.sweep(db: s.t.app.db, now: Date().addingTimeInterval(30 * 86400))
+                // A failed job.
+                let memo2 = try await uploadMemo(s)
+                _ = try await speak(s, memo: memo2)
+                let job2 = try await unwrap(try await claim(s, s.runner1).body?["id"] as? String)
+                _ = try await jobCommand(s, s.runner1, job2, "result", ["generation": 1, "errorCode": "stt_failed"])
+            }
+            let log = capture.lines.joined(separator: "\n")
+            XCTAssertGreaterThan(log.count, 0, "the sample did capture log lines at \(level)")
+            for secret in secrets { XCTAssertFalse(log.contains(secret), "\(secret) found in the log at \(level)") }
+            // Audio content: neither the bytes (as hex or base64) nor the checksum of what was recorded.
+            let audioBytes = AudioFixtures.m4a(duration: 4000)
+            XCTAssertFalse(log.contains(audioBytes.prefix(64).map { String(format: "%02x", $0) }.joined()), "audio hex at \(level)")
+            XCTAssertFalse(log.contains(audioBytes.prefix(48).base64EncodedString()), "audio base64 at \(level)")
+        }
+    }
+}

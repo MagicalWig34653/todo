@@ -196,7 +196,7 @@ components:
             attachment then belongs to the account alone (only the owner reads it) and reports no taskID. Without taskID
             and with another role the request fails with 400 invalid_attachment. Per account at most 10 task-less voice
             attachments that no channel message and no voice job references yet exist at a time (429 too_many_voice_attachments);
-            unreferenced ones older than 24 hours are removed by cleanup-uploads (full retention: ADR 0030 step 7).
+            unreferenced ones older than 24 hours are removed by cleanup-uploads. Voice audio referenced by channel messages follows the retention of ADR 0030 step 7 (recording: deleted after processing, at the latest after 24 h; reply: 7 days).
         filename:
           type: string
           description: 1 to 200 UTF-8 bytes, no control characters or path separators

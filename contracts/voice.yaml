@@ -8,7 +8,7 @@ info:
     muss dem Konto gehören und fertig hochgeladen sein). Schreiben über REST (Sitzung, App) ist die Person: text und voice_in. Der Agent (MCP) schreibt
     text, voice_out und status und kann kein voice_in erzeugen. Text höchstens 4000 Zeichen. Idempotenz über clientUUID (je Konto eindeutig): gleicher
     Schlüssel und gleicher Inhalt liefert die ursprüngliche Nachricht (200 statt 201), anderer Inhalt 409 client_uuid_conflict. Liste neueste zuerst,
-    Cursor-Paginierung. Audio und Transkripte stehen in keinem Log. Aufbewahrung, Export und Anonymisierung: ADR 0030, Schritt 7 (noch nicht umgesetzt);
+    Cursor-Paginierung. Audio und Transkripte stehen in keinem Log. Aufbewahrung (Eingangsaudio nach Verarbeitung gelöscht, spätestens 24 h; Antwortaudio 7 Tage; nach der Löschung hat die Nachricht kein attachmentID mehr, Transkript und Text bleiben), Export (channelMessages) und Anonymisierung (löscht Kanal, Nachrichten, Jobs und alles Voice-Audio): ADR 0030, Schritt 7;
     das Löschen des Kontos löscht Kanal und Nachrichten (Kaskade).
     Sprachaufträge (1.1.0): Eine voice_in-Nachricht erzeugt einen Sprachauftrag (voice_job: queued, claimed, done, failed, expired), wenn ein Gerät
     des Kontos die Fähigkeit sprache meldet (nicht vom Besitzer abgeschaltet, nicht widerrufen) und sein letzter Sprach-Heartbeat höchstens 90 s alt

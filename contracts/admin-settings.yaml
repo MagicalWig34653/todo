@@ -247,7 +247,7 @@ paths:
     get:
       operationId: exportMe
       summary: Datenexport des eigenen Kontos
-      description: 'JSON-Download (account, projects, tasks, comments, labels) nur mit eigenen Daten, ohne Geheimnisse (kein Passwort-Hash,
+      description: 'JSON-Download (account, projects, tasks, comments, labels, channelMessages) nur mit eigenen Daten; channelMessages = Nachrichten des Kanals #brain (id, kind, author, text, hasAudio, createdAt, älteste zuerst), das Audio selbst ist nicht enthalten; ohne Geheimnisse (kein Passwort-Hash,
         keine Passkeys, Token, Push-Token). Kommentare nur aus Projekten, die das Konto aktuell lesen darf. Höchstens 20 MiB, sonst 413 export_too_large.'
       responses:
         '200': {description: Export als Datei todolino-export.json, content: {application/json: {schema: {type: object}}}}

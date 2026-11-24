@@ -1585,3 +1585,11 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Tests: neue `ReviewVariantsTests` (REST: Validierung, Fehlercodes, Wahl, Verlauf, Undo, Sammelfreigabe, Review ohne Varianten) und `ReviewVariantsMCPTests` (Tool-Schema, request_review, decide_review mit Mandat+Zitat+variantID). Bestehende Review-/Brain-/Feed-/Handbuchtests unveraendert gruen (Versions-Asserts auf 1.36.0).
 - Grenzen: nur SQLite gelaufen, MariaDB-Lauf und Volllauf stehen aus (Hauptsession). Keine PWA/App-Anpassung: ReviewDTO-Felder sind additiv, alte Clients zeigen Varianten-Reviews wie bisher; ein Annehmen ohne Variante schlaegt dort mit 422 `variant_required` fehl, bis Stufe 2 die Auswahl bringt (Risiko beim Merge vor Stufe 2: eine Review mit Varianten ist in der alten PWA nicht annehmbar, nur ueber Aenderungen/Undo).
 - Naechster Schritt: Stufe 2 (PWA `ReviewDecision.svelte`, Karten-Detail, Sammelleiste, E2E `review-variants.spec.ts`).
+
+## Nachtrag 24.11.2026: T1-7 Datenschutz, Backend (Karte 1614ABC6)
+
+- Stand: Schritte 1-3 der Karte umgesetzt, test-first (rot d58632e/8449f88, grün a43d8b3/6dde4e5 und Folgecommit). Details und Grenzen: ADR 0030 „Schritt 7 Backend“.
+- Cleanup-Fristen: `VoiceRetention.sweep` (Eingang 24 h, Antwort 7 Tage; Eingang bei `done` sofort), Worker alle 5 min plus `cleanup-uploads`. Test mit Zeitverschiebung (`now:`), E2E `scripts/voice-jobs-e2e.sh` (native App, HTTP, DB-Zeitverschiebung, `App cleanup-uploads`).
+- Export: `channelMessages` (ohne Audio). Anonymisierung: Kanal, Nachrichten, Jobs, Voice-Audio weg. Tests `VoicePrivacyTests`.
+- Log-Stichprobe: auf `info` sauber; auf `debug` loggen die SQL-Treiber Binds mit Transkripten (BETRIEB.md: nie `LOG_LEVEL=debug` in Produktion).
+- Offen: „Audio behalten“ (Konto, bis 30 Tage), Endpunkt „Sprachverlauf löschen“, PWA „Daten & Datenschutz“ (Einwilligung, Fristen). Nächster Schritt: diese drei als eigener Schnitt (Migration + API + PWA).
