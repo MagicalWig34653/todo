@@ -62,7 +62,7 @@ In `stack.env`: `SETTINGS_KEY_ENABLED=true` (optional `SETTINGS_KEY_SECRET=<ande
 
 1. Neues Secret anlegen (`openssl rand -base64 32 | tr -d '\n' | docker secret create todo_settings_key_2 -`).
 2. In `stack.env`: `SETTINGS_KEY_SECRET=todo_settings_key_2` und `SETTINGS_KEY_PREVIOUS_SECRET=todo_settings_key`. Deployen (Overlay `stack.settings-previous.yaml` macht den alten Schlüssel zusätzlich lesbar).
-3. Einmalig neu verschlüsseln: in einem Backend-Container `todo-app settings rotate-key --yes` (meldet die Anzahl; wiederholbar).
+3. Einmalig neu verschlüsseln: in einem Backend-Container `todo-app settings rotate-key --yes` (auch `-y`; meldet die Anzahl; wiederholbar; ohne `--yes` bricht der Befehl mit `confirmation_required` ab).
 4. `SETTINGS_KEY_PREVIOUS_SECRET` entfernen, deployen, altes Secret löschen.
 
 **Schlüssel verloren?** Die gespeicherten Geheimnisse sind dann unlesbar (Anzeige „nicht lesbar“). In der PWA „Zurücksetzen“ und neu eingeben; Nicht-Geheimnisse bleiben unberührt.

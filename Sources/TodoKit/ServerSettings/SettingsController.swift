@@ -506,7 +506,7 @@ struct RotateSettingsKeyCommand: AsyncCommand {
     let help = "Re-encrypt stored secrets with SETTINGS_ENCRYPTION_KEY (old key in SETTINGS_ENCRYPTION_KEY_PREVIOUS)."
 
     func run(using context: CommandContext, signature: Signature) async throws {
-        guard signature.yes else { throw Abort(.badRequest, reason: "confirmation_required: pass --yes") }
+        guard context.isConfirmed(signature.yes) else { throw Abort(.badRequest, reason: "confirmation_required: pass --yes") }
         let ring = try SettingsKeyRing.fromEnvironment(get: { Environment.get($0) })
         let n = try await Self.rotate(ring: ring, on: context.application.db)
         context.console.print("re-encrypted \(n) secret(s)")

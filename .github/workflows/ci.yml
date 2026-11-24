@@ -30,6 +30,11 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
           scripts/account-deletion-e2e.sh "$RUNNER_TEMP/account-deletion-e2e"
+      # Operator commands with --yes through the real binary (card 300B3A20): settings rotate-key, push-test.
+      - name: Operator commands E2E (--yes)
+        run: |
+          apt-get install -y -qq uuid-runtime openssl
+          scripts/operator-commands-e2e.sh "$RUNNER_TEMP/operator-commands-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)

@@ -364,7 +364,7 @@ struct PushTestCommand: AsyncCommand {
     let help = "Send a generic test notification to all active devices of an account (needs APNS_ENABLED=true)."
     func run(using context: CommandContext, signature: Signature) async throws {
         guard let id = UUID(uuidString: signature.accountID) else { throw Abort(.badRequest, reason: "invalid_account_id") }
-        guard signature.yes else { throw Abort(.badRequest, reason: "confirmation_required: pass --yes") }
+        guard context.isConfirmed(signature.yes) else { throw Abort(.badRequest, reason: "confirmation_required: pass --yes") }
         let app = context.application
         guard let sender = app.apnsSender else { throw Abort(.badRequest, reason: "push_disabled: set APNS_ENABLED=true and the APNS_* variables") }
         let devices = try await PushDevice.query(on: app.db).filter(\.$userID == id).filter(\.$revokedAt == nil).sort(\.$id).all()
