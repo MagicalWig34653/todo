@@ -7,7 +7,7 @@ export const deVoicePrivacy = {
 	'settings.data.voice.consent.none': 'Noch keine Einwilligung erteilt.',
 	'settings.data.voice.periods.title': 'Aufbewahrung',
 	'settings.data.voice.periods.input': 'Eingang: Deine Sprachnachricht wird nach der Verarbeitung gelöscht, spätestens nach {span}.',
-	'settings.data.voice.periods.reply': 'Antwort: Sprachantworten werden nach {span} gelöscht.',
+	'settings.data.voice.periods.reply': 'Antwort: Sprachantworten bleiben höchstens {span} gespeichert.',
 	'settings.data.voice.periods.transcripts': 'Transkripte: Der Text deiner Nachrichten bleibt, bis du den Sprachverlauf löschst.',
 	'settings.data.voice.keep.label': 'Audio behalten (bis zu {span})',
 	'settings.data.voice.keep.hintNeedsConsent': 'Dafür brauchst du zuerst deine Einwilligung oben.',

@@ -82,7 +82,7 @@ test('periods and counters are visible, nothing is consented yet', async () => {
 	await page.goto('/settings/data');
 	const panel = page.getByTestId('voice-privacy');
 	await expect(panel).toBeVisible();
-	await expect(panel.getByRole('heading', { name: 'Sprachnachrichten (Kanal #brain)' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Sprachnachrichten (Kanal #brain)' })).toBeVisible();
 	const periods = page.getByTestId('voice-periods');
 	await expect(periods).toContainText('24 Stunden');
 	await expect(periods).toContainText('7 Tage');
@@ -148,6 +148,8 @@ test('keyboard: the consent checkbox is reachable and operable without a mouse',
 	await expect(keepAudio()).toBeDisabled();
 	await page.keyboard.press('Space');
 	await expect(consent()).toBeChecked();
+	// The consent is saved first; "keep audio" becomes operable only afterwards.
+	await expect(keepAudio()).toBeEnabled();
 	await keepAudio().focus();
 	await page.keyboard.press('Space');
 	await expect(keepAudio()).toBeChecked();

@@ -111,6 +111,8 @@ describe('API calls', () => {
 		const r = await deleteVoiceHistory(async (url, init) => ((sent = { url, init }), json({ deletedMessages: 4, deletedAudio: 1 })));
 		expect(sent?.url).toBe('/v1/channels/brain/messages');
 		expect(sent?.init?.method).toBe('DELETE');
+		// The backend refuses every state-changing request without a JSON content type (415 json_required), also without a body.
+		expect((sent?.init?.headers as Record<string, string>)['Content-Type']).toBe('application/json');
 		expect(r).toEqual({ deletedMessages: 4, deletedAudio: 1 });
 	});
 });
