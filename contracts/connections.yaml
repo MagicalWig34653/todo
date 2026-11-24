@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino MCP-Verbindungen im Teilen-Fenster
-  version: 1.2.0
+  version: 1.3.0
   description: 'ADR 0028. Eine MCP-Verbindung (OAuth-Grant) ist ein eigener Beteiligter eines Projekts neben Personen und Teams. Ihr Zugriff ist durch
     die Rechte der Person (wirksame Rolle) UND die Projektliste/Scopes des Grants begrenzt, nie größer als der Besitzer; es gibt keine eigene Rolle.
     Das Feld role der Antwort ist die aktuelle Rolle des Besitzers im Projekt. Name der Verbindung: Feld name von GET /oauth/grants
@@ -12,6 +12,7 @@ info:
     Ignorieren schaltet den Hinweis still. Entschiedene Hinweise räumt cleanup-expired nach 7 Tagen auf, offene nach 30 Tagen ohne Wiederholung.
     1.1.0 (Brain-Vollmacht, ADR 0032): /v1/settings/brain-mandate. Die Person gibt höchstens einer ihrer Verbindungen eine Vollmacht für genau die genannten Projekte (keine Vererbung auf Unterprojekte); nur diese Verbindung darf mit decide_review/answer_question als Agent entscheiden. Verwaltung ausschließlich mit Personen-Sitzung, OAuth-Tokens erhalten 401; es gibt keinen MCP-Schreibweg.'
     1.2.0 (ADR 0032 Nachtrag 23.11.2026, Karte 2280A2F1): eine Vollmacht je Verbindung statt einer je Person. GET liefert {mandates: [...]} (Liste, zuletzt geändert zuerst; das bisherige Feld mandate entfällt), PUT erteilt/überschreibt die Vollmacht genau der genannten Verbindung und lässt die übrigen unberührt, DELETE /v1/settings/brain-mandate/{grantID} widerruft nur diese Verbindung, DELETE ohne ID widerruft alle. Sicherheitsregeln unverändert (kein MCP-Schreibweg, eigene Reviews/Fragen gesperrt, Widerruf sofort, Zitat-Pflicht, Audit).
+    1.3.0 (ADR 0032 Nachtrag 24.11.2026, Karte E71B0FF1): eine Verbindung mit aktiver Vollmacht liest und ändert per MCP die Projektliste (OAuthGrant.projects) der anderen Verbindungen derselben Person, nur für Projekte ihrer eigenen Vollmacht (Abschnitt x-mcp-tools: list_connections, set_connection_projects). Das Protokoll GET /v1/settings/brain-mandate/audit zeigt zusätzlich die Änderungen (kind connection.project_added|connection.project_removed); taskID ist dort nicht gesetzt, subjectID ist die geänderte Verbindung. Es gibt weiterhin keinen MCP-Schreibweg für Vollmachten.
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -123,7 +124,10 @@ paths:
     get:
       operationId: listBrainDecisionAudit
       summary: Protokoll der Entscheidungen unter allen Vollmachten
-      description: 'Neueste zuerst, höchstens 200. Antwort {items: [{id, kind review.accepted|review.changes_requested|question.answered, taskID, projectID, subjectID, grantID, quote, note, createdAt}]}. Das Protokoll hat keine Fremdschlüssel auf Karte oder Verbindung und überdauert deren Löschung.'
+      description: 'Neueste zuerst, höchstens 200 (Entscheidungen und Verbindungsänderungen gemischt). Antwort {items: [{id, kind review.accepted|review.changes_requested|question.answered|connection.project_added|connection.project_removed, taskID (fehlt bei connection.*), projectID, subjectID (Review/Frage, bei connection.* die geänderte Verbindung), grantID (die entscheidende bzw. handelnde Verbindung), quote, note, createdAt}]}. Das Protokoll hat keine Fremdschlüssel auf Karte oder Verbindung und überdauert deren Löschung.'
       responses:
         '200': {description: BrainAuditResponse}
         '401': {description: keine Personen-Sitzung}
+x-mcp-tools:
+  list_connections: {scope: 'projects:read', arguments: {}, result: '[{grantID, name, clientName, scopes[], lastUsedAt, projects:[{id, name}]}] (die übrigen nicht widerrufenen Verbindungen derselben Person; projects nur aus der eigenen Vollmacht)', errors: 'brain_mandate_required (403)'}
+  set_connection_projects: {scope: 'projects:write', required: [grantID], arguments: {grantID: UUID, addProjectIDs: 'UUID[] bis 50', removeProjectIDs: 'UUID[] bis 50, kein Überschnitt, zusammen mindestens eines', quote: 'string 1-2000, Pflicht (Linos Zitat)'}, result: '{grantID, name, projects:[{id, name}] (nur Vollmachtsprojekte, nach der Änderung), added[], removed[]}', errors: 'invalid_projects|invalid_id|invalid_arguments (400), cannot_change_own_connection (403), not_found (404: fremde oder unbekannte Verbindung, Projekt nicht lesbar), grant_revoked (409), brain_mandate_required (403), outside_brain_mandate (403, nichts wird angewendet), quote_required|invalid_quote (400), projects_required (400)', notes: 'Prüfreihenfolge in dieser Reihenfolge; idempotent; Hinzufügen verlangt aktuelle Leserechte der Person und markiert Zugriffshinweise als granted; Audit je tatsächlicher Änderung in derselben Transaktion; Vollmachten selbst bleiben unverändert.'}

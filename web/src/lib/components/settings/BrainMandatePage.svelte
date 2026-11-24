@@ -467,10 +467,13 @@
 									<span class="text-muted-foreground text-xs">{formatWhen(a.createdAt)}</span>
 									<span class="text-muted-foreground text-xs" data-testid="bm-audit-via">{t('brainMandate.audit.via', { name: via })}</span>
 								</div>
-								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}</p>
+								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}{#if !a.taskID} · <span data-testid="bm-audit-target">{t('brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
 								<blockquote class="border-l-2 pl-2 break-words whitespace-pre-wrap" aria-label={t('brainMandate.audit.quote')}>{a.quote}</blockquote>
 								{#if a.note}<p class="text-muted-foreground text-xs break-words whitespace-pre-wrap"><span class="font-medium">{t('brainMandate.audit.note')}:</span> {a.note}</p>{/if}
-								<a class="text-ui-accent-ink w-fit text-xs underline underline-offset-2" href="?card={auditCardParam(a.taskID)}" aria-label={t('brainMandate.audit.cardLabel', { kind: t(auditKindKey(a.kind)), project: projectName(a.projectID) })} onclick={(ev) => openCard(ev, a.taskID)} data-testid="bm-audit-card">{t('brainMandate.audit.card')}</a>
+								{#if a.taskID}
+									{@const taskID = a.taskID}
+									<a class="text-ui-accent-ink w-fit text-xs underline underline-offset-2" href="?card={auditCardParam(taskID)}" aria-label={t('brainMandate.audit.cardLabel', { kind: t(auditKindKey(a.kind)), project: projectName(a.projectID) })} onclick={(ev) => openCard(ev, taskID)} data-testid="bm-audit-card">{t('brainMandate.audit.card')}</a>
+								{/if}
 							</li>
 						{/each}
 					</ul>

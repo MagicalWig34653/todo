@@ -1,5 +1,12 @@
 # Arbeitsplan
 
+## Checkpoint 24.11.2026: Brain-Vollmacht, Projektfreigaben eigener Verbindungen per MCP (Karte `E71B0FF1`)
+
+- Stand: umgesetzt auf dem Worktree-Branch `worktree-agent-a5d26e5525b4532e5` (von `45d1b36`), nicht gepusht, nicht gemergt. `list_connections` und `set_connection_projects` (Handbuch 1.39.0), Audit in `brain_connection_audits`, `contracts/connections.yaml` 1.3.0, ADR 0032 Nachtrag, E2E `scripts/connection-projects-e2e.sh` samt CI-Schritt. Belege und Zahlen: STATUS.md (oberster Nachtrag).
+- Migration/Deploy: neue Tabelle `brain_connection_audits` (additiv), vor `serve` `App migrate --yes`. Die Brain-Verbindung braucht `projects:read` und `projects:write` und die Projekte in ihrer Vollmacht.
+- Offen: PWA-Anpassung des Protokolls ungeprüft (`cd web && npm test -- tests/brainMandate.test.ts && npm run check`, kein `npm install` im Auftrag); Aktivitäts-/Feed-Eintrag "Brain im Auftrag von" fehlt bewusst (kartenlose Aktivität nicht vorhanden); CI-Lauf des neuen E2E-Schritts erst nach dem Push belegt.
+- Nächster Schritt: Hauptsession prüft Branch, führt die PWA-Prüfung aus, merged und pusht; danach Lino in Todolino: Vollmacht der Brain-Verbindung um Formular Backend, CarbStock, GearFlow ergänzen und das Brain "Wächter (Mac)" per `set_connection_projects` freigeben lassen.
+
 ## Checkpoint 17.11.2026: Zeitangaben in der PWA angebunden (Karte `330C57F8`)
 
 - Implementiert auf `codex/erstelldatum`, Hauptrepo/PWA `web/`: Karten-Detail zeigt `createdAt` und `updatedAt` (statt jüngster Fortschrittsnotiz als Kartenzeit); Fragen zeigen gestellt/beantwortet, Reviews angefragt/entschieden jeweils getrennt. Bericht, Überblick und „Für dich“ (Bedarfskarten und Feed-Beiträge) nutzen dieselbe Anzeige; Fortschrittsnotizen, Updates und Aufgaben-/Projektkommentare erhalten semantische Zeitangaben. Projektboard, Planungsboard und Übersichtskarten reservieren eine einzeilige dezente Erstellzeit, auch bei älteren Antworten ohne Feld.

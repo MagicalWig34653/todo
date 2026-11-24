@@ -20,8 +20,10 @@ export interface BrainMandate {
 export interface BrainAuditItem {
 	id: string;
 	kind: string;
-	taskID: string;
+	/** Absent for `connection.*` entries (no card involved). */
+	taskID?: string | null;
 	projectID: string;
+	/** Review or question id; for `connection.*` the id of the connection whose projects changed. */
 	subjectID: string;
 	grantID: string;
 	quote: string;
@@ -186,6 +188,10 @@ export function auditKindKey(kind: string): MessageKey {
 			return 'brainMandate.audit.kind.changes';
 		case 'question.answered':
 			return 'brainMandate.audit.kind.answered';
+		case 'connection.project_added':
+			return 'brainMandate.audit.kind.projectAdded';
+		case 'connection.project_removed':
+			return 'brainMandate.audit.kind.projectRemoved';
 		default:
 			return 'brainMandate.audit.kind.other';
 	}

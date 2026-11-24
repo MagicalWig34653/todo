@@ -175,9 +175,11 @@ describe('audit helpers', () => {
 		expect(auditKindKey('review.accepted')).toBe('brainMandate.audit.kind.accepted');
 		expect(auditKindKey('review.changes_requested')).toBe('brainMandate.audit.kind.changes');
 		expect(auditKindKey('question.answered')).toBe('brainMandate.audit.kind.answered');
+		expect(auditKindKey('connection.project_added')).toBe('brainMandate.audit.kind.projectAdded');
+		expect(auditKindKey('connection.project_removed')).toBe('brainMandate.audit.kind.projectRemoved');
 		expect(auditKindKey('unbekannt')).toBe('brainMandate.audit.kind.other');
 		expect(auditCardParam('ABCD1234-0000-0000-0000-000000000000')).toBe('task:ABCD1234-0000-0000-0000-000000000000');
-		for (const k of ['accepted', 'changes', 'answered', 'other']) expect(de[`brainMandate.audit.kind.${k}` as keyof typeof de]).toMatch(/\S/);
+		for (const k of ['accepted', 'changes', 'answered', 'projectAdded', 'projectRemoved', 'other']) expect(de[`brainMandate.audit.kind.${k}` as keyof typeof de]).toMatch(/\S/);
 	});
 });
 
