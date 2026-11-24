@@ -6,6 +6,8 @@ struct SessionStatusDTO: Content, Equatable {
     let sessionName: String
     let activity: String
     let updatedAt: String
+    /// `true` only in the answer to ending a session (the row is gone, `activity` is empty); absent otherwise.
+    var ended: Bool? = nil
 }
 
 /// One business path for REST and MCP. Writing needs the edit role on the project (like `post_progress`);
@@ -23,9 +25,10 @@ struct SessionStatusService: Sendable {
     var allowedProjects: Set<UUID>? = nil
 
     @discardableResult
-    func report(projectID: UUID, sessionName rawName: String, activity rawActivity: String) async throws -> SessionStatusDTO {
+    func report(projectID: UUID, sessionName rawName: String, activity rawActivity: String?, ended: Bool = false) async throws -> SessionStatusDTO {
         guard let name = try LiveSessionService.clean(rawName, max: Self.maxName, reason: "invalid_session"),
               !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw Abort(.badRequest, reason: "invalid_session") }
+        if ended { return try await end(projectID: projectID, sessionName: SecretFilter.redact(name).text) }
         guard let cleaned = try LiveSessionService.clean(rawActivity, max: Self.maxActivity, reason: "invalid_activity") else { throw Abort(.badRequest, reason: "invalid_activity") }
         let flat = SecretFilter.redact(cleaned).text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
         let activity = flat.count > Self.maxActivity ? String(flat.prefix(Self.maxActivity - 1)) + "…" : flat
@@ -59,11 +62,23 @@ struct SessionStatusService: Sendable {
         return SessionStatusDTO(projectID: projectID, sessionName: sessionName, activity: activity, updatedAt: LiveSessionService.iso(now))
     }
 
+    /// Ends the caller's session: the row is deleted (a model delete, so the live middleware announces it). Same rights as
+    /// reporting; no write limit; unknown names are fine, so retries and a double "end" are harmless.
+    private func end(projectID: UUID, sessionName: String) async throws -> SessionStatusDTO {
+        if let allowedProjects, !allowedProjects.contains(projectID) { throw Abort(.notFound) }
+        _ = try await ProjectAccess(user: user, db: db).project(projectID, role: .edit)
+        let uid = try user.requireID()
+        if let row = try await SessionStatus.query(on: db).filter(\.$userID == uid).filter(\.$projectID == projectID).filter(\.$sessionName == sessionName).first() {
+            try await row.delete(on: db)
+        }
+        return SessionStatusDTO(projectID: projectID, sessionName: sessionName, activity: "", updatedAt: LiveSessionService.iso(ChannelService.now()), ended: true)
+    }
+
     private static var rateLimited: Abort { Abort(.tooManyRequests, headers: ["Retry-After": "10"], reason: "rate_limited") }
 }
 
 struct SessionStatusController: RouteCollection {
-    struct Body: Content { let sessionName: String; let activity: String }
+    struct Body: Content { let sessionName: String; let activity: String?; let ended: Bool? }
 
     func boot(routes: any RoutesBuilder) throws {
         routes.put("v1", "projects", ":id", "session-status", use: put)
@@ -74,7 +89,7 @@ struct SessionStatusController: RouteCollection {
         let user = try await req.requireUser()
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.notFound) }
         let body = try req.content.decode(Body.self)
-        return try await SessionStatusService(user: user, db: req.db).report(projectID: id, sessionName: body.sessionName, activity: body.activity)
+        return try await SessionStatusService(user: user, db: req.db).report(projectID: id, sessionName: body.sessionName, activity: body.activity, ended: body.ended ?? false)
     }
 
     @Sendable func overview(_ req: Request) async throws -> OverviewNow {
