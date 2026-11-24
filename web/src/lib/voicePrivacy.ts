@@ -61,7 +61,7 @@ const browserFetch: FetchFn = (i, init) => fetch(i, init);
 async function call<T>(fetchFn: FetchFn, url: string, init: RequestInit): Promise<T> {
 	let res: Response;
 	try {
-		res = await fetchFn(url, { credentials: 'same-origin', ...init, headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}) } });
+		res = await fetchFn(url, { credentials: 'same-origin', ...init, headers: { Accept: 'application/json', ...(init.body || init.method === 'DELETE' ? { 'Content-Type': 'application/json' } : {}) } });
 	} catch {
 		throw new ApiError(0, 'network');
 	}

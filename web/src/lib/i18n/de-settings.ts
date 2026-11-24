@@ -39,7 +39,7 @@ export const deSettings = {
 	'settings.mcp': 'Claude Code verbinden',
 	'settings.mcp.description': 'Kopierfertige Befehle und Verbindungsprüfung für MCP.',
 	'settings.daten': 'Daten & Datenschutz',
-	'settings.daten.description': 'Export und Löschen deiner Daten (noch nicht verfügbar).',
+	'settings.daten.description': 'Daten exportieren, Sprachverlauf löschen, Konto anonymisieren.',
 	'settings.verwaltung-konten': 'Konten',
 	'settings.verwaltung-konten.description': 'Konten finden und Recovery-Codes ausstellen.',
 	'settings.verwaltung-einladungen': 'Einladungen',

@@ -103,7 +103,7 @@ test('consent, keep audio (only with consent), withdrawal switches it off again,
 	await page.goto('/settings/data');
 	await expect(consent()).toBeVisible();
 	await expect(consent()).toHaveAccessibleName(/Ich willige ein, dass meine Sprachnachrichten zur Verarbeitung gespeichert werden/);
-	await expect(keepAudio()).toHaveAccessibleName(/Audio behalten \(bis zu 30 Tage\)/);
+	await expect(keepAudio()).toHaveAccessibleName(/Audio behalten \(höchstens 30 Tage\)/);
 
 	await consent().check();
 	await expect(page.getByTestId('voice-status')).toContainText('Einwilligung gespeichert');
