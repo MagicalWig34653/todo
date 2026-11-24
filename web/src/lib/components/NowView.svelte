@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { api, type OverviewNow, type OverviewProject } from '#lib/api.js';
+	import { api, type NowActive, type OverviewNow, type OverviewProject } from '#lib/api.js';
 	import { relativeWhen } from '#lib/cardRef.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { de } from '#lib/i18n/de.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { liveRefresh, startLiveRefresh } from '#lib/liveRefresh.js';
 	import {
-		allowRefetch, buildCommit, buildEventHead, buildStatusOf, buildSummary, groupProjects, isEmptyNow, isExpanded, isOrphaned, loadExpanded, percentOf, projectStats, saveExpanded, type ExpandedMap
+		allowRefetch, blockOf, buildCommit, buildEventHead, buildStatusOf, buildSummary, dueInfo, groupProjects, isExpanded, isOrphaned, lifeSignText, loadExpanded, percentOf, projectStats,
+		saveExpanded, serverClock, showEmptyPage, sinceText, visibleSessions, waitingCard, type ExpandedMap
 	} from '#lib/now.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -16,6 +17,7 @@
 	import IdChip from './IdChip.svelte';
 	import BuildStatusBadge from './BuildStatusBadge.svelte';
 	import Radio from '@lucide/svelte/icons/radio';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
 
 	const sectionHead = 'text-muted-foreground mb-0.5 text-[11px] font-semibold tracking-wider uppercase';
 	let data = $state<OverviewNow | null>(null);
@@ -27,7 +29,11 @@
 	let now = $state(new Date());
 	let lastFetchAt: number | null = null;
 
-	const groups = $derived(data ? groupProjects(data.projects, now) : { active: [], quiet: [] });
+	const groups = $derived(data ? groupProjects(data.projects ?? [], now) : { active: [], quiet: [] });
+	/** Relative texts follow the server clock (kept running between fetches), not the device clock. */
+	const ref = $derived(data && lastFetchAt !== null ? serverClock(data.serverTime, lastFetchAt, now.getTime()) : now);
+	/** Block "Jetzt" (field `now`); null for an old server, then only the project sections are shown. */
+	const block = $derived(blockOf(data, ref));
 	const asOf = $derived(
 		data
 			? new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(data.serverTime))
@@ -78,6 +84,95 @@
 
 {#snippet time(iso: string)}<time datetime={new Date(iso).toISOString()} title={iso}>{when(iso)}</time>{/snippet}
 
+{#snippet activeItem(item: NowActive, testid: string, muted: boolean)}
+	{@const pct = item.kind === 'task' ? percentOf(item) : null}
+	{@const due = item.kind === 'task' ? dueInfo(item.dueAt, ref) : null}
+	{@const since = sinceText(item, ref)}
+	<li class="flex flex-col gap-1 py-2.5" data-testid={testid} data-kind={item.kind}>
+		<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+			{#if item.kind === 'task' && item.taskID}
+				{@const id = item.taskID}
+				<button type="button" class="focus-visible:ring-ring/50 rounded text-left text-sm font-semibold outline-none hover:underline focus-visible:ring-2 [overflow-wrap:anywhere]" onclick={() => cardDetail.open({ type: 'task', id })}>{item.title}</button>
+			{:else}
+				<span class="text-sm font-semibold [overflow-wrap:anywhere]">{item.title}</span>
+				<Badge variant="outline">{t('now.block.session')}</Badge>
+			{/if}
+			<span class="text-muted-foreground text-[13px]">{item.projectName}</span>
+			{#if item.worker}<Badge>{item.worker}</Badge>{/if}
+		</div>
+		{#if item.text}<p class={['text-[13px] [overflow-wrap:anywhere]', muted ? 'text-muted-foreground' : 'text-foreground']}>{item.text}</p>{/if}
+		{#if pct !== null}
+			<div class="bg-muted h-1.5 overflow-hidden rounded-full" role="progressbar" aria-valuenow={pct} aria-valuemin="0" aria-valuemax="100" aria-label={t('now.progress', { percent: pct })}>
+				<div class={['h-full', muted ? 'bg-muted-foreground/50' : 'bg-ui-accent']} style:width="{pct}%"></div>
+			</div>
+		{/if}
+		<p class="text-muted-foreground flex flex-wrap gap-x-2 text-[13px]" data-testid="{testid}-meta">
+			{#if since}<span>{since}</span>{/if}
+			<span>{lifeSignText(item, ref)}</span>
+			{#if due}<span class={due.overdue ? 'text-destructive font-medium' : ''} data-testid="{testid}-due">{due.text}</span>{/if}
+		</p>
+	</li>
+{/snippet}
+
+{#snippet nowBlock(b: NonNullable<typeof block>)}
+	<div class="mb-6 flex flex-col gap-4" data-testid="now-block">
+		<section aria-labelledby="nb-running" class="bg-card rounded-xl border px-3.5 py-3 shadow-card" data-testid="now-running">
+			<h2 id="nb-running" class="text-sm font-semibold">{t('now.block.running')}{#if b.counts.running > 0}<span class="text-muted-foreground ml-1.5 font-normal">({b.counts.running})</span>{/if}</h2>
+			{#if b.running.length === 0}
+				<p class="text-muted-foreground mt-1 text-sm" data-testid="now-running-empty">{t('now.block.runningEmpty')}</p>
+			{:else}
+				<ul class="divide-y">
+					{#each b.running as item (`${item.kind}:${item.taskID ?? item.projectID + item.title}`)}{@render activeItem(item, 'now-running-item', false)}{/each}
+				</ul>
+			{/if}
+		</section>
+
+		{#if b.waiting.length > 0}
+			<section aria-labelledby="nb-waiting" data-testid="now-waiting">
+				<h2 id="nb-waiting" class="mb-1.5 text-sm font-semibold">{t('now.block.waiting')}<span class="text-muted-foreground ml-1.5 font-normal">({b.counts.waiting})</span></h2>
+				<ul class="flex flex-col gap-1.5">
+					{#each b.waiting as w (w.kind + w.id)}
+						<li class="bg-warning-soft flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 text-sm" data-testid="now-waiting-item" data-kind={w.kind}>
+							<span class="min-w-0 flex-1 [overflow-wrap:anywhere]"><b>{w.kind === 'review' ? t('now.review') : t('now.question')}:</b> {w.text} <span class="text-muted-foreground">· {w.taskTitle} · {w.projectName} · {@render time(w.createdAt)}</span></span>
+							<Button size="sm" variant={w.kind === 'review' ? 'outline' : 'default'} onclick={() => cardDetail.open(waitingCard(w))}>{w.kind === 'review' ? t('now.look') : t('now.answer')}</Button>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
+		{#if b.recentlyDone.length > 0}
+			<section aria-labelledby="nb-done" data-testid="now-done">
+				<h2 id="nb-done" class="mb-1 text-sm font-semibold">{t('now.block.done')}<span class="text-muted-foreground ml-1.5 text-[13px] font-normal">{t('now.block.doneHint')}</span></h2>
+				<ul class="divide-y">
+					{#each b.recentlyDone as d (d.taskID)}
+						<li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 text-sm" data-testid="now-done-item">
+							<CircleCheck class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+							<button type="button" class="focus-visible:ring-ring/50 rounded text-left outline-none hover:underline focus-visible:ring-2 [overflow-wrap:anywhere]" onclick={() => cardDetail.open({ type: 'task', id: d.taskID })}>{d.title}</button>
+							<span class="text-muted-foreground text-[13px]">{d.projectName} · {t('now.block.doneAgo', { time: when(d.doneAt) })}</span>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
+		{#if b.counts.silent > 0 || b.silent.length > 0}
+			<details class="bg-muted/40 text-muted-foreground rounded-xl border border-dashed" data-testid="now-silent">
+				<summary class="focus-visible:ring-ring/50 flex cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 [&::-webkit-details-marker]:hidden">
+					<span class="w-3 text-xs" aria-hidden="true">▸</span>
+					<h2 class="text-sm font-medium">{t('now.block.silent', { count: b.counts.silent })}</h2>
+				</summary>
+				<div class="px-3.5 pb-3">
+					<p class="mb-1 text-[13px]">{t('now.block.silentHint')}</p>
+					<ul class="divide-y">
+						{#each b.silent as item (`${item.kind}:${item.taskID ?? item.projectID + item.title}`)}{@render activeItem(item, 'now-silent-item', true)}{/each}
+					</ul>
+				</div>
+			</details>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet projectRow(p: OverviewProject, quiet: boolean)}
 	{@const s = projectStats(p)}
 	<details
@@ -123,11 +218,11 @@
 					</ul>
 				</section>
 			{/if}
-			{#if p.sessions.length > 0}
+			{#if visibleSessions(p).length > 0}
 				<section aria-labelledby="ses-{p.projectID}" data-testid="now-sessions">
 					<h3 id="ses-{p.projectID}" class={sectionHead}>{t('now.section.sessions')}</h3>
 					<ul class="divide-y">
-						{#each p.sessions as session (session.sessionName)}
+						{#each visibleSessions(p) as session (session.sessionName)}
 							{@const orphan = isOrphaned(session)}
 							<li class="flex flex-col gap-0.5 py-2" data-testid="now-session" data-orphaned={orphan}>
 								<div class="flex flex-wrap items-center gap-2">
@@ -210,11 +305,15 @@
 		</div>
 	{:else}
 		{#if failed}<p class="text-warning mb-3 text-sm" role="alert" data-testid="now-stale">{t('now.errorStale')}</p>{/if}
-		{#if isEmptyNow(data.projects)}
+		{#if showEmptyPage(data, block)}
 			<div data-testid="now-empty">
 				<EmptyState title={t('now.empty')} icon={Radio}><p>{t('now.emptyHint')}</p></EmptyState>
 			</div>
 		{:else}
+			{#if block}
+				{@render nowBlock(block)}
+				{#if groups.active.length + groups.quiet.length > 0}<h2 class="mb-2 text-sm font-semibold">{t('now.block.projects')}</h2>{/if}
+			{/if}
 			<div class="flex flex-col gap-2.5" data-testid="now-active">
 				{#each groups.active as p (p.projectID)}{@render projectRow(p, false)}{/each}
 			</div>
