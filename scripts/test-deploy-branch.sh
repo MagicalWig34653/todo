@@ -38,8 +38,7 @@ while [ "${#queue[@]}" -gt 0 ]; do
   done < <(grep -oE '\$\{?SCRIPT_DIR\}?/[A-Za-z0-9_./-]+' "$cur" | sort -u)
 done
 
-deps=("${!seen[@]}")
-IFS=$'\n' deps=($(printf '%s\n' "${deps[@]}" | sort)); unset IFS
+mapfile -t deps < <(printf '%s\n' "${!seen[@]}" | sort)
 [ "${#deps[@]}" -ge 5 ] || bad "zu wenige Abhaengigkeiten erkannt (${#deps[@]}): ${deps[*]}"
 for f in "${deps[@]}"; do
   case "$listed" in *" $f "*) ok "in der Workflow-Liste: $f" ;; *) bad "fehlt in der Workflow-Liste: $f" ;; esac
@@ -56,11 +55,11 @@ FRESH="$WORK/deploy-clone"; mkdir -p "$FRESH"
 for f in $listed; do mkdir -p "$FRESH/$(dirname "$f")"; cp -p "$f" "$FRESH/$f"; done
 cp deploy/branch/gitignore "$FRESH/.gitignore"
 S="$FRESH/deploy/swarm/settings.sh"
-[ -x "$S" ] && ok "settings.sh ist ausfuehrbar" || bad "settings.sh nicht ausfuehrbar"
+if [ -x "$S" ]; then ok "settings.sh ist ausfuehrbar"; else bad "settings.sh nicht ausfuehrbar"; fi
 if out="$("$S" --help </dev/null 2>&1)" && printf '%s' "$out" | grep -q -- '--check'; then ok "settings.sh --help im frischen Baum"; else bad "settings.sh --help: $out"; fi
 cp "$FRESH/deploy/swarm/stack.env.example" "$WORK/example.env"
 if out="$("$S" --env "$WORK/example.env" --list </dev/null 2>&1)" && ! printf '%s' "$out" | grep -qiE 'fehlt|Tabelle'; then ok "settings.sh --list im frischen Baum"; else bad "settings.sh --list: ${out:0:300}"; fi
-out="$("$S" --env "$WORK/example.env" --info SETTINGS_ENCRYPTION_KEY </dev/null 2>&1)" && [ -n "$out" ] && ok "settings.sh --info (config-help.tsv)" || bad "settings.sh --info: ${out:0:300}"
+out="$("$S" --env "$WORK/example.env" --info RP_ID </dev/null 2>&1)" && [ -n "$out" ] && ok "settings.sh --info (config-help.tsv)" || bad "settings.sh --info: ${out:0:300}"
 # --check darf Warnungen und Fehler zum Inhalt der Beispieldatei melden; es darf nur keine fehlende Programmdatei geben.
 out="$("$S" --env "$WORK/example.env" --check </dev/null 2>&1)"; printf '%s' "$out" | grep -qE 'Tabelle fehlt|No such file|nicht gefunden|command not found' && bad "settings.sh --check: fehlende Datei: ${out:0:300}" || ok "settings.sh --check ohne fehlende Programmdatei"
 

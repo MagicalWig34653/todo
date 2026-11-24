@@ -49,6 +49,8 @@ jobs:
       # Stubs for docker, whiptail, openssl, update.sh and swarm-deploy.sh; no network, no Swarm. Needs bash 4.4+ (ubuntu-24.04 has 5.2).
       - name: settings.sh (menu, CLI, secrets, atomic write)
         run: scripts/test-settings.sh
+      - name: deploy branch file list (settings.sh runtime files)
+        run: scripts/test-deploy-branch.sh
 
   web:
     name: PWA (check, build, vitest)

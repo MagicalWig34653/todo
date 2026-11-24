@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 24.11.2026 (18:25): settings.sh im Branch deploy (Karte 139D9CC6, Auftrag f-8c64dd0d; kein Server-Deploy)
+
+- Ursache: Die feste Dateiliste in `.github/workflows/deploy-branch.yml` nannte `deploy/swarm/settings.sh` und `config-registry.tsv`, `config-extra.tsv`, `config-help.tsv` nicht, der Branch `deploy` hatte sie deshalb nie.
+- Laufzeitdateien von `settings.sh` (aus `$SCRIPT_DIR/...` abgeleitet): `stack.env.example`, `placement.sh`, `update.sh` (mit `lib.sh`, `scripts/swarm-deploy.sh`) waren schon in der Liste, es fehlten nur `settings.sh` und die drei TSV.
+- Umgesetzt: Dateiliste ergänzt, `deploy/branch/README.md` (Abschnitt Einstellungen), `docs/BETRIEB.md`, CI-Schritt `scripts/test-deploy-branch.sh` im Job "Deploy scripts". Test zuerst rot (8fb7315, 6 Befunde), danach grün (19 Checks, auch `settings.sh --help/--list/--info/--check` in einem Baum nur aus der Liste).
+- Den Branch `deploy` ändert nur der Workflow.
+
 ## Nachtrag 24.11.2026 (13:30): SQLite "busy: database is locked" im E2E, HTTP 500 (Karte 3C2E7F9D; kein Deploy)
 
 - Ziel: Die E2E-Läufe gegen das publizierte Image (SQLite) schlugen sporadisch mit HTTP 500 auf `POST /v1/tasks/<id>/comments` bzw. `/v1/attachments/<id>/complete` fehl, im Server-Log `busy: database is locked` (Läufe 45298835211 und 45300226759 auf `45d1b36`, 45291638604 auf `12027fd`; Specs comment-limits, task-graph, comment-compare). Auftrag war `PRAGMA busy_timeout` auf jeder Verbindung.
