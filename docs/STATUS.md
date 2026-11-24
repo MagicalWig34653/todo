@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 24.11.2026 (07:30): PWA-Ansicht für den Kanal #brain (Karte T1-8 `15C4C9DD`; kein Deploy)
+
+- Ziel (Plan Telefon T1, Schritt 8): Die PWA zeigt den eigenen Kanal #brain: Text, Sprachnachrichten mit Wiedergabe und sichtbarem Transkript, Hinweise des Brain, leerer Zustand, per Tastatur bedienbar. Aufnahme in der PWA ist nicht Teil dieses Schritts.
+- Umgesetzt (nur PWA, keine Vertragsänderung): Route `/brain` (Sidebar „Mehr“ → „Brain“), `BrainView.svelte`, `BrainAudio.svelte` (echter Button, Enter/Leertaste, `<audio preload="none">` lädt erst beim Abspielen über `/v1/attachments/{id}/download` mit der Sitzung, immer nur eine Aufnahme gleichzeitig), `lib/brainChannel.ts` (älteste zuerst, Sprecher, Seiten zusammenführen), `api.brainMessages`, Live-Refresh über den zentralen Dienst, 50 je Seite mit „Ältere Nachrichten laden“, Fehlerzustand mit „Erneut versuchen“.
+- Tests: rot zuerst (vitest `brainChannel.test.ts` Modul fehlte, `routing.test.ts` `/brain`; E2E `e2e/brain-channel.spec.ts` 1 rot, 4 nicht gelaufen), dann grün: vitest 566/566, `npm run check` 0 Fehler 0 Warnungen; E2E brain-channel 5/5 in chromium, firefox, webkit, mobile-safari (echtes Backend, frische SQLite; echte WAV-Aufnahme per Begin/PUT/Complete, `voice_in` mit Transkript, automatische Statusnachricht, Wiedergabe per Tastatur mit `currentTime > 0`, Seitenwechsel bei 55 Nachrichten, kein horizontaler Überlauf bei 390 px). Nachbar-Specs in Chromium grün: ui-nav 6, sidebar-rename 3, sidebar-diagnostics 2, settings-hub 11, passkey-flow 21, menus-and-modes 11.
+- Hell/Dunkel: Screenshots 390 und 1280 px angesehen (E2E erzeugt sie nach `E2E_SHOTS`, wartet die Farbübergänge ab und prüft, dass der Hintergrund im Dunkelmodus wirklich wechselt).
+- Grenzen: `voice_out` (Antwort mit Audio) ist in der Spec nicht dabei, weil REST nur die Person schreiben lässt (Agent schreibt über MCP); die Darstellung nutzt denselben Pfad wie `voice_in`. Kein echtes Sprachgerät, kein Safari auf iOS. In der CI läuft `brain-channel` automatisch in Chromium; Firefox/WebKit-Läufe nur lokal belegt (Audio-Wiedergabe in Linux-Headless-WebKit/Firefox nicht geprüft, deshalb nicht in `MULTI`).
+
 ## Nachtrag 24.11.2026 (06:50): Karte FC0E18C9 „PWA: Menüs im Viewport, Schnell-Hinzufügen, Browser“: Rest geschlossen (kein Deploy)
 
 - Belegt auf main: Menüs im Viewport und Schnell-Hinzufügen mit Parser seit `cb5ead7` (31.10., `floating.ts`, `QuickAdd.svelte`, vitest `floating`/`quickadd`, E2E `menus-and-modes`); Firefox und WebKit real seit `780b6d8`/`784c9b4`/`e1d8122` (Playwright 1.65.0, `docs/BROWSER-MATRIX.md`). Alle drei Unterkarten stehen auf done.

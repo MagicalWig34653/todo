@@ -13,6 +13,7 @@ export type View =
 	| 'filters'
 	| 'teams'
 	| 'agents'
+	| 'brain'
 	| 'activity'
 	| 'account'
 	| 'help';
@@ -50,6 +51,7 @@ export type View =
 	import Users from '@lucide/svelte/icons/users';
 	import UserRound from '@lucide/svelte/icons/user-round';
 	import Bot from '@lucide/svelte/icons/bot';
+	import MessagesSquare from '@lucide/svelte/icons/messages-square';
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Activity from '@lucide/svelte/icons/activity';
@@ -72,6 +74,7 @@ export type View =
 	const MORE: { v: View; icon: Icon }[] = [
 		{ v: 'upNext', icon: ListChecks },
 		{ v: 'agents', icon: Bot },
+		{ v: 'brain', icon: MessagesSquare },
 		{ v: 'activity', icon: Activity },
 		{ v: 'account', icon: UserRound }
 	];

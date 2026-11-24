@@ -382,6 +382,8 @@
 						{#await import('./TeamsView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'agents'}
 						{#await import('./AgentsView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
+					{:else if view === 'brain'}
+						{#await import('./BrainView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'activity'}
 						{#await import('./ActivityView.svelte')}{@render viewSkeleton()}{:then m}<m.default onopen={openProject} />{/await}
 					{:else if view === 'account'}

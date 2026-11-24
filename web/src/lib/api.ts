@@ -1,4 +1,5 @@
 import type { AuthenticationPayload, CreationOptionsJSON, RegistrationPayload, RequestOptionsJSON } from './webauthn.js';
+import type { ChannelMessagePage } from './brainChannel.js';
 import type { ActionRequest, ForYouPage } from './forYou.js';
 import type { BatchResponse } from './reviewBulk.js';
 import type { ReviewVariant } from './reviewVariants.js';
@@ -989,6 +990,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		},
 		capabilities: () => request<Capabilities>('GET', '/capabilities'),
 		me: () => request<User>('GET', '/me'),
+		/** contracts/voice.yaml: the own channel #brain, newest first; `cursor` is `nextCursor` of the previous page. */
+		brainMessages: (cursor?: string | null) => request<ChannelMessagePage>('GET', `/channels/brain/messages${query({ limit: 50, cursor })}`),
 		registerBegin: (token: string, displayName: string) =>
 			request<{ challengeID: string; options: CreationOptionsJSON }>('POST', '/auth/register/begin', {
 				token,

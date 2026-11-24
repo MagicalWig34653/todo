@@ -22,6 +22,7 @@ Nicht gelaufen: `mobile-chrome`.
 | attachment-upload | 9 grün | 9 grün | 9 grün | 9 grün |
 | board-single-fetch | 1 grün | 1 übersprungen | 1 übersprungen | 1 übersprungen |
 | card-detail | 15 grün | 15 übersprungen | 15 übersprungen | 15 übersprungen |
+| brain-channel | 5 grün | 5 grün | 5 grün | 5 grün (24.11., Karte T1-8, lokal) |
 | card-tabs | 11 grün | 11 grün | 11 grün | 11 grün |
 | connections | 5 grün | 5 übersprungen | 5 übersprungen | 5 übersprungen |
 | for-you | 3 grün | 3 grün | 3 grün | 3 grün |
