@@ -9,7 +9,7 @@ class AttachmentTestBase: XCTestCase {
     // A real one-pixel PNG; magic-byte checks intentionally do not promise a full image decoder.
     let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXZkAAAAASUVORK5CYII=")!
 
-    let sqlitePath = NSTemporaryDirectory() + "attachment-test-\(UUID()).sqlite"
+    let sqlitePath = TestTemp.path("attachment-test-\(UUID()).sqlite")
 
     func makeApp() async throws -> TestApp {
         if TestApp.useMariaDB { return try await TestApp.make() }
@@ -21,7 +21,7 @@ class AttachmentTestBase: XCTestCase {
         configureMigrations(app)
         try routes(app)
         try await app.autoMigrate()
-        return TestApp(app: app, settings: settings)
+        return TestApp(app: app, settings: settings, ownedSQLiteFile: sqlitePath)
     }
 
     func fixture() async throws -> (TestApp, User, User, UUID, String, String) {

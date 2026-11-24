@@ -6,15 +6,73 @@ import Vapor
 import XCTVapor
 @testable import TodoKit
 
+/// One scratch directory per test process (`todo-tests-<pid>-<UUID>` in TMPDIR). It is removed when the process
+/// exits, and directories left behind by crashed or killed runs (owner pid gone) are swept on first use, so
+/// scratch SQLite files never pile up in TMPDIR (card F49E0207).
+enum TestTemp {
+    private static let prefix = "todo-tests-"
+    private static let memoryPrefix = "sqlite-kit_memorydb-"
+    nonisolated(unsafe) private static var created: String?
+
+    static let directory: URL = {
+        let tmp = FileManager.default.temporaryDirectory
+        sweepStale(in: tmp)
+        let dir = tmp.appendingPathComponent("\(prefix)\(getpid())-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        created = dir.path
+        atexit {
+            if let path = TestTemp.created { try? FileManager.default.removeItem(atPath: path) }
+            TestTemp.sweepOwnMemoryDatabases()
+        }
+        return dir
+    }()
+
+    static func path(_ name: String) -> String { directory.appendingPathComponent(name).path }
+
+    /// Removes a SQLite file together with its -wal and -shm companions.
+    static func removeSQLite(atPath path: String) {
+        for suffix in ["", "-wal", "-shm", "-journal"] { try? FileManager.default.removeItem(atPath: path + suffix) }
+    }
+
+    static func sweepStale(in tmp: URL = FileManager.default.temporaryDirectory) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? []
+        for name in names {
+            let stem = name.hasPrefix(prefix) ? prefix : name.hasPrefix(memoryPrefix) ? memoryPrefix : nil
+            guard let stem else { continue }
+            let pidText = name.dropFirst(stem.count).prefix { $0 != "-" }
+            guard let pid = pid_t(pidText), kill(pid, 0) != 0, errno == ESRCH else { continue }
+            try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name))
+        }
+    }
+
+    /// sqlite-kit fakes `.sqlite(.memory)` with `sqlite-kit_memorydb-<pid>-<id>.sqlite3` in TMPDIR and never removes it.
+    static func sweepOwnMemoryDatabases(in tmp: URL = FileManager.default.temporaryDirectory) {
+        let own = "\(memoryPrefix)\(getpid())-"
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: tmp.path)) ?? [] where name.hasPrefix(own) {
+            try? FileManager.default.removeItem(at: tmp.appendingPathComponent(name))
+        }
+    }
+}
+
+extension DatabaseSettings {
+    /// Replaces `.sqlite(.memory)` in tests: a file in the per-process scratch directory that is removed at exit.
+    static var testScratch: DatabaseSettings {
+        DatabaseSettings(driver: .sqlite, host: "", port: 0, name: TestTemp.path("scratch-\(UUID()).sqlite"), user: "", password: "")
+    }
+}
+
 struct TestApp {
     let app: Application
     let settings: AppSettings
     private let storedDatabaseSettings: DatabaseSettings
+    /// SQLite file this instance created and must delete on shutdown; replicas share the file and own nothing.
+    private let ownedSQLiteFile: String?
 
-    init(app: Application, settings: AppSettings, databaseSettings: DatabaseSettings? = nil) {
+    init(app: Application, settings: AppSettings, databaseSettings: DatabaseSettings? = nil, ownedSQLiteFile: String? = nil) {
         self.app = app
         self.settings = settings
         self.storedDatabaseSettings = databaseSettings ?? Self.databaseSettings
+        self.ownedSQLiteFile = ownedSQLiteFile
     }
 
     static func make(password: Bool = false, issuer: String? = nil) async throws -> TestApp {
@@ -34,7 +92,8 @@ struct TestApp {
             try await resetMariaDB(app)
         }
         try await app.autoMigrate()
-        return TestApp(app: app, settings: settings, databaseSettings: database)
+        return TestApp(app: app, settings: settings, databaseSettings: database,
+                       ownedSQLiteFile: database.driver == .sqlite && !database.name.isEmpty ? database.name : nil)
     }
 
     /// Drops every table (and migration bookkeeping) so each test starts from an empty schema, independent of
@@ -61,10 +120,9 @@ struct TestApp {
 
     static var useMariaDB: Bool { ProcessInfo.processInfo.environment["TODO_TEST_MARIADB"] == "1" || ProcessInfo.processInfo.environment["TODO_TEST_DB"] != nil }
 
-    /// A fresh application gets its own file; replica() reuses the captured database settings.
-    static var sqliteFile: String {
-        FileManager.default.temporaryDirectory.appendingPathComponent("todo-\(UUID()).sqlite").path
-    }
+    /// A fresh application gets its own file in the per-process scratch directory; replica() reuses the captured
+    /// database settings.
+    static var sqliteFile: String { TestTemp.path("todo-\(UUID()).sqlite") }
 
     static var databaseSettings: DatabaseSettings {
         if useMariaDB {
@@ -87,7 +145,15 @@ struct TestApp {
         return status
     }
 
-    func shutdown() async { try? await app.asyncShutdown() }
+    /// Path of the SQLite file this instance (or its primary) runs on; nil for MariaDB or an in-memory database.
+    var sqliteFilePath: String? {
+        storedDatabaseSettings.driver == .sqlite && !storedDatabaseSettings.name.isEmpty ? storedDatabaseSettings.name : nil
+    }
+
+    func shutdown() async {
+        try? await app.asyncShutdown()
+        if let ownedSQLiteFile { TestTemp.removeSQLite(atPath: ownedSQLiteFile) }
+    }
 
     func json(
         _ method: HTTPMethod, _ path: String, _ body: [String: Any]? = nil, token: String? = nil,

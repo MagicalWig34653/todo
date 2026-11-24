@@ -4,8 +4,7 @@ import XCTVapor
 final class AASATests: XCTestCase {
     private func makeApp(ids: [String]) async throws -> Application {
         let app = try await Application.make(.testing)
-        try configureDatabase(app, settings: DatabaseSettings(
-            driver: .sqlite, host: "", port: 0, name: "", user: "", password: ""))
+        try configureDatabase(app, settings: .testScratch)
         app.settings = AppSettings(appleAppIDs: ids)
         try routes(app)
         return app

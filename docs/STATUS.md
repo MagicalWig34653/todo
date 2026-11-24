@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 24.11.2026 (09:35): Test-Temp-Dateien räumen sich auf (Karte F49E0207; kein Deploy)
+
+- Ziel: `swift test` ließ pro Test eine `todo-<UUID>.sqlite` (und `attachment-test-<UUID>.sqlite`, `sqlite-kit_memorydb-<pid>-<UUID>.sqlite3`) in TMPDIR liegen: 15.935 Dateien, TMPDIR 25 GB, ca. 8 GB/Tag (Platten-Analyse 24.11.).
+- Ursache: `TestApp.sqliteFile` vergab pro `make()` einen neuen Pfad direkt in TMPDIR, `shutdown()` löschte nie; die vier Tests mit `.sqlite(.memory)` (Health, AASA, WebRoot, Agent) erzeugen über sqlite-kit unlöschbare Ersatzdateien in TMPDIR; der Aufräumversuch in `IdentityTests.setUp` löschte nur einen frisch erzeugten, nie vorhandenen Pfad.
+- Umgesetzt (nur Tests, `Tests/TodoKitTests/TestSupport.swift`): `TestTemp` = ein Verzeichnis je Testprozess `todo-tests-<pid>-<UUID>` in TMPDIR, beim Prozessende (atexit) entfernt, inklusive eigener `sqlite-kit_memorydb-<pid>-*`; verwaiste Verzeichnisse und Memory-Dateien toter Prozesse werden beim nächsten Start gelöscht. `TestApp.shutdown()` löscht die eigene Datei samt -wal/-shm/-journal (Replikas besitzen nichts und lassen die geteilte Datei stehen). Die vier `.memory`-Tests nutzen `DatabaseSettings.testScratch`, `AttachmentTests` den Scratch-Pfad.
+- Tests: rot 0035fa9 (`TestTempCleanupTests`, 3 von 3 rot: Datei bleibt in TMPDIR, Datei bleibt nach `shutdown`, Replika-Test); danach 5 Tests (zusätzlich Sweep verwaister Verzeichnisse, Memory-Dateien eigener Prozess weg und fremde bleiben, `testScratch`) grün. Voller `swift test` (SQLite): 806 Tests, 21 übersprungen, 0 Fehler (430 s); vor dem Lauf und danach Vergleich von `ls $TMPDIR`: keine neue `todo-*`, `attachment-test-*`, `sqlite-kit_memorydb-*` oder `todo-tests-*`-Datei.
+- Grenzen: nur SQLite-Pfad (MariaDB-Läufe nutzen keine Dateien); ein hart beendeter Lauf (SIGKILL) hinterlässt sein Verzeichnis bis zum nächsten Lauf. Die Produktivcode-Eigenheit von sqlite-kit (Memory-DB als Temp-Datei) bleibt unverändert.
+
 ## Nachtrag 24.11.2026 (07:30): PWA-Ansicht für den Kanal #brain (Karte T1-8 `15C4C9DD`; kein Deploy)
 
 - Ziel (Plan Telefon T1, Schritt 8): Die PWA zeigt den eigenen Kanal #brain: Text, Sprachnachrichten mit Wiedergabe und sichtbarem Transkript, Hinweise des Brain, leerer Zustand, per Tastatur bedienbar. Aufnahme in der PWA ist nicht Teil dieses Schritts.

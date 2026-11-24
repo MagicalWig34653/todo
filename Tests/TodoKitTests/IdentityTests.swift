@@ -4,16 +4,6 @@ import XCTVapor
 @testable import TodoKit
 
 final class IdentityTests: XCTestCase {
-    override func setUpWithError() throws {
-        // The shared helper uses one file so a second Application can act as a replica.
-        // Identity test cases each need an isolated schema when run in one XCTest process.
-        if !TestApp.useMariaDB {
-            for suffix in ["", "-wal", "-shm"] {
-                try? FileManager.default.removeItem(atPath: TestApp.sqliteFile + suffix)
-            }
-        }
-    }
-
     private func addKey(_ t: TestApp, token: String, recovery: Bool = false, name: String = "Laptop") async throws -> VirtualAuthenticator {
         let path = recovery ? "/v1/identity/recovery/passkeys" : "/v1/me/passkeys"
         let begin = try await t.json(.POST, path + "/begin", token: token)

@@ -22,7 +22,7 @@ struct AgentFixture {
             configureContent()
             let settings = AppSettings()
             application.settings = settings
-            try configureDatabase(application, settings: .init(driver: .sqlite, host: "", port: 0, name: "", user: "", password: ""))
+            try configureDatabase(application, settings: .testScratch)
             configureMigrations(application)
             try routes(application)
             try await application.autoMigrate()

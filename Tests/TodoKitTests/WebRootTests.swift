@@ -23,8 +23,7 @@ final class WebRootTests: XCTestCase {
 
     private func makeApp(webRoot: String?, ids: [String] = ["T.de.x.todo"]) async throws -> Application {
         let app = try await Application.make(.testing)
-        try configureDatabase(app, settings: DatabaseSettings(
-            driver: .sqlite, host: "", port: 0, name: "", user: "", password: ""))
+        try configureDatabase(app, settings: .testScratch)
         app.settings = AppSettings(appleAppIDs: ids, webRoot: webRoot)
         try routes(app)
         return app
