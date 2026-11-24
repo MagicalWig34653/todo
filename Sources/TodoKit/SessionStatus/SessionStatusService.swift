@@ -79,6 +79,12 @@ struct SessionStatusController: RouteCollection {
 
     @Sendable func overview(_ req: Request) async throws -> OverviewNow {
         let user = try await req.requireUser()
-        return try await OverviewNowService(user: user, db: req.db).now()
+        let compact = ["true", "1"].contains((req.query[String.self, at: "compact"] ?? "").lowercased())
+        var limit: Int?
+        if let raw = req.query[String.self, at: "limit"] {
+            guard let value = Int(raw) else { throw Abort(.badRequest, reason: "invalid_limit") }
+            limit = value
+        }
+        return try await OverviewNowService(user: user, db: req.db).now(compact: compact, limit: limit)
     }
 }

@@ -36,8 +36,9 @@ extension MCPController {
                           "activity": Schema.string("What you are doing now, 1 to 300 characters.", maxLength: 300)],
              required: ["projectID", "sessionName", "activity"]),
         Tool(name: "get_overview_now", scope: "tasks:read",
-             description: "What is happening now across your projects: {serverTime, projects:[{projectID, projectName, lastActivityAt, runningTasks:[{taskID, title, worker, lastProgress, ageSeconds}], sessions:[{sessionName, activity, updatedAt, ageSeconds, orphaned}], agentJobs, builds, openQuestions, pendingReviews, recentActivity}]}. Only projects you can read and that are in your grant; most recently active first.",
-             properties: [:]),
+             description: "What is happening now across your projects. Answer: {serverTime, now:{counts:{running, waiting, recentlyDone, silent}, running:[{kind task|session, projectID, projectName, taskID, title, text, worker, since, lastSignAt, ageSeconds, dueAt, percent}], waiting:[{kind question|review, id, projectID, projectName, taskID, taskTitle, text, createdAt}], recentlyDone:[{taskID, title, projectID, projectName, doneAt}], silent:[...like running]}, projects:[{projectID, projectName, lastActivityAt, runningTasks:[{taskID, title, worker, lastProgress, ageSeconds, percent}], sessions:[{sessionName, activity, updatedAt, ageSeconds, orphaned}], agentJobs, builds, openQuestions, pendingReviews, recentActivity}]}. now: running = cards in progress and sessions with a sign of life in the last 30 minutes (sessions whose sentence starts with 'Beendet' are left out), silent = in progress or session without a sign of life for more than 30 minutes, waiting = open questions and pending reviews, recentlyDone = cards finished in the last 6 hours; counts are the totals before limit. Agents: use compact=true (only serverTime and now, texts up to 140 characters, at most `limit` entries per list, default 10). Only projects you can read and that are in your grant; projects most recently active first.",
+             properties: ["compact": Schema.boolean("true returns only {serverTime, now} (no projects), texts shortened to 140 characters, each list cut to limit. Recommended for agents."),
+                          "limit": Schema.integer("Entries per list of now when compact=true (default 10, 1 to 50). The counts still hold the totals.", min: 1, max: 50)]),
     ]
 
     func callLiveSession(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
@@ -46,7 +47,8 @@ extension MCPController {
             return try .encoded(try await service.report(projectID: uuid(a["projectID"]), sessionName: requiredString(a, "sessionName"), activity: requiredString(a, "activity")))
         }
         if name == "get_overview_now" {
-            return try .encoded(try await OverviewNowService(user: user, db: db, allowedProjects: Set(grant.projects)).now())
+            return try .encoded(try await OverviewNowService(user: user, db: db, allowedProjects: Set(grant.projects))
+                .now(compact: optionalBool(a, "compact") ?? false, limit: intArgument(a["limit"], reason: "invalid_limit")))
         }
         let taskID = try uuid(a["taskID"])
         var service = LiveSessionService(user: user, db: db, allowedProjects: Set(grant.projects))
