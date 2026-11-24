@@ -30,7 +30,7 @@ Nicht gelaufen: `mobile-chrome`.
 | invite-link | 1 grün | 1 übersprungen | 1 übersprungen | 1 übersprungen |
 | live-refresh | 1 grün | 1 übersprungen | 1 übersprungen | 1 übersprungen |
 | mail | 3 übersprungen | 3 übersprungen | 3 übersprungen | 3 übersprungen |
-| menus-and-modes | 11 grün | 11 übersprungen | 11 übersprungen | 11 übersprungen |
+| menus-and-modes | 11 grün | 11 grün | 11 grün | 11 grün (Nachlauf 24.11., Karte FC0E18C9) |
 | oauth-consent | 8 grün | 8 grün | 8 grün | 8 grün |
 | passkey-flow | 21 grün | 21 übersprungen | 21 übersprungen | 21 übersprungen |
 | permissions | 8 grün | 8 übersprungen | 8 übersprungen | 8 übersprungen |

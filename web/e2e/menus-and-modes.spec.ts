@@ -1,25 +1,14 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { signedInPage } from './support/session';
 
-// Needs a fresh backend database (bootstrap happens here). Run on its own:
-//   E2E_BASE_URL=... npx playwright test e2e/menus-and-modes.spec.ts --project=chromium
-const BOOTSTRAP_TOKEN = process.env.BOOTSTRAP_TOKEN ?? 'dev-bootstrap-only';
+// Needs a fresh backend database (bootstrap happens here). Run on its own, in any project (chromium, firefox, webkit, mobile-safari):
+//   E2E_BASE_URL=... npx playwright test e2e/menus-and-modes.spec.ts --project=webkit
 
 test.describe.configure({ mode: 'serial' });
 let page: Page;
 
 test.beforeAll(async ({ browser }) => {
-	test.skip(browser.browserType().name() !== 'chromium', 'passkey needs the Chromium CDP virtual authenticator');
-	page = await (await browser.newContext()).newPage();
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
-	});
-	await page.goto('/setup');
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel('Anzeigename').fill('Menü Tester');
-	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
-	await expect(page.getByTestId('account-menu')).toBeVisible();
+	page = await signedInPage(browser, 'Menü Tester');
 });
 test.afterAll(async () => {
 	await page?.context().close();
