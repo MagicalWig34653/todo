@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Kanal #brain (Sprach- und Textnachrichten) und Sprachaufträge
-  version: 1.1.1
+  version: 1.2.0
   description: 'Telefon T1 (ADR 0030), Schritte 2 und 3 (1.1.0: Sprachaufträge, Runner-Fähigkeit sprache). Jedes Konto hat genau einen Kanal brain (beim ersten Gebrauch angelegt). Nur der Besitzer liest und
     schreibt; kein Teilen, kein Team, kein Projekt- oder Aufgabenbezug. Eine Nachricht hat eine Art (kind: text, voice_in, voice_out, status), einen
     Autor (author: person, agent), Text bzw. Transkript und optional einen Audio-Anhang (Rolle voice, contracts/attachments.yaml 1.1.0; der Anhang
@@ -25,7 +25,12 @@ info:
     Aufträge (429 too_many_open_voice_jobs), Transkript und Antworttext je höchstens 4000 Zeichen, Antwortaudio höchstens 5 MiB und 120 s (M4A/WAV,
     Container geprüft). Limit und Doppelprüfung der Aufnahme laufen unter der Kontosperre (parallele Posts erzeugen höchstens einen Auftrag). Fehlt die Aufnahme beim Claim, wird der Auftrag festgeschrieben als failed (errorCode audio_missing) mit Statusnachricht; der Claim ohne ID überspringt ihn, der Claim per ID meldet 410 job_ended. Eine Aufnahme gehört zu genau einer voice_in-Nachricht (409 attachment_in_use). Audio und Texte stehen in keinem Log.
     MCP: list_channel_messages (Scope channels:read) und post_channel_message (Scope channels:write), siehe oauth-mcp.yaml. Neue Scopes; bestehende
-    Verbindungen behalten ihre Scopes und sehen die Tools erst nach neuer Zustimmung.'
+    Verbindungen behalten ihre Scopes und sehen die Tools erst nach neuer Zustimmung.
+    Datenschutz (1.2.0, ADR 0030 Schritt 7 Nachtrag): GET/PUT /v1/me/voice-privacy (Einwilligung consent, Audio behalten keepAudio; nur Sitzung, nur das eigene Konto),
+    DELETE /v1/channels/brain/messages (Sprachverlauf löschen: alle Nachrichten, Sprachaufträge und Voice-Audio des Kontos; Kanal und Einstellungen bleiben). Mit keepAudio
+    leben Eingangs- und Antwortaudio bis zu 30 Tage statt 24 h bzw. 7 Tage, und die Eingangsaufnahme bleibt nach erfolgreicher Verarbeitung erhalten (failed/expired löschen sie weiter sofort).
+    Die Einwilligung wird gespeichert und angezeigt, serverseitig aber nicht erzwungen (Aufnahmeflüsse bleiben unverändert; die Durchsetzung ist Sache der Clients).
+    Bewusst ohne MCP-Werkzeug (Risikoklasse C, nur App/PWA). GET /v1/me/export enthält zusätzlich voicePrivacy (contracts/admin-settings.yaml).'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -67,6 +72,47 @@ paths:
         '409': {description: 'client_uuid_conflict: gleiche clientUUID, anderer Inhalt; attachment_in_use: die Aufnahme gehört schon zu einer voice_in-Nachricht'}
         '422': {description: 'invalid_attachment: kein fertiger Anhang mit Rolle voice; bei voice_in zusätzlich: der Anhang darf keiner Aufgabe gehören'}
         '429': {description: 'voice_rate_limited (10 je Minute, 200 je Tag) oder too_many_open_voice_jobs (5); nur bei voice_in, es wird keine Nachricht angelegt'}
+    delete:
+      operationId: deleteBrainChannelHistory
+      summary: Sprachverlauf löschen (alle Nachrichten, Sprachaufträge und Voice-Audio des eigenen Kontos)
+      description: 'Nur Sitzung, nur das eigene Konto, kein MCP-Werkzeug. Löscht alle Kanalnachrichten, Sprachaufträge und alles Voice-Audio (auch nicht gesendete Aufnahmen; Datenbank-Bytes sofort, S3-Zeilen werden als deleted markiert und vom nächsten Sweep entfernt). Der Kanal und die Einstellungen (Einwilligung, keepAudio) bleiben. Wiederholen ist harmlos (0/0). Ohne Kanal 200 mit Nullen; der Kanal wird nicht angelegt.'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeleteVoiceHistoryResponse'}
+        '401': {description: nicht angemeldet}
+  /v1/me/voice-privacy:
+    get:
+      operationId: getVoicePrivacy
+      summary: Sprach-Datenschutz des eigenen Kontos lesen
+      description: 'Nur Sitzung. Ohne Kanal: alles false/0; der Kanal wird beim Lesen nicht angelegt. messageCount/audioCount zählen nur Nachrichten des eigenen Kontos bzw. solche mit Audio-Anhang.'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoicePrivacy'}
+        '401': {description: nicht angemeldet}
+    put:
+      operationId: updateVoicePrivacy
+      summary: Einwilligung und Audio behalten ändern (partiell)
+      description: 'Nur Sitzung. Mindestens ein Feld. Legt den Kanal bei Bedarf an. consent=true setzt consentAt (einmalig, wiederholtes true behält den ersten Zeitpunkt); consent=false löscht consentAt und setzt keepAudio=false. keepAudio=true ohne Einwilligung (auch zusammen mit consent=false): 409 consent_required, nichts wird geändert. Wird keepAudio ausgeschaltet, gelten beim nächsten Sweep wieder 24 h / 7 Tage. Antwort wie GET.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateVoicePrivacy'}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoicePrivacy'}
+        '400': {description: 'invalid_request: leerer Body, unbekannte Felder allein oder falsche Typen'}
+        '401': {description: nicht angemeldet}
+        '409': {description: 'consent_required: keepAudio=true ohne Einwilligung'}
   /v1/agents/devices/{id}/capabilities:
     put:
       operationId: setRunnerDeviceCapabilities
@@ -261,6 +307,34 @@ components:
         text: {type: string, maxLength: 4000}
         attachmentID: {type: string, format: uuid}
         clientUUID: {type: string, format: uuid}
+    VoicePrivacy:
+      type: object
+      required: [consent, keepAudio, retention, messageCount, audioCount]
+      properties:
+        consent: {type: boolean, description: 'Einwilligung gegeben (consentAt gesetzt); gespeichert und angezeigt, serverseitig nicht erzwungen'}
+        consentAt: {type: string, format: date-time, nullable: true}
+        keepAudio: {type: boolean, description: 'Audio bis zu 30 Tage behalten; nur mit Einwilligung'}
+        retention:
+          type: object
+          required: [inputHours, replyDays, keepDays]
+          properties:
+            inputHours: {type: integer, example: 24, description: 'Eingangsaufnahme (ohne keepAudio), spätestens'}
+            replyDays: {type: integer, example: 7, description: 'Antwortaudio (ohne keepAudio)'}
+            keepDays: {type: integer, example: 30, description: 'beides mit keepAudio'}
+        messageCount: {type: integer, description: 'Nachrichten des eigenen Kontos im Kanal'}
+        audioCount: {type: integer, description: 'davon mit Audio-Anhang (attachmentID)'}
+    UpdateVoicePrivacy:
+      type: object
+      description: 'Partiell, mindestens ein Feld'
+      properties:
+        consent: {type: boolean}
+        keepAudio: {type: boolean}
+    DeleteVoiceHistoryResponse:
+      type: object
+      required: [deletedMessages, deletedAudio]
+      properties:
+        deletedMessages: {type: integer}
+        deletedAudio: {type: integer, description: 'gelöschte Voice-Anhänge des Kontos (Aufnahmen, Antworten, nicht gesendete)'}
     DeviceCapabilities:
       type: object
       required: [capabilities, disabledCapabilities]

@@ -4,6 +4,7 @@
 Real HTTP only, no mocks: two accounts, two simulated Mac runners (real paired device tokens) for account A and one for B,
 real M4A recordings. Time is moved by rewriting timestamps in the scratch SQLite file (lease_until, expires_at,
 last_seen_at), never by waiting.
+Voice privacy settings (consent, keep audio, delete voice history, export) are checked for account B (step 7, rest).
 Usage: voice-jobs-e2e.py BASE_URL DB_FILE SESSION_A SESSION_B SPEECH_M4A [APP_BINARY]
 APP_BINARY (the same App that serves) runs `cleanup-uploads` for the retention check (ADR 0030 step 7).
 """
@@ -241,10 +242,55 @@ if native:
           and db("SELECT count(*) FROM attachment_blobs WHERE attachment_id IN (upper(?), upper(?))", memo_l, reply_b)[0][0] == 0, (r.returncode, r.stderr[-300:]))
     aged = [m for m in messages(sess_b) if m.get("text") == "Privat-Antwort-B" or m["id"].lower() == msg["id"].lower() or m.get("text") == "Privat-Transkript-B"]
     check("after retention the transcripts stay, the aged messages point to no audio", len(aged) == 3 and all(not m.get("attachmentID") for m in aged), aged)
+# ---- Voice privacy settings (ADR 0030 step 7, rest): consent, keep audio (30 days), delete voice history. Account B.
+st, b = http("GET", "/v1/me/voice-privacy", token=sess_b); d = j(b) or {}
+check("voice privacy default: no consent, no keepAudio, fixed retention", st == 200 and d.get("consent") is False and d.get("keepAudio") is False
+      and d.get("retention") == {"inputHours": 24, "replyDays": 7, "keepDays": 30}, (st, b))
+st, b = http("PUT", "/v1/me/voice-privacy", {"keepAudio": True}, sess_b); check("keepAudio without consent: 409 consent_required", st == 409 and reason(b) == "consent_required", (st, b))
+st, b = http("PUT", "/v1/me/voice-privacy", {}, sess_b); check("empty body: 400 invalid_request", st == 400 and reason(b) == "invalid_request", (st, b))
+st, b = http("PUT", "/v1/me/voice-privacy", {"consent": True, "keepAudio": True}, sess_b); d = j(b) or {}
+check("PUT consent + keepAudio", st == 200 and d.get("consent") is True and d.get("keepAudio") is True and d.get("consentAt"), (st, b))
+st, b = http("GET", "/v1/me/voice-privacy", token=sess_a); check("account A's settings are untouched", st == 200 and j(b).get("consent") is False and j(b).get("keepAudio") is False, (st, b))
+if native:
+    st, msg_k, memo_k = speak(sess_b)  # B's Mac is unreachable (stale heartbeat above): the recording stays, no job
+    check("keepAudio: recording posted without a job", st == 201, (st, msg_k))
+    def memo_count(): return db("SELECT count(*) FROM attachments WHERE id = upper(?)", memo_k)[0][0]
+    db("UPDATE channel_messages SET created_at = created_at - ? WHERE id = upper(?)", 8 * 86400, msg_k["id"])
+    sweep()
+    check("keepAudio: 8 days old, `cleanup-uploads` keeps the recording", memo_count() == 1)
+    db("UPDATE channel_messages SET created_at = created_at - ? WHERE id = upper(?)", 23 * 86400, msg_k["id"])
+    sweep()
+    check("keepAudio: 31 days old, the sweep removes recording and bytes", memo_count() == 0
+          and db("SELECT count(*) FROM attachment_blobs WHERE attachment_id = upper(?)", memo_k)[0][0] == 0)
+    st, msg_k2, memo_k2 = speak(sess_b)
+    db("UPDATE channel_messages SET created_at = created_at - ? WHERE id = upper(?)", 2 * 86400, msg_k2["id"])
+    sweep()
+    check("keepAudio: 2 days old stays", db("SELECT count(*) FROM attachments WHERE id = upper(?)", memo_k2)[0][0] == 1)
+    st, b = http("PUT", "/v1/me/voice-privacy", {"keepAudio": False}, sess_b); check("keepAudio switched off", st == 200 and j(b).get("keepAudio") is False, (st, b))
+    sweep()
+    check("keepAudio off: the 24 h limit applies at the next sweep", db("SELECT count(*) FROM attachments WHERE id = upper(?)", memo_k2)[0][0] == 0)
+    http("PUT", "/v1/me/voice-privacy", {"keepAudio": True}, sess_b)
 st, body = http("GET", "/v1/me/export", token=sess_b); doc = j(body) or {}
 texts = [m.get("text") for m in doc.get("channelMessages", [])]
 check("export contains the channel messages (texts, no audio)", st == 200 and "Privat-Transkript-B" in texts and "Privat-Antwort-B" in texts
       and b"attachments/" not in body and "Voice A" not in body.decode(), (st, texts))
+check("export contains voicePrivacy (consent, consentAt, keepAudio)", isinstance(doc.get("voicePrivacy"), dict) and doc["voicePrivacy"].get("consent") is True
+      and doc["voicePrivacy"].get("keepAudio") is True and doc["voicePrivacy"].get("consentAt"), doc.get("voicePrivacy"))
+# Delete voice history: messages, jobs and audio of B go; the channel and the settings stay; account A is untouched.
+memo_h = upload_memo(sess_b)[0]  # a loose recording nobody posted
+a_before = db("SELECT count(*) FROM channel_messages WHERE owner_id != upper(?)", uid_b)[0][0]
+st, b = http("GET", "/v1/me/voice-privacy", token=sess_b); before = j(b) or {}
+st, b = http("DELETE", M, token=sess_b); d = j(b) or {}
+check("DELETE Sprachverlauf: counts reported", st == 200 and d.get("deletedMessages") == before.get("messageCount") and d.get("deletedMessages", 0) > 0
+      and isinstance(d.get("deletedAudio"), int), (st, b, before))
+left = {t: db(f"SELECT count(*) FROM {t} WHERE owner_id = upper(?)", uid_b)[0][0] for t in ("channel_messages", "voice_jobs", "attachments")}
+check("DELETE Sprachverlauf: messages, jobs and all voice audio of B are gone", all(v == 0 for v in left.values())
+      and db("SELECT count(*) FROM attachments WHERE id = upper(?)", memo_h)[0][0] == 0
+      and db("SELECT count(*) FROM attachment_blobs WHERE attachment_id = upper(?)", memo_h)[0][0] == 0, left)
+st, b = http("GET", "/v1/me/voice-privacy", token=sess_b); d = j(b) or {}
+check("DELETE Sprachverlauf: channel and settings stay", st == 200 and d.get("consent") is True and d.get("keepAudio") is True and d.get("messageCount") == 0
+      and db("SELECT count(*) FROM channels WHERE owner_id = upper(?)", uid_b)[0][0] == 1, (st, b))
+check("DELETE Sprachverlauf: account A's messages are untouched", db("SELECT count(*) FROM channel_messages WHERE owner_id != upper(?)", uid_b)[0][0] == a_before)
 st, _ = http("POST", "/v1/me/anonymize", {"confirm": "ANONYMIZE"}, sess_b); check("account B anonymizes itself", st == 204, st)
 left = {t: db(f"SELECT count(*) FROM {t} WHERE owner_id = upper(?)", uid_b)[0][0] for t in ("channels", "channel_messages", "voice_jobs", "attachments")}
 check("anonymizing removed channel, messages, jobs and all audio of B", all(v == 0 for v in left.values()), left)

@@ -222,7 +222,10 @@ struct AccountLockController: RouteCollection {
         let comments: [ExportComment]
         let labels: [ExportLabel]
         let channelMessages: [ExportChannelMessage]
+        let voicePrivacy: ExportVoicePrivacy
     }
+    /// Voice privacy settings of the account (ADR 0030 step 7).
+    struct ExportVoicePrivacy: Content { let consent: Bool, consentAt: Date?, keepAudio: Bool }
 
     /// Own data only: the account, projects and tasks it owns, comments it wrote (in projects it can still read), its labels and its channel #brain messages. No secrets
     /// (no password hash, passkeys, tokens, push tokens).
@@ -271,12 +274,14 @@ struct AccountLockController: RouteCollection {
             ExportChannelMessage(id: try $0.requireID(), kind: $0.kind, author: $0.author, text: $0.text, hasAudio: $0.attachmentID != nil,
                                  createdAt: $0.createdAt)
         }
+        let channel = try await BrainChannel.query(on: db).filter(\.$ownerID == uid).first()
+        let voicePrivacy = ExportVoicePrivacy(consent: channel?.consentAt != nil, consentAt: channel?.consentAt, keepAudio: channel?.keepAudio ?? false)
         let document = ExportDocument(
             exportedAt: Date(),
             account: ExportAccount(id: uid, displayName: user.displayName, username: user.username, isAdmin: user.isAdmin,
                                    createdAt: user.createdAt, email: email),
             projects: projects, tasks: tasks, comments: comments, labels: labels,
-            channelMessages: channelMessages)
+            channelMessages: channelMessages, voicePrivacy: voicePrivacy)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
