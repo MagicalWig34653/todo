@@ -12,6 +12,10 @@ final class BrainChannel: Model, @unchecked Sendable {
     /// Only `brain` exists today.
     @Field(key: "kind") var kind: String
     @Field(key: "created_at") var createdAt: Date
+    /// Voice privacy consent (ADR 0030 step 7): stored and shown, not enforced by the server. nil = no consent.
+    @OptionalField(key: "consent_at") var consentAt: Date?
+    /// "Keep audio": voice audio lives up to 30 days instead of 24 h / 7 days. Only settable with consent; nil = false.
+    @OptionalField(key: "keep_audio") var keepAudio: Bool?
     init() {}
     init(ownerID: UUID, kind: String) { self.ownerID = ownerID; self.kind = kind; createdAt = Date() }
 }
@@ -64,6 +68,19 @@ struct CreateChannels: AsyncMigration {
     }
 }
 
+/// Voice privacy settings (ADR 0030 step 7). Additive; one column per ALTER (SQLite).
+struct AddChannelVoicePrivacy: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema(BrainChannel.schema).field("consent_at", .datetime).update()
+        try await db.schema(BrainChannel.schema).field("keep_audio", .bool).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema(BrainChannel.schema).deleteField("keep_audio").update()
+        try await db.schema(BrainChannel.schema).deleteField("consent_at").update()
+    }
+}
+
 func configureChannels(_ app: Application) {
     app.migrations.add(CreateChannels())
+    app.migrations.add(AddChannelVoicePrivacy())
 }

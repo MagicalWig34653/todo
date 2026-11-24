@@ -54,6 +54,32 @@ struct PostChannelMessageRequest: Content {
     let clientUUID: UUID?
 }
 
+/// Retention periods shown to the person (ADR 0030 step 7); the values come from `VoiceRetention`.
+struct VoiceRetentionDTO: Content, Equatable {
+    let inputHours: Int, replyDays: Int, keepDays: Int
+}
+
+/// Voice privacy settings of the account (consent is stored and shown, not enforced by the server).
+struct VoicePrivacyDTO: Content {
+    let consent: Bool
+    let consentAt: Date?
+    let keepAudio: Bool
+    let retention: VoiceRetentionDTO
+    let messageCount: Int
+    let audioCount: Int
+}
+
+/// Partial update: at least one field.
+struct UpdateVoicePrivacyRequest: Content {
+    var consent: Bool?
+    var keepAudio: Bool?
+}
+
+struct DeleteVoiceHistoryResponse: Content {
+    let deletedMessages: Int
+    let deletedAudio: Int
+}
+
 /// Shared by REST and MCP. The account is the only access rule: every query filters on the owner.
 struct ChannelService {
     static let brain = "brain"
@@ -82,6 +108,41 @@ struct ChannelService {
         let c = BrainChannel(ownerID: try user.requireID(), kind: Self.brain)
         do { try await c.save(on: db); return c }
         catch { if let c = try await existingChannel() { return c }; throw error }
+    }
+
+    // MARK: Voice privacy (ADR 0030 step 7)
+
+    /// Never creates the channel: without one everything is off and zero.
+    func voicePrivacy() async throws -> VoicePrivacyDTO {
+        let owner = try user.requireID()
+        let channel = try await existingChannel()
+        let messages = try await ChannelMessage.query(on: db).filter(\.$ownerID == owner).count()
+        let audio = try await ChannelMessage.query(on: db).filter(\.$ownerID == owner).filter(\.$attachmentID != nil).count()
+        return VoicePrivacyDTO(consent: channel?.consentAt != nil, consentAt: channel?.consentAt, keepAudio: channel?.keepAudio ?? false,
+                               retention: VoiceRetention.shown, messageCount: messages, audioCount: audio)
+    }
+
+    /// Partial update. Withdrawing consent also switches keepAudio off; keepAudio needs consent (409 `consent_required`).
+    /// The channel is created lazily, but only after the request passed validation.
+    func updateVoicePrivacy(_ body: UpdateVoicePrivacyRequest) async throws -> VoicePrivacyDTO {
+        guard body.consent != nil || body.keepAudio != nil else { throw Abort(.badRequest, reason: "invalid_request") }
+        let existing = try await existingChannel()
+        let consent = body.consent ?? (existing?.consentAt != nil)
+        if body.keepAudio == true, !consent { throw Abort(.conflict, reason: "consent_required") }
+        let channel = try await channel()
+        if body.consent == true, channel.consentAt == nil { channel.consentAt = Date() }
+        if body.consent == false { channel.consentAt = nil; channel.keepAudio = false }
+        if let keep = body.keepAudio { channel.keepAudio = keep }
+        try await channel.save(on: db)
+        return try await voicePrivacy()
+    }
+
+    /// "Delete voice history": every channel message, voice job and voice recording or reply of the account. The channel
+    /// and its settings (consent, keepAudio) stay.
+    func deleteHistory() async throws -> DeleteVoiceHistoryResponse {
+        let owner = try user.requireID()
+        let result = try await db.transaction { tx in try await VoiceRetention.eraseHistory(of: owner, on: tx) }
+        return DeleteVoiceHistoryResponse(deletedMessages: result.messages, deletedAudio: result.audio)
     }
 
     // MARK: Cursor
@@ -223,6 +284,26 @@ struct ChannelController: RouteCollection {
         let r = routes.grouped("v1", "channels", "brain", "messages")
         r.get(use: list)
         r.post(use: post)
+        r.delete(use: deleteHistory)
+        routes.grouped("v1", "me", "voice-privacy").get(use: getPrivacy)
+        routes.grouped("v1", "me", "voice-privacy").put(use: putPrivacy)
+    }
+
+    /// Risk class C: owner only, session only, no MCP tool (docs/MCP-PARITAET.md).
+    @Sendable func deleteHistory(_ req: Request) async throws -> DeleteVoiceHistoryResponse {
+        try await ChannelService(user: try await req.requireUser(), db: req.db).deleteHistory()
+    }
+
+    @Sendable func getPrivacy(_ req: Request) async throws -> VoicePrivacyDTO {
+        try await ChannelService(user: try await req.requireUser(), db: req.db).voicePrivacy()
+    }
+
+    @Sendable func putPrivacy(_ req: Request) async throws -> VoicePrivacyDTO {
+        let user = try await req.requireUser()
+        let body: UpdateVoicePrivacyRequest
+        do { body = try req.content.decode(UpdateVoicePrivacyRequest.self) }
+        catch { throw Abort(.badRequest, reason: "invalid_request") }
+        return try await ChannelService(user: user, db: req.db).updateVoicePrivacy(body)
     }
 
     @Sendable func list(_ req: Request) async throws -> ChannelMessagePage {

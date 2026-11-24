@@ -355,8 +355,12 @@ enum VoiceService {
             job.state = "done"; job.leaseUntil = nil; job.endedAt = Date(); job.resultHash = hash
             try await job.save(on: tx)
             // Retention (ADR 0030 step 7): the recording goes as soon as it is processed; transcript and reply stay.
-            try await deleteAttachment(job.attachmentID, db: tx)
-            if let original { original.attachmentID = nil; try await original.save(on: tx) }
+            // With "keep audio" it stays for up to 30 days instead (the sweep removes it then).
+            let keepAudio = try await BrainChannel.query(on: tx).filter(\.$ownerID == job.ownerID).filter(\.$keepAudio == true).count() > 0
+            if !keepAudio {
+                try await deleteAttachment(job.attachmentID, db: tx)
+                if let original { original.attachmentID = nil; try await original.save(on: tx) }
+            }
             return try VoiceJobDTO(job)
         }
     }
