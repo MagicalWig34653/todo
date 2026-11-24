@@ -50,7 +50,9 @@ public func configure(_ app: Application) async throws {
 public func configureDatabase(_ app: Application, settings: DatabaseSettings) throws {
     switch settings.driver {
     case .sqlite:
-        app.databases.use(settings.name.isEmpty ? .sqlite(.memory) : .sqlite(.file(settings.name)), as: .sqlite)
+        // Bounded lock waits and write-locking transactions: see SQLiteWriteLocking.swift.
+        let stock: DatabaseConfigurationFactory = settings.name.isEmpty ? .sqlite(.memory) : .sqlite(.file(settings.name))
+        app.databases.use(DatabaseConfigurationFactory { WriteLockingSQLiteConfiguration(base: stock.make()) }, as: .sqlite)
     case .mariadb:
         app.databases.use(
             .mysql(

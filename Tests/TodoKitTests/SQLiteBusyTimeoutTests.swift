@@ -54,6 +54,45 @@ final class SQLiteBusyTimeoutTests: XCTestCase {
         await t.shutdown()
     }
 
+    private struct Boom: Error {}
+
+    func testTransactionRollsBackOnErrorAndNestedTransactionsJoinTheOuterOne() async throws {
+        try XCTSkipIf(TestApp.useMariaDB, "SQLite only")
+        let t = try await TestApp.make()
+        do {
+            let db = t.app.db
+            let rolledBack = User(displayName: "Rolled Back", isAdmin: false)
+            do {
+                try await db.transaction { tx in
+                    try await rolledBack.save(on: tx)
+                    throw Boom()
+                }
+                XCTFail("the error must reach the caller")
+            } catch is Boom {}
+            let rolledBackCount = try await User.query(on: db).filter(\.$displayName == "Rolled Back").count()
+            XCTAssertEqual(rolledBackCount, 0)
+
+            let outer = User(displayName: "Nested Outer", isAdmin: false)
+            let inner = User(displayName: "Nested Inner", isAdmin: false)
+            try await db.transaction { tx in
+                try await outer.save(on: tx)
+                XCTAssertTrue(tx.inTransaction)
+                try await tx.transaction { nested in try await inner.save(on: nested) }
+            }
+            let nestedCount = try await User.query(on: db).filter(\.$displayName ~~ "Nested ").count()
+            XCTAssertEqual(nestedCount, 2)
+
+            // Raw SQL keeps working through the wrapper (48 call sites cast the database to SQLDatabase).
+            let sql = try XCTUnwrap(db as? any SQLDatabase)
+            let rows = try await sql.raw("SELECT COUNT(*) AS n FROM users WHERE display_name LIKE 'Nested %'").all()
+            XCTAssertEqual(try rows.first?.decode(column: "n", as: Int.self), 2)
+        } catch {
+            await t.shutdown()
+            throw error
+        }
+        await t.shutdown()
+    }
+
     func testTransactionThatReadsBeforeItWritesWaitsForAForeignWriteLockOnEveryEventLoop() async throws {
         try XCTSkipIf(TestApp.useMariaDB, "SQLite only")
         let t = try await TestApp.make()
