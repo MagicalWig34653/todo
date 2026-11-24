@@ -6,8 +6,10 @@ import { deAutoStart } from './de-autostart.js';
 import { deNow } from './de-now.js';
 import { deBrainMandate } from './de-brain-mandate.js';
 import { deWebhook } from './de-webhook.js';
+import { deVoicePrivacy } from './de-voice-privacy.js';
 
 export const de = {
+	...deVoicePrivacy,
 	...deNotify,
 	...deSettings,
 	...deAdminSettings,

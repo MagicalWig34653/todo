@@ -7,7 +7,7 @@
 
 <header class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 	<div class="min-w-0">
-		<h2 class="text-2xl leading-tight font-semibold tracking-tight sm:text-[28px]" data-testid={testid}>{title}</h2>
+		<h2 class="text-2xl leading-tight font-semibold tracking-tight [overflow-wrap:anywhere] sm:text-[28px]" data-testid={testid}>{title}</h2>
 		{#if description}<p class="text-muted-foreground mt-1 text-sm">{description}</p>{/if}
 	</div>
 	{#if actions}<div class="flex shrink-0 flex-wrap items-center gap-2">{@render actions()}</div>{/if}

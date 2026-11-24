@@ -8,6 +8,10 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import Dialog from '../app/Dialog.svelte';
 	import Panel from '../app/Panel.svelte';
+	import VoicePrivacyPanel from './VoicePrivacyPanel.svelte';
+
+	// Long button texts wrap instead of pushing the page wider (320 px, 200 % text).
+	const wrap = 'h-auto min-h-9 max-w-full py-1.5 text-center whitespace-normal';
 
 	let exporting = $state(false);
 	let exported = $state(false);
@@ -56,14 +60,15 @@
 <div class="flex flex-col gap-4">
 	<Panel title={t('settings.data.export.title')} description={t('settings.data.export.text')}>
 		<div class="flex flex-wrap items-center gap-3">
-			<Button onclick={exportData} disabled={exporting} data-testid="data-export">
+			<Button class={wrap} onclick={exportData} disabled={exporting} data-testid="data-export">
 				{exporting ? t('settings.data.export.busy') : t('settings.data.export.button')}
 			</Button>
 			{#if exported}<span class="text-sm" role="status" data-testid="data-export-done">{t('settings.data.export.done')}</span>{/if}
 		</div>
 	</Panel>
+	<VoicePrivacyPanel />
 	<Panel title={t('settings.data.lock.title')} description={t('settings.data.lock.text')}>
-		<div><Button variant="destructive" onclick={start} data-testid="data-lock-start">{t('settings.data.lock.button')}</Button></div>
+		<div><Button variant="destructive" class={wrap} onclick={start} data-testid="data-lock-start">{t('settings.data.lock.button')}</Button></div>
 	</Panel>
 </div>
 

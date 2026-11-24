@@ -1611,3 +1611,11 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Backend-Rest (24.11.2026, Branch worktree-agent-a954a55449da0bc16, rot a3449df/5e7eea9, grün 2fccd1f): Migration `channels.consent_at`/`keep_audio` (additiv, nullable), `GET`/`PUT /v1/me/voice-privacy`, `DELETE /v1/channels/brain/messages` („Sprachverlauf löschen“, kein MCP), `VoiceRetention.sweep` mit 30 Tagen für `keepAudio`, `VoiceService.result` behält die Eingangsaufnahme bei `keepAudio`, Export `voicePrivacy`. `eraseChannel` = `eraseHistory` + Kanal. Einwilligung wird gespeichert, serverseitig nicht erzwungen (ADR 0030 „Schritt 7 Nachtrag“). Vertrag `voice.yaml` 1.2.0.
 - Tests: `VoicePrivacySettingsTests` (9, SQLite) und E2E `scripts/voice-jobs-e2e.sh` (88 ok) grün; Voice-/Channel-/Account-Suiten gezielt grün. Volllauf, MariaDB-Lauf und Handbuch-/Paritätstests stehen aus (Hauptsession).
 - Offen: PWA „Daten & Datenschutz“ (Einwilligung, Fristen, Löschen; `web/`, anderer Auftrag), Client-Durchsetzung der Einwilligung.
+
+## Nachtrag 24.11.2026: T1-7 Datenschutz, PWA (Karte 1614ABC6)
+
+- PWA-Panel "Sprachnachrichten (Kanal #brain)" in Einstellungen, Daten & Datenschutz: Einwilligung, Fristen aus `retention`, "Audio behalten" nur mit Einwilligung, Zähler, "Sprachverlauf löschen" mit Dialog. Doku: `docs/PWA-DATENSCHUTZ.md`. Branch `worktree-agent-a37f2ce81b4f7598a`, nicht gemergt, nicht gepusht.
+- Test-first: rot (Vitest, Modul fehlt) und grün als getrennte Commits. Vitest 599 grün; Svelte-Check im Worktree nur mit bekanntem Symlink-Artefakt (`./$types` in `+layout.svelte`, im Hauptcheckout 0 Fehler).
+- Playwright `voice-privacy.spec.ts`: nur `--list` (30 Tests) und ein lokaler Probelauf gegen eine Mock-Backend-Route (nicht committet, grün inkl. kein Überlauf bei 320 px / 200 %). Lauf gegen das echte Backend steht nach dem Merge aus (Backend-Endpunkte liegen auf dem anderen Branch).
+- Nebenbei: Überschriften in `Panel`/`PageHeader` und Buttons der Daten-Seite brechen um (Überlauf bei 320 px und 200 %).
+- Offen: E2E gegen Backend, Hinweis "noch nicht verfügbar" im Seitenkopf der Daten-Seite (`settings.data.*`, veraltet) prüfen.
