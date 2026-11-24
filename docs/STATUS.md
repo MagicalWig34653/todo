@@ -1609,3 +1609,11 @@ Stand (Worktree-Branch `worktree-agent-a4d5b784cdee75772`, nicht gemergt; Backen
 - Export: `channelMessages` (ohne Audio). Anonymisierung: Kanal, Nachrichten, Jobs, Voice-Audio weg. Tests `VoicePrivacyTests`.
 - Log-Stichprobe: auf `info` sauber; auf `debug` loggen die SQL-Treiber Binds mit Transkripten (BETRIEB.md: nie `LOG_LEVEL=debug` in Produktion).
 - Offen: „Audio behalten“ (Konto, bis 30 Tage), Endpunkt „Sprachverlauf löschen“, PWA „Daten & Datenschutz“ (Einwilligung, Fristen). Nächster Schritt: diese drei als eigener Schnitt (Migration + API + PWA).
+
+## Nachtrag 24.11.2026: T1-7 Datenschutz, PWA (Karte 1614ABC6)
+
+- PWA-Panel "Sprachnachrichten (Kanal #brain)" in Einstellungen, Daten & Datenschutz: Einwilligung, Fristen aus `retention`, "Audio behalten" nur mit Einwilligung, Zähler, "Sprachverlauf löschen" mit Dialog. Doku: `docs/PWA-DATENSCHUTZ.md`. Branch `worktree-agent-a37f2ce81b4f7598a`, nicht gemergt, nicht gepusht.
+- Test-first: rot (Vitest, Modul fehlt) und grün als getrennte Commits. Vitest 599 grün; Svelte-Check im Worktree nur mit bekanntem Symlink-Artefakt (`./$types` in `+layout.svelte`, im Hauptcheckout 0 Fehler).
+- Playwright `voice-privacy.spec.ts`: nur `--list` (30 Tests) und ein lokaler Probelauf gegen eine Mock-Backend-Route (nicht committet, grün inkl. kein Überlauf bei 320 px / 200 %). Lauf gegen das echte Backend steht nach dem Merge aus (Backend-Endpunkte liegen auf dem anderen Branch).
+- Nebenbei: Überschriften in `Panel`/`PageHeader` und Buttons der Daten-Seite brechen um (Überlauf bei 320 px und 200 %).
+- Offen: E2E gegen Backend, Hinweis "noch nicht verfügbar" im Seitenkopf der Daten-Seite (`settings.data.*`, veraltet) prüfen.
