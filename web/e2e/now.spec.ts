@@ -177,7 +177,7 @@ test('block "Läuft gerade": claimed card with note and reported sessions, with 
 	await expect(running.getByTestId('now-running-item')).toHaveCount(3);
 	// The card title opens the card detail like the project lists do.
 	await card.getByRole('button', { name: 'Passkey-Anmeldung absichern' }).click();
-	await expect(page.getByRole('dialog')).toContainText('Passkey-Anmeldung absichern');
+	await expect(page.getByRole('dialog', { name: 'Passkey-Anmeldung absichern' })).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -259,7 +259,7 @@ test('"Ohne Lebenszeichen (n)": collapsed by default, counter, expandable by key
 test('screenshots of the block: light and dark, desktop and 375 px, without horizontal overflow', async () => {
 	mkdirSync(SHOTS, { recursive: true });
 	silentMode = 'add';
-	for (const [size, prefix] of [[{ width: 1280, height: 900 }, 'jetzt-block'], [{ width: 375, height: 800 }, 'jetzt-block-mobil']] as const) {
+	for (const [size, prefix] of [[{ width: 1280, height: 1100 }, 'jetzt-block'], [{ width: 375, height: 1500 }, 'jetzt-block-mobil']] as const) {
 		await page.setViewportSize(size);
 		await page.goto('/now');
 		await expect(block()).toBeVisible();
@@ -269,7 +269,8 @@ test('screenshots of the block: light and dark, desktop and 375 px, without hori
 			await page.waitForTimeout(400);
 			const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }));
 			expect(w.doc, `horizontal overflow at ${size.width}px (${scheme})`).toBeLessThanOrEqual(w.inner);
-			await block().screenshot({ path: `${SHOTS}/${prefix}-${suffix}.png` });
+			await page.evaluate(() => window.scrollTo(0, 0));
+			await page.screenshot({ path: `${SHOTS}/${prefix}-${suffix}.png` });
 		}
 	}
 	await page.emulateMedia({ colorScheme: 'light' });

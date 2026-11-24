@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 24.11.2026 (21:00): "Jetzt" in 5 Sekunden (Karte 692891DF, Auftrag f-1a09a512; kein Deploy, kein TestFlight)
+
+- Ziel: Backend + PWA der Ansicht "Jetzt": Läuft gerade (nur Lebenszeichen <= 30 min), Wartet auf dich, Zuletzt fertig (6 h), eingeklappt Ohne Lebenszeichen (n); MCP kompakt; Sitzungsstatus beenden (Kommentar 6E36DF6E).
+- Umgesetzt: Vertrag `contracts/session-status.yaml` 1.4.0 (additives Feld `now`, `compact`/`limit`, `ended`), Backend (`OverviewNowService`, `SessionStatusService`, MCP `get_overview_now {compact, limit}` und `report_session_status {ended}`, Cleanup löscht Sitzungszeilen > 24 h), PWA (`NowView`, `NowEntry` auf "Für dich", `web/src/lib/now.ts`), ADR 0034 Nachtrag 24.11., Handbuch 1.40.0, `docs/PWA-JETZT.md`.
+- Tests: Backend je Schritt rot (91641e5, ab1a476, 8692ea4, af8beb9) dann grün (c06e767, 4983fca, 3782ed2, f656bef); PWA rot b11a08d (19 von 20), grün 11bad02. Gesamt: `swift test` 839 Tests, 21 übersprungen, 0 Fehler; MariaDB 12.3 gezielt `OverviewNow|SessionStatus` 37 Tests grün (volle MariaDB-Suite nicht gelaufen); vitest 586 grün, `npm run check` 0 Fehler. E2E: `scripts/overview-now-e2e.sh` 56 Checks (REST + MCP, Zeitverschiebung für "ohne Lebenszeichen", `cleanup-expired`), Playwright `web/e2e/now.spec.ts` 15 Tests gegen das echte Backend (Chromium).
+- Bilder hell/dunkel (Desktop und 375 px) angesehen: `docs/screenshots/jetzt/jetzt-block-{hell,dunkel,mobil-hell,mobil-dunkel}.png`, an der Karte angehängt.
+- Grenzen: `doneAt` = `TodoTask.updatedAt` (spätere Bearbeitung rückt es vor); Block liest höchstens 1000 Karten in Arbeit und 500 Sitzungen; Playwright nur Chromium (virtueller Passkey).
+- Offen / nächster Schritt: Apple-Teil (Sidebar-Eintrag "Jetzt", SwiftUI-Ansicht) als Folgekarte; Widget als Folgekarte (laut Karte).
+
 ## Nachtrag 24.11.2026 (18:25): settings.sh im Branch deploy (Karte 139D9CC6, Auftrag f-8c64dd0d; kein Server-Deploy)
 
 - Ursache: Die feste Dateiliste in `.github/workflows/deploy-branch.yml` nannte `deploy/swarm/settings.sh` und `config-registry.tsv`, `config-extra.tsv`, `config-help.tsv` nicht, der Branch `deploy` hatte sie deshalb nie.
