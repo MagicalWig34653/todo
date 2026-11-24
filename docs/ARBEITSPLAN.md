@@ -177,6 +177,7 @@ Gebaut: `.claude-plugin/marketplace.json` (Marketplace `todolino`) und `claude-p
 - [x] (31.10.2026 MariaDB-Volllauf grün, Rest siehe Text) MariaDB-Läufe der neuen Tests (`SyncRetentionTests`) nachholen, falls im Checkpoint offen; Client-Seite (PWA/Apple): 410 `cursor_expired` behandeln = lokalen Cache des Kontos verwerfen, ab `c0` neu laden
 - [x] Kontolöschung: fremde Unterprojekte unter gelöschtem Projekt bleiben erhalten (Karte BCA27B3D), Team-Gründer blockiert die Löschung nicht mehr (Karte 69439B31); Tests SQLite und MariaDB, E2E `scripts/account-deletion-e2e.sh` (23.11.2026)
 - [x] Betreiberbefehle `settings rotate-key` und `push-test` erkennen `--yes`/`-y` (ConsoleKit `confirmOverride`, Karte 300B3A20), Tests `OperatorCommandYesFlagTests` und E2E `scripts/operator-commands-e2e.sh`
+- [x] Datenexport: Kommentare nur aus aktuell lesbaren Projekten (Karte 3C2E7F9D), Test `AccountLockTests.testExportOmitsCommentsWithoutCurrentAccess`
 - [ ] Selbstbedienungs-Route zur Kontolöschung (bisher nur CLI)
 
 ## Checkpoint 31.10.2026 (Dokumentation und Projektseite konsolidiert)

@@ -252,7 +252,8 @@ final class AccountLockTests: XCTestCase {
         let myTask = TodoTask(ownerID: f.user.id, projectID: try mine.requireID(), title: "Meine Aufgabe")
         let foreignTask = TodoTask(ownerID: f.admin.id, projectID: try theirs.requireID(), title: "Fremde Aufgabe")
         try await myTask.save(on: db); try await foreignTask.save(on: db)
-        try await TaskComment(taskID: try foreignTask.requireID(), authorID: f.user.id, body: "Mein Kommentar").save(on: db)
+        // On an own task: a comment on a task of a project without access is no longer exported (card 3C2E7F9D).
+        try await TaskComment(taskID: try myTask.requireID(), authorID: f.user.id, body: "Mein Kommentar").save(on: db)
         try await TaskComment(taskID: try foreignTask.requireID(), authorID: f.admin.id, body: "Fremder Kommentar").save(on: db)
         try await DiscoveryLabel(ownerID: f.user.id, name: "mein-label").save(on: db)
         try await DiscoveryLabel(ownerID: f.admin.id, name: "fremd-label").save(on: db)

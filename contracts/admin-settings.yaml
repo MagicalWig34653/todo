@@ -248,7 +248,7 @@ paths:
       operationId: exportMe
       summary: Datenexport des eigenen Kontos
       description: 'JSON-Download (account, projects, tasks, comments, labels) nur mit eigenen Daten, ohne Geheimnisse (kein Passwort-Hash,
-        keine Passkeys, Token, Push-Token). Höchstens 20 MiB, sonst 413 export_too_large.'
+        keine Passkeys, Token, Push-Token). Kommentare nur aus Projekten, die das Konto aktuell lesen darf. Höchstens 20 MiB, sonst 413 export_too_large.'
       responses:
         '200': {description: Export als Datei todolino-export.json, content: {application/json: {schema: {type: object}}}}
         '401': {description: Keine Sitzung}

@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 24.11.2026 (01:35): Datenexport nur mit aktuellem Zugriff auf Kommentare (Karte 3C2E7F9D; kein Deploy)
+
+- Ziel: `GET /v1/me/export` exportierte Aufgaben- und Projektkommentare nach Autor, ohne Zugriffsprüfung; wer den Zugriff auf ein Projekt verloren hat, bekam seine alten Kommentare dort weiter im Export (Fund beim Gegenlesen der Karte 5C41205D, Fix 571bf09 deckte nur Projekte und Aufgaben ab).
+- Umgesetzt (`Sources/TodoKit/Maintenance/AccountLock.swift`): Kommentare werden nur exportiert, wenn ihr Projekt in `readable` liegt (dieselbe Menge wie bei Projekten und Aufgaben); Aufgabenkommentare über das Projekt der Aufgabe (in 500er-Blöcken nachgeschlagen), Projektkommentare direkt. Vertrag `contracts/admin-settings.yaml` ergänzt.
+- Tests: rot 5a13b14 (`AccountLockTests.testExportOmitsCommentsWithoutCurrentAccess`: entzogenes Projekt, Aufgaben- und Projektkommentar standen im Export; Gegenprobe: Kommentare im geteilten Projekt bleiben). Bestehender Test `testExportContainsOnlyOwnDataAndNoSecrets` hatte den Fehler festgeschrieben (Kommentar auf Aufgabe im fremden Projekt ohne Freigabe wurde erwartet) und kommentiert jetzt auf einer eigenen Aufgabe. Grün im Folgecommit.
+- Entscheidung: Wer ein Projekt nur noch lesen darf, exportiert seine Kommentare dort weiter (gleiche Regel wie Aufgaben: lesbar genügt); kein Zugriff heißt kein Export.
+
 ## Nachtrag 24.11.2026 (01:20): Betreiberbefehle mit --yes (Karte 300B3A20; kein Deploy)
 
 - Ziel: `App settings rotate-key --yes` und `App push-test <konto> --yes` laufen wirklich (ConsoleKit verbraucht `--yes`/`-y` und setzt nur `console.confirmOverride`; das eigene `@Flag` sah nie `true`, beide Befehle brachen immer mit `confirmation_required` ab; laut KONFIGURATION.md war die Schluesselrotation so live nicht lauffaehig).

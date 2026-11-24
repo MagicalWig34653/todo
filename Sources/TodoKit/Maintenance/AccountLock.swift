@@ -218,7 +218,7 @@ struct AccountLockController: RouteCollection {
         let labels: [ExportLabel]
     }
 
-    /// Own data only: the account, projects and tasks it owns, comments it wrote and its labels. No secrets
+    /// Own data only: the account, projects and tasks it owns, comments it wrote (in projects it can still read) and its labels. No secrets
     /// (no password hash, passkeys, tokens, push tokens).
     @Sendable func export(_ req: Request) async throws -> Response {
         let user = try await req.requireUser()
@@ -242,10 +242,20 @@ struct AccountLockController: RouteCollection {
             ExportTask(id: try $0.requireID(), projectID: $0.projectID, title: $0.title, description: $0.details, status: $0.status,
                        createdAt: $0.createdAt, updatedAt: $0.updatedAt)
         }
-        var comments = try await TaskComment.query(on: db).filter(\.$authorID == uid).sort(\.$id).all().map {
+        // Comments are exported by authorship, but only where the account may read the project right now (card 3C2E7F9D).
+        let ownTaskComments = try await TaskComment.query(on: db).filter(\.$authorID == uid).sort(\.$id).all()
+        var projectOfTask: [UUID: UUID] = [:]
+        let taskIDs = Array(Set(ownTaskComments.map(\.taskID)))
+        for start in stride(from: 0, to: taskIDs.count, by: 500) {
+            for task in try await TodoTask.query(on: db).filter(\.$id ~~ Array(taskIDs[start..<min(start + 500, taskIDs.count)])).all() {
+                projectOfTask[try task.requireID()] = task.projectID
+            }
+        }
+        var comments = try ownTaskComments.filter { projectOfTask[$0.taskID].map(readable.contains) ?? false }.map {
             ExportComment(id: try $0.requireID(), taskID: $0.taskID, projectID: nil, body: $0.body)
         }
-        comments += try await ProjectComment.query(on: db).filter(\.$authorID == uid).sort(\.$id).all().map {
+        comments += try await ProjectComment.query(on: db).filter(\.$authorID == uid).sort(\.$id).all()
+            .filter { readable.contains($0.projectID) }.map {
             ExportComment(id: try $0.requireID(), taskID: nil, projectID: $0.projectID, body: $0.body)
         }
         let labels = try await DiscoveryLabel.query(on: db).filter(\.$ownerID == uid).sort(\.$name).all().map {
