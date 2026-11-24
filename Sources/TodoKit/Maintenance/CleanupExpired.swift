@@ -34,6 +34,8 @@ struct ExpiredCleanup: Sendable {
         var accessNotices = 0
         /// Live-view sessions deleted (ADR 0031); their events go with them.
         var liveSessions = 0
+        /// Session statuses without a card older than 24 hours deleted (ADR 0034).
+        var sessionStatuses = 0
         var syncTotal: Int { syncTombstones + syncSuperseded + syncMutations }
         var total: Int { sessions + challenges + invitations + recoveries + rateLimits + oauthSecrets + pairings + oauthClients + actionRequests + accessNotices + liveSessions + syncTotal }
     }
