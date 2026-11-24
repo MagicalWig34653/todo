@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Session-Status ohne Karte und Übersicht "Jetzt"
-  version: 1.3.0
+  version: 1.4.0
   description: 'ADR 0034. Ein Agent meldet ohne geclaimte Karte, woran seine Sitzung gerade im Projekt arbeitet (ein Satz, höchstens 300 Zeichen).
     Eine Zeile je (Konto, Projekt, Sitzungsname), jeder Aufruf überschreibt sie (Upsert). Der Text läuft vor dem Speichern durch den Secrets-Filter
     ([gefiltert]). Rate-Limit: höchstens ein Schreibvorgang je 10 s und (Konto, Projekt, Sitzungsname) (429 rate_limited, Retry-After); höchstens 20
@@ -11,7 +11,11 @@ info:
     Worker, letzte Fortschrittsnotiz, Alter), Sitzungs-Heartbeats (orphaned nach 30 Minuten ohne Meldung, nach 24 Stunden ausgeblendet), aktive
     Agentenaufträge, Builds (neueste 5), offene Fragen, ausstehende Reviews, letzte 10 Aktivitätsereignisse; Projekte ohne Inhalt entfallen,
     sortiert nach letzter Aktivität. Live (ADR 0022): jede Meldung ändert das Live-Token; MCP wait_for_events liefert zusätzlich einen
-    projektbezogenen Hinweis (kind progress, ohne taskID) für lesbare Grant-Projekte. Kein Polling nötig.'
+    projektbezogenen Hinweis (kind progress, ohne taskID) für lesbare Grant-Projekte. Kein Polling nötig.
+    Seit 1.4.0 (Karte 692891DF, ADR 0034 Nachtrag 24.11.): additives Feld `now` (Block "Jetzt" über alle lesbaren Projekte: running = Lebenszeichen höchstens 30 Minuten,
+    waiting = offene Fragen und ausstehende Reviews, recentlyDone = in den letzten 6 Stunden erledigte Karten, silent = Karten in Arbeit und Sitzungen ohne Lebenszeichen),
+    Sitzungsstatus beenden (`ended: true` löscht die Zeile) und kompakte Antwort (`compact=true`, `limit`). Sitzungen, deren Satz mit "Beendet" beginnt, zählen in `now` nie als laufend.
+    Alles Bisherige bleibt unverändert.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -42,6 +46,9 @@ paths:
     get:
       operationId: getOverviewNow
       summary: Was passiert gerade in allen lesbaren Projekten
+      parameters:
+      - {name: compact, in: query, required: false, schema: {type: boolean, default: false}, description: 'Seit 1.4.0: true liefert nur serverTime und now (ohne projects), Texte auf 140 Zeichen gekürzt.'}
+      - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 10}, description: 'Seit 1.4.0, nur mit compact=true: höchstens so viele Einträge je Liste von now (counts nennen die Gesamtzahl). Ungültig: 400 invalid_limit.'}
       responses:
         '200':
           description: ok
@@ -56,10 +63,11 @@ components:
   schemas:
     SessionStatusRequest:
       type: object
-      required: [sessionName, activity]
+      required: [sessionName]
       properties:
         sessionName: {type: string, minLength: 1, maxLength: 100}
-        activity: {type: string, minLength: 1, maxLength: 300}
+        activity: {type: string, minLength: 1, maxLength: 300, description: 'Pflicht, außer bei ended=true (dann ignoriert).'}
+        ended: {type: boolean, default: false, description: 'Seit 1.4.0: true beendet die Sitzung, die Zeile wird gelöscht (idempotent, auch wenn es sie nicht gibt; kein 10-s-Limit; schafft Platz gegen too_many_sessions). Antwort: SessionStatus mit ended=true und activity leer.'}
     SessionStatus:
       type: object
       required: [projectID, sessionName, activity, updatedAt]
@@ -68,14 +76,80 @@ components:
         sessionName: {type: string}
         activity: {type: string}
         updatedAt: {type: string, format: date-time}
+        ended: {type: boolean, description: 'Seit 1.4.0, nur bei Beenden (true).'}
     OverviewNow:
       type: object
-      required: [serverTime, projects]
+      required: [serverTime]
       properties:
         serverTime: {type: string, format: date-time}
+        now: {$ref: '#/components/schemas/NowBlock'}
         projects:
+          description: 'Fehlt bei compact=true.'
           type: array
           items: {$ref: '#/components/schemas/OverviewProject'}
+    NowBlock:
+      type: object
+      required: [counts, running, waiting, recentlyDone, silent]
+      description: 'Seit 1.4.0. Über alle lesbaren Projekte (bei MCP: im Grant). running und silent sind getrennt: running nur mit Lebenszeichen höchstens 30 Minuten (Fortschrittsnotiz, Kommentar, Aktivität, Live-Sitzung der Karte, Sitzungsstatus), silent alles andere in Arbeit. Sitzungen mit Satz "Beendet ..." (Groß-/Kleinschreibung egal) erscheinen nirgends in now.'
+      properties:
+        counts:
+          type: object
+          required: [running, waiting, recentlyDone, silent]
+          description: 'Gesamtzahlen vor dem Kürzen durch limit.'
+          properties: {running: {type: integer}, waiting: {type: integer}, recentlyDone: {type: integer}, silent: {type: integer}}
+        running:
+          type: array
+          description: 'Neuestes Lebenszeichen zuerst.'
+          items: {$ref: '#/components/schemas/NowActive'}
+        waiting:
+          type: array
+          description: 'Offene Fragen und ausstehende Reviews, neueste zuerst.'
+          items: {$ref: '#/components/schemas/NowWaiting'}
+        recentlyDone:
+          type: array
+          description: 'Karten, die in den letzten 6 Stunden auf done gesetzt wurden, neueste zuerst.'
+          items: {$ref: '#/components/schemas/NowDone'}
+        silent:
+          type: array
+          description: 'Karten in Arbeit und Sitzungen (höchstens 24 Stunden alt) ohne Lebenszeichen der letzten 30 Minuten, jüngstes Lebenszeichen zuerst.'
+          items: {$ref: '#/components/schemas/NowActive'}
+    NowActive:
+      type: object
+      required: [kind, projectID, projectName, title, text, lastSignAt, ageSeconds]
+      properties:
+        kind: {type: string, enum: [task, session]}
+        projectID: {type: string, format: uuid}
+        projectName: {type: string}
+        taskID: {type: string, format: uuid, description: 'Nur bei kind task.'}
+        title: {type: string, description: 'Kartentitel (task) oder Sitzungsname (session).'}
+        text: {type: string, description: 'Ein Satz: letzte Fortschrittsnotiz (task, einzeilig, 200 Zeichen) oder activity (session); kann leer sein.'}
+        worker: {type: string, nullable: true}
+        since: {type: string, format: date-time, description: 'Nur bei task: Beginn des Claims, sonst letzte Änderung der Karte.'}
+        lastSignAt: {type: string, format: date-time}
+        ageSeconds: {type: integer, description: 'Sekunden seit lastSignAt.'}
+        dueAt: {type: string, format: date-time, description: 'Nur bei task mit Frist (planning.dueAt).'}
+        percent: {type: integer, minimum: 0, maximum: 100, description: 'Nur bei task, wie runningTasks[].percent.'}
+    NowWaiting:
+      type: object
+      required: [kind, id, projectID, projectName, taskID, taskTitle, text, createdAt]
+      properties:
+        kind: {type: string, enum: [question, review]}
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        projectName: {type: string}
+        taskID: {type: string, format: uuid}
+        taskTitle: {type: string}
+        text: {type: string, maxLength: 200}
+        createdAt: {type: string, format: date-time}
+    NowDone:
+      type: object
+      required: [taskID, title, projectID, projectName, doneAt]
+      properties:
+        taskID: {type: string, format: uuid}
+        title: {type: string}
+        projectID: {type: string, format: uuid}
+        projectName: {type: string}
+        doneAt: {type: string, format: date-time}
     OverviewProject:
       type: object
       required: [projectID, projectName, lastActivityAt, runningTasks, sessions, agentJobs, builds, openQuestions, pendingReviews, recentActivity]
