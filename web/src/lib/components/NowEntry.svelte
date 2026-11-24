@@ -37,7 +37,7 @@
 
 <a
 	href="/now"
-	class="bg-card hover:bg-muted focus-visible:ring-ring/50 flex min-h-11 items-center gap-2.5 rounded-xl border px-3.5 py-2 text-sm shadow-card transition-colors outline-none focus-visible:ring-2"
+	class="bg-card hover:bg-muted focus-visible:ring-ring/50 flex min-h-11 min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border px-3.5 py-2 text-sm shadow-card transition-colors outline-none focus-visible:ring-2"
 	data-testid="now-entry"
 	onclick={open}
 >
@@ -45,5 +45,5 @@
 	<span class="font-semibold">{t('now.entry.title')}</span>
 	{#if label}<span class="text-muted-foreground" data-testid="now-entry-running">{label}</span>{/if}
 	{#if waitingLabel}<span class="text-muted-foreground" data-testid="now-entry-waiting">· {waitingLabel}</span>{/if}
-	<ChevronRight class="text-muted-foreground ml-auto size-4 shrink-0" aria-hidden="true" />
+	<ChevronRight class="text-muted-foreground ml-auto size-4 shrink-0 max-[420px]:hidden" aria-hidden="true" />
 </a>
