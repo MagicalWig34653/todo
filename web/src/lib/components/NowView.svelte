@@ -117,7 +117,7 @@
 {#snippet nowBlock(b: NonNullable<typeof block>)}
 	<div class="mb-6 flex flex-col gap-4" data-testid="now-block">
 		<section aria-labelledby="nb-running" class="bg-card rounded-xl border px-3.5 py-3 shadow-card" data-testid="now-running">
-			<h2 id="nb-running" class="text-sm font-semibold">{t('now.block.running')}{#if b.counts.running > 0}<span class="text-muted-foreground ml-1.5 font-normal">({b.counts.running})</span>{/if}</h2>
+			<h3 id="nb-running" class="text-sm font-semibold">{t('now.block.running')}{#if b.counts.running > 0}<span class="text-muted-foreground ml-1.5 font-normal">({b.counts.running})</span>{/if}</h3>
 			{#if b.running.length === 0}
 				<p class="text-muted-foreground mt-1 text-sm" data-testid="now-running-empty">{t('now.block.runningEmpty')}</p>
 			{:else}
@@ -129,7 +129,7 @@
 
 		{#if b.waiting.length > 0}
 			<section aria-labelledby="nb-waiting" data-testid="now-waiting">
-				<h2 id="nb-waiting" class="mb-1.5 text-sm font-semibold">{t('now.block.waiting')}<span class="text-muted-foreground ml-1.5 font-normal">({b.counts.waiting})</span></h2>
+				<h3 id="nb-waiting" class="mb-1.5 text-sm font-semibold">{t('now.block.waiting')}<span class="text-muted-foreground ml-1.5 font-normal">({b.counts.waiting})</span></h3>
 				<ul class="flex flex-col gap-1.5">
 					{#each b.waiting as w (w.kind + w.id)}
 						<li class="bg-warning-soft flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 text-sm" data-testid="now-waiting-item" data-kind={w.kind}>
@@ -143,7 +143,7 @@
 
 		{#if b.recentlyDone.length > 0}
 			<section aria-labelledby="nb-done" data-testid="now-done">
-				<h2 id="nb-done" class="mb-1 text-sm font-semibold">{t('now.block.done')}<span class="text-muted-foreground ml-1.5 text-[13px] font-normal">{t('now.block.doneHint')}</span></h2>
+				<h3 id="nb-done" class="mb-1 text-sm font-semibold">{t('now.block.done')}<span class="text-muted-foreground ml-1.5 text-[13px] font-normal">{t('now.block.doneHint')}</span></h3>
 				<ul class="divide-y">
 					{#each b.recentlyDone as d (d.taskID)}
 						<li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 text-sm" data-testid="now-done-item">
@@ -160,7 +160,7 @@
 			<details class="bg-muted/40 text-muted-foreground rounded-xl border border-dashed" data-testid="now-silent">
 				<summary class="focus-visible:ring-ring/50 flex cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 [&::-webkit-details-marker]:hidden">
 					<span class="w-3 text-xs" aria-hidden="true">▸</span>
-					<h2 class="text-sm font-medium">{t('now.block.silent', { count: b.counts.silent })}</h2>
+					<h3 class="text-sm font-medium">{t('now.block.silent', { count: b.counts.silent })}</h3>
 				</summary>
 				<div class="px-3.5 pb-3">
 					<p class="mb-1 text-[13px]">{t('now.block.silentHint')}</p>
@@ -312,7 +312,7 @@
 		{:else}
 			{#if block}
 				{@render nowBlock(block)}
-				{#if groups.active.length + groups.quiet.length > 0}<h2 class="mb-2 text-sm font-semibold">{t('now.block.projects')}</h2>{/if}
+				{#if groups.active.length + groups.quiet.length > 0}<h3 class="mb-2 text-sm font-semibold">{t('now.block.projects')}</h3>{/if}
 			{/if}
 			<div class="flex flex-col gap-2.5" data-testid="now-active">
 				{#each groups.active as p (p.projectID)}{@render projectRow(p, false)}{/each}
