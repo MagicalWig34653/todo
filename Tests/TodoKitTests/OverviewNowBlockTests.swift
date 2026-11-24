@@ -244,7 +244,8 @@ final class OverviewNowBlockTests: XCTestCase {
             try await ProjectGrant(projectID: try foreign.requireID(), principalType: "person", principalID: try f.user.requireID(), role: .read).save(on: db)
             now = try await block(f)
             XCTAssertEqual(counts(now)["recentlyDone"], 1)
-            XCTAssertTrue(Set(titles(now, "running")).isSuperset(of: ["Geheim", "geheime Sitzung"]), String(describing: now))
+            XCTAssertEqual(titles(now, "running"), ["geheime Sitzung"], "fresh session of the shared project")
+            XCTAssertEqual(titles(now, "silent"), ["Geheim"], "card in progress without any sign of life")
         }
     }
 
