@@ -21,7 +21,10 @@
 	import Dialog from './app/Dialog.svelte';
 	import BuildStatusBadge from './BuildStatusBadge.svelte';
 	import { buildEventHead, buildStatusOf } from '#lib/now.js';
+	import NowEntry from './NowEntry.svelte';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
+
+	let { onnow }: { onnow?: () => void } = $props();
 
 	let needs = $state<ForYouNeed[]>([]);
 	let needsTotal = $state(0);
@@ -156,6 +159,7 @@
 
 <section class="flex flex-col gap-4" data-testid="for-you">
 	<PageHeader title={t('forYou.title')} description={t('forYou.hint')} testid="view-heading" />
+	{#if onnow}<NowEntry onopen={onnow} />{/if}
 
 	{#if unsupported}
 		<EmptyState title={t('forYou.unsupported')} icon={Sparkles} />

@@ -361,7 +361,7 @@
 			{:else}
 				<div class={['mx-auto', view === 'overview' || view === 'calendar' ? 'max-w-none' : 'max-w-4xl']}>
 					{#if view === 'forYou'}
-						<ForYouView />
+						<ForYouView onnow={() => go('now')} />
 					{:else if view === 'today' || view === 'upcoming' || view === 'upNext'}
 						<PlanningView mode={view} />
 					{:else if view === 'calendar'}

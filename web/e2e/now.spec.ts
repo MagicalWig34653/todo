@@ -13,6 +13,10 @@ let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
 const ids = { alpha: '', quiet: '', running: '', question: '', review: '', oldReview: '', old: '' };
 let rewrite = true;
+/** Block `now` (contract session-status 1.4.0): the API cannot age a heartbeat, so "silent" entries are produced by rewriting the answer. */
+let silentMode: 'off' | 'add' | 'move' = 'off';
+const MIN = 60_000;
+const block = () => page.getByTestId('now-block');
 
 async function api<T>(method: 'post' | 'patch' | 'put' | 'get', path: string, data?: unknown): Promise<T> {
 	const r = await page.request[method](path, method === 'get' ? undefined : { ...json, data });
@@ -63,6 +67,15 @@ test.beforeAll(async ({ browser }) => {
 		for (const p of body.projects) {
 			if (p.projectID === ids.quiet || p.projectID === ids.old) p.lastActivityAt = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
 			for (const s of p.sessions) if (s.sessionName === 'backend-oauth') Object.assign(s, { orphaned: true, ageSeconds: 47 * 60, updatedAt: new Date(Date.now() - 47 * 60000).toISOString() });
+		}
+		if (silentMode !== 'off' && body.now) {
+			const quietSign = { lastSignAt: new Date(Date.now() - 47 * MIN).toISOString(), ageSeconds: 47 * 60 };
+			const extra = { kind: 'session', projectID: ids.alpha, projectName: 'Todolino Jetzt', title: 'ios-build', text: 'Wartet auf CI', worker: null, ...quietSign };
+			const moved = silentMode === 'move' ? body.now.running.map((i: object) => ({ ...i, ...quietSign })) : [];
+			if (silentMode === 'move') body.now.running = [];
+			body.now.silent = [...moved, extra, ...body.now.silent];
+			body.now.counts.running = body.now.running.length;
+			body.now.counts.silent = body.now.silent.length;
 		}
 		await route.fulfill({ response: res, json: body });
 	});
@@ -144,6 +157,137 @@ test('an old project with an open review is not quiet: it stands on top, expande
 test('updates live when an agent reports something new', async () => {
 	await api('post', `/v1/tasks/${ids.running}/progress-notes`, { note: 'Neuer Zwischenstand live', percent: 80 });
 	await expect(project('Todolino Jetzt').getByTestId('now-running-item')).toContainText('Neuer Zwischenstand live', { timeout: 15_000 });
+});
+
+test('block "Läuft gerade": claimed card with note and reported sessions, with project, sentence and life sign', async () => {
+	await page.goto('/now');
+	const running = block().getByTestId('now-running');
+	await expect(running.getByRole('heading', { name: /Läuft gerade/ })).toBeVisible();
+	await expect(running.getByTestId('now-running-empty')).toHaveCount(0);
+	const card = running.getByTestId('now-running-item').filter({ hasText: 'Passkey-Anmeldung absichern' });
+	await expect(card).toHaveAttribute('data-kind', 'task');
+	await expect(card).toContainText('Todolino Jetzt');
+	await expect(card).toContainText('Neuer Zwischenstand live');
+	await expect(card).toContainText(/seit .*Min\./);
+	await expect(card).toContainText(/Lebenszeichen (gerade eben|vor .*Min\.)/);
+	await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '80');
+	const ses = running.getByTestId('now-running-item').filter({ hasText: 'Führt vitest aus' });
+	await expect(ses).toHaveAttribute('data-kind', 'session');
+	await expect(ses).toContainText('web-passkey');
+	await expect(running.getByTestId('now-running-item')).toHaveCount(3);
+	// The card title opens the card detail like the project lists do.
+	await card.getByRole('button', { name: 'Passkey-Anmeldung absichern' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Passkey-Anmeldung absichern');
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('block "Wartet auf dich" is separate from "Läuft gerade" and links to the card', async () => {
+	const waiting = block().getByTestId('now-waiting');
+	await expect(waiting.getByRole('heading', { name: /Wartet auf dich/ })).toBeVisible();
+	await expect(waiting.getByTestId('now-waiting-item')).toHaveCount(3);
+	await expect(waiting).toContainText('Soll der Runner pausieren?');
+	await expect(waiting).toContainText('Kalender Stufe A fertig');
+	await expect(waiting).toContainText('Rate-Limit fertig');
+	const running = block().getByTestId('now-running');
+	await expect(running).not.toContainText('Soll der Runner pausieren?');
+	await expect(running).not.toContainText('Kalender Stufe A fertig');
+	await expect(waiting).not.toContainText('Passkey-Anmeldung absichern');
+	await waiting.getByRole('button', { name: 'Antworten' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Soll der Runner pausieren?');
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('a sentence starting with "Beendet" is shown nowhere: not in the block, not in the project sessions, not counted', async () => {
+	await api('put', `/v1/projects/${ids.alpha}/session-status`, { sessionName: 'web-ende', activity: 'Beendet: alles erledigt' });
+	await page.goto('/now');
+	await expect(project('Todolino Jetzt')).toBeVisible();
+	await expect(page.getByText('Beendet: alles erledigt')).toHaveCount(0);
+	await expect(page.getByText('web-ende')).toHaveCount(0);
+	await expect(summaryOf('Todolino Jetzt').getByTestId('now-stat-sessions')).toHaveText('2 Sessions');
+	await expect(block().getByTestId('now-running-item')).toHaveCount(3);
+});
+
+test('block "Zuletzt fertig": cards done in the last 6 hours, at most 5 visible', async () => {
+	for (let i = 1; i <= 6; i++) {
+		const t = await api<{ id: string }>('post', '/v1/tasks', { projectID: ids.alpha, title: `Erledigt Nr ${i}` });
+		await api('patch', `/v1/tasks/${t.id}`, { version: 1, status: 'done' });
+	}
+	await page.goto('/now');
+	const done = block().getByTestId('now-done');
+	await expect(done.getByRole('heading', { name: /Zuletzt fertig/ })).toBeVisible();
+	await expect(done.getByTestId('now-done-item')).toHaveCount(5);
+	await expect(done.getByTestId('now-done-item').first()).toContainText('Erledigt Nr 6');
+	await expect(done).not.toContainText('Erledigt Nr 1');
+	await expect(done.getByTestId('now-done-item').first()).toContainText('Todolino Jetzt');
+});
+
+test('"Ohne Lebenszeichen (n)": collapsed by default, counter, expandable by keyboard, never inside "Läuft gerade"', async () => {
+	silentMode = 'add';
+	await page.goto('/now');
+	const silent = block().getByTestId('now-silent');
+	await expect(silent).toBeVisible();
+	await expect(silent).toHaveJSProperty('open', false);
+	await expect(silent.locator('summary')).toHaveText(/Ohne Lebenszeichen \(1\)/);
+	await expect(silent.getByTestId('now-silent-item')).toBeHidden();
+	await silent.locator('summary').focus();
+	await page.keyboard.press('Enter');
+	await expect(silent).toHaveJSProperty('open', true);
+	await expect(silent.getByTestId('now-silent-item')).toHaveCount(1);
+	await expect(silent).toContainText('ios-build');
+	await expect(silent).toContainText('Wartet auf CI');
+	await expect(silent).toContainText(/Lebenszeichen vor 4\d Min\./);
+	await expect(block().getByTestId('now-running')).not.toContainText('ios-build');
+	await expect(block().getByTestId('now-running').getByTestId('now-running-item')).toHaveCount(3);
+
+	// Everything without a life sign: "Läuft gerade" shows the calm sentence, the counter follows the list.
+	silentMode = 'move';
+	await page.goto('/now');
+	await expect(block().getByTestId('now-running-empty')).toHaveText('Gerade läuft nichts mit Lebenszeichen.');
+	await expect(block().getByTestId('now-running').getByTestId('now-running-item')).toHaveCount(0);
+	const silent2 = block().getByTestId('now-silent');
+	await expect(silent2).toHaveJSProperty('open', false);
+	const n = Number(/\((\d+)\)/.exec((await silent2.locator('summary').textContent()) ?? '')?.[1]);
+	expect(n).toBe(4);
+	await silent2.locator('summary').click();
+	await expect(silent2.getByTestId('now-silent-item')).toHaveCount(n);
+	await expect(silent2).toContainText('Passkey-Anmeldung absichern');
+	silentMode = 'off';
+});
+
+test('screenshots of the block: light and dark, desktop and 375 px, without horizontal overflow', async () => {
+	mkdirSync(SHOTS, { recursive: true });
+	silentMode = 'add';
+	for (const [size, prefix] of [[{ width: 1280, height: 900 }, 'jetzt-block'], [{ width: 375, height: 800 }, 'jetzt-block-mobil']] as const) {
+		await page.setViewportSize(size);
+		await page.goto('/now');
+		await expect(block()).toBeVisible();
+		await block().getByTestId('now-silent').locator('summary').click();
+		for (const [scheme, suffix] of [['light', 'hell'], ['dark', 'dunkel']] as const) {
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.waitForTimeout(400);
+			const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }));
+			expect(w.doc, `horizontal overflow at ${size.width}px (${scheme})`).toBeLessThanOrEqual(w.inner);
+			await block().screenshot({ path: `${SHOTS}/${prefix}-${suffix}.png` });
+		}
+	}
+	await page.emulateMedia({ colorScheme: 'light' });
+	await page.setViewportSize({ width: 1280, height: 900 });
+	silentMode = 'off';
+});
+
+test('shortcut "Jetzt" on the start page shows the running count and leads to the page (mouse and keyboard)', async () => {
+	await page.goto('/for-you');
+	const entry = page.getByTestId('now-entry');
+	await expect(entry).toBeVisible();
+	await expect(entry).toContainText('Jetzt');
+	await expect(entry.getByTestId('now-entry-running')).toHaveText('3 laufen');
+	await expect(entry.getByTestId('now-entry-waiting')).toContainText('warten auf dich');
+	await entry.focus();
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/now$/);
+	await expect(block()).toBeVisible();
 });
 
 test('screenshots desktop and mobile (light)', async () => {

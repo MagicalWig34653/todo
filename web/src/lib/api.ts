@@ -893,7 +893,31 @@ export interface OverviewProject {
 	pendingReviews: OverviewOpenItem[];
 	recentActivity: OverviewEvent[];
 }
-export interface OverviewNow { serverTime: string; projects: OverviewProject[] }
+/** Block "Jetzt" over all readable projects (contract session-status 1.4.0, field `now`). */
+export interface NowActive {
+	kind: 'task' | 'session';
+	projectID: string;
+	projectName: string;
+	/** Only for kind task. */
+	taskID?: string;
+	/** Card title (task) or session name (session). */
+	title: string;
+	/** One sentence: last progress note (task) or activity (session); may be empty. */
+	text: string;
+	worker?: string | null;
+	/** Only for tasks: start of the claim, otherwise the last change of the card. */
+	since?: string;
+	lastSignAt: string;
+	ageSeconds: number;
+	dueAt?: string;
+	percent?: number | null;
+}
+export interface NowWaiting { kind: 'question' | 'review'; id: string; projectID: string; projectName: string; taskID: string; taskTitle: string; text: string; createdAt: string }
+export interface NowDone { taskID: string; title: string; projectID: string; projectName: string; doneAt: string }
+export interface NowCounts { running: number; waiting: number; recentlyDone: number; silent: number }
+export interface NowBlock { counts: NowCounts; running: NowActive[]; waiting: NowWaiting[]; recentlyDone: NowDone[]; silent: NowActive[] }
+/** `now` is missing on old servers, `projects` with `compact=true`. */
+export interface OverviewNow { serverTime: string; now?: NowBlock; projects?: OverviewProject[] }
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -1067,7 +1091,8 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		confirmActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/confirm`),
 		rejectActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/reject`),
 		performAction: (method: string, path: string, body: unknown) => request<unknown>(method, path, body),
-		overviewNow: () => request<OverviewNow>('GET', '/overview/now'),
+		overviewNow: (opts: { compact?: boolean; limit?: number } = {}) =>
+			request<OverviewNow>('GET', `/overview/now${query({ compact: opts.compact ? 'true' : undefined, limit: opts.compact ? opts.limit : undefined })}`),
 		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
 			request<FeedPage>('GET', `/activity${query({ projectID: params.projectID, before: params.before, limit: params.limit })}`),
 
