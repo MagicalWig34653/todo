@@ -712,3 +712,94 @@ final class VoiceJobTests: XCTestCase {
         }
     }
 }
+
+// MARK: Retention (ADR 0030 step 7): input audio after processing / 24 h, reply audio 7 days, shifted time instead of sleeping
+
+extension VoiceJobTests {
+    private func attachmentExists(_ s: Setup, _ id: String) async throws -> Bool {
+        try await Attachment.find(UUID(uuidString: id), on: s.t.app.db) != nil
+    }
+
+    func testSuccessfulJobDeletesTheInputRecordingButKeepsTranscriptAndReply() async throws {
+        let s = try await make()
+        try await run(s) {
+            _ = try await heartbeat(s, s.runner1)
+            let memo = try await uploadMemo(s)
+            let clientUUID = UUID().uuidString
+            _ = try await speak(s, memo: memo, clientUUID: clientUUID)
+            let job = try await unwrap(try await claim(s, s.runner1).body?["id"] as? String)
+            let reply = try await unwrap(try await putReply(s, s.runner1, job, generation: 1, data: AudioFixtures.m4a(duration: 1000)).body?["attachmentID"] as? String)
+            let done = try await jobCommand(s, s.runner1, job, "result", ["generation": 1, "transcript": "Wie ist die Lage?", "replyText": "Ruhig."])
+            XCTAssertEqual(done.status, .ok)
+            try await eq(try await attachmentExists(s, memo), false, "recording is deleted after processing")
+            try await eq(try await attachmentExists(s, reply), true, "reply audio stays for 7 days")
+            let list = try await messages(s)
+            XCTAssertEqual(list[0]["text"] as? String, "Wie ist die Lage?", "transcript stays")
+            XCTAssertNil(list[0]["attachmentID"] as? String, "no dangling attachment id")
+            XCTAssertNotNil(list[1]["attachmentID"] as? String)
+            // The app repeats a post whose answer it did not see: still the same message, although its recording is gone.
+            let again = try await s.t.json(.POST, "/v1/channels/brain/messages", ["kind": "voice_in", "attachmentID": memo, "clientUUID": clientUUID], token: s.human)
+            XCTAssertEqual(again.status, .ok, "\(again.body ?? [:])")
+            try await eq(try await messages(s).count, 2)
+        }
+    }
+
+    func testRetentionSweepDeletesInputAfter24HoursAndReplyAfter7DaysWithShiftedTime() async throws {
+        let s = try await make()
+        try await run(s) {
+            // A recording nobody could process (no runner): only the 24 h limit removes it.
+            let lonely = try await uploadMemo(s)
+            _ = try await speak(s, memo: lonely)
+            // A processed job with reply audio.
+            _ = try await heartbeat(s, s.runner1)
+            _ = try await speak(s)
+            let job = try await unwrap(try await claim(s, s.runner1).body?["id"] as? String)
+            let reply = try await unwrap(try await putReply(s, s.runner1, job, generation: 1, data: AudioFixtures.m4a(duration: 1000)).body?["attachmentID"] as? String)
+            _ = try await jobCommand(s, s.runner1, job, "result", ["generation": 1, "transcript": "Hallo", "replyText": "Hi."])
+            let db = s.t.app.db
+            let t0 = Date()
+
+            try await eq(try await VoiceRetention.sweep(db: db, now: t0.addingTimeInterval(23 * 3600)), 0, "23 h: nothing is due")
+            try await eq(try await attachmentExists(s, lonely), true)
+
+            try await eq(try await VoiceRetention.sweep(db: db, now: t0.addingTimeInterval(25 * 3600)), 1, "25 h: the unprocessed recording goes")
+            try await eq(try await attachmentExists(s, lonely), false)
+            try await eq(try await attachmentExists(s, reply), true, "reply audio is 7 days")
+
+            try await eq(try await VoiceRetention.sweep(db: db, now: t0.addingTimeInterval(6 * 86400)), 0, "6 days: reply stays")
+            try await eq(try await VoiceRetention.sweep(db: db, now: t0.addingTimeInterval(8 * 86400)), 1, "8 days: reply goes")
+            try await eq(try await attachmentExists(s, reply), false)
+            try await eq(try await VoiceRetention.sweep(db: db, now: t0.addingTimeInterval(9 * 86400)), 0, "idempotent")
+
+            // Texts and transcripts stay; the messages no longer point to deleted audio.
+            let list = try await messages(s)
+            XCTAssertEqual(list.compactMap { $0["text"] as? String }, ["Hallo", "Hi."])
+            XCTAssertTrue(list.allSatisfy { $0["attachmentID"] == nil || $0["attachmentID"] is NSNull }, "\(list)")
+            try await eq(try await ChannelMessage.query(on: db).count(), list.count, "no message is deleted")
+        }
+    }
+
+    func testRetentionLeavesTheRecordingOfAnOpenJobAlone() async throws {
+        let s = try await make()
+        try await run(s) {
+            _ = try await heartbeat(s, s.runner1)
+            let memo = try await uploadMemo(s)
+            _ = try await speak(s, memo: memo)   // queued job, not yet expired
+            try await eq(try await VoiceRetention.sweep(db: s.t.app.db, now: Date().addingTimeInterval(48 * 3600)), 0,
+                         "an open job is ended by its own 10 minute expiry, not by the sweep")
+            try await eq(try await attachmentExists(s, memo), true)
+        }
+    }
+
+    func testRetentionRemovesMarkedDeletedVoiceObjectsOfTheAccount() async throws {
+        let s = try await make()
+        try await run(s) {
+            let memo = try await uploadMemo(s)
+            let a = try await unwrap(try await Attachment.find(UUID(uuidString: memo), on: s.t.app.db))
+            a.status = "deleted"   // what an S3 recording looks like right after a failed or finished job
+            try await a.save(on: s.t.app.db)
+            try await eq(try await VoiceRetention.sweep(db: s.t.app.db), 1)
+            try await eq(try await attachmentExists(s, memo), false)
+        }
+    }
+}
