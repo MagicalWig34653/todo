@@ -35,6 +35,11 @@ jobs:
         run: |
           apt-get install -y -qq uuid-runtime openssl
           scripts/operator-commands-e2e.sh "$RUNNER_TEMP/operator-commands-e2e"
+      # Project lists of other connections changed by a mandated connection (card E71B0FF1): real backend, REST + MCP with OAuth tokens.
+      - name: Connection projects E2E (brain mandate, MCP)
+        run: |
+          apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
+          scripts/connection-projects-e2e.sh "$RUNNER_TEMP/connection-projects-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)
