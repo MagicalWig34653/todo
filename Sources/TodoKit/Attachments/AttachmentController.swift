@@ -148,10 +148,13 @@ struct AttachmentController: RouteCollection {
 
 struct CleanupAttachmentsCommand: AsyncCommand {
     struct Signature: CommandSignature {}
-    let help = "Delete expired uploads and orphaned attachment objects."
+    let help = "Delete expired uploads, orphaned attachment objects and voice audio past its retention (24 h / 7 days)."
     func run(using context: CommandContext, signature: Signature) async throws {
-        let count = try await AttachmentService(settings: context.application.settings).cleanup(db: context.application.db)
-        context.console.print("Removed \(count) attachments.")
+        let service = AttachmentService(settings: context.application.settings)
+        // Voice retention first: it never throws on a storage failure, and `cleanup` rethrows the first error after its sweep.
+        let voice = try await VoiceRetention.sweep(db: context.application.db, service: service)
+        let count = try await service.cleanup(db: context.application.db)
+        context.console.print("Removed \(count) attachments and \(voice) voice recordings.")
     }
 }
 

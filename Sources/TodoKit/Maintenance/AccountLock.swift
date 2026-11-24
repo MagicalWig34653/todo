@@ -153,6 +153,7 @@ enum AccountLock {
             }
         }
         try await ServerSettingAudit.query(on: db).filter(\.$actorID == uid).set(\.$actorName, to: placeholderName).update()
+        try await VoiceRetention.eraseChannel(of: uid, on: db)
     }
 }
 
@@ -209,6 +210,10 @@ struct AccountLockController: RouteCollection {
         let id: UUID, taskID: UUID?, projectID: UUID?, body: String
     }
     struct ExportLabel: Content { let id: UUID, name: String }
+    /// Channel #brain (ADR 0030): texts and transcripts; the audio itself is not exported (`hasAudio` only says that it still exists).
+    struct ExportChannelMessage: Content {
+        let id: UUID, kind: String, author: String, text: String?, hasAudio: Bool, createdAt: Date
+    }
     struct ExportDocument: Content {
         let exportedAt: Date
         let account: ExportAccount
@@ -216,9 +221,10 @@ struct AccountLockController: RouteCollection {
         let tasks: [ExportTask]
         let comments: [ExportComment]
         let labels: [ExportLabel]
+        let channelMessages: [ExportChannelMessage]
     }
 
-    /// Own data only: the account, projects and tasks it owns, comments it wrote (in projects it can still read) and its labels. No secrets
+    /// Own data only: the account, projects and tasks it owns, comments it wrote (in projects it can still read), its labels and its channel #brain messages. No secrets
     /// (no password hash, passkeys, tokens, push tokens).
     @Sendable func export(_ req: Request) async throws -> Response {
         let user = try await req.requireUser()
@@ -261,11 +267,16 @@ struct AccountLockController: RouteCollection {
         let labels = try await DiscoveryLabel.query(on: db).filter(\.$ownerID == uid).sort(\.$name).all().map {
             ExportLabel(id: try $0.requireID(), name: $0.name)
         }
+        let channelMessages = try await ChannelMessage.query(on: db).filter(\.$ownerID == uid).sort(\.$createdAt).sort(\.$id).all().map {
+            ExportChannelMessage(id: try $0.requireID(), kind: $0.kind, author: $0.author, text: $0.text, hasAudio: $0.attachmentID != nil,
+                                 createdAt: $0.createdAt)
+        }
         let document = ExportDocument(
             exportedAt: Date(),
             account: ExportAccount(id: uid, displayName: user.displayName, username: user.username, isAdmin: user.isAdmin,
                                    createdAt: user.createdAt, email: email),
-            projects: projects, tasks: tasks, comments: comments, labels: labels)
+            projects: projects, tasks: tasks, comments: comments, labels: labels,
+            channelMessages: channelMessages)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

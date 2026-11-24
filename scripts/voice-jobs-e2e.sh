@@ -35,6 +35,6 @@ mk() { # name -> prints session token
   printf '%s' "$s"
 }
 a=$(mk "Voice A"); b=$(mk "Voice B")
-python3 -I scripts/voice-jobs-e2e.py "http://localhost:$port" "$scratch/e2e.sqlite" "$a" "$b" "$scratch/files/speech.m4a"
+python3 -I scripts/voice-jobs-e2e.py "http://localhost:$port" "$scratch/e2e.sqlite" "$a" "$b" "$scratch/files/speech.m4a" "$native"
 # No audio, transcript or reply text in the server log.
-if grep -q "Wie ist die Lage\|Alles ruhig\|Sprachnachricht fuer" "$scratch/backend.log"; then echo "FAIL message content found in backend.log"; exit 1; else echo "ok   no transcript or reply text in backend.log"; fi
+if grep -q "Wie ist die Lage\|Alles ruhig\|Sprachnachricht fuer\|Privat-Transkript-B\|Privat-Antwort-B" "$scratch/backend.log"; then echo "FAIL message content found in backend.log"; exit 1; else echo "ok   no transcript or reply text in backend.log"; fi

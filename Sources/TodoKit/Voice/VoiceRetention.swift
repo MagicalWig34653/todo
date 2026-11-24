@@ -45,6 +45,20 @@ enum VoiceRetention {
         return removed
     }
 
+    /// Anonymizing an account: channel messages, jobs, the channel itself and every voice recording and reply of the account
+    /// (also unposted ones). Recordings in the database go with their bytes at once; an S3 object is marked `deleted` and
+    /// removed by the next sweep (the account layer has no storage settings).
+    static func eraseChannel(of owner: UUID, on db: any Database) async throws {
+        try await VoiceJob.query(on: db).filter(\.$ownerID == owner).delete()
+        try await ChannelMessage.query(on: db).filter(\.$ownerID == owner).delete()
+        try await BrainChannel.query(on: db).filter(\.$ownerID == owner).delete()
+        for a in try await Attachment.query(on: db).filter(\.$ownerID == owner).filter(\.$taskID == Attachment.noTask).filter(\.$role == "voice").all() {
+            let id = try a.requireID()
+            try await UploadSession.query(on: db).filter(\.$attachmentID == id).delete()
+            try await VoiceService.deleteAttachment(id, db: db)
+        }
+    }
+
     /// Deletes the object and the row. A storage failure (S3 down) leaves the row marked `deleted`: the next sweep retries,
     /// and nothing can be downloaded in the meantime. Returns false when the row is already gone.
     @discardableResult

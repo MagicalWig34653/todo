@@ -4,11 +4,13 @@
 Real HTTP only, no mocks: two accounts, two simulated Mac runners (real paired device tokens) for account A and one for B,
 real M4A recordings. Time is moved by rewriting timestamps in the scratch SQLite file (lease_until, expires_at,
 last_seen_at), never by waiting.
-Usage: voice-jobs-e2e.py BASE_URL DB_FILE SESSION_A SESSION_B SPEECH_M4A
+Usage: voice-jobs-e2e.py BASE_URL DB_FILE SESSION_A SESSION_B SPEECH_M4A [APP_BINARY]
+APP_BINARY (the same App that serves) runs `cleanup-uploads` for the retention check (ADR 0030 step 7).
 """
-import hashlib, json, sqlite3, sys, threading, time, urllib.error, urllib.request
+import hashlib, json, os, sqlite3, subprocess, sys, threading, time, urllib.error, urllib.request
 
 base, dbfile, sess_a, sess_b, m4a_path = sys.argv[1:6]
+native = sys.argv[6] if len(sys.argv) > 6 else None
 audio = open(m4a_path, "rb").read()
 failures = []
 
@@ -199,7 +201,8 @@ for _ in range(7):
 check("5 open jobs, then 429 too_many_open_voice_jobs", [c[0] for c in codes[:5]] == [201] * 5 and codes[5][0] == 429 and codes[5][1] == "too_many_open_voice_jobs", codes)
 db("UPDATE voice_jobs SET expires_at = ? WHERE state IN ('queued','claimed')", past())
 http("GET", M + "?limit=1", token=sess_a)  # the read sweeps the expired jobs
-st, b = http("POST", M, {"kind": "voice_in", "attachmentID": memo1}, sess_a); check("a recording belongs to one message: 409 attachment_in_use", st == 409 and reason(b) == "attachment_in_use", (st, b))
+st, _m, memo_use = speak(sess_b)  # B has no reachable Mac yet: the recording stays (a processed one is deleted, see below)
+st, b = http("POST", M, {"kind": "voice_in", "attachmentID": memo_use}, sess_b); check("a recording belongs to one message: 409 attachment_in_use", st == 409 and reason(b) == "attachment_in_use", (st, b))
 seen = None
 for i in range(15):
     st, msg, _m = speak(sess_a)
@@ -209,6 +212,43 @@ st, _, _ = speak(sess_b); check("account B is not limited by A", st == 201, st)
 st, b = upload_memo(sess_a, no_task=True)[:2]
 st2, b2 = http("POST", "/v1/attachments/begin", {"filename": "a.png", "role": "result", "mediaType": "image/png", "size": 10, "checksum": "0" * 64}, sess_a)
 check("only voice may omit the task: 400", st2 == 400, (st2, b2))
+
+# ---- Data protection (ADR 0030 step 7): input audio after processing, 24 h / 7 days, export, anonymizing. Account B, time moved in the database.
+st, b = http("GET", "/v1/me", token=sess_b); uid_b = (j(b) or {}).get("id")
+hb(runB)
+st, msg, memo_b = speak(sess_b); st, b = claim(runB); jb = j(b)
+st, b = reply(runB, jb["id"], jb["generation"], audio); reply_b = (j(b) or {}).get("attachmentID")
+st, b = cmd(runB, jb["id"], "result", {"generation": jb["generation"], "transcript": "Privat-Transkript-B", "replyText": "Privat-Antwort-B"})
+check("processed job: input recording deleted at once, transcript stays", st == 200
+      and db("SELECT count(*) FROM attachments WHERE id = upper(?)", memo_b)[0][0] == 0
+      and db("SELECT count(*) FROM attachment_blobs WHERE attachment_id = upper(?)", memo_b)[0][0] == 0
+      and db("SELECT count(*) FROM attachments WHERE id = upper(?)", reply_b)[0][0] == 1
+      and any(m.get("text") == "Privat-Transkript-B" and not m.get("attachmentID") for m in messages(sess_b)), (st, b))
+# A recording nobody could process (Mac not reachable): only the 24 h limit removes it.
+db("UPDATE runner_devices SET last_seen_at = ? WHERE id = upper(?)", time.time() - 3600, devB)
+st, msg, memo_l = speak(sess_b)
+check("unreachable Mac: voice_in accepted, no job", st == 201 and db("SELECT count(*) FROM voice_jobs WHERE message_id = upper(?)", msg["id"])[0][0] == 0, (st, msg))
+if native:
+    env = dict(os.environ)
+    def sweep(): return subprocess.run([native, "cleanup-uploads"], env=env, capture_output=True, text=True, timeout=120)
+    sweep()
+    check("23 h / 6 days: nothing removed", db("SELECT count(*) FROM attachments WHERE id IN (upper(?), upper(?))", memo_l, reply_b)[0][0] == 2)
+    db("UPDATE channel_messages SET created_at = created_at - ? WHERE id = upper(?)", 25 * 3600, msg["id"])
+    db("UPDATE channel_messages SET created_at = created_at - ? WHERE kind = 'voice_out' AND owner_id = upper(?)", 8 * 86400, uid_b)
+    r = sweep()
+    check("25 h / 8 days: `cleanup-uploads` removes the unprocessed recording and the reply audio", r.returncode == 0
+          and db("SELECT count(*) FROM attachments WHERE id IN (upper(?), upper(?))", memo_l, reply_b)[0][0] == 0
+          and db("SELECT count(*) FROM attachment_blobs WHERE attachment_id IN (upper(?), upper(?))", memo_l, reply_b)[0][0] == 0, (r.returncode, r.stderr[-300:]))
+    aged = [m for m in messages(sess_b) if m.get("text") == "Privat-Antwort-B" or m["id"].lower() == msg["id"].lower() or m.get("text") == "Privat-Transkript-B"]
+    check("after retention the transcripts stay, the aged messages point to no audio", len(aged) == 3 and all(not m.get("attachmentID") for m in aged), aged)
+st, body = http("GET", "/v1/me/export", token=sess_b); doc = j(body) or {}
+texts = [m.get("text") for m in doc.get("channelMessages", [])]
+check("export contains the channel messages (texts, no audio)", st == 200 and "Privat-Transkript-B" in texts and "Privat-Antwort-B" in texts
+      and b"attachments/" not in body and "Voice A" not in body.decode(), (st, texts))
+st, _ = http("POST", "/v1/me/anonymize", {"confirm": "ANONYMIZE"}, sess_b); check("account B anonymizes itself", st == 204, st)
+left = {t: db(f"SELECT count(*) FROM {t} WHERE owner_id = upper(?)", uid_b)[0][0] for t in ("channels", "channel_messages", "voice_jobs", "attachments")}
+check("anonymizing removed channel, messages, jobs and all audio of B", all(v == 0 for v in left.values()), left)
+check("anonymizing B left the channel of A alone", db("SELECT count(*) FROM channel_messages WHERE owner_id != upper(?)", uid_b)[0][0] > 0)
 
 print("FAILURES: " + ", ".join(failures) if failures else "all checks passed")
 sys.exit(1 if failures else 0)
