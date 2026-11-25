@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { uniqueKeys } from '#lib/keys.js';
 	import Timestamp from './Timestamp.svelte';
 	import { api, type BoardResponse, type ProjectColumn, type Project, type Task, type TaskStatus } from '#lib/api.js';
 	import { applyMove, PROJECT_COLORS, reorderKeys, snippet, toLanes, type Lane } from '#lib/boardLogic.js';
@@ -323,7 +324,7 @@
 						<span class={['inline-flex items-center gap-1', dueTone(pl.dueAt, task.status === 'done')]} data-testid="card-due"><CalendarDays class="size-3.5" aria-hidden="true" />{formatWhen(pl.dueAt)}</span>
 					{/if}
 					{#if pl?.hasRecurrence}<Repeat class="text-muted-foreground size-3.5" aria-label={t('planning.chip.recurrence')} />{/if}
-					{#each labels as l (l)}
+					{#each uniqueKeys(labels, (x) => x) as { item: l, key } (key)}
 						<span class="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5" data-testid="card-label"><Tag class="size-3" aria-hidden="true" />{l}</span>
 					{/each}
 				</div>

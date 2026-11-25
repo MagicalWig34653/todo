@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { uniqueKeys } from '#lib/keys.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
 	/**
@@ -22,7 +23,7 @@
 </script>
 
 <div class={['flex min-w-0 flex-wrap gap-1.5', className]} role="group" aria-label={label}>
-	{#each items as item (item.key)}
+	{#each uniqueKeys(items, (x) => x.key) as { item, key } (key)}
 		<Button {size} variant="outline" class={fit} {disabled} data-testid={testid} onclick={() => onpick(item.key)}>{item.label}</Button>
 	{/each}
 </div>

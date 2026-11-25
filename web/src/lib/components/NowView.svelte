@@ -3,6 +3,7 @@
 	import { api, type NowActive, type OverviewNow, type OverviewProject } from '#lib/api.js';
 	import { relativeWhen } from '#lib/cardRef.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
+	import { uniqueKeys } from '#lib/keys.js';
 	import { de } from '#lib/i18n/de.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { liveRefresh, startLiveRefresh } from '#lib/liveRefresh.js';
@@ -19,6 +20,7 @@
 	import Radio from '@lucide/svelte/icons/radio';
 	import CircleCheck from '@lucide/svelte/icons/circle-check';
 
+	const activeKey = (item: NowActive) => `${item.kind}:${item.taskID ?? item.projectID + item.title}`;
 	const sectionHead = 'text-muted-foreground mb-0.5 text-[11px] font-semibold tracking-wider uppercase';
 	let data = $state<OverviewNow | null>(null);
 	let failed = $state(false);
@@ -122,7 +124,7 @@
 				<p class="text-muted-foreground mt-1 text-sm" data-testid="now-running-empty">{t('now.block.runningEmpty')}</p>
 			{:else}
 				<ul class="divide-y">
-					{#each b.running as item (`${item.kind}:${item.taskID ?? item.projectID + item.title}`)}{@render activeItem(item, 'now-running-item', false)}{/each}
+					{#each uniqueKeys(b.running, activeKey) as { item, key } (key)}{@render activeItem(item, 'now-running-item', false)}{/each}
 				</ul>
 			{/if}
 		</section>
@@ -165,7 +167,7 @@
 				<div class="px-3.5 pb-3">
 					<p class="mb-1 text-[13px]">{t('now.block.silentHint')}</p>
 					<ul class="divide-y">
-						{#each b.silent as item (`${item.kind}:${item.taskID ?? item.projectID + item.title}`)}{@render activeItem(item, 'now-silent-item', true)}{/each}
+						{#each uniqueKeys(b.silent, activeKey) as { item, key } (key)}{@render activeItem(item, 'now-silent-item', true)}{/each}
 					</ul>
 				</div>
 			</details>
@@ -222,7 +224,7 @@
 				<section aria-labelledby="ses-{p.projectID}" data-testid="now-sessions">
 					<h3 id="ses-{p.projectID}" class={sectionHead}>{t('now.section.sessions')}</h3>
 					<ul class="divide-y">
-						{#each visibleSessions(p) as session (session.sessionName)}
+						{#each uniqueKeys(visibleSessions(p), (x) => x.sessionName) as { item: session, key } (key)}
 							{@const orphan = isOrphaned(session)}
 							<li class="flex flex-col gap-0.5 py-2" data-testid="now-session" data-orphaned={orphan}>
 								<div class="flex flex-wrap items-center gap-2">
@@ -259,7 +261,7 @@
 				<section aria-labelledby="bld-{p.projectID}" data-testid="now-builds">
 					<h3 id="bld-{p.projectID}" class={sectionHead}>{t('now.section.builds')}</h3>
 					<ul class="divide-y">
-						{#each p.builds as b (b.buildID)}
+						{#each uniqueKeys(p.builds, (x) => x.id ?? x.buildID) as { item: b, key } (key)}
 							<li class="flex flex-wrap items-center gap-2 py-2 text-sm" data-testid="now-build">
 								<span class="font-semibold [overflow-wrap:anywhere]">{buildSummary(b)}</span>
 								<BuildStatusBadge status={b.status} />

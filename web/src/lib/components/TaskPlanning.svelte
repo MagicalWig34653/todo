@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { uniqueKeys } from '#lib/keys.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import RecurrenceFields from './RecurrenceFields.svelte';
 	import { describeRecurrence, type RecurrenceBasis } from '#lib/recurrence.js';
@@ -261,7 +262,7 @@
 	<h4 class="text-sm font-medium">{t('planning.reminders')}</h4>
 	{#if reminders.length === 0}<p class="text-muted-foreground text-xs">{t('planning.reminders.empty')}</p>{/if}
 	<ul class="flex flex-wrap gap-1">
-		{#each reminders as r (r)}
+		{#each uniqueKeys(reminders, (x) => x) as { item: r, key } (key)}
 			<li class="bg-secondary flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" data-testid="reminder">
 				{formatWhen(r)}
 				<button
@@ -357,7 +358,7 @@
 		<SideSection title={t('planning.reminders')} addLabel={t('card.side.reminderAdd')} onadd={() => (editRem = !editRem)} active={editRem} testid="side-reminders">
 			{#if reminders.length > 0}
 				<ul class="flex flex-wrap gap-1">
-					{#each reminders as r (r)}
+					{#each uniqueKeys(reminders, (x) => x) as { item: r, key } (key)}
 						<li class="bg-secondary flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs" data-testid="reminder">
 							{formatWhen(r)}
 							<button type="button" class="text-muted-foreground hover:text-foreground hit-area relative inline-flex size-5 items-center justify-center" aria-label={t('planning.reminders.remove', { when: formatWhen(r) })} onclick={() => { reminders = removeReminder(reminders, r); void save(); }}><X class="size-3" aria-hidden="true" /></button>

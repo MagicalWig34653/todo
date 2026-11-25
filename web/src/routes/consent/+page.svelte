@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { uniqueKeys } from '#lib/keys.js';
 	import { api, ApiError, type ConsentRequest } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { describeError } from '#lib/errors.js';
@@ -84,7 +85,7 @@
 			<div>
 				<h2 class="text-sm font-medium">{t('consent.scopes')}</h2>
 				<ul class="list-disc pl-5 text-sm">
-					{#each request.scopes as s (s)}<li>{scopeLabel(s)}</li>{/each}
+					{#each uniqueKeys(request.scopes, (x) => x) as { item: s, key } (key)}<li>{scopeLabel(s)}</li>{/each}
 				</ul>
 			</div>
 			<fieldset class="flex flex-col gap-1">

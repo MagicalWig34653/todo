@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { uniqueKeys } from '#lib/keys.js';
 	import { api, type Label, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { notice } from '#lib/notice.svelte.js';
@@ -138,7 +139,7 @@
 			/>
 			<p id="qa-hint" class="text-muted-foreground text-xs">{t('quickAdd.hint')}</p>
 			<div class="flex min-h-6 flex-wrap gap-1.5" aria-live="polite" data-testid="quick-add-chips">
-				{#each chips as c (c.kind + c.text)}
+				{#each uniqueKeys(chips, (x) => x.kind + x.text) as { item: c, key } (key)}
 					<span class={['rounded-full border px-2 py-0.5 text-xs', c.bad ? 'border-warning text-warning' : 'bg-muted']} data-testid="qa-chip" data-kind={c.kind}>{c.text}</span>
 				{/each}
 			</div>
