@@ -322,7 +322,8 @@ final class RecurrenceRulesTests: XCTestCase {
     private func successor(_ f: OAuthFixture, of task: TodoTask) async throws -> TaskPlanning {
         let receipt = try await PlanningOccurrence.find(task.requireID(), on: f.test.app.db)
         let nextID = try XCTUnwrap(receipt?.nextTaskID)
-        return try XCTUnwrap(try await TaskPlanning.find(nextID, on: f.test.app.db))
+        let planning = try await TaskPlanning.find(nextID, on: f.test.app.db)
+        return try XCTUnwrap(planning)
     }
 
     func testSpawnNextWithCompletionBasisUsesTheInjectedTime() async throws {

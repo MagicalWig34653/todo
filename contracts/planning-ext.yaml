@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: Todolino – Planungserweiterung
-  version: 1.2.0
+  version: 1.3.0
   description: 'Erweiterung des bestehenden Vertrags. ISO-8601-Zeitpunkte; Priorität 0 (keine) bis 3 (hoch). PUT
     ersetzt alle Planungsdaten. Wiederholungen benötigen dueAt oder plannedAt und erzeugen höchstens eine Folgeinstanz
     je Ursprungsaufgabe, auch nach Wiederöffnung. Datum und Erinnerungen werden je Kalenderintervall verschoben;
     until ist inklusive. Keine Pushzustellung. Beim Projektwechsel werden Abhängigkeiten und Meilensteinzuordnungen
-    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md. Ab 1.1.0 (ADR 0033): plannedAt ist der geplante Start (Anzeigename Geplanter Start), dazu plannedMinutes (5 bis 1440) und plannedAllDay; PATCH /v1/tasks/{id}/schedule ist der einzige Teilschreibweg für Kalender-Drag&Drop, GET /v1/planning/schedule liefert das Kalenderfenster. PUT übernimmt plannedMinutes/plannedAllDay nur, wenn der Schlüssel im Body steht (fehlt er, bleibt der Wert; null löscht). Ab 1.2.0 (ADR 0033 Stufe C): autoStart/autoStartedAt in Planungsantworten und ScheduleEntry mit echten Werten; PUT /v1/tasks/{id}/auto-start (nur Sitzung, Projekteigentümer) und GET/PUT /v1/settings/auto-start (Kontoschalter, Standard aus). Änderungen an Titel, Beschreibung, Projekt oder plannedAt löschen autoStart (Aktivität agent.auto_start_revoked), plannedMinutes nur bei Änderung durch jemand anderen als den Eigentümer in Person.'
+    entfernt. Alle Ansichten prüfen ProjectAccess. Details: Sources/TodoKit/PlanningExt/ADR.md. Ab 1.1.0 (ADR 0033): plannedAt ist der geplante Start (Anzeigename Geplanter Start), dazu plannedMinutes (5 bis 1440) und plannedAllDay; PATCH /v1/tasks/{id}/schedule ist der einzige Teilschreibweg für Kalender-Drag&Drop, GET /v1/planning/schedule liefert das Kalenderfenster. PUT übernimmt plannedMinutes/plannedAllDay nur, wenn der Schlüssel im Body steht (fehlt er, bleibt der Wert; null löscht). Ab 1.2.0 (ADR 0033 Stufe C): autoStart/autoStartedAt in Planungsantworten und ScheduleEntry mit echten Werten; PUT /v1/tasks/{id}/auto-start (nur Sitzung, Projekteigentümer) und GET/PUT /v1/settings/auto-start (Kontoschalter, Standard aus). Änderungen an Titel, Beschreibung, Projekt oder plannedAt löschen autoStart (Aktivität agent.auto_start_revoked), plannedMinutes nur bei Änderung durch jemand anderen als den Eigentümer in Person. Ab 1.3.0 (Karte 21CF716D, rein additiv): RecurrenceRule trägt optional weekdays (ISO-Wochentage 1 Montag bis 7 Sonntag, nur mit weekly, eindeutig, nicht leer), basis (due = Standard, Zählung ab Fälligkeit; completion = ab dem Kalendertag der Erledigung in timeZone, die Uhrzeit der bisherigen Fälligkeit/Planung bleibt) und monthDay (1 bis 31, nur mit monthly; kurze Monate nehmen ihren letzten Tag, der Stichtag driftet nicht). Fehlende Felder werden nicht ausgegeben (nil nicht kodiert): Regeln ohne die neuen Felder und ihre Folgeinstanzen sind byte-gleich zu 1.2.0. Ungültige Kombinationen und Werte: 400 invalid_recurrence. Nächstes Vorkommen mit weekdays: vom Basis-Kalendertag (Woche Montag bis Sonntag) der nächste größere gewählte Wochentag derselben Woche, sonst der kleinste gewählte Wochentag der Woche +interval. Erinnerungen der Folgeinstanz: hat die Regel mindestens eines der neuen Felder, verschieben sie sich um dieselbe Zeitdifferenz wie Fälligkeit (sonst Planung); sonst wie bisher je Erinnerung um ein Intervall. Es ist keine Migration nötig, die Regel liegt in einer JSON-Spalte. Ältere Clients (Apple vor Folgekarte A18F3FF7) kennen die Felder nicht und verlieren sie, wenn sie eine Regel vollständig neu schreiben.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -801,10 +801,36 @@ components:
           - string
           - 'null'
           format: date-time
+        weekdays:
+          type: array
+          description: Seit 1.3.0. ISO-Wochentage 1 Montag bis 7 Sonntag; nur mit frequency weekly, nicht leer, ohne Duplikate (sonst 400 invalid_recurrence). Reihenfolge beliebig, wird so gespeichert wie gesendet. Fehlt das Feld, gilt das bisherige Verhalten.
+          minItems: 1
+          maxItems: 7
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+            maximum: 7
+        basis:
+          type: string
+          description: Seit 1.3.0. due (Standard, Zählung ab Fälligkeit wie bisher) oder completion (Zählung ab dem Kalendertag der Erledigung in timeZone; Uhrzeit bleibt).
+          enum:
+          - due
+          - completion
+        monthDay:
+          type: integer
+          description: Seit 1.3.0. Tag im Monat; nur mit frequency monthly (sonst 400 invalid_recurrence). Kurze Monate nehmen ihren letzten Tag (31 wird 28, 29 oder 30), der folgende Monat nimmt wieder den Stichtag.
+          minimum: 1
+          maximum: 31
       required:
       - frequency
       - interval
       - timeZone
+      examples:
+      - {frequency: weekly, interval: 1, timeZone: Europe/Berlin, weekdays: [1, 4]}
+      - {frequency: monthly, interval: 1, timeZone: UTC, monthDay: 31}
+      - {frequency: daily, interval: 3, timeZone: Pacific/Auckland, basis: completion}
+      - {frequency: weekly, interval: 2, timeZone: Europe/Berlin, until: '2027-12-31T00:00:00Z'}
     Task:
       type: object
       properties:

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.6.0
+  version: 1.7.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -16,6 +16,9 @@ info:
     auto_start_not_enabled, task_done, task_blocked). get_task_planning und list_schedule liefern autoStart/autoStartedAt mit echten Werten;
     Schreibzugriffe über update_task, update_task_planning und Sync widerrufen autoStart (Aktivität agent.auto_start_revoked).
     get_system_status liefert autoStartAllowed.
+    1.7.0 (Karte 21CF716D, additiv, Handbuch 1.42.0): update_task_planning und get_task_planning tragen in recurrence optional weekdays (Array ganzer Zahlen 1 bis 7,
+    nur weekly, eindeutig, nicht leer), basis (due|completion) und monthDay (1 bis 31, nur monthly); null gilt wie nicht gesetzt; ungültige Werte oder Kombinationen: invalid_recurrence.
+    Fehlende Felder erscheinen nicht in den Antworten. Der Erledigungszeitpunkt für basis completion ist der Serverzeitpunkt der Erledigung.
 servers:
   - url: http://localhost:28080
 paths:

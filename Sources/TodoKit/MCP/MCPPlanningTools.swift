@@ -4,7 +4,7 @@ import Vapor
 extension MCPController {
     static let planningTools: [Tool] = [
         Tool(name: "get_task_planning", scope: "tasks:read", description: "Read task planning (REST planning DTO; dates in UTC).", properties: ["taskID": Schema.uuid("Task id.")], required: ["taskID"]),
-        Tool(name: "update_task_planning", scope: "tasks:write", description: "Patch planning; omitted fields stay, null clears dates/recurrence. dueDate YYYY-MM-DD and dueTime HH:mm use UTC (midnight by default). dueAt/plannedAt accept REST ISO 8601 timestamps. Optional version checks and increments task version.", properties: [
+        Tool(name: "update_task_planning", scope: "tasks:write", description: "Patch planning; omitted fields stay, null clears dates/recurrence. recurrence may add weekdays (ISO 1..7, weekly only), basis (due|completion) and monthDay (1..31, monthly only); invalid combinations give invalid_recurrence. dueDate YYYY-MM-DD and dueTime HH:mm use UTC (midnight by default). dueAt/plannedAt accept REST ISO 8601 timestamps. Optional version checks and increments task version.", properties: [
             "taskID": Schema.uuid("Task id."), "version": Schema.integer("Optional current task version.", min: 0),
             "dueDate": Schema.nullable("string", "UTC calendar date YYYY-MM-DD; null clears due date."), "dueTime": Schema.nullable("string", "UTC time HH:mm; requires a due date."),
             "dueAt": Schema.nullable("string", "REST due timestamp, ISO 8601. Do not combine with dueDate/dueTime."),
@@ -12,7 +12,7 @@ extension MCPController {
             "plannedMinutes": .object(["type": .array([.string("integer"), .string("null")]), "description": .string("Duration in minutes, 5 through 1440; null clears (display default 30)."), "minimum": .number(5), "maximum": .number(1440)]),
             "plannedAllDay": Schema.boolean("All-day card: needs plannedAt (start of the day); the watcher never auto-starts all-day cards."),
             "priority": Schema.integer("Priority 0 through 3.", min: 0, max: 3),
-            "recurrence": .object(["type": .array([.string("object"), .string("null")]), "description": .string("REST rule: frequency daily|weekly|monthly, interval 1..1000, timeZone (IANA), optional until ISO 8601."), "properties": .object(["frequency": Schema.string("Frequency.", values: ["daily", "weekly", "monthly"]), "interval": Schema.integer("Interval.", min: 1, max: 1000), "timeZone": Schema.string("IANA zone."), "until": Schema.nullable("string", "Optional ISO 8601 end date.")]), "required": .strings(["frequency", "interval", "timeZone"])]),
+            "recurrence": .object(["type": .array([.string("object"), .string("null")]), "description": .string("REST rule: frequency daily|weekly|monthly, interval 1..1000, timeZone (IANA), optional until ISO 8601."), "properties": .object(["frequency": Schema.string("Frequency.", values: ["daily", "weekly", "monthly"]), "interval": Schema.integer("Interval.", min: 1, max: 1000), "timeZone": Schema.string("IANA zone."), "until": Schema.nullable("string", "Optional ISO 8601 end date."), "weekdays": .object(["type": .string("array"), "items": Schema.integer("ISO weekday, 1 Monday to 7 Sunday.", min: 1, max: 7), "minItems": .number(1), "maxItems": .number(7), "uniqueItems": .bool(true), "description": .string("Optional, only with frequency weekly: repeat on these ISO weekdays (1 Monday .. 7 Sunday), unique, not empty. The next one in the same week, else the first one `interval` weeks later.")]), "basis": Schema.string("Optional: due (default, count from the due date) or completion (count from the day the task is completed; the time of day stays).", values: ["due", "completion"]), "monthDay": Schema.integer("Optional, only with frequency monthly: day of the month 1..31; short months use their last day (31 -> 28/29/30) without drifting.", min: 1, max: 31)]), "required": .strings(["frequency", "interval", "timeZone"])]),
             "reminders": Schema.stringArray("ISO 8601 reminder timestamps; replaces all reminders, maximum 100.", maxItems: 100)], required: ["taskID"]),
         Tool(name: "list_planned_tasks", scope: "tasks:read", description: "List open tasks like REST planning views, restricted to granted projects; default limit 50, maximum 200. Today uses UTC.", properties: ["view": Schema.string("View.", values: ["today", "upcoming", "up_next"]), "projectID": Schema.uuid("Optional project filter."), "limit": Schema.integer("Result limit.", min: 1, max: 200)], required: ["view"]),
         Tool(name: "list_schedule", scope: "tasks:read", description: "Calendar window like REST GET /v1/planning/schedule: cards whose planned start/duration overlaps [from, to) or whose due date lies inside, with plannedAt/plannedMinutes/plannedAllDay, dueAt, blocked, autoStart, jobState and conflicts. Restricted to granted projects; window at most 62 days, default and maximum limit 500.", properties: ["from": Schema.string("Window start, ISO 8601."), "to": Schema.string("Window end (exclusive), ISO 8601."), "projectID": Schema.uuid("Optional project filter (includes sub-projects)."), "limit": Schema.integer("Result limit.", min: 1, max: 500)], required: ["from", "to"]),
@@ -149,6 +149,22 @@ extension MCPController {
         return date
     }
 
+    /// `null` or absent means "not set"; anything but an array of whole numbers is `invalid_recurrence` (range and uniqueness: `validate`).
+    private func recurrenceWeekdays(_ value: JSONValue) throws -> [Int]? {
+        if value.isNull { return nil }
+        guard case .array(let items) = value else { throw Abort(.badRequest, reason: "invalid_recurrence") }
+        return try items.map { item in
+            guard let day = try intArgument(item, reason: "invalid_recurrence") else { throw Abort(.badRequest, reason: "invalid_recurrence") }
+            return day
+        }
+    }
+
+    private func recurrenceBasis(_ value: JSONValue) throws -> String? {
+        if value.isNull { return nil }
+        guard let text = value.string else { throw Abort(.badRequest, reason: "invalid_recurrence") }
+        return text
+    }
+
     private func planningPatch(_ a: JSONValue, current p: TaskPlanning?) throws -> PlanningData {
         guard case .object(let fields) = a else { throw Abort(.badRequest) }
         var data = PlanningData(dueAt: p?.dueAt, plannedAt: p?.plannedAt, plannedMinutes: p?.plannedMinutes, plannedAllDay: p?.plannedAllDay, priority: p?.priority ?? 0, recurrence: p?.recurrence, reminders: p?.reminders ?? [])
@@ -192,9 +208,10 @@ extension MCPController {
             if a["recurrence"].isNull { data.recurrence = nil }
             else {
                 let r = a["recurrence"]
-                guard case .object(let object) = r, Set(object.keys).isSubset(of: ["frequency", "interval", "timeZone", "until"]),
+                guard case .object(let object) = r, Set(object.keys).isSubset(of: ["frequency", "interval", "timeZone", "until", "weekdays", "basis", "monthDay"]),
                       let interval = try intArgument(r["interval"], reason: "invalid_recurrence") else { throw Abort(.badRequest, reason: "invalid_recurrence") }
-                data.recurrence = RecurrenceRule(frequency: try requiredString(r, "frequency"), interval: interval, timeZone: try requiredString(r, "timeZone"), until: try planningDate(r["until"]))
+                data.recurrence = RecurrenceRule(frequency: try requiredString(r, "frequency"), interval: interval, timeZone: try requiredString(r, "timeZone"), until: try planningDate(r["until"]),
+                                                 weekdays: try recurrenceWeekdays(r["weekdays"]), basis: try recurrenceBasis(r["basis"]), monthDay: try intArgument(r["monthDay"], reason: "invalid_recurrence"))
             }
         }
         if fields["reminders"] != nil {

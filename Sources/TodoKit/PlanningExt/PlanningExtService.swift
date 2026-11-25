@@ -237,11 +237,12 @@ struct PlanningService: Sendable {
     }
 
     /// Caller holds the source task row lock. Receipt and successor commit with completion in one transaction.
-    func spawnNext(_ source: TodoTask, planning: TaskPlanning) async throws {
+    /// `completedAt` is the completion time for rules with `basis: completion`; injectable so tests need no clock.
+    func spawnNext(_ source: TodoTask, planning: TaskPlanning, completedAt: Date = Date()) async throws {
         let id = try source.requireID()
         guard let rule = planning.recurrence, try await PlanningOccurrence.find(id, on: db) == nil else { return }
-        let due = try planning.dueAt.map(rule.next)
-        let planned = try planning.plannedAt.map(rule.next)
+        let due = try planning.dueAt.map { try rule.successor(of: $0, completedAt: completedAt) }
+        let planned = try planning.plannedAt.map { try rule.successor(of: $0, completedAt: completedAt) }
         guard let anchor = due ?? planned else { throw Abort(.badRequest, reason: "recurrence_requires_date") }
         if let until = rule.until, anchor > until {
             try await PlanningOccurrence(source: id, next: nil).save(on: db)
@@ -253,7 +254,13 @@ struct PlanningService: Sendable {
         let p = TaskPlanning(taskID: try next.requireID())
         p.dueAt = due; p.plannedAt = planned; p.priority = planning.priority; p.recurrence = rule
         p.plannedMinutes = planning.plannedMinutes; p.plannedAllDay = planning.plannedAllDay
-        p.reminders = try planning.reminders.map(rule.next)
+        if rule.usesExtendedRules, let oldAnchor = planning.dueAt ?? planning.plannedAt {
+            // Reminders keep their distance to the card: they move by the same time difference as the due date (or start).
+            let shift = anchor.timeIntervalSince(oldAnchor)
+            p.reminders = planning.reminders.map { $0.addingTimeInterval(shift) }
+        } else {
+            p.reminders = try planning.reminders.map(rule.next)
+        }
         try await p.save(on: db)
         try await PlanningOccurrence(source: id, next: next.requireID()).save(on: db)
     }
