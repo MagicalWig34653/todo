@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Absturz der Seite „Jetzt“ (Karte `B0CF5F73`)
+
+- Stand: behoben auf `main` (`a29f7a2`, `a704700`), Belege in `docs/STATUS.md` (oberster Nachtrag); nicht deployt.
+- Offen: Apple-Listen-IDs (`21A79A08`), 429 auf `/v1/sync/wait` (`A1A4690B`).
+- Nächster Schritt: Deploy durch Lino (nur Image).
+
 ## Checkpoint 25.11.2026: Pipeline Stufe 3, Ausführung über den Runner (Karte `F5DD1C00`)
 
 - Stand: Backend, MCP, PWA auf `main` (rot `c30ad33`/`ba2988c`, grün `6e525e9`, Verträge `0b1188f`, Merge PWA `356bd37`), Runner im Apple-Repo `7f478be`; Belege in `docs/STATUS.md` (oberster Nachtrag). Migration `CreatePipelineExecution`, Handbuch 1.45.0, `pipeline.yaml` 1.2.0, `agents.yaml` 1.3.0; nicht deployt.
