@@ -229,9 +229,9 @@ test('unknown kinds from a newer server stay readable and nothing breaks', async
 			{ id: 'zukunft:2', kind: 'zukunft', event: 'zukunft.event', projectID: project.id, projectName: project.name, taskID: tasks.quiet, taskTitle: 'Karte ohne Plan', actor: { type: 'Integration', id: 'x', name: 'Zukunft' }, text: 'Rohtext bleibt sichtbar', images: [] }
 		]
 	};
-	await page.goto('/for-you');
+	// The rules are set on the page that is already open, so one navigation suffices (a reload can abort the previous one in Firefox).
 	await setMocks(page, [{ url: '/v1/feed', method: 'GET', json: future }]);
-	await page.reload();
+	await page.goto('/for-you');
 	const need = page.locator('[data-testid="needs-card"][data-kind="zukunft"]');
 	await expect(need).toBeVisible();
 	await expect(need).toContainText('Hinweis');
