@@ -137,6 +137,7 @@ func configurePipeline(_ app: Application) {
     app.migrations.add(CreateTaskPipeline())
     app.migrations.add(CreateProjectPipelineSettings())
     app.migrations.add(AddPlanVersionToPipelineSteps())
+    app.migrations.add(CreatePipelineExecution())
 }
 
 // MARK: - DTOs

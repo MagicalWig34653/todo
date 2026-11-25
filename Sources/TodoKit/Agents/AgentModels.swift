@@ -14,6 +14,8 @@ final class RunnerDevice: Model, @unchecked Sendable {
     @OptionalField(key: "disabled_capabilities") var disabledCapabilitiesRaw: String?
     /// Last capability heartbeat (server clock).
     @OptionalField(key: "last_seen_at") var lastSeenAt: Date?
+    /// Set once the runner asked with `?pipeline=1` (pipeline stage 3).
+    @OptionalField(key: "pipeline_seen_at") var pipelineSeenAt: Date?
     init() {}
     init(ownerID: UUID, label: String, tokenHash: String?, revokedAt: Date?) {
         self.ownerID = ownerID
@@ -69,6 +71,10 @@ final class AgentJob: Model, @unchecked Sendable {
     @Field(key: "state") var state: String
     @Field(key: "progress") var progress: String
     @OptionalField(key: "result") var result: String?
+    /// Set only on jobs queued by a pipeline execution; old runners never see them.
+    @OptionalField(key: "pipeline_execution_id") var pipelineExecutionID: UUID?
+    @OptionalField(key: "pipeline_step") var pipelineStep: String?
+    @OptionalField(key: "pipeline_plan_version") var pipelinePlanVersion: Int?
     init() {}
     init(taskID: UUID, projectID: UUID, bindingID: UUID, requestedBy: UUID, previousJobID: UUID? = nil, taskRevision: Int, mode: String, scope: String, state: String, progress: String, result: String?) {
         self.taskID = taskID
