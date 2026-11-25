@@ -170,6 +170,17 @@ describe('error messages', () => {
 	});
 });
 
+describe('mandate page texts', () => {
+	it('say that the mandate also covers plans, with a mandatory quote and never for an own plan', () => {
+		expect(de['settings.brain-vollmacht.description']).toContain('Pläne');
+		expect(de['brainMandate.intro.allows']).toContain('Pläne freigeben oder Änderungen daran verlangen');
+		expect(de['brainMandate.intro.allows']).toContain('Pflichtzitat');
+		expect(de['brainMandate.intro.limits']).toContain('nie für Reviews oder Fragen, die die Verbindung selbst gestellt hat, und nie für Pläne, die sie selbst geschrieben hat');
+		expect(de['brainMandate.intro.limits']).toContain('keine fremden Reviews, Fragen oder Pläne entscheiden');
+		expect(findEntry('brain-vollmacht')?.keywords).toContain('plan');
+	});
+});
+
 describe('audit helpers', () => {
 	it('names the decision kinds and builds the card link', () => {
 		expect(auditKindKey('review.accepted')).toBe('brainMandate.audit.kind.accepted');
@@ -177,6 +188,10 @@ describe('audit helpers', () => {
 		expect(auditKindKey('question.answered')).toBe('brainMandate.audit.kind.answered');
 		expect(auditKindKey('connection.project_added')).toBe('brainMandate.audit.kind.projectAdded');
 		expect(auditKindKey('connection.project_removed')).toBe('brainMandate.audit.kind.projectRemoved');
+		expect(auditKindKey('plan.approved')).toBe('brainMandate.audit.kind.planApproved');
+		expect(auditKindKey('plan.changes_requested')).toBe('brainMandate.audit.kind.planChanges');
+		expect(de[auditKindKey('plan.approved')]).toBe('Plan freigegeben');
+		expect(de[auditKindKey('plan.changes_requested')]).toBe('Änderungen am Plan verlangt');
 		expect(auditKindKey('unbekannt')).toBe('brainMandate.audit.kind.other');
 		expect(auditCardParam('ABCD1234-0000-0000-0000-000000000000')).toBe('task:ABCD1234-0000-0000-0000-000000000000');
 		for (const k of ['accepted', 'changes', 'answered', 'projectAdded', 'projectRemoved', 'other']) expect(de[`brainMandate.audit.kind.${k}` as keyof typeof de]).toMatch(/\S/);

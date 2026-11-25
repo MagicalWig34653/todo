@@ -227,6 +227,117 @@ describe('pipeline controller', () => {
 		expect(view.feedback).toEqual({ tone: 'info', key: 'pipeline.feedback.newVersion', params: { version: 2 } });
 	});
 
+	/** The person has version 1 before them, then version 2 arrives through a live refresh. */
+	async function replaced() {
+		const ctx = setup();
+		await ctx.ctl.open('t1');
+		ctx.view.comment = 'bleibt stehen';
+		ctx.server.current = proposed({ version: 2, body: 'Neu' });
+		await ctx.ctl.refresh();
+		return ctx;
+	}
+	const readFirst = { tone: 'info', key: 'pipeline.feedback.readFirst', params: { version: 2 } };
+
+	for (const decision of ['approve', 'request_changes'] as const) {
+		it(`${decision}: after the version changed under the person the first click sends nothing and asks to read first`, async () => {
+			const { view, ctl, api } = await replaced();
+			expect(await ctl.decide(decision, true)).toBe('unread');
+			expect(api.decidePlan).not.toHaveBeenCalled();
+			expect(view.confirm).toBe(decision);
+			expect(view.feedback).toEqual(readFirst);
+			expect(view.comment).toBe('bleibt stehen');
+			// A double or repeated click on the same button is no confirmation.
+			expect(await ctl.decide(decision, true)).toBe('unread');
+			expect(api.decidePlan).not.toHaveBeenCalled();
+		});
+
+		it(`${decision}: the confirmation sends the new version with the kept comment`, async () => {
+			const { view, ctl, api } = await replaced();
+			await ctl.decide(decision, true);
+			expect(await ctl.confirm(true)).toBe('done');
+			expect(api.decidePlan).toHaveBeenCalledTimes(1);
+			expect(api.decidePlan).toHaveBeenCalledWith('t1', { decision, version: 2, comment: 'bleibt stehen' });
+			expect(view.confirm).toBeNull();
+			expect(view.unread).toBe(false);
+		});
+	}
+
+	it('knows the German hint to read the new version first', () => {
+		expect((de as Record<string, string>)['pipeline.feedback.readFirst']).toContain('Neue Fassung – bitte erst lesen');
+	});
+
+	it('offers no confirmation without a first click or without permission', async () => {
+		const { ctl, api } = await replaced();
+		expect(await ctl.confirm(true)).toBe('ignored');
+		await ctl.decide('approve', true);
+		expect(await ctl.confirm(false)).toBe('ignored');
+		expect(api.decidePlan).not.toHaveBeenCalled();
+	});
+
+	it('a confirmation offered for one version never sends a later one', async () => {
+		const { view, ctl, api, server } = await replaced();
+		await ctl.decide('approve', true);
+		server.current = proposed({ version: 3 });
+		await ctl.refresh();
+		expect(view.confirm).toBeNull();
+		expect(await ctl.confirm(true)).toBe('ignored');
+		expect(await ctl.decide('approve', true)).toBe('unread');
+		expect(api.decidePlan).not.toHaveBeenCalled();
+	});
+
+	it('drops the confirmation once someone else decided; an identical refresh keeps it', async () => {
+		const { view, ctl, server } = await replaced();
+		await ctl.decide('approve', true);
+		await ctl.refresh();
+		expect(view.confirm).toBe('approve');
+		expect(view.feedback).toEqual(readFirst);
+		server.current = proposed({ version: 2, body: 'Neu', state: 'approved' });
+		await ctl.refresh();
+		expect(view.confirm).toBeNull();
+		expect(view.feedback).toBeNull();
+	});
+
+	it('checks the comment only at the confirmation and keeps it offered until the comment is there', async () => {
+		const { view, ctl, api } = await replaced();
+		view.comment = '';
+		expect(await ctl.decide('request_changes', true)).toBe('unread');
+		expect(await ctl.confirm(true)).toBe('invalid');
+		expect(view.problem).toBe('comment_required');
+		expect(view.confirm).toBe('request_changes');
+		ctl.type('Jetzt mit Begründung');
+		expect(await ctl.confirm(true)).toBe('done');
+		expect(api.decidePlan).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps the confirmation for a retry when sending fails', async () => {
+		const { view, ctl, api } = await replaced();
+		await ctl.decide('approve', true);
+		api.decidePlan.mockRejectedValueOnce(new ApiError(0, 'network'));
+		expect(await ctl.confirm(true)).toBe('failed');
+		expect(view.confirm).toBe('approve');
+		expect(view.comment).toBe('bleibt stehen');
+		expect(await ctl.confirm(true)).toBe('done');
+	});
+
+	it('also asks to read first when the new version came with a plan_changed refusal', async () => {
+		const { view, ctl, api, server } = setup();
+		await ctl.open('t1');
+		api.decidePlan.mockRejectedValueOnce(new ApiError(409, 'plan_changed'));
+		server.current = proposed({ version: 2 });
+		await ctl.decide('approve', true);
+		expect(await ctl.decide('approve', true)).toBe('unread');
+		expect(api.decidePlan).toHaveBeenCalledTimes(1);
+		expect(await ctl.confirm(true)).toBe('done');
+		expect(api.decidePlan).toHaveBeenLastCalledWith('t1', { decision: 'approve', version: 2, comment: undefined });
+	});
+
+	it('does not ask for a confirmation on a freshly opened card', async () => {
+		const { view, ctl } = await replaced();
+		await ctl.open('t1');
+		expect(view.unread).toBe(false);
+		expect(await ctl.decide('approve', true)).toBe('done');
+	});
+
 	it('resets comment and message when another card is opened and drops late answers of the old one', async () => {
 		const first = deferred<TaskPipeline>();
 		const { view, ctl, server } = setup(() => first.promise);

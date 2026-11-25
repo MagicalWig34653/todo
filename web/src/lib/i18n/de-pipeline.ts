@@ -42,6 +42,9 @@ export const dePipeline = {
 	'pipeline.feedback.approved': 'Plan freigegeben.',
 	'pipeline.feedback.changesRequested': 'Änderungen angefragt. Der Planer ist wieder an der Reihe.',
 	'pipeline.feedback.newVersion': 'Neue Planversion {version}. Bitte lies sie, bevor du entscheidest.',
+	'pipeline.feedback.readFirst': 'Neue Fassung – bitte erst lesen. Es wurde noch nichts gesendet, angezeigt wird jetzt Version {version}.',
+	'pipeline.confirm.approve': 'Gelesen: Version {version} freigeben',
+	'pipeline.confirm.changes': 'Gelesen: Änderungen zu Version {version} senden',
 
 	'pipeline.error.commentRequired': 'Beschreibe im Kommentar, was am Plan geändert werden soll.',
 	'pipeline.error.invalidComment': 'Der Kommentar ist ungültig oder länger als 4000 Zeichen.',

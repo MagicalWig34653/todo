@@ -58,13 +58,19 @@
 
 	let decisionArea = $state<HTMLDivElement | null>(null);
 	let feedback = $state<HTMLParagraphElement | null>(null);
+	let confirmButton = $state<HTMLElement | null>(null);
 
-	async function decide(decision: PlanDecision) {
+	/** Without a decision: the confirmation of the one offered for a new plan version. */
+	async function decide(decision?: PlanDecision) {
 		const area = decisionArea;
-		const outcome = await controller.decide(decision, canEdit);
+		const outcome = await (decision ? controller.decide(decision, canEdit) : controller.confirm(canEdit));
 		if (outcome === 'ignored') return;
 		await tick();
-		if (outcome === 'invalid') area?.querySelector('textarea')?.focus();
+		if (outcome === 'unread') {
+			// Focus on the message, not on the confirmation: pressing Enter twice must not send.
+			feedback?.focus();
+			confirmButton?.scrollIntoView({ block: 'nearest' });
+		} else if (outcome === 'invalid') area?.querySelector('textarea')?.focus();
 		// The buttons are gone after a decision: keep the focus inside the window, on the message that says what happened.
 		else if (!area?.isConnected) feedback?.focus();
 		if (outcome === 'done') await ondecided();
@@ -166,6 +172,15 @@
 			class={['focus-visible:ring-ring/60 -mt-3 rounded-lg font-medium [overflow-wrap:anywhere] outline-none empty:-mt-5 focus-visible:ring-2', view.feedback?.tone === 'error' ? 'text-destructive' : view.feedback?.tone === 'success' ? 'text-success' : 'text-foreground']}
 			data-testid="pipeline-feedback"
 		>{view.feedback ? t(view.feedback.key, view.feedback.params) : ''}</p>
+
+		<!-- Below the message, so nothing moves under the pointer; the second click of a double click is ignored. -->
+		{#if view.confirm && plan && canDecide(data, canEdit)}
+			<div class="-mt-3 flex" bind:this={confirmButton}>
+				<Button class="h-auto min-h-9 whitespace-normal max-sm:w-full aria-disabled:opacity-60" aria-disabled={view.busy !== null} data-testid="pipeline-confirm" onclick={(e: MouseEvent) => { if (e.detail <= 1) void decide(); }}>
+					{view.busy ? t('pipeline.sending') : t(view.confirm === 'approve' ? 'pipeline.confirm.approve' : 'pipeline.confirm.changes', { version: plan.version })}
+				</Button>
+			</div>
+		{/if}
 
 		{#if data.events.length > 0}
 			<details class="min-w-0" data-testid="pipeline-history">
