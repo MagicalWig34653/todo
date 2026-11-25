@@ -121,23 +121,42 @@ extension WorkflowService {
         if value.isEmpty { return nil }
         // Characters are not bytes: stacked combining marks must not overflow the TEXT columns of MariaDB (65 535 bytes).
         let maxBytes = max > PipelineLimits.maxComment ? 262_144 : 60_000
-        guard value.count <= max, value.utf8.count <= maxBytes, !value.unicodeScalars.contains(where: {
+        func fits(_ text: String) -> Bool { text.count <= max && text.utf8.count <= maxBytes }
+        guard fits(value), !value.unicodeScalars.contains(where: {
             $0.properties.generalCategory == .control && !"\n\r\t".unicodeScalars.contains($0)
         }) else { throw Abort(.badRequest, reason: reason) }
-        return SecretFilter.redactLong(value)
+        // The mask and compatibility folding lengthen text, so the limits are checked again on what gets stored. Refused
+        // rather than cut: nobody should approve a plan that silently lost its end.
+        let masked = SecretFilter.redactLong(value)
+        guard fits(masked) else { throw Abort(.badRequest, reason: reason) }
+        return masked
+    }
+
+    /// Names are cut instead: at most `maxLabel` characters, and no more code points than VARCHAR(255) of MariaDB holds.
+    private static func fittingLabel(_ name: String) -> String {
+        var result = "", scalars = 0
+        for character in name.prefix(PipelineLimits.maxLabel) {
+            scalars += character.unicodeScalars.count
+            if scalars > PipelineLimits.maxLabelScalars { break }
+            result.append(character)
+        }
+        return result
     }
 
     /// `agentName`, else the connection's name, else (persons) the account's display name.
     private func pipelineLabel(_ agentName: String?, actor: WorkflowActor) throws -> String? {
         if let name = try Self.optionalLabel(agentName, reason: "invalid_agent_name") {
-            // The label of decisions under the brain mandate is written by the server only.
-            guard !name.lowercased().hasPrefix(CommentService.reservedLabelPrefix.lowercased()) else {
+            let masked = SecretFilter.redact(name).text
+            // The label of decisions under the brain mandate is written by the server only. Checked after the filter too,
+            // which folds look-alike characters.
+            let reserved = CommentService.reservedLabelPrefix.lowercased()
+            guard ![name, masked].contains(where: { $0.lowercased().hasPrefix(reserved) }) else {
                 throw Abort(.badRequest, reason: "invalid_agent_name")
             }
-            return SecretFilter.redact(name).text
+            return Self.fittingLabel(masked)
         }
         let fallback = actor.label ?? (actor.type == .person ? user.displayName : nil)
-        return fallback.map { String($0.prefix(100)) }
+        return fallback.map(Self.fittingLabel)
     }
 
     /// Caller holds the task row lock.

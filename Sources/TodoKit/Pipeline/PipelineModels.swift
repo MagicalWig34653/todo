@@ -25,6 +25,8 @@ enum PipelineLimits {
     static let maxComment = 4000
     static let maxNote = 2000
     static let maxEvents = 50
+    static let maxLabel = 100
+    static let maxLabelScalars = 255
 }
 
 // MARK: - Models
