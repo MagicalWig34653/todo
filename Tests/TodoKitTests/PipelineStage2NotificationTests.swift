@@ -89,13 +89,19 @@ final class PipelineStage2NotificationTests: XCTestCase {
             XCTAssertEqual(approve["label"] as? String, "Plan freigeben")
             XCTAssertEqual(approve["method"] as? String, "POST")
             XCTAssertEqual(approve["path"] as? String, "/v1/tasks/\(w.task)/plan/decision")
-            XCTAssertEqual(approve["body"] as? [String: AnyHashable], ["decision": "approve", "version": 1])
+            let approveBody = approve["body"] as? [String: Any]
+            XCTAssertEqual(approveBody?["decision"] as? String, "approve")
+            XCTAssertEqual(approveBody?["version"] as? Int, 1)
+            XCTAssertEqual(approveBody?.count, 2)
             XCTAssertEqual(approve["requiresInput"] as? Bool, false)
             let changes = try XCTUnwrap(actions.last)
             XCTAssertEqual(changes["label"] as? String, "Änderungen")
             XCTAssertEqual(changes["requiresInput"] as? Bool, true)
             XCTAssertEqual(changes["inputField"] as? String, "comment")
-            XCTAssertEqual(changes["body"] as? [String: AnyHashable], ["decision": "request_changes", "version": 1])
+            let changesBody = changes["body"] as? [String: Any]
+            XCTAssertEqual(changesBody?["decision"] as? String, "request_changes")
+            XCTAssertEqual(changesBody?["version"] as? Int, 1)
+            XCTAssertEqual(changesBody?.count, 2)
             // The action can be sent as it is.
             let done = try await json(w, .POST, approve["path"] as? String ?? "", approve["body"] as? [String: Any])
             XCTAssertEqual(done.status, .ok, "\(done.body ?? [:])")
