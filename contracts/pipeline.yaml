@@ -9,12 +9,16 @@ info:
     DTOs ändern sich nicht. Lesen braucht Leserecht am Projekt, jedes Schreiben Bearbeitungsrecht (unsichtbar oder fremd 404,
     sichtbar ohne Recht 403). nil-Felder fehlen im JSON; Clients behandeln fehlend wie null. actorType und authorType sind
     klein geschrieben (person, integration, run). actorLabel, authorLabel, decidedByLabel: agentName, sonst Name der
-    Verbindung (OAuth-Client) bzw. der Person. Plan, Kommentar, Notiz und agentName laufen vor dem Speichern durch den
-    Secrets-Filter ([gefiltert]); Zeilenumbrüche und Tabs sind erlaubt, andere Steuerzeichen nicht. Jede Änderung ist
+    Verbindung (OAuth-Client) bzw. der Person. Für Personen ohne agentName wird kein Name gespeichert: er wird beim Lesen
+    aus dem Konto gelesen (folgt Umbenennungen; nach Löschen des Kontos fehlt das Feld). Plan, Kommentar, Notiz und
+    agentName laufen vor dem Speichern durch den Secrets-Filter ([gefiltert]); Zeilenumbrüche und Tabs sind erlaubt,
+    andere Steuerzeichen nicht. Die Längengrenzen gelten auch nach dem Filter (Maske und Unicode-Faltung verlängern
+    Text): Plan, Kommentar und Notiz werden dann mit invalid_plan, invalid_comment bzw. invalid_note abgelehnt, Namen auf
+    100 Zeichen (höchstens 255 Codepunkte) gekürzt. Jede Änderung ist
     zusätzlich eine Aktivität der Karte (kind plan.written, plan.approved, plan.changes_requested, pipeline.step); Clients
     müssen unbekannte kinds anzeigen können. Live (ADR 0022): das Live-Token ändert sich, MCP wait_for_events liefert die
     Hinweise kind plan und kind pipeline mit taskID. Pläne gehören zur Aufgabe: Löschen von Aufgabe oder Projekt löscht sie,
-    das Löschen eines Kontos lässt sie auf weiterbestehenden Karten stehen.
+    das Löschen eines Kontos lässt sie auf weiterbestehenden Karten stehen, ohne den Namen der Person.
 security:
 - bearerAuth: []
 - sessionCookie: []
