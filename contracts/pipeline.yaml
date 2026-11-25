@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Pipeline je Karte (Plan, Freigabe, Schrittstatus)
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Karte 74EC341D, Stufe 1. Je Aufgabe ein aktueller Plan (Markdown) mit Version und Freigabe, der Status von sechs festen
     Schritten (planner, approval, developer, validation, tester, review) und ein Protokoll. Es wird nichts ausgeführt und es
@@ -19,6 +19,28 @@ info:
     müssen unbekannte kinds anzeigen können. Live (ADR 0022): das Live-Token ändert sich, MCP wait_for_events liefert die
     Hinweise kind plan und kind pipeline mit taskID. Pläne gehören zur Aufgabe: Löschen von Aufgabe oder Projekt löscht sie,
     das Löschen eines Kontos lässt sie auf weiterbestehenden Karten stehen, ohne den Namen der Person.
+
+    1.1.0 (Karte B926E7D8, Stufe 2, rein additiv, kein Runner, nichts wird gestartet; docs/PLAN-PIPELINE-STUFE-2.md): (1)
+    Projekt-Einstellungen GET/PATCH /v1/projects/{projectID}/pipeline-settings (Tabelle project_pipeline_settings, eine
+    Zeile je Projekt, erst beim ersten Schreiben; ohne Zeile gelten die Standardwerte und revision 0; Audit in
+    project_pipeline_settings_events, letzte 20 als history). Lesen: Leserecht; Schreiben: Recht manage (edit genügt nicht,
+    403); MCP get_pipeline_settings (projects:read) und update_pipeline_settings (projects:write, nur mit Brain-Vollmacht
+    für Verbindung und Projekt plus quote, Protokoll der Vollmacht kind pipeline.settings, taskID fehlt, subjectID =
+    Projekt). Teil-Update mit Pflichtfeld revision (409 revision_conflict); gleicher Inhalt ändert weder Revision noch
+    Verlauf, auch nicht mit älterer revision. (2) Pipeline der Karte: neue Felder settings (ohne history), je Schritt
+    enabled, planVersion, role (nur planner, developer, tester, review), fixRounds {used, max, remaining}, waitingApproval;
+    Plan zusätzlich decidedByType (person|integration|system). Ausgeschaltete Schritte: planner aus = kein Plan nötig, planner
+    und approval erscheinen als skipped (enabled false), der Plan-Gate entfällt; approval aus = ein geschriebener Plan ist
+    sofort approved (decidedByType system, ohne Namen, Schritt approval skipped); developer, validation, tester, review
+    aus = Schritt enabled false, state skipped (oder der gespeicherte Zustand), set_pipeline_step und retry darauf 409
+    step_disabled. (3) retry (POST .../steps/{step}/retry, MCP retry_pipeline_step): nur failed -> pending, zählt als
+    Fix-Runde der aktuellen Planversion, Grenze maxFixRounds (0 bis 10, Standard 3) 409 fix_rounds_exhausted; Protokoll
+    step_retried. (4) set_pipeline_step und retry nehmen optional planVersion (409 plan_changed). (5) Benachrichtigung bei
+    wartender Freigabe: Feed needsYou kind plan, Command Center planWaiting/plansWaiting, Updates und Feed-Posts plan.*, Push
+    (feed.yaml, command-center.yaml, push.yaml unverändert im Schema). Die Aktivitäten plan.* zeigen jetzt auf den
+    Protokolleintrag (Version und Kommentar des Zeitpunkts); älteres Verhalten (Plan als subjectID) wird noch gelesen.
+    Fehlercodes neu: invalid_pipeline_settings, invalid_model, invalid_effort, invalid_plan_version, revision_conflict,
+    step_disabled, step_not_failed, fix_rounds_exhausted; plan_changed gilt jetzt auch für Schritte.
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -83,6 +105,63 @@ paths:
         '403': {description: 'kein Bearbeitungsrecht; cannot_decide_own_plan, brain_mandate_required, outside_brain_mandate'}
         '404': {description: Aufgabe unbekannt oder unsichtbar}
         '409': {description: 'no_plan, plan_changed, plan_not_pending'}
+  /v1/projects/{projectID}/pipeline-settings:
+    get:
+      operationId: getPipelineSettings
+      summary: Pipeline-Einstellungen des Projekts (ohne Zeile die Standardwerte, revision 0)
+      parameters:
+      - {name: projectID, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Einstellungen, content: {application/json: {schema: {$ref: '#/components/schemas/PipelineSettings'}}}}
+        '401': {description: nicht angemeldet}
+        '404': {description: Projekt unbekannt oder unsichtbar}
+    patch:
+      operationId: patchPipelineSettings
+      summary: Einstellungen teilweise ändern (Recht manage)
+      description: >-
+        Nur gesendete Felder ändern sich (steps und roles auf Feldebene; model oder effort null löscht). Mindestens ein Feld,
+        unbekannte Schlüssel invalid_pipeline_settings. model getrimmt 1 bis 100 Zeichen aus A-Za-z0-9._:/- (invalid_model),
+        effort low|medium|high|xhigh|max (invalid_effort), maxFixRounds 0 bis 10. revision ist Pflicht (aktueller Stand, 0 ohne
+        Zeile), sonst 409 revision_conflict. Gleicher Inhalt ändert weder Revision noch Verlauf.
+      parameters:
+      - {name: projectID, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PatchPipelineSettingsRequest'}
+      responses:
+        '200': {description: Einstellungen nach der Änderung, content: {application/json: {schema: {$ref: '#/components/schemas/PipelineSettings'}}}}
+        '400': {description: 'invalid_pipeline_settings, invalid_model, invalid_effort'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Recht manage}
+        '404': {description: Projekt unbekannt oder unsichtbar}
+        '409': {description: revision_conflict}
+  /v1/tasks/{taskID}/pipeline/steps/{step}/retry:
+    post:
+      operationId: retryTaskPipelineStep
+      summary: Fehlgeschlagenen Schritt zurück auf pending (zählt als Fix-Runde, startet nichts)
+      description: >-
+        Prüfreihenfolge: invalid_step, step_managed (approval), invalid_plan_version, invalid_note, Rechte (edit), plan_changed
+        (planVersion angegeben und nicht aktuell), step_disabled, step_not_failed, plan_not_approved (Arbeitsschritt ohne
+        freigegebenen Plan, sofern der Planer an ist), fix_rounds_exhausted (Wiederholungen der aktuellen Planversion >=
+        maxFixRounds). Nur dieser Schritt wird pending, die Notiz wird ersetzt oder gelöscht; Protokoll step_retried,
+        Aktivität pipeline.step.
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      - {name: step, in: path, required: true, schema: {$ref: '#/components/schemas/StepName'}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RetryPipelineStepRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '400': {description: 'invalid_step, invalid_note, invalid_plan_version, invalid_agent_name'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Bearbeitungsrecht}
+        '404': {description: Aufgabe unbekannt oder unsichtbar}
+        '409': {description: 'step_managed, plan_changed, step_disabled, step_not_failed, plan_not_approved, fix_rounds_exhausted'}
   /v1/tasks/{taskID}/pipeline/steps/{step}:
     put:
       operationId: putTaskPipelineStep
@@ -101,16 +180,19 @@ paths:
             schema: {$ref: '#/components/schemas/SetPipelineStepRequest'}
       responses:
         '200': {$ref: '#/components/responses/Pipeline'}
-        '400': {description: 'invalid_step, invalid_state, invalid_note, invalid_agent_name'}
+        '400': {description: 'invalid_step, invalid_state, invalid_note, invalid_agent_name, invalid_plan_version'}
         '401': {description: nicht angemeldet}
         '403': {description: kein Bearbeitungsrecht}
         '404': {description: Aufgabe unbekannt oder unsichtbar}
-        '409': {description: 'step_managed, plan_not_approved'}
+        '409': {description: 'step_managed, plan_not_approved (entfällt bei ausgeschaltetem Planer), step_disabled, plan_changed (planVersion angegeben und nicht aktuell, nichts wird geschrieben)'}
 x-mcp-tools:
+  get_pipeline_settings: {scope: 'projects:read', required: [projectID], result: PipelineSettings}
+  update_pipeline_settings: {scope: 'projects:write', required: [projectID, revision], arguments: {projectID: UUID, revision: 'int >= 0', steps: 'Objekt Schritt -> bool', roles: 'Objekt Rolle -> {model, effort} (null löscht)', maxFixRounds: 'int 0..10', notifyOnWaitingApproval: bool, quote: 'Pflicht (Brain-Vollmacht, Protokoll kind pipeline.settings)'}, result: PipelineSettings}
+  retry_pipeline_step: {scope: 'tasks:write', required: [taskID, step], arguments: {taskID: UUID, step: 'planner|developer|validation|tester|review', planVersion: 'int >= 1', note: 'bis 2000 Zeichen', agentName: 'bis 100 Zeichen'}, result: Pipeline}
   get_task_pipeline: {scope: 'tasks:read', required: [taskID], result: Pipeline}
   set_task_plan: {scope: 'tasks:write', required: [taskID, plan], arguments: {taskID: UUID, plan: 'Markdown, 1 bis 20000 Zeichen', expectedVersion: 'int >= 0', agentName: 'bis 100 Zeichen'}, result: Pipeline}
   decide_plan: {scope: 'tasks:write', required: [taskID, decision, version], arguments: {taskID: UUID, decision: 'approve|request_changes', version: int, comment: 'bis 4000 Zeichen', quote: 'Pflicht für Integrationen (Brain-Vollmacht)'}, result: Pipeline}
-  set_pipeline_step: {scope: 'tasks:write', required: [taskID, step, state], arguments: {taskID: UUID, step: 'planner|developer|validation|tester|review', state: 'pending|running|done|failed|skipped', note: 'bis 2000 Zeichen', agentName: 'bis 100 Zeichen'}, result: Pipeline}
+  set_pipeline_step: {scope: 'tasks:write', required: [taskID, step, state], arguments: {taskID: UUID, step: 'planner|developer|validation|tester|review', state: 'pending|running|done|failed|skipped', note: 'bis 2000 Zeichen', planVersion: 'int >= 1 (empfohlen)', agentName: 'bis 100 Zeichen'}, result: Pipeline}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
@@ -139,6 +221,9 @@ components:
         plan: {$ref: '#/components/schemas/Plan'}
         steps: {type: array, minItems: 6, maxItems: 6, description: Immer alle sechs in fester Reihenfolge, items: {$ref: '#/components/schemas/Step'}}
         events: {type: array, maxItems: 50, description: Neueste zuerst, items: {$ref: '#/components/schemas/Event'}}
+        settings: {$ref: '#/components/schemas/PipelineSettingsSummary'}
+        fixRounds: {$ref: '#/components/schemas/FixRounds'}
+        waitingApproval: {type: boolean, description: Der Plan ist proposed und das Projekt hat einen Freigabeschritt}
     Plan:
       type: object
       required: [version, body, state, authorType, writtenAt]
@@ -152,6 +237,7 @@ components:
         decidedAt: {type: string, format: date-time}
         decidedByLabel: {type: string}
         decisionComment: {type: string}
+        decidedByType: {type: string, enum: [person, integration, system], description: 'system = ohne Freigabeschritt sofort freigegeben (Stufe 2); fehlt solange nicht entschieden'}
     Step:
       type: object
       required: [step, state]
@@ -161,12 +247,15 @@ components:
         note: {type: string}
         actorLabel: {type: string}
         updatedAt: {type: string, format: date-time}
+        enabled: {type: boolean, description: 'Stufe 2: false, wenn das Projekt den Schritt ausgeschaltet hat (state ist dann skipped oder der gespeicherte Zustand)'}
+        planVersion: {type: integer, description: 'Planversion, auf die sich der Zustand bezieht; fehlt bei pending ohne Zeile und bei Zeilen aus Stufe 1'}
+        role: {$ref: '#/components/schemas/RoleSetting'}
     Event:
       type: object
       required: [id, action, actorType, createdAt]
       properties:
         id: {type: string, format: uuid}
-        action: {type: string, enum: [plan_written, plan_approved, plan_changes_requested, step_changed]}
+        action: {type: string, enum: [plan_written, plan_approved, plan_changes_requested, step_changed, step_retried]}
         planVersion: {type: integer, description: Fehlt bei Schrittmeldungen ohne Plan}
         step: {$ref: '#/components/schemas/StepName'}
         state: {$ref: '#/components/schemas/StepState'}
@@ -195,3 +284,69 @@ components:
         state: {type: string, enum: [pending, running, done, failed, skipped]}
         note: {type: string, maxLength: 2000}
         agentName: {type: string, maxLength: 100}
+        planVersion: {type: integer, minimum: 1, description: 'Optional (empfohlen): Planversion, auf die sich die Meldung bezieht; sonst 409 plan_changed'}
+    RetryPipelineStepRequest:
+      type: object
+      properties:
+        planVersion: {type: integer, minimum: 1}
+        note: {type: string, maxLength: 2000}
+        agentName: {type: string, maxLength: 100}
+    RoleSetting:
+      type: object
+      description: Fehlende Felder = Standard des Runners (null)
+      properties:
+        model: {type: string, maxLength: 100, pattern: '^[A-Za-z0-9._:/-]+$'}
+        effort: {type: string, enum: [low, medium, high, xhigh, max]}
+    FixRounds:
+      type: object
+      required: [used, max, remaining]
+      properties:
+        used: {type: integer, description: Wiederholungen (step_retried) der aktuellen Planversion}
+        max: {type: integer, minimum: 0, maximum: 10}
+        remaining: {type: integer, minimum: 0}
+    PipelineSettingsSummary:
+      type: object
+      required: [revision, steps, roles, maxFixRounds, notifyOnWaitingApproval]
+      properties:
+        revision: {type: integer, minimum: 0}
+        steps: {type: object, description: 'Immer alle sechs Schritte (planner, approval, developer, validation, tester, review) als bool', additionalProperties: {type: boolean}}
+        roles: {type: object, description: 'Immer planner, developer, tester, reviewer', additionalProperties: {$ref: '#/components/schemas/RoleSetting'}}
+        maxFixRounds: {type: integer, minimum: 0, maximum: 10, default: 3}
+        notifyOnWaitingApproval: {type: boolean, default: true}
+    PipelineSettings:
+      allOf:
+      - {$ref: '#/components/schemas/PipelineSettingsSummary'}
+      - type: object
+        required: [projectID, history]
+        properties:
+          projectID: {type: string, format: uuid}
+          updatedAt: {type: string, format: date-time, description: Fehlt ohne Zeile}
+          updatedByLabel: {type: string, description: Fehlt ohne Zeile; bei Personen der Kontoname}
+          history:
+            type: array
+            maxItems: 20
+            description: Neueste zuerst
+            items:
+              type: object
+              required: [id, actorType, summary, createdAt]
+              properties:
+                id: {type: string, format: uuid}
+                actorType: {type: string, enum: [person, integration]}
+                actorLabel: {type: string}
+                summary: {type: string, description: 'Kurzer Text, z. B. steps.tester aus; roles.developer.model sonnet'}
+                createdAt: {type: string, format: date-time}
+    PatchPipelineSettingsRequest:
+      type: object
+      required: [revision]
+      properties:
+        revision: {type: integer, minimum: 0}
+        steps: {type: object, additionalProperties: {type: boolean}}
+        roles:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              model: {type: string, nullable: true, maxLength: 100, pattern: '^[A-Za-z0-9._:/-]+$'}
+              effort: {type: string, nullable: true, enum: [low, medium, high, xhigh, max]}
+        maxFixRounds: {type: integer, minimum: 0, maximum: 10}
+        notifyOnWaitingApproval: {type: boolean}

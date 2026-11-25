@@ -1,5 +1,5 @@
 #!/bin/sh
-# End-to-end run for the card pipeline, stage 1 (card 74EC341D): native backend, empty scratch SQLite, REST and MCP with real OAuth tokens.
+# End-to-end run for the card pipeline, stages 1 and 2 (cards 74EC341D, B926E7D8): native backend, empty scratch SQLite, REST and MCP with real OAuth tokens.
 # Plan over MCP, refused agent decisions, changes requested, new plan, approval by the person, step states, audit trail, a decision
 # under the brain mandate and removal with the card; a second migrate must change nothing.
 # Usage: scripts/pipeline-e2e.sh [scratch-dir]   (E2E_NATIVE overrides the App binary, default .build/debug/App)

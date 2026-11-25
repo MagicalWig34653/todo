@@ -23,19 +23,54 @@ extension MCPController {
                           "quote": quoteField],
              required: ["taskID", "decision", "version"]),
         Tool(name: "set_pipeline_step", scope: "tasks:write",
-             description: "Report the state of one pipeline step. developer, validation, tester and review need an approved plan for any state but pending (plan_not_approved). planner takes pending, running or failed (writing the plan finishes it). approval follows from the decision (step_managed). The note replaces the previous one; omitting it clears it.",
+             description: "Report the state of one pipeline step. developer, validation, tester and review need an approved plan for any state but pending (plan_not_approved; not needed when the project switched the planner off). planner takes pending, running or failed (writing the plan finishes it). approval follows from the decision (step_managed). The note replaces the previous one; omitting it clears it. Pass planVersion (from get_task_pipeline) so that a stale agent cannot overwrite the steps of a newer plan (plan_changed). A step the project switched off is refused (step_disabled). To repeat a failed step use retry_pipeline_step: a direct pending is allowed but does not count as a fix round.",
              properties: ["taskID": taskIDField,
                           "step": Schema.string("planner, developer, validation, tester or review.",
                               values: PipelineStepName.allCases.filter { $0 != .approval }.map(\.rawValue)),
                           "state": Schema.string("pending, running, done, failed or skipped.", values: PipelineStepState.settable),
                           "note": Schema.string("Optional short result or reason, up to 2000 characters.", maxLength: PipelineLimits.maxNote),
+                          "planVersion": Schema.integer("Optional but recommended: the plan version you work on (plan_changed if it is not the current one).", min: 1),
                           "agentName": agentNameField],
              required: ["taskID", "step", "state"]),
+        Tool(name: "retry_pipeline_step", scope: "tasks:write",
+             description: "Put one FAILED pipeline step back to pending as a counted fix round (step_retried). Only the failed step changes; nothing is started. Refused: step not failed (step_not_failed), approval (step_managed), a step the project switched off (step_disabled), a stale planVersion (plan_changed), no more rounds left for the current plan version (fix_rounds_exhausted; get_task_pipeline shows fixRounds {used, max, remaining}). The note replaces the previous one; omitting it clears it.",
+             properties: ["taskID": taskIDField,
+                          "step": Schema.string("planner, developer, validation, tester or review.",
+                              values: PipelineStepName.allCases.filter { $0 != .approval }.map(\.rawValue)),
+                          "planVersion": Schema.integer("Optional but recommended: the plan version you work on (plan_changed if it is not the current one).", min: 1),
+                          "note": Schema.string("Optional short note, up to 2000 characters.", maxLength: PipelineLimits.maxNote),
+                          "agentName": agentNameField],
+             required: ["taskID", "step"]),
+        Tool(name: "get_pipeline_settings", scope: "projects:read",
+             description: "Read the pipeline settings of one project: which steps are on (planner, approval, developer, validation, tester, review), model and effort per role (planner, developer, tester, reviewer; missing = default of the runner), maxFixRounds (0 to 10, default 3), notifyOnWaitingApproval, revision (0 without a row) and the latest 20 changes. Without a stored row the defaults are returned.",
+             properties: ["projectID": Schema.uuid("Project id (must be in this connection's grant).")], required: ["projectID"]),
+        Tool(name: "update_pipeline_settings", scope: "projects:write",
+             description: "Change the pipeline settings of a project (partial update, only the sent fields change). Needs manage on the project AND the person's brain mandate for this connection and project plus a quote of their words (brain_mandate_required, outside_brain_mandate, quote_required, invalid_quote): model and effort decide the cost, so a connection never raises them on its own. revision is required (current value from get_pipeline_settings, 0 without a row; revision_conflict otherwise). model must match [A-Za-z0-9._:/-]+ (1 to 100 characters, invalid_model), effort is low, medium, high, xhigh or max (invalid_effort); null clears a model or effort. Unknown or empty updates are invalid_pipeline_settings. Repeating the same content changes nothing. The decision is entered in the mandate log (kind pipeline.settings).",
+             properties: ["projectID": Schema.uuid("Project id (must be in this connection's grant)."),
+                          "revision": Schema.integer("Current revision of the settings (0 if never written).", min: 0),
+                          "steps": .object(["type": .string("object"), "description": .string("Switch steps on or off: any of planner, approval, developer, validation, tester, review as true or false."),
+                                            "additionalProperties": .object(["type": .string("boolean")])]),
+                          "roles": .object(["type": .string("object"), "description": .string("Per role (planner, developer, tester, reviewer) an object with model and/or effort; null clears the field."),
+                                            "additionalProperties": .object(["type": .string("object"), "description": .string("model (string or null) and effort (low, medium, high, xhigh, max or null).")])]),
+                          "maxFixRounds": Schema.integer("Fix rounds per plan version, 0 (retry never allowed) to 10.", min: 0, max: PipelineSettingsLimits.maxFixRoundsCeiling),
+                          "notifyOnWaitingApproval": Schema.boolean("Tell people (Für dich, command center, push) when a plan waits for approval."),
+                          "quote": quoteField],
+             required: ["projectID", "revision"]),
     ]
 
     func callPipeline(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
         let service = WorkflowService(user: user, db: db, allowedProjects: Set(grant.projects))
         let actor = try await self.actor(grant: grant, db: db)
+        switch name {
+        case "get_pipeline_settings":
+            return try .encoded(try await service.pipelineSettings(try uuid(a["projectID"])))
+        case "update_pipeline_settings":
+            // The same JSON object as the REST body, without the arguments that only MCP knows.
+            var body: [String: JSONValue] = [:]
+            for key in ["revision", "steps", "roles", "maxFixRounds", "notifyOnWaitingApproval"] where a[key] != .null || key == "revision" { body[key] = a[key] }
+            return try .encoded(try await service.updatePipelineSettings(try uuid(a["projectID"]), .object(body), quote: optionalString(a, "quote"), actor: actor))
+        default: break
+        }
         let taskID = try uuid(a["taskID"])
         switch name {
         case "get_task_pipeline":
@@ -51,8 +86,12 @@ extension MCPController {
             return try .encoded(try await service.decidePlan(taskID, body, quote: optionalString(a, "quote"), actor: actor))
         case "set_pipeline_step":
             let body = SetPipelineStepRequest(state: try requiredString(a, "state"), note: try optionalString(a, "note"),
-                agentName: try optionalString(a, "agentName"))
+                agentName: try optionalString(a, "agentName"), planVersion: try intArgument(a["planVersion"], reason: "invalid_planVersion"))
             return try .encoded(try await service.setPipelineStep(taskID, step: requiredString(a, "step"), body, actor: actor))
+        case "retry_pipeline_step":
+            let body = RetryPipelineStepRequest(planVersion: try intArgument(a["planVersion"], reason: "invalid_planVersion"),
+                note: try optionalString(a, "note"), agentName: try optionalString(a, "agentName"))
+            return try .encoded(try await service.retryPipelineStep(taskID, step: requiredString(a, "step"), body, actor: actor))
         default: throw Abort(.notFound)
         }
     }

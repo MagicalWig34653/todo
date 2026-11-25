@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end check of the card pipeline, stage 1 (card 74EC341D) against a running backend: REST and MCP.
+"""End-to-end check of the card pipeline, stage 1 (card 74EC341D) and stage 2 (card B926E7D8) against a running backend: REST and MCP.
 
 Real HTTP and real OAuth tokens for /mcp: one connection plans and reports, a second one holds the brain mandate.
 Usage: pipeline-e2e.py BASE_URL SESSION SQLITE_FILE
@@ -72,7 +72,7 @@ def tool(tok, name, args):
     res = mcp(tok, "tools/call", {"name": name, "arguments": args}); text = res["content"][0]["text"]
     return res.get("isError", False), text, j(text)
 
-SCOPES = "projects:read tasks:read tasks:write"
+SCOPES = "projects:read projects:write tasks:read tasks:write"
 agent = oauth_token(SCOPES, "Pipeline Agent")
 brain = oauth_token(SCOPES, "Pipeline Brain")
 
@@ -187,6 +187,67 @@ left = [sql(f"SELECT count(*) FROM {t} WHERE lower(task_id) = lower('{second}')"
 kept = [sql(f"SELECT count(*) FROM {t} WHERE lower(task_id) = lower('{task}')") for t in tables]
 check("delete removes plan, steps and events", st == 204 and left == ["0", "0", "0"], (st, left))
 check("the other card keeps its pipeline (rows found by the same query)", all(int(n) > 0 for n in kept) and pipeline(task)["plan"]["version"] == 2, kept)
+
+# 8. Stage 2 (card B926E7D8): project settings, switched off steps, plan version, retry and the waiting plan in "Für dich".
+st, cfg = rest("GET", f"/v1/projects/{project}/pipeline-settings")
+check("settings: defaults without a row", st == 200 and cfg.get("revision") == 0 and cfg.get("maxFixRounds") == 3 and all(cfg["steps"].values()) and len(cfg["steps"]) == 6 and cfg.get("history") == [], cfg)
+check("settings: no row written by reading", sql("SELECT count(*) FROM project_pipeline_settings") == "0")
+check("settings: anonymous 401", http("GET", f"/v1/projects/{project}/pipeline-settings")[0] == 401)
+names2 = {t["name"] for t in mcp(agent, "tools/list")["tools"]}
+check("MCP: three stage 2 tools listed", {"get_pipeline_settings", "update_pipeline_settings", "retry_pipeline_step"} <= names2, sorted(names2)[:5])
+for body, why in [({"revision": 0}, "no field"), ({"revision": 0, "maxFixRounds": 11}, "11 rounds"), ({"revision": 0, "roles": {"developer": {"model": "no good"}}}, "model"),
+                  ({"revision": 0, "roles": {"developer": {"effort": "ultra"}}}, "effort")]:
+    check(f"settings: refused ({why})", rest("PATCH", f"/v1/projects/{project}/pipeline-settings", body)[0] == 400)
+st, cfg = rest("PATCH", f"/v1/projects/{project}/pipeline-settings", {"revision": 0, "steps": {"tester": False}, "roles": {"developer": {"model": "sonnet", "effort": "high"}}, "maxFixRounds": 1})
+check("settings: partial update, revision 1, history", st == 200 and cfg["revision"] == 1 and cfg["steps"]["tester"] is False and cfg["roles"]["developer"] == {"model": "sonnet", "effort": "high"} and len(cfg["history"]) == 1, cfg)
+check("settings: stale revision 409", reason(rest("PATCH", f"/v1/projects/{project}/pipeline-settings", {"revision": 0, "maxFixRounds": 2})) == (409, "revision_conflict"))
+st, again = rest("PATCH", f"/v1/projects/{project}/pipeline-settings", {"revision": 1, "maxFixRounds": 1})
+check("settings: same content changes nothing", st == 200 and again["revision"] == 1 and len(again["history"]) == 1, again)
+err, text, data = tool(agent, "get_pipeline_settings", {"projectID": project})
+check("MCP: get_pipeline_settings", not err and data["revision"] == 1 and data["roles"]["developer"]["model"] == "sonnet", text[:200])
+err, text, _ = tool(agent, "update_pipeline_settings", {"projectID": project, "revision": 1, "maxFixRounds": 2, "quote": "ja"})
+check("MCP: update without mandate refused", err and text == "brain_mandate_required", text)
+err, text, _ = tool(brain, "update_pipeline_settings", {"projectID": project, "revision": 1, "maxFixRounds": 2})
+check("MCP: update without quote refused", err and text == "quote_required", text)
+err, text, data = tool(brain, "update_pipeline_settings", {"projectID": project, "revision": 1, "roles": {"developer": {"effort": None}}, "maxFixRounds": 2, "quote": "Zwei Runden reichen"})
+check("MCP: mandated update", not err and data["revision"] == 2 and data["maxFixRounds"] == 2 and "effort" not in data["roles"]["developer"] and data["history"][0]["actorType"] == "integration", text[:300])
+audit = rest("GET", "/v1/settings/brain-mandate/audit")[1].get("items", [])
+check("brain audit: pipeline.settings with the quote", any(x["kind"] == "pipeline.settings" and x["quote"] == "Zwei Runden reichen" and x["projectID"].lower() == project.lower() and "taskID" not in x for x in audit), audit)
+
+# A card with the plan approved, tester switched off, a step bound to the plan version and a counted retry.
+t2 = new_task("Stage two")
+check("pipeline: settings and per-step fields", (lambda p: p["settings"]["revision"] == 2 and p["fixRounds"] == {"used": 0, "max": 2, "remaining": 2} and p["waitingApproval"] is False and all("enabled" in s for s in p["steps"])
+      and [s["step"] for s in p["steps"] if s.get("role") is not None] == ["planner", "developer", "tester", "review"])(pipeline(t2)), pipeline(t2))
+check("pipeline: tester is off and shown as skipped", (lambda s: s["enabled"] is False and s["state"] == "skipped")(pipeline(t2)["steps"][4]))
+tool(agent, "set_task_plan", {"taskID": t2, "plan": "# Stage two\nerste Zeile", "expectedVersion": 0})
+check("pipeline: waitingApproval after writing", pipeline(t2)["waitingApproval"] is True)
+st, feed = rest("GET", "/v1/feed")
+item = next((x for x in feed.get("needsYou", []) if x.get("kind") == "plan" and x["taskID"].lower() == t2.lower()), None)
+check("feed: needsYou item kind plan with both actions", item is not None and item["id"].lower() == f"plan:{t2}:1".lower() and [a["key"] for a in item["actions"]] == ["approve", "request_changes"], item)
+st, center = rest("GET", "/v1/command-center?view=list")
+card2 = next((c for c in center.get("items", []) if c["task"]["id"].lower() == t2.lower()), {})
+check("command center: planWaiting and plansWaiting", card2.get("planWaiting") is True and center["summary"]["plansWaiting"] >= 1, (card2.get("planWaiting"), center["summary"].get("plansWaiting")))
+action = (item or {"actions": [{}]})["actions"][0]
+st, p = rest(action.get("method", "POST"), action.get("path", "/"), action.get("body"))
+check("feed: the approve action works as sent", st == 200 and p["plan"]["state"] == "approved", (st, p))
+st, feed = rest("GET", "/v1/feed")
+check("feed: the decided plan is gone", not any(x.get("kind") == "plan" and x["taskID"].lower() == t2.lower() for x in feed.get("needsYou", [])))
+err, text, _ = tool(agent, "set_pipeline_step", {"taskID": t2, "step": "developer", "state": "running", "planVersion": 2})
+check("MCP: stale planVersion refused", err and text == "plan_changed", text)
+err, text, data = tool(agent, "set_pipeline_step", {"taskID": t2, "step": "developer", "state": "failed", "planVersion": 1, "note": "rot"})
+check("MCP: step bound to plan version 1", not err and data["steps"][2]["state"] == "failed" and data["steps"][2]["planVersion"] == 1, text[:200])
+err, text, _ = tool(agent, "set_pipeline_step", {"taskID": t2, "step": "tester", "state": "running", "planVersion": 1})
+check("MCP: switched off step refused", err and text == "step_disabled", text)
+check("REST: retry of a pending step refused", reason(rest("POST", f"/v1/tasks/{t2}/pipeline/steps/validation/retry", {}))== (409, "step_not_failed"))
+err, text, data = tool(agent, "retry_pipeline_step", {"taskID": t2, "step": "developer", "planVersion": 1, "agentName": "runner@mac"})
+check("MCP: retry puts only the failed step back, one round used", not err and data["steps"][2]["state"] == "pending" and data["fixRounds"] == {"used": 1, "max": 2, "remaining": 1} and data["events"][0]["action"] == "step_retried", text[:300])
+rest("PUT", f"/v1/tasks/{t2}/pipeline/steps/developer", {"state": "failed"})
+st, p = rest("POST", f"/v1/tasks/{t2}/pipeline/steps/developer/retry", {})
+check("REST: second retry uses the last round", st == 200 and p["fixRounds"]["remaining"] == 0, p)
+rest("PUT", f"/v1/tasks/{t2}/pipeline/steps/developer", {"state": "failed"})
+check("REST: no round left", reason(rest("POST", f"/v1/tasks/{t2}/pipeline/steps/developer/retry", {})) == (409, "fix_rounds_exhausted"))
+check("migrations: stage 2 tables and column exist", sql("SELECT count(*) FROM project_pipeline_settings") == "1" and sql("SELECT count(*) FROM project_pipeline_settings_events") == "2"
+      and sql("SELECT count(*) FROM pragma_table_info('task_pipeline_steps') WHERE name = 'plan_version'") == "1")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed"); sys.exit(1)

@@ -4,8 +4,8 @@ import Vapor
 /// Rules of the card pipeline; REST and MCP call these methods. Writes run in `mutate` (sharing graph and task row lock).
 extension WorkflowService {
     func pipeline(_ taskID: UUID) async throws -> PipelineDTO {
-        _ = try await readableTask(taskID)
-        return try await Self.pipelineDTO(taskID, on: db)
+        let task = try await readableTask(taskID)
+        return try await Self.pipelineDTO(taskID, projectID: task.projectID, on: db)
     }
 
     /// A new text is a new version that needs a new approval; the work steps start over.
@@ -18,8 +18,11 @@ extension WorkflowService {
             let id = try task.requireID()
             let existing = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first()
             // A retry of the write that is still waiting for its decision changes nothing, whatever version it expected.
-            if let existing, existing.state == PlanState.proposed, existing.body == body {
-                return try await Self.pipelineDTO(id, on: tx)
+            let settings = try await PipelineSettingsStore.values(task.projectID, on: tx)
+            let autoApprove = !settings.enabled(.approval)
+            if let existing, existing.body == body,
+               existing.state == PlanState.proposed || (autoApprove && existing.state == PlanState.approved && existing.decidedByType == Self.systemDecider) {
+                return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
             }
             if let expected = request.expectedVersion, expected != (existing?.version ?? 0) {
                 throw Abort(.conflict, reason: "plan_changed")
@@ -29,14 +32,21 @@ extension WorkflowService {
             plan.taskID = id; plan.version = (existing?.version ?? 0) + 1; plan.body = body; plan.state = PlanState.proposed
             plan.authorType = actor.type; plan.authorID = actor.id; plan.authorLabel = label; plan.writtenAt = now
             plan.decidedAt = nil; plan.decidedByType = nil; plan.decidedByID = nil; plan.decidedByLabel = nil; plan.decisionComment = nil
+            // Without an approval step a written plan is approved at once, by the system and without a name.
+            if autoApprove {
+                plan.state = PlanState.approved; plan.decidedAt = now; plan.decidedByType = Self.systemDecider
+            }
             try await plan.save(on: tx)
             let work: [PipelineStepName] = [.developer, .validation, .tester, .review]
             try await TaskPipelineStep.query(on: tx).filter(\.$taskID == id).filter(\.$step ~~ work.map(\.rawValue)).delete()
-            try await Self.saveStep(id, .planner, state: PipelineStepState.done, note: nil, label: label, actor: actor, at: now, on: tx)
-            try await Self.saveStep(id, .approval, state: PipelineStepState.waiting, note: nil, label: label, actor: actor, at: now, on: tx)
-            try await Self.audit(id, action: "plan_written", planVersion: plan.version, label: label, actor: actor, at: now, on: tx)
-            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "plan.written", subjectID: plan.id, on: tx)
-            return try await Self.pipelineDTO(id, on: tx)
+            try await Self.saveStep(id, .planner, state: PipelineStepState.done, note: nil, planVersion: plan.version, label: label, actor: actor, at: now, on: tx)
+            try await Self.saveStep(id, .approval, state: autoApprove ? PipelineStepState.skipped : PipelineStepState.waiting, note: nil,
+                planVersion: plan.version, label: label, actor: actor, at: now, on: tx)
+            let event = try await Self.audit(id, action: "plan_written", planVersion: plan.version, label: label, actor: actor, at: now, on: tx)
+            // The activity points to the audit entry: it knows the version and the comment of that very moment (the plan row
+            // only knows the current ones).
+            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "plan.written", subjectID: event.id, on: tx)
+            return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
         }
     }
 
@@ -66,18 +76,18 @@ extension WorkflowService {
             plan.decidedByLabel = label; plan.decisionComment = comment
             try await plan.save(on: tx)
             try await Self.saveStep(id, .approval, state: approve ? PipelineStepState.done : PipelineStepState.changesRequested,
-                note: comment, label: label, actor: actor, at: now, on: tx)
+                note: comment, planVersion: plan.version, label: label, actor: actor, at: now, on: tx)
             if !approve {
-                try await Self.saveStep(id, .planner, state: PipelineStepState.pending, note: nil, label: label, actor: actor, at: now, on: tx)
+                try await Self.saveStep(id, .planner, state: PipelineStepState.pending, note: nil, planVersion: plan.version, label: label, actor: actor, at: now, on: tx)
             }
-            try await Self.audit(id, action: approve ? "plan_approved" : "plan_changes_requested", planVersion: plan.version,
+            let event = try await Self.audit(id, action: approve ? "plan_approved" : "plan_changes_requested", planVersion: plan.version,
                 note: comment, label: label, actor: actor, at: now, on: tx)
             let kind = approve ? "plan.approved" : "plan.changes_requested"
-            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: kind, subjectID: plan.id, on: tx)
+            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: kind, subjectID: event.id, on: tx)
             if let authority {
                 try await recordBrainDecision(authority, kind: kind, task: task, subjectID: try plan.requireID(), note: comment, actor: actor, on: tx)
             }
-            return try await Self.pipelineDTO(id, on: tx)
+            return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
         }
     }
 
@@ -92,22 +102,58 @@ extension WorkflowService {
         }
         let note = try Self.pipelineText(request.note, max: PipelineLimits.maxNote, reason: "invalid_note")
         let label = try Self.pipelineLabel(request.agentName, actor: actor)
+        let expected = try Self.expectedPlanVersion(request.planVersion)
         return try await mutate(taskID, role: .edit) { task, tx in
             let id = try task.requireID()
             let plan = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first()
-            if step != .planner, state != PipelineStepState.pending, plan?.state != PlanState.approved {
+            // An agent that works on an older plan must not overwrite the steps of a newer one.
+            if let expected, expected != plan?.version { throw Abort(.conflict, reason: "plan_changed") }
+            let settings = try await PipelineSettingsStore.values(task.projectID, on: tx)
+            guard settings.effectivelyEnabled(step) else { throw Abort(.conflict, reason: "step_disabled") }
+            // With the planner off no plan is needed, so there is no gate either.
+            if step != .planner, state != PipelineStepState.pending, settings.enabled(.planner), plan?.state != PlanState.approved {
                 throw Abort(.conflict, reason: "plan_not_approved")
             }
             let current = try await TaskPipelineStep.query(on: tx).filter(\.$taskID == id).filter(\.$step == step.rawValue).first()
             if (current?.state ?? PipelineStepState.pending) == state, current?.note == note {
-                return try await Self.pipelineDTO(id, on: tx)
+                return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
             }
             let now = Date()
-            let row = try await Self.saveStep(id, step, state: state, note: note, label: label, actor: actor, at: now, on: tx)
+            let row = try await Self.saveStep(id, step, state: state, note: note, planVersion: plan?.version, label: label, actor: actor, at: now, on: tx)
             try await Self.audit(id, action: "step_changed", planVersion: plan?.version, step: step.rawValue, state: state,
                 note: note, label: label, actor: actor, at: now, on: tx)
             try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "pipeline.step", subjectID: row.id, on: tx)
-            return try await Self.pipelineDTO(id, on: tx)
+            return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
+        }
+    }
+
+    /// Back from `failed` to `pending` for this one step, as a counted fix round (`step_retried`). Nothing is started.
+    func retryPipelineStep(_ taskID: UUID, step rawStep: String, _ request: RetryPipelineStepRequest, actor: WorkflowActor) async throws -> PipelineDTO {
+        guard let step = PipelineStepName(rawValue: rawStep) else { throw Abort(.badRequest, reason: "invalid_step") }
+        guard step != .approval else { throw Abort(.conflict, reason: "step_managed") }
+        let note = try Self.pipelineText(request.note, max: PipelineLimits.maxNote, reason: "invalid_note")
+        let label = try Self.pipelineLabel(request.agentName, actor: actor)
+        let expected = try Self.expectedPlanVersion(request.planVersion)
+        return try await mutate(taskID, role: .edit) { task, tx in
+            let id = try task.requireID()
+            let plan = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first()
+            if let expected, expected != plan?.version { throw Abort(.conflict, reason: "plan_changed") }
+            let settings = try await PipelineSettingsStore.values(task.projectID, on: tx)
+            guard settings.effectivelyEnabled(step) else { throw Abort(.conflict, reason: "step_disabled") }
+            let current = try await TaskPipelineStep.query(on: tx).filter(\.$taskID == id).filter(\.$step == step.rawValue).first()
+            guard current?.state == PipelineStepState.failed else { throw Abort(.conflict, reason: "step_not_failed") }
+            if step != .planner, settings.enabled(.planner), plan?.state != PlanState.approved {
+                throw Abort(.conflict, reason: "plan_not_approved")
+            }
+            let used = try await Self.fixRoundsUsed(id, planVersion: plan?.version, on: tx)
+            guard used < settings.maxFixRounds else { throw Abort(.conflict, reason: "fix_rounds_exhausted") }
+            let now = Date()
+            let row = try await Self.saveStep(id, step, state: PipelineStepState.pending, note: note, planVersion: plan?.version,
+                label: label, actor: actor, at: now, on: tx)
+            try await Self.audit(id, action: "step_retried", planVersion: plan?.version, step: step.rawValue, state: PipelineStepState.pending,
+                note: note, label: label, actor: actor, at: now, on: tx)
+            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "pipeline.step", subjectID: row.id, on: tx)
+            return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
         }
     }
 
@@ -161,27 +207,47 @@ extension WorkflowService {
 
     /// Caller holds the task row lock.
     @discardableResult
-    private static func saveStep(_ taskID: UUID, _ step: PipelineStepName, state: String, note: String?, label: String?,
+    private static func saveStep(_ taskID: UUID, _ step: PipelineStepName, state: String, note: String?, planVersion: Int?, label: String?,
                                  actor: WorkflowActor, at now: Date, on db: any Database) async throws -> TaskPipelineStep {
         let row = try await TaskPipelineStep.query(on: db).filter(\.$taskID == taskID).filter(\.$step == step.rawValue).first()
             ?? TaskPipelineStep()
-        row.taskID = taskID; row.step = step.rawValue; row.state = state; row.note = note
+        row.taskID = taskID; row.step = step.rawValue; row.state = state; row.note = note; row.planVersion = planVersion
         row.actorType = actor.type; row.actorID = actor.id; row.actorLabel = label; row.updatedAt = now
         try await row.save(on: db)
         return row
     }
 
     /// Caller holds the task row lock, which serialises the sequence numbers.
+    @discardableResult
     private static func audit(_ taskID: UUID, action: String, planVersion: Int?, step: String? = nil, state: String? = nil,
-                              note: String? = nil, label: String?, actor: WorkflowActor, at now: Date, on db: any Database) async throws {
+                              note: String? = nil, label: String?, actor: WorkflowActor, at now: Date, on db: any Database) async throws -> TaskPipelineEvent {
         let last = try await TaskPipelineEvent.query(on: db).filter(\.$taskID == taskID).sort(\.$sequence, .descending).first()?.sequence ?? 0
         let e = TaskPipelineEvent()
         e.taskID = taskID; e.sequence = last + 1; e.action = action; e.planVersion = planVersion; e.step = step; e.state = state
         e.note = note; e.actorType = actor.type; e.actorID = actor.id; e.actorLabel = label; e.createdAt = now
         try await e.save(on: db)
+        return e
     }
 
-    private static func pipelineDTO(_ taskID: UUID, on db: any Database) async throws -> PipelineDTO {
+    /// `decidedByType` of a plan that was approved without a person (the project has no approval step).
+    static let systemDecider = "system"
+
+    /// Optional `planVersion` of a request: at least 1.
+    private static func expectedPlanVersion(_ raw: Int?) throws -> Int? {
+        guard let raw else { return nil }
+        guard raw >= 1 else { throw Abort(.badRequest, reason: "invalid_plan_version") }
+        return raw
+    }
+
+    /// Fix rounds of the current plan version: how often a failed step was retried since that plan was written.
+    static func fixRoundsUsed(_ taskID: UUID, planVersion: Int?, on db: any Database) async throws -> Int {
+        let query = TaskPipelineEvent.query(on: db).filter(\.$taskID == taskID).filter(\.$action == "step_retried")
+        if let planVersion { return try await query.filter(\.$planVersion == planVersion).count() }
+        return try await query.filter(\.$planVersion == .null).count()
+    }
+
+    private static func pipelineDTO(_ taskID: UUID, projectID: UUID, on db: any Database) async throws -> PipelineDTO {
+        let settings = try await PipelineSettingsStore.values(projectID, on: db)
         let plan = try await TaskPlan.query(on: db).filter(\.$taskID == taskID).first()
         let rows = try await TaskPipelineStep.query(on: db).filter(\.$taskID == taskID).all()
         let byStep = Dictionary(rows.map { ($0.step, $0) }, uniquingKeysWith: { first, _ in first })
@@ -205,12 +271,19 @@ extension WorkflowService {
             PlanDTO(p, authorLabel: label(p.authorLabel, p.authorType, p.authorID),
                 decidedByLabel: label(p.decidedByLabel, p.decidedByType.flatMap(ActivityActorType.init(rawValue:)), p.decidedByID))
         }
+        // A switched off step shows as `skipped` unless it has a stored state; the stored state itself is never touched.
         let steps = PipelineStepName.allCases.map { name -> PipelineStepDTO in
             let row = byStep[name.rawValue]
-            return PipelineStepDTO(step: name.rawValue, state: row?.state ?? PipelineStepState.pending, note: row?.note,
-                actorLabel: label(row?.actorLabel, row?.actorType, row?.actorID), updatedAt: row?.updatedAt)
+            let enabled = settings.effectivelyEnabled(name)
+            let role = PipelineRoleName.of(name).map { settings.roles[$0.rawValue] ?? PipelineRoleValue() }
+            return PipelineStepDTO(step: name.rawValue, state: row?.state ?? (enabled ? PipelineStepState.pending : PipelineStepState.skipped),
+                note: row?.note, actorLabel: label(row?.actorLabel, row?.actorType, row?.actorID), updatedAt: row?.updatedAt,
+                enabled: enabled, planVersion: row?.planVersion, role: role)
         }
+        let used = try await fixRoundsUsed(taskID, planVersion: plan?.version, on: db)
         return PipelineDTO(taskID: taskID, plan: planDTO, steps: steps,
-            events: try events.map { try PipelineEventDTO($0, actorLabel: label($0.actorLabel, $0.actorType, $0.actorID)) })
+            events: try events.map { try PipelineEventDTO($0, actorLabel: label($0.actorLabel, $0.actorType, $0.actorID)) },
+            settings: PipelineSettingsSummaryDTO(settings), fixRounds: FixRoundsDTO(used: used, max: settings.maxFixRounds),
+            waitingApproval: plan?.state == PlanState.proposed && settings.enabled(.approval))
     }
 }

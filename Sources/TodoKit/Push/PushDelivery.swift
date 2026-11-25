@@ -52,6 +52,11 @@ enum PushContent {
             (cat, priority, ttl) = ("TODO_QUESTION", 10, 24 * 3600)
             title = showContent ? (de ? "Rückfrage: " : "Question: ") + name : (de ? "Rückfrage vom Agenten" : "Question from the agent")
             body = showContent ? clip(detail ?? "", 160) : (de ? "Eine Aufgabe wartet auf deine Antwort." : "A task is waiting for your answer.")
+        case "plan":
+            // Never the text of the plan: it may be long and sensitive. With the content opt-in the card title is shown.
+            (cat, priority, ttl) = ("TODO_PLAN", 10, 24 * 3600)
+            title = showContent ? "Plan: " + name : (de ? "Plan wartet auf Freigabe" : "Plan waiting for approval")
+            body = de ? "Ein Plan wartet auf deine Freigabe." : "A plan is waiting for your approval."
         case "review":
             (cat, priority, ttl) = ("TODO_REVIEW", 10, 24 * 3600)
             title = showContent ? "Review: " + name : (de ? "Review bereit" : "Review ready")
@@ -97,7 +102,7 @@ struct PushDelivery: Sendable {
     static func requiredRole(_ kind: String) -> ProjectRole {
         switch kind {
         case "question": return .comment
-        case "review": return .edit
+        case "review", "plan": return .edit
         default: return .read
         }
     }
@@ -117,6 +122,11 @@ struct PushDelivery: Sendable {
         case "review":
             guard let id = event.subjectID, let r = try await TaskReview.find(id, on: db), r.state == "pending" else { return nil }
             return (task, r.summary)
+        case "plan":
+            // Decided, replaced by a newer version or switched off in the meantime: nothing to announce any more.
+            guard let id = event.subjectID, let plan = try await TaskPlan.find(id, on: db), plan.taskID == task.id, plan.state == PlanState.proposed,
+                  plan.version == event.version, try await PipelineSettingsStore.values(task.projectID, on: db).announcesWaitingPlans else { return nil }
+            return (task, nil)
         case "comment":
             return (task, nil)
         default:

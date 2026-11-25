@@ -24,11 +24,11 @@ struct FeedImageDTO: Content {
 struct FeedPostDTO: Content {
     /// Id of the activity event (the newest one when several screenshots of one build were merged).
     let id: UUID
-    /// progress | build | done | review | question | comment | agent_run
+    /// progress | build | done | review | question | comment | agent_run | plan
     let kind: String
     /// Raw activity kind, e.g. `review.accepted`, `agent.claimed`.
     let event: String
-    /// started | finished | stopped | failed (agent_run), accepted | changes_requested (review).
+    /// started | finished | stopped | failed (agent_run), accepted | changes_requested (review), written | approved | changes_requested (plan).
     let state: String?
     let projectID: UUID
     let projectName: String
@@ -69,7 +69,7 @@ struct FeedActionBody: Content {
 struct FeedNeedsYouDTO: Content {
     /// Stable per object, e.g. `question:<uuid>`.
     let id: String
-    /// question | review | blocked | overdue | due
+    /// question | review | plan | blocked | overdue | due
     let kind: String
     let projectID: UUID
     let projectName: String

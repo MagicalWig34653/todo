@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.8.0
+  version: 1.9.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -22,6 +22,11 @@ info:
     1.8.0 (Karte 74EC341D, additiv, Handbuch 1.43.0, contracts/pipeline.yaml 1.0.0): neue Werkzeuge get_task_pipeline (tasks:read), set_task_plan,
     decide_plan (Brain-Vollmacht und quote wie decide_review, cannot_decide_own_plan) und set_pipeline_step (tasks:write); wait_for_events kennt
     zusätzlich die Hinweisarten plan und pipeline. Keine neuen Scopes.
+    1.9.0 (Karte B926E7D8, Pipeline Stufe 2, additiv, Handbuch 1.44.0, contracts/pipeline.yaml 1.1.0): neue Werkzeuge get_pipeline_settings (projects:read),
+    update_pipeline_settings (projects:write; Recht manage am Projekt, Brain-Vollmacht für Verbindung und Projekt plus quote, Pflichtfeld revision) und
+    retry_pipeline_step (tasks:write); set_pipeline_step nimmt optional planVersion; get_task_pipeline liefert zusätzlich settings, fixRounds,
+    waitingApproval und je Schritt enabled, planVersion, role. Neue Fehlercodes: invalid_pipeline_settings, invalid_model, invalid_effort,
+    invalid_plan_version, revision_conflict, step_disabled, step_not_failed, fix_rounds_exhausted. Keine neuen Scopes.
 servers:
   - url: http://localhost:28080
 paths:
@@ -296,5 +301,8 @@ x-mcp-tools:
   get_task_pipeline: {scope: 'tasks:read', required: [taskID], notes: 'Siehe contracts/pipeline.yaml. REST GET /v1/tasks/{id}/pipeline.'}
   set_task_plan: {scope: 'tasks:write', required: [taskID, plan], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, plan, expectedVersion?, agentName?. REST PUT /v1/tasks/{id}/plan.'}
   decide_plan: {scope: 'tasks:write', required: [taskID, decision, version], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, decision (approve|request_changes), version, comment?, quote?; Brain-Vollmacht, nie der eigene Plan.'}
-  set_pipeline_step: {scope: 'tasks:write', required: [taskID, step, state], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, step, state, note?, agentName?. REST PUT /v1/tasks/{id}/pipeline/steps/{step}.'}
+  set_pipeline_step: {scope: 'tasks:write', required: [taskID, step, state], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, step, state, note?, planVersion? (empfohlen; plan_changed), agentName?. REST PUT /v1/tasks/{id}/pipeline/steps/{step}.'}
+  retry_pipeline_step: {scope: 'tasks:write', required: [taskID, step], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, step, planVersion?, note?, agentName?. Nur failed -> pending als Fix-Runde (fix_rounds_exhausted, step_not_failed, step_disabled). REST POST /v1/tasks/{id}/pipeline/steps/{step}/retry.'}
+  get_pipeline_settings: {scope: 'projects:read', required: [projectID], notes: 'Siehe contracts/pipeline.yaml. REST GET /v1/projects/{id}/pipeline-settings.'}
+  update_pipeline_settings: {scope: 'projects:write', required: [projectID, revision], notes: 'Siehe contracts/pipeline.yaml. Argumente: projectID, revision, steps?, roles?, maxFixRounds?, notifyOnWaitingApproval?, quote. Brain-Vollmacht Pflicht (brain_mandate_required, outside_brain_mandate, quote_required, invalid_quote); Protokoll kind pipeline.settings. REST PATCH /v1/projects/{id}/pipeline-settings (nur Personen mit manage).'}
 x-oauth-scopes: ['projects:read', 'tasks:read', 'tasks:write', 'comments:write', 'attachments:read', 'agents:read', 'labels:read', 'labels:write', 'filters:read', 'filters:write', 'sharing:read', 'sharing:write', 'teams:read', 'teams:write', 'runs:read', 'runs:write', 'channels:read', 'channels:write']

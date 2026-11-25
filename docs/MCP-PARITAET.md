@@ -204,7 +204,19 @@ Vertrag `contracts/pipeline.yaml` 1.0.0, Code `Sources/TodoKit/Pipeline/` und `M
 | `decide_plan` | tasks:write | B | `POST /v1/tasks/{id}/plan/decision` | `invalid_decision`, `invalid_comment`, `comment_required`, `invalid_version`, `no_plan`, `plan_changed`, `plan_not_pending`, `cannot_decide_own_plan`, `brain_mandate_required`, `outside_brain_mandate`, `quote_required`, `invalid_quote` |
 | `set_pipeline_step` | tasks:write | A | `PUT /v1/tasks/{id}/pipeline/steps/{step}` | `invalid_step`, `invalid_state`, `step_managed`, `plan_not_approved`, `invalid_note`, `invalid_agent_name` |
 
-Unterschied zwischen den Wegen: `quote` gibt es nur über MCP (Personen entscheiden per REST ohne Zitat). `wait_for_events` meldet die Hinweisarten `plan` und `pipeline`. Runner-Ausführung und Projekteinstellungen sind nicht Teil dieser Stufe.
+Unterschied zwischen den Wegen: `quote` gibt es nur über MCP (Personen entscheiden per REST ohne Zitat). `wait_for_events` meldet die Hinweisarten `plan` und `pipeline`. Runner-Ausführung ist nicht Teil der Stufen 1 und 2.
+
+## Pipeline je Karte, Stufe 2 (25.11.2026, Handbuch 1.44.0, Karte B926E7D8)
+
+Vertrag `contracts/pipeline.yaml` 1.1.0, `oauth-mcp.yaml` 1.9.0, Code `Sources/TodoKit/Pipeline/PipelineSettings.swift`, `PipelineService.swift`, `MCP/MCPPipelineTools.swift`, Tests `PipelineStage2Tests`, `PipelineStage2NotificationTests`, E2E `scripts/pipeline-e2e.sh`. `set_pipeline_step` nimmt zusätzlich `planVersion` (`plan_changed`, `invalid_plan_version`, `step_disabled`); `get_task_pipeline` liefert zusätzlich `settings`, `fixRounds`, `waitingApproval`, je Schritt `enabled`, `planVersion`, `role`.
+
+| Tool | Scope | Klasse | REST | Fehlercodes |
+| --- | --- | --- | --- | --- |
+| `get_pipeline_settings` | projects:read | A | `GET /v1/projects/{id}/pipeline-settings` | |
+| `update_pipeline_settings` | projects:write | B | `PATCH /v1/projects/{id}/pipeline-settings` | `invalid_pipeline_settings`, `invalid_model`, `invalid_effort`, `revision_conflict`, `brain_mandate_required`, `outside_brain_mandate`, `quote_required`, `invalid_quote` |
+| `retry_pipeline_step` | tasks:write | A | `POST /v1/tasks/{id}/pipeline/steps/{step}/retry` | `invalid_step`, `step_managed`, `invalid_plan_version`, `invalid_note`, `plan_changed`, `step_disabled`, `step_not_failed`, `plan_not_approved`, `fix_rounds_exhausted` |
+
+Unterschied zwischen den Wegen: `update_pipeline_settings` verlangt über MCP die Brain-Vollmacht der Verbindung für das Projekt und ein Zitat (Protokoll `pipeline.settings`), das Recht `manage` der Person gilt zusätzlich; REST ist Personen mit `manage` vorbehalten und braucht weder Vollmacht noch Zitat. Beide rufen `WorkflowService.updatePipelineSettings` auf (gleiche Validierung, Revision, Verlauf).
 
 ## Wiederholungsregeln (25.11.2026, Handbuch 1.42.0, Karte 21CF716D)
 

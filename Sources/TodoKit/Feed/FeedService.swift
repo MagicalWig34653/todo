@@ -35,7 +35,7 @@ struct FeedService: Sendable {
     static let managementKinds = [
         "progress.posted", "build.added", "build.status_changed", "task.status_changed", "review.accepted", "review.changes_requested",
         "question.answered", "comment.created", "agent.claimed", "agent.submit", "agent.stop", "agent.fail",
-        "agent.accept", "agent.request_changes",
+        "agent.accept", "agent.request_changes", "plan.written", "plan.approved", "plan.changes_requested",
     ]
     static let classicKinds = ["comment.created", "task.status_changed"]
 
@@ -129,6 +129,33 @@ struct FeedService: Sendable {
                             FeedActionDTO(key: "accept", label: "Annehmen", method: "POST", path: path, body: FeedActionBody(decision: "accept"), requiresInput: false, inputField: nil),
                             FeedActionDTO(key: "request_changes", label: "Änderungen anfordern", method: "POST", path: path, body: FeedActionBody(decision: "request_changes"), requiresInput: true, inputField: "note"),
                         ])))
+                }
+                // Plans waiting for approval (stage 2 of the pipeline): people who may decide them, in projects with an approval
+                // step that notifies. Same rank as reviews.
+                let plans = try await TaskPlan.query(on: db)
+                    .join(TodoTask.self, on: \TaskPlan.$taskID == \TodoTask.$id)
+                    .filter(TodoTask.self, \.$projectID ~~ chunk).filter(TaskPlan.self, \.$state == PlanState.proposed).all()
+                if !plans.isEmpty {
+                    let announce = try await PipelineSettingsStore.values(for: try plans.map { try $0.joined(TodoTask.self).projectID }, on: db)
+                    let authors = try await displayNames(plans.filter { $0.authorType == .person }.map(\.authorID), on: db)
+                    for p in plans {
+                        let task = try p.joined(TodoTask.self)
+                        guard (roles[task.projectID]?.rank ?? -1) >= ProjectRole.edit.rank, announce[task.projectID]?.announcesWaitingPlans == true else { continue }
+                        let tid = try task.requireID()
+                        let path = "/v1/tasks/\(tid)/plan/decision"
+                        let first = p.body.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
+                        ranked.append((2, p.writtenAt, FeedNeedsYouDTO(
+                            id: "plan:\(tid):\(p.version)", kind: "plan", projectID: task.projectID, projectName: name(task.projectID), taskID: tid,
+                            taskTitle: task.title, taskVersion: task.version, title: "\(task.title) – Plan v\(p.version) wartet auf Freigabe",
+                            detail: first.map { PushContent.clip($0, 160) }, options: [], blocking: false, questionID: nil, reviewID: nil, dueAt: nil,
+                            actor: FeedActorDTO(type: p.authorType, id: p.authorID, name: p.authorLabel ?? authors[p.authorID]),
+                            createdAt: p.writtenAt, actions: [
+                                FeedActionDTO(key: "approve", label: "Plan freigeben", method: "POST", path: path,
+                                    body: FeedActionBody(decision: "approve", version: p.version), requiresInput: false, inputField: nil),
+                                FeedActionDTO(key: "request_changes", label: "Änderungen", method: "POST", path: path,
+                                    body: FeedActionBody(decision: "request_changes", version: p.version), requiresInput: true, inputField: "comment"),
+                            ])))
+                    }
                 }
                 // Blocked tasks with the reason.
                 let blocked = try await TaskWorkflow.query(on: db)
@@ -225,6 +252,7 @@ struct FeedService: Sendable {
         let answeredIDs = subjects(["question.answered"])
         let questions = Dictionary(uniqueKeysWithValues: try await TaskQuestion.query(on: db).filter(\.$id ~~ answeredIDs).all().map { ($0.id!, $0) })
         let artifacts = Dictionary(uniqueKeysWithValues: try await BuildArtifact.query(on: db).filter(\.$id ~~ subjects(["build.added", "build.status_changed"])).all().map { ($0.id!, $0) })
+        let plans = try await PipelinePlanActivity.load(subjects(PipelinePlanActivity.kinds), on: db)
         let attachments = Dictionary(uniqueKeysWithValues: try await Attachment.query(on: db).filter(\.$id ~~ artifacts.values.map(\.attachmentID)).all().map { ($0.id!, $0) })
         let names = try await displayNames(events.filter { $0.actorType == .person }.map(\.actorID), on: db)
         // Integration actors carry the grant id: without a label the agent reported, show the connection's name.
@@ -279,6 +307,13 @@ struct FeedService: Sendable {
             case "comment.created":
                 guard let c = e.subjectID.flatMap({ comments[$0] }) else { continue }
                 kind = "comment"; text = String(c.body.prefix(600))
+            case "plan.written", "plan.approved", "plan.changes_requested":
+                guard let plan = plans.describe(e.subjectID) else { continue }
+                kind = "plan"; state = String(e.kind.dropFirst("plan.".count))
+                let title = "Plan v\(plan.version)"
+                // A decision shows its comment; the plan itself has none.
+                text = e.kind == "plan.written" ? title : (plan.comment ?? title)
+                detail = e.kind != "plan.written" && plan.comment != nil ? title : nil
             case "agent.claimed": kind = "agent_run"; state = "started"
             case "agent.submit": kind = "agent_run"; state = "finished"
             case "agent.stop": kind = "agent_run"; state = "stopped"
