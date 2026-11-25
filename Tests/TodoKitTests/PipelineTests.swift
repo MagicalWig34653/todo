@@ -260,6 +260,36 @@ final class PipelineTests: XCTestCase {
         }
     }
 
+    /// Masking and compatibility folding lengthen text after the input check; MariaDB refuses what exceeds its columns.
+    func testStoredTextAndNamesStayInsideTheirColumnsAfterMasking() async throws {
+        try await run { e in
+            let task = try await newTask(e)
+            // Every short secret grows from 5 to 15 characters.
+            func swelling(_ max: Int) -> String { String(String(repeating: "pwd=a\n", count: max / 6).dropLast()) }
+            expect(try await putPlan(e, task, ["body": swelling(20_000)]), .badRequest, "invalid_plan")
+            expect(try await putStep(e, task, "planner", ["state": "running", "note": swelling(2000)]), .badRequest, "invalid_note")
+            // U+FDFA folds into 18 characters.
+            let folding = String(repeating: "\u{FDFA}", count: 1990) + " pwd=a"
+            expect(try await putStep(e, task, "planner", ["state": "running", "note": folding]), .badRequest, "invalid_note")
+            let written = try await rows(e, "task_pipeline_steps")
+            XCTAssertEqual(written, 0)
+            expect(try await putPlan(e, task, ["body": "A"]), .ok)
+            expect(try await decide(e, task, ["decision": "request_changes", "version": 1, "comment": swelling(4000)]), .badRequest, "invalid_comment")
+            let names = [String(repeating: "\u{FDFA}", count: 100), "a" + String(repeating: "\u{301}", count: 600),
+                         String(String(repeating: "pwd=a ", count: 17).prefix(100))]
+            for (n, name) in names.enumerated() {
+                let r = try await putPlan(e, task, ["body": "Plan \(n)", "agentName": name])
+                expect(r, .ok)
+                let label = try XCTUnwrap(plan(r)?["authorLabel"] as? String)
+                XCTAssertLessThanOrEqual(label.count, 100, "name \(n)")
+                XCTAssertLessThanOrEqual(label.unicodeScalars.count, 255, "name \(n)")
+                XCTAssertFalse(label.contains("pwd=a"))
+            }
+            // Folding must not produce the reserved label after it was checked.
+            expect(try await putPlan(e, task, ["body": "B", "agentName": "\u{FF22}rain im Auftrag von OAuth User"]), .badRequest, "invalid_agent_name")
+        }
+    }
+
     func testVersionConflictAndIdempotentRetry() async throws {
         try await run { e in
             let task = try await newTask(e)
