@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end check of the card pipeline, stage 1 (card 74EC341D) and stage 2 (card B926E7D8) against a running backend: REST and MCP.
+"""End-to-end check of the card pipeline, stages 1 to 3 (cards 74EC341D, B926E7D8, F5DD1C00) against a running backend: REST, MCP and runner protocol.
 
 Real HTTP and real OAuth tokens for /mcp: one connection plans and reports, a second one holds the brain mandate.
 Usage: pipeline-e2e.py BASE_URL SESSION SQLITE_FILE
@@ -248,6 +248,100 @@ rest("PUT", f"/v1/tasks/{t2}/pipeline/steps/developer", {"state": "failed"})
 check("REST: no round left", reason(rest("POST", f"/v1/tasks/{t2}/pipeline/steps/developer/retry", {})) == (409, "fix_rounds_exhausted"))
 check("migrations: stage 2 tables and column exist", sql("SELECT count(*) FROM project_pipeline_settings") == "1" and sql("SELECT count(*) FROM project_pipeline_settings_events") == "2"
       and sql("SELECT count(*) FROM pragma_table_info('task_pipeline_steps') WHERE name = 'plan_version'") == "1")
+
+# 9. Stage 3 (card F5DD1C00): this script plays the Mac runner over HTTP.
+st, cfg = rest("PATCH", f"/v1/projects/{project}/pipeline-settings", {"revision": 2, "steps": {"tester": True}, "maxFixRounds": 2})
+check("stage 3: tester switched on again", st == 200 and cfg["steps"]["tester"] is True, cfg)
+pairing = rest("POST", "/v1/agents/devices", {"label": "E2E Mac"})[1]
+runner = rest("POST", "/v1/runner/pair", {"code": pairing["code"]}, None)[1]["token"]
+binding = rest("POST", "/v1/agents/bindings", {"projectID": project, "deviceID": pairing["deviceID"],
+    "repositoryKey": "11111111-2222-3333-4444-555555555555", "label": "e2e checkout"})[1]["id"]
+
+def jobs(query="?pipeline=1"):
+    return rest("GET", "/v1/runner/jobs" + query, token=runner)[1] or []
+
+def claim(job):
+    return rest("POST", f"/v1/runner/jobs/{job}/claim?pipeline=1", token=runner)
+
+def cmd(run, action, body=None):
+    return rest("POST", f"/v1/runner/runs/{run}/{action}", {"generation": 1, **(body or {})}, runner)
+
+def result(outcome, plan=None, summary="done"):
+    body = {"result": {"summary": summary, "references": [], "checks": [], "limitations": []}, "outcome": outcome}
+    if plan: body["plan"] = plan
+    return body
+
+def queued_step(name):
+    found = jobs()
+    ok = [x.get("pipelineStep") for x in found] == [name]
+    check(f"stage 3: one queued job for {name}", ok, found)
+    return found[0]["id"] if found else "missing"
+
+def run_step(name, outcome="passed", plan=None):
+    job = queued_step(name)
+    st, run = claim(job)
+    check(f"stage 3: claim {name}", st == 200, run)
+    st, done = cmd(run.get("id"), "submit", result(outcome, plan))
+    check(f"stage 3: submit {name} {outcome}", st == 200, done)
+    return job, done
+
+def execution(tid):
+    return pipeline(tid).get("execution") or {}
+
+t3 = new_task("Stage three")
+check("stage 3: no execution before the start", "execution" not in pipeline(t3))
+check("stage 3: anonymous start 401", http("POST", f"/v1/tasks/{t3}/pipeline/execution", {"id": "x", "bindingID": binding})[0] == 401)
+exec_id = "aaaaaaaa-0000-4000-8000-000000000001"
+st, p = rest("POST", f"/v1/tasks/{t3}/pipeline/execution", {"id": exec_id, "bindingID": binding})
+check("stage 3: started, planner queued", st == 200 and p["execution"]["state"] == "running" and p["execution"]["step"] == "planner" and p["execution"]["runnerSupportsPipeline"] is False, p)
+st, p = rest("POST", f"/v1/tasks/{t3}/pipeline/execution", {"id": exec_id, "bindingID": binding})
+check("stage 3: same id is idempotent", st == 200 and p["execution"]["id"].lower() == exec_id, p)
+check("stage 3: second start refused", reason(rest("POST", f"/v1/tasks/{t3}/pipeline/execution", {"id": "aaaaaaaa-0000-4000-8000-000000000002", "bindingID": binding})) == (409, "execution_active"))
+check("stage 3: old runner sees no pipeline job", jobs("") == [])
+planner = queued_step("planner")
+check("stage 3: runner support remembered", execution(t3).get("runnerSupportsPipeline") is True)
+check("stage 3: claim without parameter refused", reason(rest("POST", f"/v1/runner/jobs/{planner}/claim", token=runner)) == (409, "pipeline_runner_required"))
+st, held = rest("POST", f"/v1/runner/jobs/{planner}/hold", {"reason": "Kontingent-Bremse: rot"}, runner)
+check("stage 3: hold shows as progress", st == 200 and held["progress"] == "Kontingent-Bremse: rot" and execution(t3).get("jobProgress") == "Kontingent-Bremse: rot", held)
+st, run = claim(planner)
+check("stage 3: planner claimed, progress cleared", st == 200 and run["job"]["progress"] == "" and run["job"]["mode"] == "clarify", run)
+cmd(run["id"], "checkpoint", {"checkpoint": {"contextRevision": run["job"]["taskRevision"], "sessionReference": "bbbbbbbb-0000-4000-8000-000000000001", "nextStep": "plan"}})
+check("stage 3: outcome required", reason(cmd(run["id"], "submit", {"result": result("passed")["result"]})) == (400, "outcome_required"))
+check("stage 3: plan required", reason(cmd(run["id"], "submit", result("passed"))) == (400, "plan_required"))
+st, done = cmd(run["id"], "submit", result("passed", "# Plan vom Runner"))
+check("stage 3: plan submitted, waiting for approval", st == 200 and done["job"]["state"] == "succeeded" and execution(t3)["state"] == "waiting_approval" and pipeline(t3)["plan"]["authorType"] == "run", done)
+decide(t3, {"decision": "approve", "version": 1})
+developer = queued_step("developer")
+st, run = claim(developer)
+info = rest("GET", f"/v1/runner/jobs/{developer}", token=runner)[1].get("pipeline") or {}
+check("stage 3: developer resumes the planner session with plan and model", info.get("planBody") == "# Plan vom Runner" and info.get("resumeSessionReference") == "bbbbbbbb-0000-4000-8000-000000000001" and info.get("model") == "sonnet", info)
+cmd(run["id"], "submit", result("passed"))
+run_step("validation")
+run_step("tester", "failed")
+check("stage 3: blocked after the failed tester", (execution(t3)["state"], execution(t3).get("reason"), execution(t3)["step"]) == ("blocked", "step_failed", "tester") and jobs() == [], execution(t3))
+err, text, _ = tool(agent, "retry_pipeline_step", {"taskID": t3, "step": "tester"})
+check("stage 3: retry by a connection starts nothing", not err and execution(t3).get("reason") == "continue_required" and jobs() == [], text[:200])
+st, p = rest("POST", f"/v1/tasks/{t3}/pipeline/execution/continue", {"planVersion": 1})
+check("stage 3: continued by the person", st == 200 and p["execution"]["state"] == "running", p)
+run_step("tester")
+job, done = run_step("review")
+check("stage 3: last step waits for review, execution completed", done["job"]["state"] == "awaiting_review" and execution(t3)["state"] == "completed", done)
+check("stage 3: audit of the execution", [a for a in actions(pipeline(t3)) if a.startswith("execution_")] == ["execution_completed", "execution_continued", "execution_started"], actions(pipeline(t3)))
+check("stage 3: stop without execution", reason(rest("POST", f"/v1/tasks/{t3}/pipeline/execution/stop", {})) == (409, "no_execution"))
+check("stage 3: nothing to run", reason(rest("POST", f"/v1/tasks/{t3}/pipeline/execution", {"id": "aaaaaaaa-0000-4000-8000-000000000003", "bindingID": binding})) == (409, "nothing_to_run"))
+
+# MCP start needs runs:write; stop ends the job.
+t4 = new_task("Stage three MCP")
+err, text, _ = tool(agent, "start_pipeline_execution", {"taskID": t4, "bindingID": binding})
+check("stage 3: MCP start without runs scope refused", err, text[:200])
+starter = oauth_token(SCOPES + " runs:read runs:write", "Pipeline Starter")
+err, text, data = tool(starter, "start_pipeline_execution", {"taskID": t4, "bindingID": binding})
+check("stage 3: MCP start", not err and data["execution"]["state"] == "running", text[:300])
+st, p = rest("POST", f"/v1/tasks/{t4}/pipeline/execution/stop", {})
+check("stage 3: stopped by the person", st == 200 and p["execution"]["state"] == "stopped" and jobs() == [], p)
+check("stage 3: migration", sql("SELECT count(*) FROM task_pipeline_executions") == "2"
+      and sql("SELECT count(*) FROM pragma_table_info('agent_jobs') WHERE name LIKE 'pipeline_%'") == "3"
+      and sql("SELECT count(*) FROM pragma_table_info('runner_devices') WHERE name = 'pipeline_seen_at'") == "1")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed"); sys.exit(1)
