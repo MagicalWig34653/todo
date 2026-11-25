@@ -34,6 +34,12 @@ extension MCPController {
                           "releaseID": Schema.uuid("Optional idempotency key (UUID). The same call with the same releaseID returns the existing job instead of a second one; different data under the same releaseID fails with release_id_conflict."),
                           "origin": Schema.string("manual (default) or scheduler. scheduler is the guard (watcher on the Mac): it only works if the person allowed automatic starts in the account settings and on this card (one-time permission set in the app, never by an agent), the card is not done and not blocked; otherwise auto_start_disabled_for_account, auto_start_not_enabled, task_done or task_blocked. A start more than 5 minutes after plannedAt is audited as catch-up.", values: ["manual", "scheduler"])],
              required: ["taskID"]),
+        Tool(name: "start_pipeline_execution", scope: "runs:write",
+             description: "Start the pipeline of one card on a paired Mac through an EXISTING project binding: the server queues one runner job per step (planner, developer, validation, tester, review, as the project switched them on) and waits for the person at the plan approval. Owner rights required, same rules as start_agent_job. Refused: execution_active, execution_id_conflict (same executionID, other data), nothing_to_run. Follow the state with get_task_pipeline (execution); stop it with stop_agent_job on execution.jobID. Continuing a paused execution is a person's decision in the app.",
+             properties: ["taskID": Schema.uuid("Task id (its project must be in this connection's grant)."),
+                          "bindingID": Schema.uuid("Runner binding of the task's project (see list_runner_devices)."),
+                          "executionID": Schema.uuid("Optional idempotency key (UUID); the same call returns the existing execution.")],
+             required: ["taskID", "bindingID"]),
         Tool(name: "stop_agent_job", scope: "runs:write",
              description: "Stop a queued, claimed, running or waiting local runner job (state becomes cancelled; the runner confirms termination later). Owner rights required.",
              properties: ["jobID": Schema.uuid("Agent job id (see list_agent_jobs).")],
@@ -90,6 +96,13 @@ extension MCPController {
                 previousJobID: nil, taskRevision: task.version, mode: mode, scope: scope), user: user, origin: releaseOrigin,
                 integrationGrant: releaseOrigin == .scheduler ? try grant.requireID() : nil, on: db)
             return try .encoded(job)
+        case "start_pipeline_execution":
+            let task = try await task(uuid(a["taskID"]), user: user, grant: grant, db: db)
+            let executionID: UUID
+            if a["executionID"].isNull { executionID = UUID() }
+            else { guard let raw = a["executionID"].string, let parsed = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_execution_id") }; executionID = parsed }
+            return try .encoded(try await WorkflowService(user: user, db: db, allowedProjects: allowed).startExecution(task.requireID(),
+                StartExecutionRequest(id: executionID, bindingID: uuid(a["bindingID"])), actor: await actor(grant: grant, db: db)))
         case "stop_agent_job":
             let jobID = try uuid(a["jobID"])
             guard let job = try await AgentJob.find(jobID, on: db), allowed.contains(job.projectID) else { throw Abort(.notFound) }

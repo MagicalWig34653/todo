@@ -9,6 +9,9 @@ struct PipelineController: RouteCollection {
         task.post("plan", "decision", use: decide)
         task.put("pipeline", "steps", ":step", use: setStep)
         task.post("pipeline", "steps", ":step", "retry", use: retryStep)
+        task.post("pipeline", "execution", use: start)
+        task.post("pipeline", "execution", "continue", use: resume)
+        task.post("pipeline", "execution", "stop", use: stop)
         let project = routes.grouped("v1", "projects", ":id")
         project.get("pipeline-settings", use: settings)
         project.patch("pipeline-settings", use: updateSettings)
@@ -41,6 +44,20 @@ struct PipelineController: RouteCollection {
         let c = try await context(req)
         guard let step = req.parameters.get("step") else { throw Abort(.badRequest, reason: "invalid_step") }
         return try await c.service.retryPipelineStep(c.taskID, step: step, req.content.decode(RetryPipelineStepRequest.self), actor: c.actor)
+    }
+    @Sendable func start(_ req: Request) async throws -> PipelineDTO {
+        let c = try await context(req)
+        return try await c.service.startExecution(c.taskID, req.content.decode(StartExecutionRequest.self), actor: c.actor)
+    }
+    /// The body is optional.
+    @Sendable func resume(_ req: Request) async throws -> PipelineDTO {
+        let c = try await context(req)
+        let body = (req.body.data?.readableBytes ?? 0) > 0 ? try req.content.decode(ContinueExecutionRequest.self) : ContinueExecutionRequest()
+        return try await c.service.continueExecution(c.taskID, body, actor: c.actor)
+    }
+    @Sendable func stop(_ req: Request) async throws -> PipelineDTO {
+        let c = try await context(req)
+        return try await c.service.stopExecution(c.taskID, actor: c.actor)
     }
     @Sendable func settings(_ req: Request) async throws -> PipelineSettingsDTO {
         let c = try await context(req)

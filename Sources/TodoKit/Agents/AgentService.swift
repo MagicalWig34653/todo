@@ -31,6 +31,9 @@ struct AgentRunCommand: Content {
     let prompt: String?
     let options: [String]?
     let result: AgentResult?
+    /// Pipeline jobs only (submit): `passed` or `failed`, and the plan of a passed planner step.
+    var outcome: String? = nil
+    var plan: String? = nil
     /// Reconciliation is an observation by the local runner, never an instruction to restart.
     let observation: String?
 }
@@ -48,10 +51,14 @@ struct AgentJobDTO: Content {
     let state: String
     let progress: String
     let result: AgentResult?
+    /// Present only on jobs of a pipeline execution.
+    let pipelineStep: String?
+    let pipelineExecutionID: UUID?
     init(_ job: AgentJob) throws {
         id = try job.requireID(); taskID = job.taskID; projectID = job.projectID
         bindingID = job.bindingID; requestedBy = job.requestedBy; taskRevision = job.taskRevision
         previousJobID = job.previousJobID
+        pipelineStep = job.pipelineStep; pipelineExecutionID = job.pipelineExecutionID
         mode = job.mode; scope = job.scope; state = job.state; progress = job.progress
         result = try job.result.map { try JSONDecoder().decode(AgentResult.self, from: Data($0.utf8)) }
     }
@@ -97,6 +104,7 @@ struct AgentService {
                 try await job.save(on: db)
                 try await event(job, kind: "owner_changed", on: db)
             }
+            try await PipelineExecution.stopAll(bindingIDs: [bindingID], on: db)
             if jobs.isEmpty, try await AgentRun.query(on: db).filter(\.$bindingID == bindingID).count() == 0 { try await binding.delete(on: db) }
         }
     }
@@ -127,36 +135,87 @@ struct AgentService {
 
     /// The device row serializes claims across bindings referring to the same local repository.
     /// An expired run keeps its slot until a runner explicitly confirms that the process stopped.
-    static func claim(jobID: UUID, deviceID: UUID, on database: any Database) async throws -> AgentRunDTO {
-        try await database.transaction { db in
+    /// `pipeline` is true when the runner asked with `?pipeline=1`; only such a runner may take a pipeline job.
+    static func claim(jobID: UUID, deviceID: UUID, pipeline: Bool = false, on database: any Database) async throws -> AgentRunDTO {
+        // Read outside the transaction: the task lock has to come before the first consistent read.
+        let pipelineTask = try await AgentJob.find(jobID, on: database).flatMap { $0.pipelineExecutionID == nil ? nil : $0.taskID }
+        let outcome: ClaimOutcome = try await database.transaction { db in
             try await lockRow(table: RunnerDevice.schema, id: deviceID, on: db)
+            if let pipelineTask { try await lockRow(table: TodoTask.schema, id: pipelineTask, on: db) }
             guard let device = try await RunnerDevice.find(deviceID, on: db), device.revokedAt == nil,
                   let job = try await AgentJob.find(jobID, on: db),
                   let binding = try await ProjectRunnerBinding.find(job.bindingID, on: db) else { throw Abort(.notFound) }
             try await authorized(binding, device: device, on: db)
             guard job.state == "queued" else { throw Abort(.conflict, reason: "job_not_queued") }
+            if job.pipelineExecutionID != nil, !pipeline { throw Abort(.conflict, reason: "pipeline_runner_required") }
             let bindings = try await ProjectRunnerBinding.query(on: db).filter(\.$deviceID == deviceID)
                 .filter(\.$repositoryKey == binding.repositoryKey).all()
             let ids = try bindings.map { try $0.requireID() }
             guard try await AgentRun.query(on: db).filter(\.$bindingID ~~ ids).filter(\.$endedAt == nil).count() == 0 else {
                 throw Abort(.conflict, reason: "repository_busy_reconcile_first")
             }
-            guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID,
-                  task.version == job.taskRevision else { throw Abort(.conflict, reason: "task_revision_changed") }
+            guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID else {
+                throw Abort(.conflict, reason: "task_revision_changed")
+            }
+            if job.pipelineExecutionID != nil {
+                // The card content counts, not its revision. A refused job is cancelled, so the transaction commits.
+                if let reason = try await PipelineExecution.refuseClaim(job, task: task, on: db) { return .refused(reason) }
+                job.taskRevision = task.version
+            } else {
+                guard task.version == job.taskRevision else { throw Abort(.conflict, reason: "task_revision_changed") }
+            }
             let run = try AgentRun(jobID: jobID, bindingID: binding.requireID(), deviceID: deviceID,
                                generation: 1, leaseUntil: Date().addingTimeInterval(leaseDuration), endedAt: nil)
             try await run.save(on: db)
             job.state = "claimed"
+            job.progress = ""
             try await job.save(on: db)
             try await event(job, run: run, kind: "claimed", on: db)
             try await appendLockedActivity(taskID: job.taskID, actorType: .run, actorID: run.requireID(), kind: "agent.claimed", subjectID: job.id, on: db)
-            return try await AgentRunDTO(run, job: job, on: db)
+            if let step = job.pipelineStep.flatMap(PipelineStepName.init(rawValue:)) {
+                try await PipelineExecution.changeStep(job.taskID, step, state: PipelineStepState.running, note: nil,
+                    actor: PipelineExecution.runActor(run.requireID()), on: db)
+            }
+            return .claimed(try await AgentRunDTO(run, job: job, on: db))
+        }
+        switch outcome {
+        case .claimed(let run): return run
+        case .refused(let reason): throw Abort(.conflict, reason: reason)
+        }
+    }
+
+    private enum ClaimOutcome: Sendable {
+        case claimed(AgentRunDTO)
+        case refused(String)
+    }
+
+    /// A waiting job the runner cannot take right now (for example the budget brake): the reason becomes its progress.
+    static func hold(jobID: UUID, deviceID: UUID, reason: String, on database: any Database) async throws -> AgentJobDTO {
+        let value = SecretFilter.redact(try text(reason, max: PipelineExecution.maxHold)).text
+        return try await database.transaction { db in
+            try await lockRow(table: RunnerDevice.schema, id: deviceID, on: db)
+            guard let device = try await RunnerDevice.find(deviceID, on: db), device.revokedAt == nil,
+                  let job = try await AgentJob.find(jobID, on: db),
+                  let binding = try await ProjectRunnerBinding.find(job.bindingID, on: db) else { throw Abort(.notFound) }
+            try await authorized(binding, device: device, on: db)
+            guard job.state == "queued" else { throw Abort(.conflict, reason: "job_not_queued") }
+            if job.progress != value {
+                job.progress = value
+                try await job.save(on: db)
+                try await event(job, kind: "held", detail: value, on: db)
+            }
+            return try AgentJobDTO(job)
         }
     }
 
     static func command(runID: UUID, deviceID: UUID, action: String, body: AgentRunCommand, on database: any Database) async throws -> AgentRunDTO {
-        try await database.transaction { db in
+        var pipelineTask: UUID?
+        if let initial = try await AgentRun.find(runID, on: database), initial.deviceID == deviceID,
+           let job = try await AgentJob.find(initial.jobID, on: database), job.pipelineExecutionID != nil { pipelineTask = job.taskID }
+        let lockedTask = pipelineTask
+        return try await database.transaction { db in
             try await lockRow(table: RunnerDevice.schema, id: deviceID, on: db)
+            if let lockedTask { try await lockRow(table: TodoTask.schema, id: lockedTask, on: db) }
             guard let device = try await RunnerDevice.find(deviceID, on: db), device.revokedAt == nil,
                   let run = try await AgentRun.find(runID, on: db), run.deviceID == deviceID,
                   let job = try await AgentJob.find(run.jobID, on: db),
@@ -171,12 +230,17 @@ struct AgentService {
             guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID else { throw Abort(.notFound) }
             guard run.generation == body.generation else { throw Abort(.conflict, reason: "stale_generation") }
             guard run.endedAt == nil else { throw Abort(.gone, reason: "run_ended") }
+            // What the pipeline has to do once the job is saved.
+            var afterwards: (@Sendable () async throws -> Void)?
+            let isPipeline = job.pipelineExecutionID != nil
             if action == "reconcile" {
                 guard ["alive", "paused", "stopped"].contains(body.observation ?? "") else { throw Abort(.badRequest) }
                 if body.observation == "stopped" {
                     run.endedAt = Date()
+                    let wasOpen = PipelineExecution.openJobStates.contains(job.state)
                     if job.state != "cancelled" { job.state = "failed" }
                     try await WorkflowMirror.runnerWithdrawn(jobID: job.requireID(), on: db)
+                    if isPipeline, wasOpen { afterwards = { try await PipelineExecution.failed(job, runID: runID, on: db) } }
                 } else {
                     guard job.state != "cancelled" else { throw Abort(.gone, reason: "stop_local_process") }
                     if body.observation == "paused" {
@@ -231,18 +295,37 @@ struct AgentService {
                     guard result.references.count + result.checks.count + result.limitations.count <= 100 else { throw Abort(.badRequest) }
                     for value in result.references + result.checks + result.limitations { _ = try text(value) }
                     job.result = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
-                    try await WorkflowMirror.runnerSubmitted(job: job, runID: runID, summary: result.summary, on: db)
-                    job.state = "awaiting_review"
                     run.endedAt = Date()
+                    if isPipeline {
+                        let submission = try PipelineExecution.Submission(step: job.pipelineStep, outcome: body.outcome, plan: body.plan,
+                            summary: result.summary)
+                        let trigger = try await PipelineExecution.submitted(job, runID: runID, submission, on: db)
+                        let taskID = job.taskID
+                        afterwards = { try await PipelineExecution.advance(taskID, trigger, on: db) }
+                    } else {
+                        try await WorkflowMirror.runnerSubmitted(job: job, runID: runID, summary: result.summary, on: db)
+                        job.state = "awaiting_review"
+                    }
                 case "stop", "fail":
                     job.state = action == "stop" ? "cancelled" : "failed"
                     run.endedAt = Date()
                     try await WorkflowMirror.runnerWithdrawn(jobID: job.requireID(), on: db)
+                    if isPipeline {
+                        if action == "fail" {
+                            afterwards = { try await PipelineExecution.failed(job, runID: runID, on: db) }
+                        } else {
+                            afterwards = {
+                                guard let execution = try await PipelineExecution.active(of: job, on: db) else { return }
+                                try await PipelineExecution.stop(execution, actor: PipelineExecution.runActor(runID), on: db)
+                            }
+                        }
+                    }
                 default: throw Abort(.notFound)
                 }
             }
             try await run.save(on: db)
             try await job.save(on: db)
+            try await afterwards?()
             // Heartbeats and replaceable progress do not create a permanent log stream.
             if !["heartbeat", "progress"].contains(action) {
                 try await event(job, run: run, kind: action, detail: body.observation ?? "", on: db)
@@ -346,8 +429,10 @@ extension AgentService {
         guard ["stop", "accept", "request_changes"].contains(decision) else { throw Abort(.badRequest) }
         let initial = try await humanJob(jobID, user: user, on: database)
         guard let binding = try await ProjectRunnerBinding.find(initial.bindingID, on: database) else { throw Abort(.notFound) }
+        let pipelineTask = initial.pipelineExecutionID == nil ? nil : initial.taskID
         return try await database.transaction { db in
             try await lockRow(table: RunnerDevice.schema, id: binding.deviceID, on: db)
+            if let pipelineTask { try await lockRow(table: TodoTask.schema, id: pipelineTask, on: db) }
             let job = try await humanJob(jobID, user: user, on: db)
             if decision == "stop" {
                 guard ["queued", "claimed", "running", "waiting_for_answer"].contains(job.state) else { throw Abort(.conflict) }
@@ -364,6 +449,9 @@ extension AgentService {
                 try await WorkflowMirror.runnerDecided(job: job, accepted: decision == "accept", user: user, on: db)
             }
             try await job.save(on: db)
+            if decision == "stop", let execution = try await PipelineExecution.active(of: job, on: db) {
+                try await PipelineExecution.stop(execution, actor: .person(user), on: db)
+            }
             try await AgentService.event(job, kind: decision, detail: try user.requireID().uuidString, on: db)
             try await appendLockedActivity(taskID: job.taskID, actorType: .person, actorID: user.requireID(), kind: "agent.\(decision)", subjectID: job.id, on: db)
             return try AgentJobDTO(job)

@@ -76,6 +76,7 @@ final class TaskPipelineEvent: Model, @unchecked Sendable {
     @Field(key: "task_id") var taskID: UUID
     @Field(key: "sequence") var sequence: Int
     /// `plan_written` | `plan_approved` | `plan_changes_requested` | `step_changed` | `step_retried`
+    /// | `execution_started` | `execution_continued` | `execution_stopped` | `execution_completed`
     @Field(key: "action") var action: String
     @OptionalField(key: "plan_version") var planVersion: Int?
     @OptionalField(key: "step") var step: String?
@@ -214,6 +215,8 @@ struct PipelineDTO: Content {
     let fixRounds: FixRoundsDTO
     /// The plan is `proposed` and the project has an approval step.
     let waitingApproval: Bool
+    /// Stage 3: absent while the card never ran.
+    var execution: PipelineExecutionDTO? = nil
 }
 
 struct SetPlanRequest: Content {

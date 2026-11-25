@@ -23,6 +23,7 @@ struct ReleaseJobRequest: Content {
     let mode: String
     let scope: String
 }
+struct HoldJobRequest: Content { let reason: String }
 struct AnswerRequest: Content { let value: String }
 struct ReviewRequest: Content { let decision: String }
 struct AgentQuestionDTO: Content {
@@ -37,6 +38,8 @@ struct AgentDetail: Content {
     let task: TaskDTO
     let questions: [AgentQuestionDTO]
     let events: [AgentEventDTO]
+    /// Only on the runner's view of a pipeline job.
+    var pipeline: RunnerPipelineDTO? = nil
     init(_ job: AgentJob, on db: any Database) async throws {
         self.job = try AgentJobDTO(job)
         guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID else { throw Abort(.notFound) }
@@ -106,6 +109,7 @@ struct AgentController: RouteCollection {
         runner.get("jobs", use: queued)
         runner.post("jobs", ":id", "claim", use: claim)
         runner.get("jobs", ":id", use: runnerDetail)
+        runner.post("jobs", ":id", "hold", use: hold)
         runner.get("runs", use: runs)
         runner.post("runs", ":id", ":action", use: command)
     }
@@ -259,6 +263,9 @@ struct AgentController: RouteCollection {
             device.revokedAt = Date()
             try await device.save(on: db)
             // Revocation cannot confirm termination of a local process. Its repository stays occupied.
+            // Pipelines on this device cannot go on: stop them first (their open jobs are cancelled and fenced).
+            let bindingIDs = try await ProjectRunnerBinding.query(on: db).filter(\.$deviceID == deviceID).all().map { try $0.requireID() }
+            try await PipelineExecution.stopAll(bindingIDs: bindingIDs, on: db)
             for run in try await AgentRun.query(on: db).filter(\.$deviceID == deviceID).filter(\.$endedAt == nil).all() {
                 run.generation += 1
                 run.leaseUntil = Date()
@@ -326,20 +333,40 @@ struct AgentController: RouteCollection {
         return result
     }
 
+    /// `?pipeline=1`: this runner understands pipeline jobs. Remembered on the device for the PWA.
+    private func pipelineRunner(_ req: Request, _ device: RunnerDevice) async throws -> Bool {
+        guard req.query[String.self, at: "pipeline"] == "1" else { return false }
+        if device.pipelineSeenAt == nil {
+            device.pipelineSeenAt = Date()
+            try await device.save(on: req.db)
+        }
+        return true
+    }
+
     @Sendable func queued(_ req: Request) async throws -> [AgentJobDTO] {
         let device = try await device(req)
+        let pipeline = try await pipelineRunner(req, device)
         let bindings = try await ProjectRunnerBinding.query(on: req.db).filter(\.$deviceID == device.requireID()).all()
         var result: [AgentJobDTO] = []
         for binding in bindings {
             guard try await AgentService.isAuthorized(binding, device: device, on: req.db) else { continue }
-            result += try await AgentJob.query(on: req.db).filter(\.$bindingID == binding.requireID()).filter(\.$state == "queued").all().map(AgentJobDTO.init)
+            var jobs = try await AgentJob.query(on: req.db).filter(\.$bindingID == binding.requireID()).filter(\.$state == "queued").all()
+            if !pipeline { jobs = jobs.filter { $0.pipelineExecutionID == nil } }
+            result += try jobs.map(AgentJobDTO.init)
         }
         return result
     }
 
     @Sendable func claim(_ req: Request) async throws -> AgentRunDTO {
         let device = try await device(req)
-        return try await AgentService.claim(jobID: id(req), deviceID: device.requireID(), on: req.db)
+        let pipeline = try await pipelineRunner(req, device)
+        return try await AgentService.claim(jobID: id(req), deviceID: device.requireID(), pipeline: pipeline, on: req.db)
+    }
+
+    @Sendable func hold(_ req: Request) async throws -> AgentJobDTO {
+        let device = try await device(req)
+        return try await AgentService.hold(jobID: id(req), deviceID: device.requireID(),
+            reason: req.content.decode(HoldJobRequest.self).reason, on: req.db)
     }
 
     @Sendable func command(_ req: Request) async throws -> AgentRunDTO {
@@ -365,6 +392,8 @@ struct AgentController: RouteCollection {
         guard let job = try await AgentJob.find(id(req), on: req.db),
               let binding = try await ProjectRunnerBinding.find(job.bindingID, on: req.db) else { throw Abort(.notFound) }
         try await AgentService.authorized(binding, device: device, on: req.db)
-        return try await AgentDetail(job, on: req.db)
+        var detail = try await AgentDetail(job, on: req.db)
+        detail.pipeline = try await PipelineExecution.runnerInfo(job, on: req.db)
+        return detail
     }
 }

@@ -120,6 +120,7 @@ enum AccountLock {
             try await job.save(on: db)
             try await AgentService.event(job, kind: "account_disabled", on: db)
         }
+        try await PipelineExecution.stopAll(bindingIDs: bindingIDs, requestedBy: uid, on: db)
         // Runs of the account's devices that belong to jobs of other people: fence them as well.
         if !deviceIDs.isEmpty {
             for run in try await AgentRun.query(on: db).filter(\.$deviceID ~~ deviceIDs).filter(\.$endedAt == nil).all() {

@@ -5,7 +5,7 @@ import Vapor
 extension MCPController {
     static let pipelineTools: [Tool] = [
         Tool(name: "get_task_pipeline", scope: "tasks:read",
-             description: "Read the pipeline of one task: the current plan (version, Markdown body, state proposed|approved|changes_requested, decision comment), the six steps planner, approval, developer, validation, tester, review with their state and note, and the latest audit entries. Poll it (or use wait_for_events) to see whether your plan was decided.",
+             description: "Read the pipeline of one task: the current plan (version, Markdown body, state proposed|approved|changes_requested, decision comment), the six steps planner, approval, developer, validation, tester, review with their state and note, the latest audit entries and, if the card ran on a Mac, execution (state running|waiting_approval|blocked|paused|completed|stopped, reason, step, job). Poll it (or use wait_for_events) to see whether your plan was decided.",
              properties: ["taskID": taskIDField], required: ["taskID"]),
         Tool(name: "set_task_plan", scope: "tasks:write",
              description: "Write the plan of a task for approval (Markdown, 1 to 20000 characters; secrets are masked). A new text is a new version in state proposed, needs a new approval and resets the steps developer, validation, tester and review. Repeating the same text while it is proposed changes nothing. Pass expectedVersion (0 = no plan yet) to avoid overwriting someone else's version (plan_changed). Do not decide your own plan.",
