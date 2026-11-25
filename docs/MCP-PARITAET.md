@@ -193,6 +193,10 @@ Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflic
 Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.
 
 
+## Wiederholungsregeln (25.11.2026, Handbuch 1.42.0, Karte 21CF716D)
+
+- `update_task_planning.recurrence` und `get_task_planning` tragen optional `weekdays` (Array 1 bis 7, nur `weekly`), `basis` (`due`|`completion`) und `monthDay` (1 bis 31, nur `monthly`); gleiche Fachregel und Validierung wie REST `PUT /v1/planning/tasks/{id}` und Sync `task.planning` (`RecurrenceRule.validate`, `invalid_recurrence`). Kein neues Werkzeug, kein neuer Scope. `null` für ein neues Feld gilt als nicht gesetzt; ohne die Felder bleibt die Antwort byte-gleich.
+
 ## Offene Reviews beim Erledigen und Rückzug (25.11.2026, Handbuch 1.41.0, Karte 6515CAFA)
 
 - `withdraw_review` (`taskID`, `note?`; Scope `tasks:write`, Klasse B; ReviewDTO) gibt es nur über MCP: Nur die anfragende Verbindung zieht ihre eigene offene Review zurück (`state` `withdrawn`, `decidedBy` leer, Aktivität `review.withdrawn`; Karte in `in_review` zurück nach `in_progress`/"In Arbeit", sonst unverändert). Fehler `no_pending_review` (409), `not_review_requester` (403, auch für Runner-Reviews), `invalid_note`, `not_found` außerhalb des Grants. Keine Vollmacht, kein Zitat: ein Rückzug ist keine Entscheidung. Kein REST-Pendant, weil REST nur die Person kennt und diese entscheidet (`/review/decision`) oder die Karte erledigt (Review wird automatisch zurückgezogen).
