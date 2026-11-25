@@ -644,15 +644,40 @@ final class PipelineTests: XCTestCase {
         }
     }
 
-    func testAccountDeletionKeepsThePlanOnASurvivingCard() async throws {
+    func testAccountDeletionKeepsThePlanOnASurvivingCardWithoutTheName() async throws {
         try await run { e in
             let task = try await newTask(e)
             let author = try await person(e, name: "Leaving", role: .edit)
             expect(try await putPlan(e, task, ["body": "A"], token: author.token), .ok)
+            expect(try await decide(e, task, ["decision": "approve", "version": 1], token: author.token), .ok)
+            expect(try await putStep(e, task, "developer", ["state": "running"], token: author.token), .ok)
+            expect(try await putStep(e, task, "tester", ["state": "running", "agentName": "tester@mac"], token: author.token), .ok)
+            // No copy of the account name is stored; it is read from the account.
+            let id = try XCTUnwrap(UUID(uuidString: task))
+            let storedPlan = try await TaskPlan.query(on: e.db).filter(\.$taskID == id).first()
+            XCTAssertNil(storedPlan?.authorLabel); XCTAssertNil(storedPlan?.decidedByLabel)
+            let storedSteps = try await TaskPipelineStep.query(on: e.db).filter(\.$taskID == id).all()
+            XCTAssertEqual(storedSteps.compactMap(\.actorLabel), ["tester@mac"])
+            let storedEvents = try await TaskPipelineEvent.query(on: e.db).filter(\.$taskID == id).all()
+            XCTAssertEqual(storedEvents.compactMap(\.actorLabel), ["tester@mac"])
+
+            author.user.displayName = "Renamed"
+            try await author.user.save(on: e.db)
+            let named = try await get(e, task)
+            XCTAssertEqual(plan(named)?["authorLabel"] as? String, "Renamed")
+            XCTAssertEqual(plan(named)?["decidedByLabel"] as? String, "Renamed")
+            XCTAssertEqual(step(named.body, "developer")?["actorLabel"] as? String, "Renamed")
+            XCTAssertEqual(events(named.body).map { $0["actorLabel"] as? String ?? "?" }, ["tester@mac", "Renamed", "Renamed", "Renamed"])
+
             try await AccountDeletion.delete(userID: author.user.requireID(), on: e.db)
             let r = try await get(e, task)
-            XCTAssertEqual(plan(r)?["authorLabel"] as? String, "Leaving")
-            XCTAssertEqual(events(r.body).count, 1)
+            XCTAssertEqual(plan(r)?["state"] as? String, "approved")
+            XCTAssertNil(plan(r)?["authorLabel"]); XCTAssertNil(plan(r)?["decidedByLabel"])
+            XCTAssertNil(step(r.body, "developer")?["actorLabel"])
+            XCTAssertEqual(step(r.body, "tester")?["actorLabel"] as? String, "tester@mac")
+            XCTAssertEqual(events(r.body).count, 4)
+            XCTAssertEqual(events(r.body).compactMap { $0["actorLabel"] as? String }, ["tester@mac"])
+            XCTAssertFalse("\(r.body ?? [:])".contains("Renamed"))
         }
     }
 
