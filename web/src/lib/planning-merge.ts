@@ -1,5 +1,6 @@
 import type { PlanningTask } from './api.js';
 import { toLocalInput } from './planning.js';
+import { recurrenceExtras, type RecurrenceBasis } from './recurrence.js';
 
 /** The editable planning fields as the form holds them (strings for inputs, so values compare exactly). */
 export interface PlanningForm {
@@ -9,13 +10,19 @@ export interface PlanningForm {
 	frequency: string;
 	interval: number;
 	until: string;
+	/** ISO weekdays (weekly only), empty = plain week interval. */
+	weekdays: number[];
+	basis: RecurrenceBasis;
+	/** Day of the month (monthly only), null = as before. */
+	monthDay: number | null;
 	reminders: string[];
 }
 export type PlanningField = keyof PlanningForm;
-export const PLANNING_FIELDS: PlanningField[] = ['due', 'planned', 'priority', 'frequency', 'interval', 'until', 'reminders'];
+export const PLANNING_FIELDS: PlanningField[] = ['due', 'planned', 'priority', 'frequency', 'interval', 'until', 'weekdays', 'basis', 'monthDay', 'reminders'];
 
 /** Form values for a stored planning. */
 export function planningForm(pt: PlanningTask): PlanningForm {
+	const extras = recurrenceExtras(pt.recurrence);
 	return {
 		due: toLocalInput(pt.dueAt),
 		planned: toLocalInput(pt.plannedAt),
@@ -23,6 +30,9 @@ export function planningForm(pt: PlanningTask): PlanningForm {
 		frequency: pt.recurrence?.frequency ?? 'none',
 		interval: pt.recurrence?.interval ?? 1,
 		until: toLocalInput(pt.recurrence?.until),
+		weekdays: extras.weekdays,
+		basis: extras.basis,
+		monthDay: extras.monthDay,
 		reminders: [...pt.reminders]
 	};
 }

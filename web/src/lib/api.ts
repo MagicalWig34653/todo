@@ -275,6 +275,12 @@ export interface Recurrence {
 	interval: number;
 	timeZone: string;
 	until?: string | null;
+	/** ISO weekdays 1 = Monday .. 7 = Sunday; only for `weekly`, not empty, unique (contracts, optional). */
+	weekdays?: number[];
+	/** `due` (default, from the due date) or `completion` (from the day the card is completed). */
+	basis?: 'due' | 'completion';
+	/** Day of the month 1..31, only for `monthly`; shorter months use their last day. */
+	monthDay?: number;
 }
 export interface PlanningData {
 	dueAt?: string | null;
