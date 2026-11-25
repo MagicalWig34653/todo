@@ -735,8 +735,14 @@ final class PipelineStage2Tests: XCTestCase {
                 let count = try await rows(e, table)
                 XCTAssertEqual(count, 0, table)
             }
-            let columns = try await sql.raw("SELECT name FROM pragma_table_info('task_pipeline_steps')").all().map { try $0.decode(column: "name", as: String.self) }
-            if sql.dialect.name == "sqlite" { XCTAssertTrue(columns.contains("plan_version")) }
+            if sql.dialect.name == "sqlite" {
+                let columns = try await sql.raw("SELECT name FROM pragma_table_info('task_pipeline_steps')").all().map { try $0.decode(column: "name", as: String.self) }
+                XCTAssertTrue(columns.contains("plan_version"))
+            } else {
+                let columns = try await sql.raw("SELECT column_name AS name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_pipeline_steps'")
+                    .all().map { try $0.decode(column: "name", as: String.self) }
+                XCTAssertTrue(columns.contains("plan_version"))
+            }
             // Reverting and applying the settings migration again works on an empty database.
             try await CreateProjectPipelineSettings().revert(on: e.db)
             try await CreateProjectPipelineSettings().prepare(on: e.db)
