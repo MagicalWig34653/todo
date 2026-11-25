@@ -16,6 +16,8 @@ const RUNNING = NOW_SEED.runningTasks + NOW_SEED.sessions;
 const DESKTOP = { width: 1280, height: 900 };
 
 test.describe.configure({ mode: 'serial' });
+// The overview answer is rewritten with `page.route`; WebKit does not route requests of a page under a service worker.
+test.use({ serviceWorkers: 'block' });
 let page: Page;
 let helper: APIRequestContext;
 let ids: NowIds;
@@ -68,6 +70,17 @@ test('pictures of the seeded page: light and dark, desktop, phone and 320 px', a
 			await expect(page.getByTestId('now-project').first()).toBeVisible();
 			await page.waitForTimeout(500);
 			await page.screenshot({ path: `${SHOTS}/${PREFIX}-${name}-${suffix}.png`, fullPage: true });
+			if (PREFIX === 'vorher' || width === 320) continue;
+			// Everything the redesign folds away, unfolded: all waiting entries, no life sign, one project.
+			await block().getByTestId('now-waiting-toggle').click();
+			await block().getByTestId('now-silent').locator('summary').click();
+			await openProject(ids.projects.todolino);
+			await page.evaluate(() => {
+				(document.activeElement as HTMLElement | null)?.blur();
+				window.scrollTo(0, 0);
+			});
+			await page.waitForTimeout(500);
+			await page.screenshot({ path: `${SHOTS}/${PREFIX}-offen-${name}-${suffix}.png`, fullPage: true });
 		}
 	}
 	await page.emulateMedia({ colorScheme: null, reducedMotion: null });
@@ -95,7 +108,7 @@ test('four tiles show the counted numbers: four in a row on wide screens, two by
 	await page.setViewportSize(DESKTOP);
 	// The list under "Zuletzt fertig" shows five of the six counted cards and says so.
 	await expect(block().getByTestId('now-done-item')).toHaveCount(5);
-	await expect(block().getByTestId('now-done')).toContainText('5 von 6');
+	await expect(block().getByTestId('now-done')).toContainText('in den letzten 6 Stunden · 5 von 6 gezeigt');
 });
 
 test('a tile leads to its section by mouse and keyboard; "Ohne Lebenszeichen" opens', async () => {
@@ -264,6 +277,7 @@ test('inside a project: builds per build, five events first, waiting entries as 
 	// The server delivers at most five files per project; the page says so instead of claiming a total.
 	await expect(todolino.getByTestId('now-builds')).toContainText('neuesten 5 Dateien');
 
+	await expect(todolino.getByTestId('now-running-item')).toContainText(/60 % · .+ · „Rückfall geschrieben/);
 	const events = todolino.getByTestId('now-event');
 	await expect(events).toHaveCount(5);
 	const more = todolino.getByTestId('now-events-toggle');

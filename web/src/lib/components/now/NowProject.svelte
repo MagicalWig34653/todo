@@ -76,7 +76,7 @@
 								</div>
 							{/if}
 							<p class="text-muted-foreground line-clamp-3 text-[13px] [overflow-wrap:anywhere]">
-								{#if pct !== null}{t('now.percent', { percent: pct })} · {/if}{#if task.lastProgress}{@render time(task.lastProgress.at)} · „{previewText(task.lastProgress.note)}“{:else}{t('now.noNote')}{/if}
+								{#if pct !== null}{t('now.percent', { percent: pct }) + ' · '}{/if}{#if task.lastProgress}{@render time(task.lastProgress.at)}{' · „' + previewText(task.lastProgress.note) + '“'}{:else}{t('now.noNote')}{/if}
 							</p>
 						</li>
 					{/each}

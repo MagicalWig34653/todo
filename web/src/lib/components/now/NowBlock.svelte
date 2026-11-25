@@ -20,6 +20,12 @@
 	const activeKey = (item: NowActive) => `${item.kind}:${item.taskID ?? item.projectID + item.title}`;
 	const heading = 'focus-visible:ring-ring/50 mb-2 flex scroll-mt-16 flex-wrap items-baseline gap-x-2 rounded text-base font-semibold outline-none focus-visible:ring-2';
 	let root = $state<HTMLElement>();
+	/** The list shows five at most; the tile counts all cards of the window, so the difference is said here. */
+	const doneHint = $derived(
+		b.counts.recentlyDone > b.recentlyDone.length
+			? `${t('now.block.doneHint')} · ${t('now.block.doneShown', { shown: b.recentlyDone.length, count: b.counts.recentlyDone })}`
+			: t('now.block.doneHint')
+	);
 
 	/** A tile moves focus and view to its section; "Ohne Lebenszeichen" opens first. */
 	function jump(id: NowTileID) {
@@ -64,7 +70,7 @@
 	{#if b.counts.recentlyDone > 0 || b.recentlyDone.length > 0}
 		<section aria-labelledby="nb-done" data-testid="now-done">
 			<h3 id="nb-done" class={heading} tabindex="-1" data-jump="done">
-				{t('now.block.done')}<span class="text-muted-foreground text-[13px] font-normal">{t('now.block.doneHint')}{#if b.counts.recentlyDone > b.recentlyDone.length} · {t('now.block.doneShown', { shown: b.recentlyDone.length, count: b.counts.recentlyDone })}{/if}</span>
+				{t('now.block.done')}<span class="text-muted-foreground text-[13px] font-normal">{doneHint}</span>
 			</h3>
 			<ul class="bg-card shadow-card divide-y rounded-xl border px-3">
 				{#each uniqueKeys(b.recentlyDone, (d) => d.taskID) as { item: d, key } (key)}
