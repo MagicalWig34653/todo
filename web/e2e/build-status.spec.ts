@@ -81,6 +81,7 @@ async function seedCapture(task: string, filename: string): Promise<string> {
 
 test('Jetzt shows status badges as text, commit short with full title; no badge without status', async () => {
 	await page.goto('/now');
+	await page.getByTestId('now-project').locator('summary').click();
 	const rows = page.getByTestId('now-build');
 	await expect(rows).toHaveCount(4);
 	const row = (label: string) => rows.filter({ hasText: label });

@@ -177,11 +177,14 @@ test('every overview page renders its content without an error', async ({ browse
 	await healthy('/now', async () => {
 		await visible(page.getByTestId('now-view'));
 		await expandAll();
-		// Backend: five artifacts, three of them of one build on one card, a fourth of that build on another card.
+		// Backend: five artifacts, three of them of one build on one card, a fourth of that build on another card: one line
+		// per build (redesign, card B0CF5F73), with the number of its files.
 		const backend = page.getByTestId('now-project').filter({ has: page.getByTestId('now-project-name').getByText('Backend', { exact: true }) });
-		await expect(backend.getByTestId('now-build')).toHaveCount(5);
-		await expect(backend.getByTestId('now-build').filter({ hasText: 'Web 564a6b4' })).toHaveCount(4);
-		await expect(page.getByTestId('now-build')).toHaveCount(15);
+		await expect(backend.getByTestId('now-build')).toHaveCount(2);
+		await expect(backend.getByTestId('now-build').filter({ hasText: 'Web 564a6b4' })).toContainText('4 Dateien');
+		await expect(backend.getByTestId('now-build').filter({ hasText: 'iOS 42' })).toContainText('1 Datei');
+		await expect(page.getByTestId('now-build')).toHaveCount(7);
+		await expect(page.getByTestId('now-build').filter({ hasText: 'Build 7' }).filter({ hasText: '2 Dateien' })).toHaveCount(5);
 	});
 	if (SHOTS) {
 		mkdirSync(SHOTS, { recursive: true });
@@ -191,7 +194,7 @@ test('every overview page renders its content without an error', async ({ browse
 				await page.setViewportSize({ width, height: 900 });
 				await healthy('/now', async () => {
 					await expandAll();
-					await expect(page.getByTestId('now-build')).toHaveCount(15);
+					await expect(page.getByTestId('now-build')).toHaveCount(7);
 				});
 				await page.screenshot({ path: `${SHOTS}/jetzt-${scheme}-${width}.png`, fullPage: true });
 			}

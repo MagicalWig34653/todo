@@ -84,13 +84,16 @@ test.beforeAll(async ({ browser }) => {
 	await expect(project('Todolino Jetzt')).toBeVisible();
 });
 
-test('shows header, live badge, stand time and the active project expanded', async () => {
+test('shows header, live badge, stand time and the active project as a closed row that opens', async () => {
 	await expect(page.getByTestId('view-heading')).toHaveText('Jetzt');
 	await expect(page.getByTestId('now-live')).toContainText('Live');
 	await expect(page.getByTestId('now-asof')).toContainText('Stand');
 	await expect(page).toHaveTitle(/Jetzt/);
 	await expect(page.getByRole('link', { name: 'Jetzt' }).or(page.getByRole('button', { name: 'Jetzt' })).first()).toBeVisible();
+	// Below the block "Jetzt" the project rows start closed (redesign, card B0CF5F73); opening one is stored for this device.
 	const row = project('Todolino Jetzt');
+	await expect(row).toHaveJSProperty('open', false);
+	await summaryOf('Todolino Jetzt').click();
 	await expect(row).toHaveJSProperty('open', true);
 	await expect(summaryOf('Todolino Jetzt').getByTestId('now-stat-running')).toHaveText('1 läuft');
 	await expect(summaryOf('Todolino Jetzt').getByTestId('now-stat-sessions')).toHaveText('2 Sessions');
@@ -144,11 +147,13 @@ test('quiet projects are grouped, collapsed, and the expand state survives a rel
 	await expect(project('Formular Ruhig')).toHaveJSProperty('open', false);
 });
 
-test('an old project with an open review is not quiet: it stands on top, expanded', async () => {
+test('an old project with an open review is not quiet: it stands among the active rows', async () => {
 	const names = page.getByTestId('now-active').getByTestId('now-project-name');
 	await expect(names).toHaveText(['Todolino Jetzt', 'Altes Review']);
 	const old = project('Altes Review');
 	await expect(old).toHaveAttribute('data-quiet', 'false');
+	await expect(old).toHaveJSProperty('open', false);
+	await summaryOf('Altes Review').click();
 	await expect(old).toHaveJSProperty('open', true);
 	await expect(old.getByTestId('now-waiting-item')).toContainText('Rate-Limit fertig');
 	await expect(page.getByTestId('now-quiet').getByText('Altes Review')).toHaveCount(0);
