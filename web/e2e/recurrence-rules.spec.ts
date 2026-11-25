@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -140,6 +140,45 @@ async function probeBackend(taskID: string) {
 	backendKnowsFields = r.status() === 200 && ((await r.json()) as Planning).recurrence?.weekdays?.length === 2;
 	await put(null);
 }
+/**
+ * Holds back the answer of every planning save until `release()` so that typing can overlap the save deterministically (the real
+ * overlap is a matter of a few milliseconds). Done inside the page by wrapping `fetch`, because `page.route` does not see these
+ * requests in every browser (WebKit). `held()` is how many answers wait.
+ */
+async function holdPlanningAnswers() {
+	await page.evaluate(() => {
+		const w = window as unknown as { __held: number; __gate?: () => void; __realFetch?: typeof fetch };
+		w.__held = 0;
+		w.__realFetch ??= window.fetch;
+		const real = w.__realFetch;
+		const gate = new Promise<void>((resolve) => (w.__gate = resolve));
+		window.fetch = async (input, init) => {
+			const response = await real(input, init);
+			const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+			const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+			if (method === 'PUT' && /\/v1\/planning\/tasks\//.test(url)) {
+				w.__held++;
+				await gate;
+			}
+			return response;
+		};
+	});
+	return {
+		held: () => page.evaluate(() => (window as unknown as { __held: number }).__held),
+		release: () => page.evaluate(() => {
+			const w = window as unknown as { __gate?: () => void; __realFetch?: typeof fetch };
+			w.__gate?.();
+			if (w.__realFetch) window.fetch = w.__realFetch;
+		})
+	};
+}
+/** Types like a person: key by key (input events), the change event only follows when the field is left. */
+async function typeWithoutCommitting(field: Locator, text: string) {
+	await field.focus();
+	await field.press('ControlOrMeta+a');
+	await field.pressSequentially(text);
+}
+
 /** Runs the action and waits for the planning save it triggers. */
 async function saving(action: () => Promise<unknown>) {
 	const [response] = await Promise.all([
@@ -218,6 +257,46 @@ test.describe('part 1', () => {
 		await saving(() => dialog().getByLabel('Nächster Termin').selectOption('completion'));
 		expect(puts.bodies.at(-1)?.recurrence?.basis).toBe('completion');
 		puts.stop();
+	});
+
+	test('a value typed while the previous save is in flight is not overwritten by that save\'s answer', async () => {
+		// Card 21CF716D, CI run 45554917308 (Firefox): choosing the frequency starts a save; the interval is typed (input event) while
+		// it runs and committed (change event) only after its answer arrived. The answer must not reset the typed value.
+		const id = await card('Tippen waehrend Speichern', at9(day(3)));
+		await openCard(id);
+		await openEditor();
+		const held = await holdPlanningAnswers();
+		const first = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/v1\/planning\/tasks\//.test(r.url()));
+		await frequency().selectOption('daily');
+		const interval = dialog().getByLabel('Alle … Tage');
+		await expect.poll(() => held.held()).toBeGreaterThan(0); // the save is on its way: type now
+		await typeWithoutCommitting(interval, '3');
+		expect((await first).status()).toBe(200);
+		await held.release();
+		await page.waitForTimeout(300); // the answer is adopted now
+		await expect(interval).toHaveValue('3');
+		await saving(() => interval.press('Tab'));
+		await expect.poll(async () => (await planning(id)).recurrence).toMatchObject({ frequency: 'daily', interval: 3 });
+		await expect(summary()).toHaveText('Täglich · Alle … Tage 3');
+	});
+
+	test('the day of the month typed while the frequency save is in flight survives its answer', async () => {
+		const id = await card('Monatstag waehrend Speichern', at9(day(3)));
+		await openCard(id);
+		await openEditor();
+		const held = await holdPlanningAnswers();
+		const first = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/v1\/planning\/tasks\//.test(r.url()));
+		await frequency().selectOption('monthly');
+		const monthDay = dialog().getByLabel('Am n-ten Tag des Monats');
+		await expect.poll(() => held.held()).toBeGreaterThan(0);
+		await typeWithoutCommitting(monthDay, '15');
+		expect((await first).status()).toBe(200);
+		await held.release();
+		await page.waitForTimeout(300); // the answer is adopted now
+		await expect(monthDay).toHaveValue('15');
+		await saving(() => monthDay.press('Tab'));
+		await expect.poll(async () => (await planning(id)).recurrence?.frequency).toBe('monthly');
+		if (backendKnowsFields) await expect.poll(async () => (await planning(id)).recurrence?.monthDay).toBe(15);
 	});
 
 	test('a rule without the new fields is shown as before and saved without them', async () => {
