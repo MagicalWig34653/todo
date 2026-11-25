@@ -129,6 +129,8 @@ struct CommandCard: Content {
     /// Own or subtask claim in progress without a sign of life for more than 24 hours (flag only).
     var orphaned: Bool = false
     var lastSignOfLifeAt: Date? = nil
+    /// True while the card (or one of its subtasks) has a plan that waits for approval in a project with an approval step that notifies; absent otherwise.
+    var planWaiting: Bool? = nil
 }
 
 struct LaneDTO: Content {
@@ -161,6 +163,8 @@ struct SummaryDTO: Content {
     var pendingAccessRequests: Int = 0
     /// Readable in-progress tasks (incl. subtasks) whose claim has had no sign of life for more than 24 hours.
     var orphanedClaims: Int = 0
+    /// Plans waiting for approval in the scope (pipeline stage 2; same rule as `CommandCard.planWaiting`).
+    var plansWaiting: Int = 0
 }
 
 struct UpdateItem: Content {
@@ -276,7 +280,7 @@ struct CommandCenterService: Sendable {
         "progress.posted", "question.asked", "question.answered", "question.withdrawn", "review.requested",
         "review.accepted", "review.changes_requested", "build.added", "build.status_changed", "task.claimed", "task.released", "task.blocked",
         "agent.released", "agent.claimed", "agent.question", "agent.answered", "agent.resume", "agent.submit",
-        "agent.stop", "agent.fail", "agent.accept", "agent.request_changes",
+        "agent.stop", "agent.fail", "agent.accept", "agent.request_changes", "plan.written", "plan.approved", "plan.changes_requested",
     ]
 
     private static let urgency = ["question": 0, "review": 1, "running": 2, "blocked": 3, "ready": 4]
@@ -350,6 +354,7 @@ struct CommandCenterService: Sendable {
 
         let questions = try await batched(allTaskIDs, { try await TaskQuestion.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "open").sort(\.$createdAt).all() })
         let reviews = try await batched(allTaskIDs, { try await TaskReview.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "pending").sort(\.$createdAt).all() })
+        let planWaitingIDs = Set(try await PipelineSettingsStore.waitingPlans(taskIDs: allTaskIDs, projectOf: taskProject, on: db).map(\.taskID))
         let noteCutoff = now.addingTimeInterval(-30 * 86_400)
         // Only the newest note per task is shown, so only that row is read (agents post many notes; `perf_notes_task` serves the subquery).
         let notes = try await batched(allTaskIDs, { try await TaskProgressNote.query(on: db).filter(\.$taskID ~~ $0).filter(\.$createdAt >= noteCutoff)
@@ -467,7 +472,7 @@ struct CommandCenterService: Sendable {
                 builds: Array(sortedBuilds.prefix(3)), buildCount: sortedBuilds.count,
                 dueDate: due, nextDue: ((task.status == "done" ? [] : [due].compactMap { $0 }) + kidDue).min(), priority: planning[id]?.priority ?? 0,
                 subtasks: kids.map { SubtaskBrief(id: $0.id!, title: $0.title, status: $0.status, lane: states[$0.id!]?.lane ?? "ready", progressPercent: progress($0).percent, orphaned: orphanedIDs.contains($0.id!)) },
-                orphaned: !orphanedFamily.isEmpty, lastSignOfLifeAt: lastSign)
+                orphaned: !orphanedFamily.isEmpty, lastSignOfLifeAt: lastSign, planWaiting: family.contains { planWaitingIDs.contains($0) } ? true : nil)
         }
 
         let tops = loaded.filter { task in
@@ -496,7 +501,7 @@ struct CommandCenterService: Sendable {
             activeAgents: activeAgents.count, staleProjects: syncEntries.filter { $0.sync.bound && $0.sync.state != "fresh" }.count,
             pendingConfirmations: q.projectID == nil && allowedProjects == nil ? try await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total : 0,
             pendingAccessRequests: q.projectID == nil && allowedProjects == nil ? try await ConnectionService.openRequests(user: user, scopeProjects: scope.projects, db: db).count : 0,
-            orphanedClaims: orphanedIDs.count)
+            orphanedClaims: orphanedIDs.count, plansWaiting: planWaitingIDs.count)
 
         let updates = q.updatesLimit == 0 ? [] : try await self.updates(scope: scope, limit: q.updatesLimit)
         let buildGroups = Self.groups(builds, limit: 10)
@@ -594,6 +599,7 @@ struct CommandCenterService: Sendable {
             .filter(\.$id ~~ Array(subjects["review"] ?? [])).all().map { ($0.id!, $0) })
         let artifacts = Dictionary(uniqueKeysWithValues: try await BuildArtifact.query(on: db)
             .filter(\.$id ~~ Array(subjects["build"] ?? [])).all().map { ($0.id!, $0) })
+        let plans = try await PipelinePlanActivity.load(Array(subjects["plan"] ?? []), on: db)
         let names = try await displayNames(events.filter { $0.actorType == .person }.map(\.actorID), on: db)
         return try events.map { e in
             let task = try e.joined(TodoTask.self)
@@ -606,6 +612,8 @@ struct CommandCenterService: Sendable {
                 case "review.requested": text = reviews[s]?.summary
                 case "review.accepted", "review.changes_requested": text = reviews[s]?.decisionText ?? reviews[s]?.summary
                 case "build.added", "build.status_changed": text = artifacts[s].map { $0.label ?? $0.buildID }
+                case "plan.written": text = plans.describe(s).map { "Plan v\($0.version)" }
+                case "plan.approved", "plan.changes_requested": text = plans.describe(s).map { $0.comment ?? "Plan v\($0.version)" }
                 default: break
                 }
             }

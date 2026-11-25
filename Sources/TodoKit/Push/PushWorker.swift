@@ -230,7 +230,7 @@ struct PushTriggers: Sendable {
     }
 
     func run() async throws -> Int {
-        try await reminders() + questions() + reviews() + comments() + confirmations() + dailyBriefs()
+        try await reminders() + questions() + reviews() + plans() + comments() + confirmations() + dailyBriefs()
     }
 
     private func reminders() async throws -> Int {
@@ -284,6 +284,25 @@ struct PushTriggers: Sendable {
                 guard await canRead(c.user, taskID, role: .edit) != nil else { continue }
                 let event = PushEvent(kind: "review", taskID: taskID, projectID: task.projectID, subjectID: rid, at: nil)
                 if try await enqueue(c.id, .agentReviews, event, key: "review:\(rid)") { count += 1 }
+            }
+        }
+        return count
+    }
+
+    /// Plans waiting for approval (pipeline stage 2), category `agent_reviews`: everybody who may decide them (edit rights) in a
+    /// project with an approval step that notifies, except the person who wrote the plan. One row per plan version.
+    private func plans() async throws -> Int {
+        let who = enabled(.agentReviews)
+        guard !who.isEmpty else { return 0 }
+        var count = 0
+        let waiting = try await TaskPlan.query(on: db).filter(\.$state == PlanState.proposed).filter(\.$writtenAt >= since).limit(200).all()
+        for p in waiting {
+            guard let planID = p.id, let task = try await TodoTask.find(p.taskID, on: db), let taskID = task.id,
+                  try await PipelineSettingsStore.values(task.projectID, on: db).announcesWaitingPlans else { continue }
+            for c in who where !(p.authorType == .person && p.authorID == c.id) {
+                guard await canRead(c.user, taskID, role: .edit) != nil else { continue }
+                let event = PushEvent(kind: "plan", taskID: taskID, projectID: task.projectID, subjectID: planID, at: nil, version: p.version)
+                if try await enqueue(c.id, .agentReviews, event, key: "plan:\(planID):\(p.version)") { count += 1 }
             }
         }
         return count

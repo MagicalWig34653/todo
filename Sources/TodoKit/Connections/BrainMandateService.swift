@@ -29,7 +29,7 @@ struct BrainAuditDTO: Content {
     /// nil for `connection.*` kinds (no card involved).
     let taskID: UUID?
     let projectID: UUID
-    /// Review or question id; for `connection.*` kinds the id of the connection whose project list changed.
+    /// Review or question id; for `connection.*` kinds the id of the connection whose project list changed; for `pipeline.settings` the project.
     let subjectID: UUID
     /// The deciding or acting connection.
     let grantID: UUID
@@ -41,7 +41,9 @@ struct BrainAuditDTO: Content {
         grantID = a.grantID; quote = a.quote; note = a.note; createdAt = a.createdAt
     }
     init(_ a: BrainConnectionAudit) throws {
-        id = try a.requireID(); kind = a.kind; taskID = nil; projectID = a.projectID; subjectID = a.targetGrantID
+        // `pipeline.settings` (card B926E7D8) changes a project, not another connection: its subject is the project.
+        id = try a.requireID(); kind = a.kind; taskID = nil; projectID = a.projectID
+        subjectID = a.kind == "pipeline.settings" ? a.projectID : a.targetGrantID
         grantID = a.grantID; quote = a.quote; note = nil; createdAt = a.createdAt
     }
 }

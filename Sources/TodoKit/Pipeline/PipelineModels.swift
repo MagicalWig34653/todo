@@ -64,6 +64,8 @@ final class TaskPipelineStep: Model, @unchecked Sendable {
     @Field(key: "actor_id") var actorID: UUID
     @OptionalField(key: "actor_label") var actorLabel: String?
     @Field(key: "updated_at") var updatedAt: Date
+    /// Plan version the stored state refers to (stage 2); nil on rows of stage 1.
+    @OptionalField(key: "plan_version") var planVersion: Int?
     init() {}
 }
 
@@ -73,7 +75,7 @@ final class TaskPipelineEvent: Model, @unchecked Sendable {
     @ID(key: .id) var id: UUID?
     @Field(key: "task_id") var taskID: UUID
     @Field(key: "sequence") var sequence: Int
-    /// `plan_written` | `plan_approved` | `plan_changes_requested` | `step_changed`
+    /// `plan_written` | `plan_approved` | `plan_changes_requested` | `step_changed` | `step_retried`
     @Field(key: "action") var action: String
     @OptionalField(key: "plan_version") var planVersion: Int?
     @OptionalField(key: "step") var step: String?
@@ -133,6 +135,8 @@ struct CreateTaskPipeline: AsyncMigration {
 
 func configurePipeline(_ app: Application) {
     app.migrations.add(CreateTaskPipeline())
+    app.migrations.add(CreateProjectPipelineSettings())
+    app.migrations.add(AddPlanVersionToPipelineSteps())
 }
 
 // MARK: - DTOs
@@ -150,9 +154,12 @@ struct PlanDTO: Content {
     let decidedAt: Date?
     let decidedByLabel: String?
     let decisionComment: String?
+    /// `person` | `integration` | `system` (a plan approved without a person because the project has no approval step); absent while undecided.
+    let decidedByType: String?
     init(_ p: TaskPlan, authorLabel: String?, decidedByLabel: String?) {
         version = p.version; body = p.body; state = p.state; authorType = wireType(p.authorType); self.authorLabel = authorLabel
         writtenAt = p.writtenAt; decidedAt = p.decidedAt; self.decidedByLabel = decidedByLabel; decisionComment = p.decisionComment
+        decidedByType = p.decidedByType?.lowercased()
     }
 }
 
@@ -162,6 +169,19 @@ struct PipelineStepDTO: Content {
     let note: String?
     let actorLabel: String?
     let updatedAt: Date?
+    /// Stage 2: false when the project switched the step off (the shown `state` is then `skipped` or the stored one).
+    var enabled: Bool = true
+    /// Plan version the state refers to; absent for `pending` without a row and for rows of stage 1.
+    var planVersion: Int? = nil
+    /// Model and effort of the role of this step (planner, developer, tester, review only).
+    var role: PipelineRoleValue? = nil
+}
+
+struct FixRoundsDTO: Content {
+    let used: Int
+    let max: Int
+    let remaining: Int
+    init(used: Int, max: Int) { self.used = used; self.max = max; remaining = Swift.max(0, max - used) }
 }
 
 struct PipelineEventDTO: Content {
@@ -187,6 +207,12 @@ struct PipelineDTO: Content {
     let steps: [PipelineStepDTO]
     /// Newest first, at most `PipelineLimits.maxEvents`.
     let events: [PipelineEventDTO]
+    /// Effective project settings (stage 2).
+    let settings: PipelineSettingsSummaryDTO
+    /// Retries of the current plan version against the maximum.
+    let fixRounds: FixRoundsDTO
+    /// The plan is `proposed` and the project has an approval step.
+    let waitingApproval: Bool
 }
 
 struct SetPlanRequest: Content {
@@ -205,6 +231,14 @@ struct PlanDecisionRequest: Content {
 
 struct SetPipelineStepRequest: Content {
     let state: String
+    var note: String? = nil
+    var agentName: String? = nil
+    /// Stage 2, optional: the plan version the caller works on (409 `plan_changed` if it is not the current one).
+    var planVersion: Int? = nil
+}
+
+struct RetryPipelineStepRequest: Content {
+    var planVersion: Int? = nil
     var note: String? = nil
     var agentName: String? = nil
 }

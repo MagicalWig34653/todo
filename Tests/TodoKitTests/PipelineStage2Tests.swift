@@ -409,7 +409,7 @@ final class PipelineStage2Tests: XCTestCase {
             XCTAssertEqual(fresh.body?["waitingApproval"] as? Bool, false)
             XCTAssertNil(fresh.body?["plan"] as? [String: Any])
 
-            expect(try await patch(e, ["revision": 0, "roles": ["review": ["model": "sonnet", "effort": "low"]], "maxFixRounds": 5]), .ok)
+            expect(try await patch(e, ["revision": 0, "roles": ["reviewer": ["model": "sonnet", "effort": "low"]], "maxFixRounds": 5]), .ok)
             expect(try await putPlan(e, task), .ok)
             let written = try await pipeline(e, task)
             XCTAssertEqual(written.body?["waitingApproval"] as? Bool, true)

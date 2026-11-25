@@ -8,6 +8,10 @@ struct PipelineController: RouteCollection {
         task.put("plan", use: setPlan)
         task.post("plan", "decision", use: decide)
         task.put("pipeline", "steps", ":step", use: setStep)
+        task.post("pipeline", "steps", ":step", "retry", use: retryStep)
+        let project = routes.grouped("v1", "projects", ":id")
+        project.get("pipeline-settings", use: settings)
+        project.patch("pipeline-settings", use: updateSettings)
     }
 
     private func context(_ req: Request) async throws -> (service: WorkflowService, actor: WorkflowActor, taskID: UUID) {
@@ -32,5 +36,19 @@ struct PipelineController: RouteCollection {
         let c = try await context(req)
         guard let step = req.parameters.get("step") else { throw Abort(.badRequest, reason: "invalid_step") }
         return try await c.service.setPipelineStep(c.taskID, step: step, req.content.decode(SetPipelineStepRequest.self), actor: c.actor)
+    }
+    @Sendable func retryStep(_ req: Request) async throws -> PipelineDTO {
+        let c = try await context(req)
+        guard let step = req.parameters.get("step") else { throw Abort(.badRequest, reason: "invalid_step") }
+        return try await c.service.retryPipelineStep(c.taskID, step: step, req.content.decode(RetryPipelineStepRequest.self), actor: c.actor)
+    }
+    @Sendable func settings(_ req: Request) async throws -> PipelineSettingsDTO {
+        let c = try await context(req)
+        return try await c.service.pipelineSettings(c.taskID)
+    }
+    /// The body is read as plain JSON: a `null` model or effort clears the field, which a Codable struct cannot tell from a missing one.
+    @Sendable func updateSettings(_ req: Request) async throws -> PipelineSettingsDTO {
+        let c = try await context(req)
+        return try await c.service.updatePipelineSettings(c.taskID, req.content.decode(JSONValue.self), actor: c.actor)
     }
 }

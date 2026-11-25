@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Push-Benachrichtigungen (APNs)
-  version: 1.1.0
+  version: 1.2.0
   description: 'ADR 0021, Betrieb: docs/PUSH-EINRICHTUNG.md. Geräte-Registrierung und Einstellungen je Konto; Sitzung oder Bearer nötig,
     jedes Konto sieht und ändert nur seine eigenen Geräte. Geräte-Tokens werden nie ausgegeben und nie geloggt. Registrierung ist auch
     möglich, wenn der Server Push noch nicht aktiviert hat (APNS_ENABLED=false); bei aktiviertem Push muss bundleId zu APNS_TOPIC passen.
@@ -9,7 +9,7 @@ info:
     ohne Auslöser). Inhalt generisch, solange showContent false ist. Nachrichten tragen im userInfo auf oberster Ebene kind
     (reminder|question|review|comment|test), taskID, projectID, subjectID (Frage-/Review-/Kommentar-ID) und aps.thread-id = projectID,
     aps.category TODO_REMINDER|TODO_QUESTION|TODO_REVIEW|TODO_COMMENT, mutable-content 1 (Notification Service Extension möglich), optional aps.badge
-    (offene Fragen plus ausstehende Reviews, wenn badge true). Kein Sync-Feed. Ob der Server Push anbietet: GET /v1/push/status (angemeldet) {enabled}; Umgebung und Details nur für Administratoren in GET /v1/admin/health (push {enabled, environment}), nie anonym in /health/ready.'
+    (offene Fragen plus ausstehende Reviews, wenn badge true). Seit 1.2.0 (Karte B926E7D8, Pipeline Stufe 2, additiv): kind plan (aps.category TODO_PLAN, subjectID = Plan, Kategorie agent_reviews) für einen Plan, der auf Freigabe wartet: an alle mit Recht edit am Projekt außer dem schreibenden Konto, nur in Projekten mit Freigabeschritt und eingeschalteter Benachrichtigung; Nachprüfung vor dem Senden (entschieden, ersetzt oder ausgeschaltet = skipped); mit showContent nur der Kartentitel, nie der Plantext; das Abzeichen zählt Pläne nicht. Kein Sync-Feed. Ob der Server Push anbietet: GET /v1/push/status (angemeldet) {enabled}; Umgebung und Details nur für Administratoren in GET /v1/admin/health (push {enabled, environment}), nie anonym in /health/ready.'
 security:
 - bearerAuth: []
 - sessionCookie: []

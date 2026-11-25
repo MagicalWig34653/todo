@@ -62,13 +62,15 @@ final class PushOutbox: Model, @unchecked Sendable {
 }
 
 struct PushEvent: Codable, Equatable, Sendable {
-    /// `reminder` | `question` | `review` | `comment`
+    /// `reminder` | `question` | `review` | `comment` | `plan`
     var kind: String
     var taskID: UUID
     var projectID: UUID
     var subjectID: UUID?
     /// Reminder time (unix seconds) for `reminder` events.
     var at: Int?
+    /// Plan version for `plan` events (the plan row is `subjectID`).
+    var version: Int? = nil
 }
 
 /// Outbox payload of category `daily_brief`: only the day (UTC, yyyy-MM-dd); the line is computed when sending.
