@@ -107,4 +107,47 @@ final class SecretFilterTests: XCTestCase {
             XCTAssertEqual(SecretFilter.redact(once).text, once)
         }
     }
+
+    /// Long lines are redacted piece by piece; no position of a piece boundary may separate a key from its value.
+    func testLongLinesNeverSeparateAKeyFromItsValue() {
+        let secret = "hunter2secret"
+        // (name, construct, filler without findings that offers the cut points)
+        let cases: [(String, String, String)] = [
+            ("colon space", "password: \(secret)", "ab "),
+            ("equals space", "key= \(secret)", "ab "),
+            ("spaces around", "password = \(secret)", "ab "),
+            ("newline after colon", "password:\n\(secret)", "ab "),
+            ("quoted words", "password: \"two words \(secret)\"", "ab "),
+            ("cli flag", "--password \(secret)", "ab "),
+            ("short flag", "mysql -p\(secret)", "ab "),
+            ("authorization", "Authorization: Bearer \(secret)", "ab "),
+            ("minified json", "\"password\":\"\(secret)\"", "ab,"),
+            ("no break at all", ";password=\(secret)", "ab."),
+        ]
+        for (name, construct, unit) in cases {
+            for offset in 0...(construct.count + 1) {
+                let length = SecretFilter.maxInputScalars - offset
+                let filler = String(String(repeating: unit, count: length).prefix(length - 1)) + String(unit.last!)
+                let tail = " end " + String(repeating: unit, count: 40)
+                let out = SecretFilter.redactLong(filler + construct + tail)
+                let leaked = out.contains("hunter") || out.contains("2secret")
+                XCTAssertFalse(leaked, "\(name), boundary at \(offset): …\(out.dropFirst(1990).prefix(120))")
+                if leaked { break }
+                XCTAssertTrue(out.hasPrefix(filler), name)
+                XCTAssertTrue(out.hasSuffix(String(repeating: unit, count: 40)), name)
+            }
+        }
+    }
+
+    func testALongCookieLineIsMaskedToItsEnd() {
+        let line = "Cookie: " + String(repeating: "a=1; ", count: 900) + "sid=hunter2secret"
+        XCTAssertEqual(SecretFilter.redactLong(line + "\nnext line"), "Cookie: \(mask)\nnext line")
+    }
+
+    func testLongHarmlessTextStaysByteForByte() {
+        for unit in ["word ", "a1,", "x.", "Schritt: prüfen ½\n", "token refresh later "] where !SecretFilter.redact(unit).didRedact {
+            let text = String(repeating: unit, count: 12_000 / unit.count)
+            XCTAssertEqual(SecretFilter.redactLong(text), text, unit)
+        }
+    }
 }
