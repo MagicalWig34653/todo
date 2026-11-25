@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Pipeline Stufe 3, Ausführung über den Runner (Karte `F5DD1C00`)
+
+- Stand: Backend, MCP, PWA auf `main` (rot `c30ad33`/`ba2988c`, grün `6e525e9`, Verträge `0b1188f`, Merge PWA `356bd37`), Runner im Apple-Repo `7f478be`; Belege in `docs/STATUS.md` (oberster Nachtrag). Migration `CreatePipelineExecution`, Handbuch 1.45.0, `pipeline.yaml` 1.2.0, `agents.yaml` 1.3.0; nicht deployt.
+- Offen: Apple-Oberfläche für die Ausführung, echter Lauf mit `claude` und dem Budget-Skript auf Linos Mac, Schluss-Review „Änderungen“ setzt keine Schritte zurück.
+- Nächster Schritt: Deploy durch Lino (vor `serve` `App migrate --yes`), Runner neu bauen, `todo-runner validation`/`budget` einrichten.
+
 ## Checkpoint 25.11.2026: Pipeline Stufe 2 (Karte `B926E7D8`)
 
 - Stand: Backend, MCP und PWA auf `main` (rot `fd2e158`/`8ff39ec`, grün `e5f0beb`/`ceb44c9`, Phase 2 `e8979cd`); Belege in `docs/STATUS.md` (oberster Nachtrag). Migrationen `CreateProjectPipelineSettings`, `AddPlanVersionToPipelineSteps`, Handbuch 1.44.0, Vertrag `pipeline.yaml` 1.1.0; nicht deployt.
