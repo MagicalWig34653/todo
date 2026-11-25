@@ -224,7 +224,10 @@
 	/** The runner finishes an execution with a review on the card: read the card again so it is there. */
 	const executionState = $derived(pipeline.data?.execution?.state ?? null);
 	$effect(() => {
-		if (executionState === 'completed') untrack(() => void (data?.ctx && data.ctx.review?.state !== 'pending' && load()));
+		if (executionState !== 'completed') return;
+		untrack(() => {
+			if (data?.ctx && data.ctx.review?.state !== 'pending') void load();
+		});
 	});
 	/** The completed execution points to the review in the overview tab; the focus goes with it. */
 	async function showReview() {

@@ -125,7 +125,7 @@ export const dePipeline = {
 	'pipeline.exec.live.held': 'Wartet wegen der Kontingent-Bremse',
 	'pipeline.exec.unsupported': 'Dieses Gerät hat noch keinen Pipeline-Auftrag abgefragt. Prüfe, ob todo-runner dort läuft und aktuell ist, sonst bleibt der Auftrag liegen.',
 	'pipeline.exec.waitingApproval': 'Der Plan wartet auf Freigabe. Nach der Freigabe geht es automatisch weiter.',
-	'pipeline.exec.blocked.step_failed': 'Der Schritt „{step}“ ist fehlgeschlagen. „Wiederholen“ beim Schritt lässt ihn erneut laufen.',
+	'pipeline.exec.blocked.step_failed': 'Der Schritt „{step}“ ist fehlgeschlagen. Weiter geht es mit „Wiederholen“ beim Schritt.',
 	'pipeline.exec.blocked.fix_rounds_exhausted': 'Der Schritt „{step}“ ist fehlgeschlagen und es ist keine Fix-Runde mehr frei. Ein neuer Plan beginnt wieder bei Runde 1.',
 	'pipeline.exec.fixRounds': 'Fix-Runden verbraucht: {used} von {max}',
 	'pipeline.exec.pause.plan_needs_owner': 'Dieser Plan wurde noch nicht vom Projekteigentümer angenommen. Lies ihn und setze fort, wenn er so ausgeführt werden soll.',
