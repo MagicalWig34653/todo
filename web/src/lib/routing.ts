@@ -7,7 +7,7 @@ import { DEFAULT_TAB, parseCardTab, type CardTab } from './cardTabs.js';
 export type RouteView =
 	| 'project' | 'forYou' | 'inbox' | 'overview' | 'now' | 'today' | 'upcoming' | 'upNext' | 'calendar' | 'search' | 'filters' | 'teams' | 'agents' | 'brain' | 'activity' | 'account' | 'help';
 
-export type ProjectSub = 'list' | 'board' | 'overview' | 'comments' | 'graph';
+export type ProjectSub = 'list' | 'board' | 'overview' | 'comments' | 'graph' | 'pipeline';
 
 export interface Route {
 	view: RouteView | 'notfound';
@@ -39,7 +39,7 @@ const PATH_OF: Partial<Record<RouteView, string>> = {
 	forYou: '/for-you', today: '/today', inbox: '/inbox', upcoming: '/upcoming', upNext: '/up-next', calendar: '/calendar', search: '/search',
 	overview: '/overview', now: '/now', activity: '/activity', agents: '/agents', brain: '/brain', teams: '/teams', filters: '/filter', account: '/settings', help: '/help'
 };
-const SUBS: ProjectSub[] = ['list', 'board', 'overview', 'comments', 'graph'];
+const SUBS: ProjectSub[] = ['list', 'board', 'overview', 'comments', 'graph', 'pipeline'];
 const LEGACY_SUBS: Record<string, ProjectSub> = { liste: 'list', ueberblick: 'overview', kommentare: 'comments' };
 const ID = /^[A-Za-z0-9-]{8,64}$/;
 

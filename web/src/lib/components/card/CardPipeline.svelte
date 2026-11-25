@@ -7,17 +7,25 @@
 	import Hourglass from '@lucide/svelte/icons/hourglass';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import MessageSquareWarning from '@lucide/svelte/icons/message-square-warning';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { t } from '#lib/i18n/index.js';
 	import {
 		PLAN_COMMENT_MAX,
 		canDecide,
+		effortKey,
 		eventText,
 		isEmptyPipeline,
+		offSteps,
 		orderedSteps,
 		planStateKey,
+		retryOffer,
+		roleLine,
+		stepCounts,
 		stepNameKey,
+		stepOn,
 		stepStateKey,
 		type PipelineController,
+		type PipelineStepName,
 		type PipelineStepState,
 		type PipelineView,
 		type PlanDecision,
@@ -76,6 +84,17 @@
 		if (outcome === 'done') await ondecided();
 	}
 
+	/** The retry button disappears with the new state: the focus then moves to the message that says what happened. */
+	async function retryStep(step: PipelineStepName) {
+		const outcome = await controller.retryStep(step, canEdit);
+		if (outcome === 'ignored') return;
+		await tick();
+		if (outcome === 'done' || document.activeElement === document.body || !document.activeElement?.isConnected) feedback?.focus();
+		if (outcome === 'done') await ondecided();
+	}
+	const counts = $derived(stepCounts(data));
+	const off = $derived(offSteps(data));
+
 	const heading = 'text-muted-foreground text-xs font-semibold tracking-wide uppercase';
 	const prose = '[overflow-wrap:anywhere] whitespace-pre-wrap';
 </script>
@@ -90,22 +109,52 @@
 		</div>
 	{:else if !data || isEmptyPipeline(data)}
 		<CardTabEmpty title={t('card.tab.pipeline.emptyTitle')} text={t('card.tab.pipeline.emptyText')} />
+		{#if off.length > 0}
+			<p class="text-muted-foreground -mt-2 text-xs" data-testid="pipeline-off-hint">{t('pipeline.offHint', { steps: off.map((s) => t(stepNameKey(s))).join(', ') })}</p>
+		{/if}
 	{:else}
 		<section class="flex flex-col gap-1.5">
-			<h3 class={heading}>{t('pipeline.steps')}</h3>
+			<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+				<h3 class={heading}>{t('pipeline.steps')}</h3>
+				<p class="text-muted-foreground text-xs" data-tabular data-testid="pipeline-step-count">
+					{t('pipeline.stepCount', { done: counts.done, total: counts.total })}{#if counts.off > 0}{', '}{t('pipeline.stepCount.off', { count: counts.off })}{/if}
+				</p>
+			</div>
 			<ol class="flex flex-col divide-y rounded-xl border" aria-label={t('pipeline.steps')}>
 				{#each orderedSteps(data) as s (s.step)}
-					{@const look = stepLook[s.state] ?? stepLook.pending}
-					<li class="flex min-w-0 gap-3 px-3 py-2.5" data-testid="pipeline-step" data-step={s.step} data-state={s.state}>
+					{@const on = stepOn(s)}
+					{@const look = on ? (stepLook[s.state] ?? stepLook.pending) : stepLook.skipped}
+					{@const role = roleLine(s)}
+					{@const offer = retryOffer(data, s.step, canEdit)}
+					<li class={['flex min-w-0 gap-3 px-3 py-2.5', !on && 'text-muted-foreground']} data-testid="pipeline-step" data-step={s.step} data-state={s.state} data-enabled={on ? 'true' : 'false'}>
 						<look.icon class="mt-0.5 size-4 shrink-0 {look.color}" aria-hidden="true" />
 						<div class="flex min-w-0 flex-1 flex-col gap-0.5">
 							<div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
 								<span class="font-medium">{t(stepNameKey(s.step))}</span>
-								<Badge variant={look.badge} data-testid="pipeline-step-state">{t(stepStateKey(s.state))}</Badge>
+								<Badge variant={look.badge} data-testid="pipeline-step-state">{on ? t(stepStateKey(s.state)) : t('pipeline.step.off')}</Badge>
 							</div>
-							{#if s.note}<p class={prose}>{s.note}</p>{/if}
-							{#if s.actorLabel || s.updatedAt}
+							{#if role}
+								<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-testid="pipeline-step-role">{t('pipeline.roleLine', { model: role.model ?? t('pipeline.modelDefault'), effort: t(effortKey(role.effort)) })}</p>
+							{/if}
+							{#if on && s.note}<p class={prose}>{s.note}</p>{/if}
+							{#if on && (s.actorLabel || s.updatedAt)}
 								<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-tabular>{s.actorLabel ?? ''}{#if s.actorLabel && s.updatedAt}{' · '}{/if}<Timestamp value={s.updatedAt} /></p>
+							{/if}
+							{#if offer.kind === 'ready'}
+								<div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+									<!-- aria-disabled instead of disabled: the focus stays on the button while sending; the controller ignores repeats. -->
+									<Button size="sm" variant="outline" class="max-sm:w-full aria-disabled:opacity-60" aria-disabled={view.retrying !== null} onclick={() => retryStep(s.step)}>
+										<RotateCcw aria-hidden="true" />{view.retrying === s.step ? t('pipeline.retry.sending') : t('pipeline.retry')}
+									</Button>
+									<span class="text-muted-foreground text-xs" data-testid="pipeline-step-round" data-tabular>{t('pipeline.retry.round', { round: offer.round, max: offer.max })}</span>
+								</div>
+							{:else if offer.kind === 'exhausted'}
+								<div class="mt-1 flex flex-col gap-1.5">
+									<div class="flex">
+										<Button size="sm" variant="outline" class="max-sm:w-full" disabled aria-describedby="pipeline-exhausted-{s.step}"><RotateCcw aria-hidden="true" />{t('pipeline.retry')}</Button>
+									</div>
+									<p class="text-muted-foreground text-xs" id="pipeline-exhausted-{s.step}" data-testid="pipeline-step-exhausted">{offer.max === 0 ? t('pipeline.retry.disabled') : t('pipeline.retry.exhausted', { max: offer.max })}</p>
+								</div>
 							{/if}
 						</div>
 					</li>
@@ -129,7 +178,7 @@
 				{#if plan.state !== 'proposed'}
 					<div class="flex flex-col gap-1" data-testid="pipeline-plan-decided">
 						<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-tabular>
-							{t(plan.state === 'approved' ? 'pipeline.approvedBy' : 'pipeline.changesBy', { who: plan.decidedByLabel || t('cc.update.anonymous') })}{#if plan.decidedAt}{' · '}<Timestamp value={plan.decidedAt} />{/if}
+							{#if plan.state === 'approved' && plan.decidedByType === 'system'}{t('pipeline.approvedAuto')}{:else}{t(plan.state === 'approved' ? 'pipeline.approvedBy' : 'pipeline.changesBy', { who: plan.decidedByLabel || t('cc.update.anonymous') })}{/if}{#if plan.decidedAt}{' · '}<Timestamp value={plan.decidedAt} />{/if}
 						</p>
 						{#if plan.decisionComment}<p class="border-l-2 pl-2 {prose}">{plan.decisionComment}</p>{/if}
 					</div>

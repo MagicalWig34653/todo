@@ -22,6 +22,7 @@
 	import CommandCenter from './CommandCenter.svelte';
 	import MilestonesPanel from './MilestonesPanel.svelte';
 	import ProjectComments from './ProjectComments.svelte';
+	import ProjectPipelineSettings from './ProjectPipelineSettings.svelte';
 	import ProjectBoard from './ProjectBoard.svelte';
 	import TaskGraph from './TaskGraph.svelte';
 	import Workflow from '@lucide/svelte/icons/workflow';
@@ -193,6 +194,8 @@
 	// ---- dialogs ----------------------------------------------------------------------------------------------
 	let milestonesOpen = $state(false);
 	let commentsOpen = $state(false);
+	/** Pipeline settings of the project (card B926E7D8); route `/project/<id>/pipeline`. */
+	let pipelineOpen = $state(false);
 	let colorOpen = $state(false);
 	let detail = $state<Task | null>(null);
 	let detailOpen = $state(false);
@@ -206,6 +209,7 @@
 		routeApplied = true;
 		if (sub === 'overview') tab = 'overview';
 		else if (sub === 'comments') commentsOpen = true;
+		else if (sub === 'pipeline') pipelineOpen = true;
 		else if (sub === 'graph') graphOpen = true;
 		else if ((sub === 'board' || sub === 'list') && (sub === 'board') !== (display.view === 'board')) setDisplay({ view: sub === 'board' ? 'board' : 'list' });
 	});
@@ -218,7 +222,7 @@
 	});
 	$effect(() => {
 		if (!routeApplied) return;
-		const current: ProjectSub = commentsOpen ? 'comments' : graphOpen && !(management && tab === 'overview') ? 'graph' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
+		const current: ProjectSub = commentsOpen ? 'comments' : pipelineOpen ? 'pipeline' : graphOpen && !(management && tab === 'overview') ? 'graph' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
 		const task = detailOpen ? detail?.id : undefined;
 		// Deep link to a task still loading: keep ?task= until it was applied or is known to be missing.
 		const keep = taskID && !taskApplied ? taskID : task;
@@ -332,6 +336,7 @@
 				{#if management}
 					<MenuItem testid="milestones-open" onclick={() => { close(); milestonesOpen = true; }}>{t('view.milestones')}</MenuItem>
 				{/if}
+				<MenuItem testid="pipeline-settings-open" onclick={() => { close(); pipelineOpen = true; }}>{t('pipeline.settings.title')}</MenuItem>
 			{/snippet}
 		</Popover>
 	</div>
@@ -422,6 +427,9 @@
 
 <Dialog bind:open={commentsOpen} title={t('project.commentsTitle', { name: project.name })} class="max-w-xl" testid="project-comments-dialog">
 	<ProjectComments {project} />
+</Dialog>
+<Dialog bind:open={pipelineOpen} title={t('pipeline.settings.title')} class="max-w-2xl" testid="pipeline-settings-dialog">
+	<ProjectPipelineSettings {project} />
 </Dialog>
 <Dialog bind:open={colorOpen} title={t('project.colorTitle')} testid="project-color-dialog">
 	<div class="flex flex-wrap gap-2" role="group" aria-label={t('project.colorTitle')}>

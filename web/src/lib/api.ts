@@ -4,7 +4,8 @@ import type { ActionRequest, ForYouPage } from './forYou.js';
 import type { BatchResponse } from './reviewBulk.js';
 import type { ReviewVariant } from './reviewVariants.js';
 import type { BrainAuditItem, BrainMandate } from './brainMandate.js';
-import type { PlanDecisionInput, TaskPipeline } from './pipeline.js';
+import type { PipelineStepName, PlanDecisionInput, RetryInput, TaskPipeline } from './pipeline.js';
+import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
 
 export interface Capabilities {
@@ -653,6 +654,8 @@ export interface CommandCard {
 	nextDue?: string | null;
 	priority: number;
 	subtasks: SubtaskBrief[];
+	/** The plan of the card waits for approval (pipeline stage 2); absent otherwise. */
+	planWaiting?: boolean;
 }
 export interface CommandLane {
 	key: LaneKey;
@@ -679,6 +682,8 @@ export interface CommandSummary {
 	pendingConfirmations?: number;
 	/** Connections that asked for a project outside their grant (open notices); absent on older servers. */
 	pendingAccessRequests?: number;
+	/** Plans waiting for approval (pipeline stage 2); absent on older servers. */
+	plansWaiting?: number;
 }
 /** contracts/project-sync.yaml */
 export type SyncState = 'fresh' | 'stale' | 'never';
@@ -1334,6 +1339,15 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		taskPipeline: (taskID: string) => request<TaskPipeline>('GET', `/tasks/${taskID}/pipeline`),
 		decidePlan: (taskID: string, { decision, version, comment }: PlanDecisionInput) =>
 			request<TaskPipeline>('POST', `/tasks/${taskID}/plan/decision`, { decision, version, comment: comment || undefined }),
+		/** Stage 2 (card B926E7D8): only a failed step goes back to pending; the server counts the fix round. */
+		retryPipelineStep: (taskID: string, step: PipelineStepName, { planVersion, note }: RetryInput) =>
+			request<TaskPipeline>('POST', `/tasks/${taskID}/pipeline/steps/${step}/retry`, { planVersion, note: note?.trim() || undefined }),
+		/** `planVersion`: the version the state is based on; the server refuses (`plan_changed`) when the plan moved on. */
+		setPipelineStep: (taskID: string, step: PipelineStepName, body: { state: string; note?: string; planVersion?: number }) =>
+			request<TaskPipeline>('PUT', `/tasks/${taskID}/pipeline/steps/${step}`, body),
+		pipelineSettings: (projectID: string) => request<PipelineSettings>('GET', `/projects/${projectID}/pipeline-settings`),
+		updatePipelineSettings: (projectID: string, body: SettingsPatch & { revision: number }) =>
+			request<PipelineSettings>('PATCH', `/projects/${projectID}/pipeline-settings`, body),
 		setTaskStructure: (taskID: string, body: { kind?: string; parentTaskID?: string | null }) => request<unknown>('PUT', `/tasks/${taskID}/structure`, body),
 		projectStructure: (projectID: string) => request<ProjectStructure>('GET', `/projects/${projectID}/structure`),
 		getAgentBrief: (projectID: string) => request<AgentBrief>('GET', `/projects/${projectID}/agent-brief`),

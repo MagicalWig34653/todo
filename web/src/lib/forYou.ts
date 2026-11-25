@@ -1,3 +1,5 @@
+import type { MessageKey } from './i18n/index.js';
+
 /** "Für dich" feed (backend ADR 0023, contracts/feed.yaml): types and pure helpers. */
 export interface ForYouActor {
 	type: 'Person' | 'Integration' | 'Run';
@@ -16,7 +18,7 @@ export interface ForYouImage {
 }
 export interface ForYouPost {
 	id: string;
-	kind: 'progress' | 'build' | 'done' | 'review' | 'question' | 'comment' | 'agent_run' | string;
+	kind: 'progress' | 'build' | 'done' | 'review' | 'question' | 'comment' | 'agent_run' | 'plan' | string;
 	event: string;
 	state?: string | null;
 	projectID: string;
@@ -38,13 +40,13 @@ export interface ForYouAction {
 	label: string;
 	method: string;
 	path: string;
-	body?: { answer?: string; decision?: string; note?: string; status?: string; version?: number } | null;
+	body?: { answer?: string; decision?: string; note?: string; comment?: string; status?: string; version?: number } | null;
 	requiresInput: boolean;
 	inputField?: string | null;
 }
 export interface ForYouNeed {
 	id: string;
-	kind: 'question' | 'review' | 'blocked' | 'overdue' | 'due' | string;
+	kind: 'question' | 'review' | 'plan' | 'blocked' | 'overdue' | 'due' | string;
 	projectID: string;
 	projectName: string;
 	taskID: string;
@@ -139,10 +141,23 @@ export function actionRequest(action: ForYouAction, input = ''): { method: strin
 	const body: Record<string, unknown> = { ...(action.body ?? {}) };
 	const text = input.trim();
 	if (action.requiresInput) {
-		if (action.inputField === 'answer' && !text) return null;
+		// An answer and the comment of a plan change are mandatory; the note of a review is optional.
+		if ((action.inputField === 'answer' || action.inputField === 'comment') && !text) return null;
 		if (action.inputField && text) body[action.inputField] = text;
 	}
 	return { method: action.method, path: action.path.replace(/^\/v1/, ''), body };
+}
+
+/** What an action asks the person to type: a free answer, a note (optional) or a comment (mandatory); null when nothing. */
+export type NeedInputKind = 'answer' | 'note' | 'comment';
+export function needInputKind(action: Pick<ForYouAction, 'requiresInput' | 'inputField'>): NeedInputKind | null {
+	if (!action.requiresInput) return null;
+	return action.inputField === 'answer' || action.inputField === 'note' || action.inputField === 'comment' ? action.inputField : null;
+}
+
+/** i18n key of the label above a needs-you entry; unknown kinds of a newer server get a neutral one instead of nothing. */
+export function needKindKey(kind: string): MessageKey {
+	return (['question', 'review', 'plan', 'blocked', 'overdue', 'due'] as readonly string[]).includes(kind) ? (`forYou.kind.${kind}` as MessageKey) : 'forYou.kind.other';
 }
 
 /**
@@ -173,6 +188,8 @@ export function postTitleKey(p: Pick<ForYouPost, 'kind' | 'state'> & { event?: s
 		case 'review': return p.state === 'accepted' ? 'forYou.post.reviewAccepted' : 'forYou.post.reviewChanges';
 		case 'question': return 'forYou.post.answered';
 		case 'comment': return 'forYou.post.comment';
+		case 'plan':
+			return ({ 'plan.written': 'forYou.post.planWritten', 'plan.approved': 'forYou.post.planApproved', 'plan.changes_requested': 'forYou.post.planChanges' } as Record<string, string>)[p.event ?? ''] ?? 'forYou.post.plan';
 		case 'agent_run':
 			return ({ started: 'forYou.post.runStarted', failed: 'forYou.post.runFailed', stopped: 'forYou.post.runStopped' } as Record<string, string>)[p.state ?? ''] ?? 'forYou.post.runFinished';
 		default: return 'forYou.post.other';

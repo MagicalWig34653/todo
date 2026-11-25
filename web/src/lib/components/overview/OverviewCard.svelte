@@ -5,12 +5,14 @@
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { formatWhen, isOverdue } from '#lib/planning.js';
 	import { workspace } from '#lib/workspace.svelte.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import QuestionAnswer from './QuestionAnswer.svelte';
 	import ReviewDecision from './ReviewDecision.svelte';
 	import Bot from '@lucide/svelte/icons/bot';
 	import Layers from '@lucide/svelte/icons/layers';
 	import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
+	import Hourglass from '@lucide/svelte/icons/hourglass';
 
 	interface Props {
 		card: CommandCard;
@@ -69,6 +71,18 @@
 		{#if card.agent.checkpointNextStep}
 			<p class="text-muted-foreground text-xs break-words">{t('cc.card.nextStep', { text: card.agent.checkpointNextStep })}</p>
 		{/if}
+	{/if}
+
+	{#if card.planWaiting}
+		<!-- Opens the card on the Pipeline tab, where the plan is read and decided. -->
+		<button
+			type="button"
+			class="text-warning hover:bg-muted focus-visible:ring-ring/60 -mx-1 flex min-h-8 items-center gap-1.5 rounded-md px-1 text-left text-xs font-medium outline-none focus-visible:ring-2"
+			data-testid="oc-plan-waiting"
+			onclick={() => cardDetail.open({ type: 'task', id: card.task.id }, [], 'pipeline')}
+		>
+			<Hourglass class="size-3.5 shrink-0" aria-hidden="true" />{t('cc.card.planWaiting')}
+		</button>
 	{/if}
 
 	{#if card.blockedReason || card.blockedBy.length > 0}

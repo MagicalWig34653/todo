@@ -2,6 +2,7 @@ import { ApiError } from './api.js';
 import { PasskeyError } from './auth.svelte.js';
 import { de } from './i18n/de.js';
 import { errorMessage, t } from './i18n/index.js';
+import { pipelineReasonKey } from './pipeline.js';
 
 /** Converts any thrown value into a localized, user-facing message. */
 export function describeError(e: unknown): string {
@@ -11,6 +12,10 @@ export function describeError(e: unknown): string {
 		if (e.reason === 'last_admin_required') return t('settings.admin.accounts.lastAdmin');
 		if (e.reason === 'invalid_token') return errorMessage(e.reason);
 		if (e.reason === 'cannot_lock_self' || e.reason === 'account_anonymized' || e.reason === 'account_disabled') return errorMessage(e.reason);
+		// Pipeline refusals (stage 2): a plan decision from the feed, settings, retry.
+		if (e.reason === 'plan_not_pending') return t('pipeline.error.notPending');
+		const pipelineKey = pipelineReasonKey(e.reason);
+		if (pipelineKey) return t(pipelineKey);
 		if (e.isConflict) return t('conflict.body');
 		if (e.status === 404) return t('error.not_found');
 		if (e.status === 403) return t('error.forbidden');

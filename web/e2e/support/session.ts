@@ -12,15 +12,16 @@ const VIRTUAL_AUTHENTICATOR = {
  * authenticator) and its session cookies are handed to a context of the browser under test. Everything after the sign-in
  * (UI, API calls, uploads) then runs in the browser the project selected, with the project's emulation options.
  * The passkey ceremony itself is therefore NOT exercised in Firefox/WebKit.
+ * `code`: the setup code of the first account (default) or the token of an invitation for a further account.
  */
-export async function signedInPage(browser: Browser, displayName: string): Promise<Page> {
+export async function signedInPage(browser: Browser, displayName: string, code = BOOTSTRAP_TOKEN): Promise<Page> {
 	const baseURL = test.info().project.use.baseURL;
 	// Test stacks with a self-signed certificate (E2E_IGNORE_HTTPS_ERRORS=1, see playwright.config.ts): every context must accept it.
 	const ignoreHTTPSErrors = test.info().project.use.ignoreHTTPSErrors ?? false;
 	if (browser.browserType().name() === 'chromium') {
 		const page = await (await browser.newContext({ ignoreHTTPSErrors })).newPage();
 		await addAuthenticator(page);
-		await register(page, displayName);
+		await register(page, displayName, code);
 		return page;
 	}
 	const helper = await chromium.launch();
@@ -28,7 +29,7 @@ export async function signedInPage(browser: Browser, displayName: string): Promi
 		const ctx = await helper.newContext({ baseURL, ignoreHTTPSErrors });
 		const page = await ctx.newPage();
 		await addAuthenticator(page);
-		await register(page, displayName);
+		await register(page, displayName, code);
 		const state = await ctx.storageState();
 		const own = await (await browser.newContext({ storageState: state, ignoreHTTPSErrors })).newPage();
 		await own.goto('/');
@@ -45,9 +46,9 @@ async function addAuthenticator(page: Page) {
 	await cdp.send('WebAuthn.addVirtualAuthenticator', { options: VIRTUAL_AUTHENTICATOR });
 }
 
-async function register(page: Page, displayName: string) {
+async function register(page: Page, displayName: string, code: string) {
 	await page.goto('/setup');
-	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(BOOTSTRAP_TOKEN);
+	await page.getByLabel('Einrichtungs- oder Einladungscode').fill(code);
 	await page.getByLabel('Anzeigename').fill(displayName);
 	await page.getByRole('button', { name: 'Passkey erstellen' }).click();
 	await expect(page.getByTestId('account-menu')).toBeVisible({ timeout: 20_000 });

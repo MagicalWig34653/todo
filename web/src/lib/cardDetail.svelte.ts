@@ -25,15 +25,16 @@ class CardDetailState {
 		return neighborsOf(this.siblings, this.ref);
 	}
 
-	open(ref: CardRef, siblings: readonly CardRef[] = []): void {
+	open(ref: CardRef, siblings: readonly CardRef[] = [], tab: CardTab = DEFAULT_TAB): void {
 		if (sameCard(this.ref, ref)) return;
 		this.ref = ref;
 		this.siblings = [...siblings];
 		this.invalid = false;
-		this.tab = DEFAULT_TAB;
+		this.tab = tab;
 		const url = new URL(location.href);
 		url.searchParams.set('card', buildCardParam(ref));
-		url.searchParams.delete('tab');
+		if (tab === DEFAULT_TAB) url.searchParams.delete('tab');
+		else url.searchParams.set('tab', tab);
 		history.pushState(null, '', url.pathname + url.search.replace(/%3A/gi, ':'));
 		this.pushed = true;
 	}

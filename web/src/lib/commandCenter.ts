@@ -45,8 +45,8 @@ export function orderedLanes(lanes: CommandLane[] | null | undefined, titles: (k
 }
 
 /** Number that deserves attention in the sidebar: open questions plus reviews waiting for a decision. */
-export function attentionCount(s: Pick<CommandSummary, 'openQuestions' | 'pendingReviews'> & { pendingConfirmations?: number; pendingAccessRequests?: number } | null | undefined): number {
-	return (s?.openQuestions ?? 0) + (s?.pendingReviews ?? 0) + (s?.pendingConfirmations ?? 0) + (s?.pendingAccessRequests ?? 0);
+export function attentionCount(s: Pick<CommandSummary, 'openQuestions' | 'pendingReviews'> & { pendingConfirmations?: number; pendingAccessRequests?: number; plansWaiting?: number } | null | undefined): number {
+	return (s?.openQuestions ?? 0) + (s?.pendingReviews ?? 0) + (s?.pendingConfirmations ?? 0) + (s?.pendingAccessRequests ?? 0) + (s?.plansWaiting ?? 0);
 }
 
 /** Open questions of all cards, newest first, de-duplicated by id (feature cards repeat subtask questions). */
@@ -77,7 +77,7 @@ export function decisionNeedsNote(decision: ReviewDecision, note: string): boole
 	return decision === 'request_changes' && !note.trim();
 }
 
-export type UpdateGroup = 'progress' | 'asked' | 'answered' | 'withdrawn' | 'review' | 'accepted' | 'changes' | 'build' | 'claimed' | 'released' | 'blocked' | 'agent';
+export type UpdateGroup = 'planWritten' | 'planApproved' | 'planChanges' | 'progress' | 'asked' | 'answered' | 'withdrawn' | 'review' | 'accepted' | 'changes' | 'build' | 'claimed' | 'released' | 'blocked' | 'agent';
 
 /** Maps the activity kind of an update (`updateKinds` in the backend) to a stable i18n suffix. */
 export function updateKind(kind: string): UpdateGroup {
@@ -112,6 +112,12 @@ export function updateKind(kind: string): UpdateGroup {
 			return 'released';
 		case 'task.blocked':
 			return 'blocked';
+		case 'plan.written':
+			return 'planWritten';
+		case 'plan.approved':
+			return 'planApproved';
+		case 'plan.changes_requested':
+			return 'planChanges';
 		default:
 			return 'agent';
 	}

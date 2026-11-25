@@ -170,7 +170,8 @@ function setup(initial: TaskPipeline | (() => Promise<TaskPipeline>) = proposed(
 	const server = { current: initial };
 	const api = {
 		taskPipeline: vi.fn<PipelineApi['taskPipeline']>(async () => (typeof server.current === 'function' ? server.current() : structuredClone(server.current))),
-		decidePlan: vi.fn<PipelineApi['decidePlan']>(async () => proposed({ state: 'approved' }))
+		decidePlan: vi.fn<PipelineApi['decidePlan']>(async () => proposed({ state: 'approved' })),
+		retryPipelineStep: vi.fn<PipelineApi['retryPipelineStep']>(async () => pipeline())
 	};
 	const view = emptyPipelineView();
 	return { server, api, view, ctl: createPipelineController(view, api) };
