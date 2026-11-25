@@ -26,14 +26,17 @@ enum SecretFilter {
 
     private static let keyWords = "password|passwort|passwd|pass|pwd|passphrase|kennwort|secret|geheim|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|credentials?|zugangsdaten|schl(?:ü|ue)ssel|auth|key"
 
+    // Private key blocks, also when the end marker is missing (cut off text).
+    private static let privateKeyBlock = sensitive("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)")
+    // Cookies carry session ids.
+    private static let cookieLine = insensitive("(\\b(?:set-)?cookie[\"']?\\s*[:=]\\s*)[^\\n]+", "$1\(mask)")
+
     /// Order matters: structured forms first, generic shapes last. Templates use `$1`; the mask has no template characters.
     private static let rules: [Rule] = [
-        // Private key blocks, also when the end marker is missing (cut off text).
-        sensitive("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)"),
+        privateKeyBlock,
         // Authorization header: keep the header name, mask scheme and credentials.
         insensitive("(\\bauthorization[\"']?\\s*[:=]\\s*)(?:(?:bearer|basic|token|digest)\\s+)?[^\\s'\",;]+", "$1\(mask)"),
-        // Cookies carry session ids.
-        insensitive("(\\b(?:set-)?cookie[\"']?\\s*[:=]\\s*)[^\\n]+", "$1\(mask)"),
+        cookieLine,
         // CLI flags: --password x, --token=x, -phunter2, curl -u user:pw.
         insensitive("(--?(?:password|passwort|passwd|pass|pwd|token|secret|api-?key|auth)(?:=|\\s+))\\S+", "$1\(mask)"),
         sensitive("(?<=\\s)-p[^\\s=-]\\S{2,}"),
@@ -74,32 +77,59 @@ enum SecretFilter {
         return first
     }
 
-    /// Long texts that must not be cut (card plans): private key blocks are masked on the whole text, everything else piece
-    /// by piece (whole lines up to `maxInputScalars`). A piece without a finding stays byte for byte as written.
+    /// Long texts that must not be cut (card plans): the rules that reach over a whole block or line run on the whole text,
+    /// everything else piece by piece (up to `maxInputScalars`). A piece without a finding stays byte for byte as written.
     static func redactLong(_ raw: String) -> String {
-        let keys = rules[0].regex.stringByReplacingMatches(in: raw, options: [], range: NSRange(location: 0, length: (raw as NSString).length), withTemplate: rules[0].template)
-        return pieces(of: keys).map { piece in
+        let blocks = [privateKeyBlock, cookieLine].reduce(raw) { apply($1, to: $0) }
+        return pieces(of: blocks).map { piece in
             let result = redact(piece)
             return result.didRedact ? result.text : piece
         }.joined()
     }
 
-    /// Cuts after the last line break that fits, else after the last space or tab, else hard at the limit.
     private static func pieces(of text: String) -> [String] {
         let scalars = Array(text.unicodeScalars)
         var result: [String] = []
         var start = 0
         while start < scalars.count {
             var end = min(start + maxInputScalars, scalars.count)
-            if end < scalars.count {
-                let window = scalars[start..<end]
-                if let cut = window.lastIndex(of: "\n") ?? window.lastIndex(where: { $0 == " " || $0 == "\t" }) { end = cut + 1 }
-            }
-            var view = String.UnicodeScalarView(); view.append(contentsOf: scalars[start..<end])
-            result.append(String(view))
+            if end < scalars.count { end = cut(scalars, from: start, limit: end) }
+            result.append(string(scalars[start..<end]))
             start = end
         }
         return result
+    }
+
+    /// Where the piece starting at `start` ends: after a line break if possible, else after a blank, else after a
+    /// separator, else near the limit. A candidate counts only if it does not part a key from its value.
+    private static func cut(_ scalars: [Unicode.Scalar], from start: Int, limit: Int) -> Int {
+        let breaks: [(Unicode.Scalar) -> Bool] = [{ $0 == "\n" }, { $0 == " " || $0 == "\t" }, { $0 == "," || $0 == ";" || $0 == "&" }]
+        // A few candidates of each kind keep the work bounded on adversarial input.
+        let perKind = 12
+        var candidates: [Int] = []
+        for isBreak in breaks {
+            candidates += stride(from: limit - 1, through: start, by: -1).lazy.filter { isBreak(scalars[$0]) }.prefix(perKind).map { $0 + 1 }
+        }
+        candidates += stride(from: limit, to: start, by: -64).prefix(perKind)
+        return candidates.first { isSafeCut(scalars, at: $0, from: start) } ?? candidates.first ?? limit
+    }
+
+    /// Both sides of the cut, redacted on their own, must read like the two redacted together. The look reaches half a
+    /// piece in each direction, so it sees a key left of the cut and its value right of it.
+    private static func isSafeCut(_ scalars: [Unicode.Scalar], at cut: Int, from start: Int) -> Bool {
+        let reach = maxInputScalars / 2
+        let before = string(scalars[max(start, cut - reach)..<cut])
+        let after = string(scalars[cut..<min(scalars.count, cut + reach)])
+        return redact(before).text + redact(after).text == redact(before + after).text
+    }
+
+    private static func string(_ scalars: ArraySlice<Unicode.Scalar>) -> String {
+        var view = String.UnicodeScalarView(); view.append(contentsOf: scalars)
+        return String(view)
+    }
+
+    private static func apply(_ rule: Rule, to text: String) -> String {
+        rule.regex.stringByReplacingMatches(in: text, options: [], range: NSRange(location: 0, length: (text as NSString).length), withTemplate: rule.template)
     }
 
     private static func normalize(_ raw: String) -> String {
@@ -115,7 +145,7 @@ enum SecretFilter {
         var text = input
         var changed = false
         for rule in rules {
-            let out = rule.regex.stringByReplacingMatches(in: text, options: [], range: NSRange(location: 0, length: (text as NSString).length), withTemplate: rule.template)
+            let out = apply(rule, to: text)
             if out != text { changed = true; text = out }
         }
         // 40 hex characters are a git commit hash, which agents mention all the time; every other long hex run is a key or digest.

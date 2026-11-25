@@ -13,7 +13,7 @@ extension WorkflowService {
         guard let body = try Self.pipelineText(request.body, max: PipelineLimits.maxPlan, reason: "invalid_plan") else {
             throw Abort(.badRequest, reason: "invalid_plan")
         }
-        let label = try pipelineLabel(request.agentName, actor: actor)
+        let label = try Self.pipelineLabel(request.agentName, actor: actor)
         return try await mutate(taskID, role: .edit) { task, tx in
             let id = try task.requireID()
             let existing = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first()
@@ -48,7 +48,7 @@ extension WorkflowService {
         let comment = try Self.pipelineText(request.comment, max: PipelineLimits.maxComment, reason: "invalid_comment")
         if !approve, comment == nil { throw Abort(.badRequest, reason: "comment_required") }
         guard let version = request.version else { throw Abort(.badRequest, reason: "invalid_version") }
-        let label = try pipelineLabel(nil, actor: actor)
+        let label = try Self.pipelineLabel(nil, actor: actor)
         return try await mutate(taskID, role: .edit) { task, tx in
             let id = try task.requireID()
             guard let plan = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first() else {
@@ -91,7 +91,7 @@ extension WorkflowService {
             throw Abort(.conflict, reason: "step_managed")
         }
         let note = try Self.pipelineText(request.note, max: PipelineLimits.maxNote, reason: "invalid_note")
-        let label = try pipelineLabel(request.agentName, actor: actor)
+        let label = try Self.pipelineLabel(request.agentName, actor: actor)
         return try await mutate(taskID, role: .edit) { task, tx in
             let id = try task.requireID()
             let plan = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first()
@@ -121,23 +121,42 @@ extension WorkflowService {
         if value.isEmpty { return nil }
         // Characters are not bytes: stacked combining marks must not overflow the TEXT columns of MariaDB (65 535 bytes).
         let maxBytes = max > PipelineLimits.maxComment ? 262_144 : 60_000
-        guard value.count <= max, value.utf8.count <= maxBytes, !value.unicodeScalars.contains(where: {
+        func fits(_ text: String) -> Bool { text.count <= max && text.utf8.count <= maxBytes }
+        guard fits(value), !value.unicodeScalars.contains(where: {
             $0.properties.generalCategory == .control && !"\n\r\t".unicodeScalars.contains($0)
         }) else { throw Abort(.badRequest, reason: reason) }
-        return SecretFilter.redactLong(value)
+        // The mask and compatibility folding lengthen text, so the limits are checked again on what gets stored. Refused
+        // rather than cut: nobody should approve a plan that silently lost its end.
+        let masked = SecretFilter.redactLong(value)
+        guard fits(masked) else { throw Abort(.badRequest, reason: reason) }
+        return masked
     }
 
-    /// `agentName`, else the connection's name, else (persons) the account's display name.
-    private func pipelineLabel(_ agentName: String?, actor: WorkflowActor) throws -> String? {
+    /// Names are cut instead: at most `maxLabel` characters, and no more code points than VARCHAR(255) of MariaDB holds.
+    private static func fittingLabel(_ name: String) -> String {
+        var result = "", scalars = 0
+        for character in name.prefix(PipelineLimits.maxLabel) {
+            scalars += character.unicodeScalars.count
+            if scalars > PipelineLimits.maxLabelScalars { break }
+            result.append(character)
+        }
+        return result
+    }
+
+    /// The stored name: `agentName`, else the connection's name. A person without `agentName` gets none, because a copy
+    /// of the account name would outlive the account; `pipelineDTO` reads it from the account.
+    private static func pipelineLabel(_ agentName: String?, actor: WorkflowActor) throws -> String? {
         if let name = try Self.optionalLabel(agentName, reason: "invalid_agent_name") {
-            // The label of decisions under the brain mandate is written by the server only.
-            guard !name.lowercased().hasPrefix(CommentService.reservedLabelPrefix.lowercased()) else {
+            let masked = SecretFilter.redact(name).text
+            // The label of decisions under the brain mandate is written by the server only. Checked after the filter too,
+            // which folds look-alike characters.
+            let reserved = CommentService.reservedLabelPrefix.lowercased()
+            guard ![name, masked].contains(where: { $0.lowercased().hasPrefix(reserved) }) else {
                 throw Abort(.badRequest, reason: "invalid_agent_name")
             }
-            return SecretFilter.redact(name).text
+            return fittingLabel(masked)
         }
-        let fallback = actor.label ?? (actor.type == .person ? user.displayName : nil)
-        return fallback.map { String($0.prefix(100)) }
+        return actor.label.map(fittingLabel)
     }
 
     /// Caller holds the task row lock.
@@ -166,13 +185,32 @@ extension WorkflowService {
         let plan = try await TaskPlan.query(on: db).filter(\.$taskID == taskID).first()
         let rows = try await TaskPipelineStep.query(on: db).filter(\.$taskID == taskID).all()
         let byStep = Dictionary(rows.map { ($0.step, $0) }, uniquingKeysWith: { first, _ in first })
+        let events = try await TaskPipelineEvent.query(on: db).filter(\.$taskID == taskID).sort(\.$sequence, .descending)
+            .limit(PipelineLimits.maxEvents).all()
+
+        // Persons without a stored name are looked up once for the whole answer; a deleted account has none.
+        var persons = rows.filter { $0.actorType == .person }.map(\.actorID) + events.filter { $0.actorType == .person }.map(\.actorID)
+        if let plan {
+            if plan.authorType == .person { persons.append(plan.authorID) }
+            if plan.decidedByType == ActivityActorType.person.rawValue, let id = plan.decidedByID { persons.append(id) }
+        }
+        let names = try await displayNames(persons, on: db)
+        func label(_ stored: String?, _ type: ActivityActorType?, _ id: UUID?) -> String? {
+            if let stored { return stored }
+            guard type == .person, let id else { return nil }
+            return names[id].map(fittingLabel)
+        }
+
+        let planDTO = plan.map { p in
+            PlanDTO(p, authorLabel: label(p.authorLabel, p.authorType, p.authorID),
+                decidedByLabel: label(p.decidedByLabel, p.decidedByType.flatMap(ActivityActorType.init(rawValue:)), p.decidedByID))
+        }
         let steps = PipelineStepName.allCases.map { name -> PipelineStepDTO in
             let row = byStep[name.rawValue]
             return PipelineStepDTO(step: name.rawValue, state: row?.state ?? PipelineStepState.pending, note: row?.note,
-                actorLabel: row?.actorLabel, updatedAt: row?.updatedAt)
+                actorLabel: label(row?.actorLabel, row?.actorType, row?.actorID), updatedAt: row?.updatedAt)
         }
-        let events = try await TaskPipelineEvent.query(on: db).filter(\.$taskID == taskID).sort(\.$sequence, .descending)
-            .limit(PipelineLimits.maxEvents).all()
-        return PipelineDTO(taskID: taskID, plan: plan.map(PlanDTO.init), steps: steps, events: try events.map(PipelineEventDTO.init))
+        return PipelineDTO(taskID: taskID, plan: planDTO, steps: steps,
+            events: try events.map { try PipelineEventDTO($0, actorLabel: label($0.actorLabel, $0.actorType, $0.actorID)) })
     }
 }

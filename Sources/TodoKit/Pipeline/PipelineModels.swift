@@ -25,6 +25,8 @@ enum PipelineLimits {
     static let maxComment = 4000
     static let maxNote = 2000
     static let maxEvents = 50
+    static let maxLabel = 100
+    static let maxLabelScalars = 255
 }
 
 // MARK: - Models
@@ -92,6 +94,7 @@ extension TaskPipelineStep: LiveTaskScoped { var liveTaskID: UUID? { taskID } }
 
 /// Additive: three new tables, removed with their task (and so with their project). No foreign key to accounts, like the
 /// other agent texts on a card (progress notes, reviews): they stay with a surviving card when an account is deleted.
+/// The label columns never hold a person's account name (it is read from the account, so it ends with it).
 struct CreateTaskPipeline: AsyncMigration {
     func prepare(on db: any Database) async throws {
         // `.sql(raw:)` because `.sql(.text)` becomes VARCHAR(255) on MariaDB; a plan of 20 000 characters can exceed TEXT.
@@ -147,9 +150,9 @@ struct PlanDTO: Content {
     let decidedAt: Date?
     let decidedByLabel: String?
     let decisionComment: String?
-    init(_ p: TaskPlan) {
-        version = p.version; body = p.body; state = p.state; authorType = wireType(p.authorType); authorLabel = p.authorLabel
-        writtenAt = p.writtenAt; decidedAt = p.decidedAt; decidedByLabel = p.decidedByLabel; decisionComment = p.decisionComment
+    init(_ p: TaskPlan, authorLabel: String?, decidedByLabel: String?) {
+        version = p.version; body = p.body; state = p.state; authorType = wireType(p.authorType); self.authorLabel = authorLabel
+        writtenAt = p.writtenAt; decidedAt = p.decidedAt; self.decidedByLabel = decidedByLabel; decisionComment = p.decisionComment
     }
 }
 
@@ -171,9 +174,9 @@ struct PipelineEventDTO: Content {
     let actorType: String
     let actorLabel: String?
     let createdAt: Date
-    init(_ e: TaskPipelineEvent) throws {
+    init(_ e: TaskPipelineEvent, actorLabel: String?) throws {
         id = try e.requireID(); action = e.action; planVersion = e.planVersion; step = e.step; state = e.state; note = e.note
-        actorType = wireType(e.actorType); actorLabel = e.actorLabel; createdAt = e.createdAt
+        actorType = wireType(e.actorType); self.actorLabel = actorLabel; createdAt = e.createdAt
     }
 }
 

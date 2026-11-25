@@ -83,3 +83,8 @@ Anlass (Lino 24.11.): Die Verbindung "Wächter (Mac)" sieht Formular Backend, Ca
 - *Schleife/Flut:* höchstens 50 Projekte je Aufruf; idempotente Wiederholungen schreiben nichts.
 
 **Bekannte Lücken (bewusst offen):** Kein Eintrag in Aktivität/Feed mit dem Label „Brain im Auftrag von <Name>“: `activity_events` ist an eine Karte gebunden (`task_id` Pflicht), eine projektbezogene Aktivität ohne Karte gibt es nicht; das wäre ein eigener Umbau. Das Protokoll in den Einstellungen ist der Nachweis. Kein Chatkommentar (keine Karte). Kein Push an die Person bei Freigaben (nur Protokoll). `list_connections` nennt keine Verbindungen anderer Personen und keine widerrufenen.
+
+## Nachtrag 25.11.2026: Plan-Freigabe unter der Vollmacht (Karte `74EC341D`)
+
+Die Vollmacht gilt seit Karte `74EC341D` auch für `decide_plan` (Plan freigeben oder Änderungen verlangen, Vertrag `contracts/pipeline.yaml`). Es gelten dieselben Regeln wie für `decide_review`: eigene Vollmacht der aufrufenden Verbindung, Projekt der Karte in deren Projektliste, Pflicht-Zitat, nie der eigene Plan derselben Verbindung (`cannot_decide_own_plan`), Audit (`plan.approved`, `plan.changes_requested`) und Chatkommentar. Das gilt auch für bereits erteilte Vollmachten; sie müssen nicht neu erteilt werden.
+
