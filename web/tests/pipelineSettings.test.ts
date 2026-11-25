@@ -161,6 +161,8 @@ describe('history text', () => {
 		expect(settingsSummary('maxFixRounds 5')).toBe('Höchstens 5 Fix-Runden');
 		expect(settingsSummary('notifyOnWaitingApproval aus')).toBe('Benachrichtigung bei wartender Freigabe ausgeschaltet');
 		expect(settingsSummary('roles.reviewer.model null')).toBe('Reviewer: Modell auf Standard');
+		// What the backend writes when a value is cleared.
+		expect(settingsSummary('roles.developer.model Standard; roles.developer.effort Standard')).toBe('Entwickler: Modell auf Standard; Entwickler: Effort auf Standard');
 	});
 
 	it('shows an unknown text as it is', () => {

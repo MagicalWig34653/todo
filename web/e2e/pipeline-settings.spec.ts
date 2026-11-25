@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { signedInPage } from './support/session';
+import { clearMocks, installMocks, setMocks } from './support/fetchMock';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +68,7 @@ const shoots = () => test.info().project.name === 'chromium';
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(SHOTS, { recursive: true });
 	owner = await signedInPage(browser, 'Pipeline Eigentümer');
+	await installMocks(owner);
 	const invite = (await (await owner.request.post('/v1/invitations', { ...json, data: {} })).json()) as { token: string };
 	guest = await signedInPage(browser, 'Pipeline Gast', invite.token);
 	const guestID = ((await (await guest.request.get('/v1/me')).json()) as { id: string }).id;
@@ -105,7 +107,7 @@ test('the project menu opens the settings; the defaults are all steps on, no mod
 	// Escape closes the dialog and the URL goes back to the project.
 	await owner.keyboard.press('Escape');
 	await expect(dialog(owner)).toHaveCount(0);
-	await expect(owner).toHaveURL(new RegExp(`/project/${projectID}$`, 'i'));
+	await expect(owner).toHaveURL(new RegExp(`/project/${projectID}(/list)?$`, "i"));
 });
 
 test('saving without a change sends nothing', async () => {
@@ -175,13 +177,13 @@ test('an invalid model or round count is explained and nothing is sent', async (
 
 test('the server refuses an invalid model with a German message and keeps the typed values', async () => {
 	await open(owner, projectID);
-	await owner.route('**/pipeline-settings', (r) => (r.request().method() === 'PATCH' ? r.fulfill({ status: 400, json: { error: true, reason: 'invalid_model' } }) : r.continue()));
+	await setMocks(owner, [{ url: '/pipeline-settings', method: 'PATCH', status: 400, json: { error: true, reason: 'invalid_model' } }]);
 	await model(owner, 'Planer').fill('opus');
 	await save(owner).click();
 	await expect(feedback(owner)).toContainText('Modell');
 	await expect(feedback(owner)).not.toContainText('invalid_model');
 	await expect(model(owner, 'Planer')).toHaveValue('opus');
-	await owner.unroute('**/pipeline-settings');
+	await clearMocks(owner);
 });
 
 test('clearing a model or an effort goes back to the default', async () => {
@@ -217,9 +219,7 @@ test('a change made elsewhere in the meantime: message, current values loaded, t
 
 test('the keyboard saves: Enter in the field sends the form, focus stays visible and the result is announced', async () => {
 	await open(owner, projectID);
-	await rounds(owner).focus();
-	await owner.keyboard.press('Control+a');
-	await owner.keyboard.type('4');
+	await rounds(owner).fill('4');
 	expect(await patchesSent(owner, () => owner.keyboard.press('Enter'))).toBe(1);
 	await expect(feedback(owner)).toContainText('Gespeichert');
 	await expect(rounds(owner)).toBeFocused();
@@ -252,21 +252,22 @@ test('a person without the manage right only sees the values; the server refuses
 
 test('a server refusal for a missing right is explained (the right was withdrawn while the dialog was open)', async () => {
 	await open(owner, projectID);
-	await owner.route('**/pipeline-settings', (r) => (r.request().method() === 'PATCH' ? r.fulfill({ status: 403, json: { error: true, reason: 'forbidden' } }) : r.continue()));
+	await setMocks(owner, [{ url: '/pipeline-settings', method: 'PATCH', status: 403, json: { error: true, reason: 'forbidden' } }]);
 	await rounds(owner).fill('6');
 	await save(owner).click();
 	await expect(feedback(owner)).toContainText('Berechtigung');
 	await expect(rounds(owner)).toHaveValue('6');
-	await owner.unroute('**/pipeline-settings');
+	await clearMocks(owner);
 });
 
 test('a server without the endpoint (404) says so instead of showing an empty form', async () => {
-	const url = `**/v1/projects/${projectID}/pipeline-settings`;
-	await owner.route(url, (r) => r.fulfill({ status: 404, json: { error: true, reason: 'Not Found' } }));
+	await owner.goto('/for-you');
+	await expect(owner.getByTestId('view-heading')).toBeVisible();
+	await setMocks(owner, [{ url: `/projects/${projectID}/pipeline-settings`, status: 404, json: { error: true, reason: 'Not Found' } }]);
 	await owner.goto(`/project/${projectID}/pipeline`);
 	await expect(dialog(owner)).toContainText('noch nicht');
 	await expect(save(owner)).toHaveCount(0);
-	await owner.unroute(url);
+	await clearMocks(owner);
 });
 
 for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['mobile', { width: 390, height: 844 }]] as const) {

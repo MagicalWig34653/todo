@@ -146,7 +146,7 @@ function summaryPart(part: string): string | null {
 	}
 	if (group === 'roles' && name && isRole(name) && (field === 'model' || field === 'effort')) {
 		const role = t(`pipeline.role.${name}` as MessageKey);
-		if (CLEARED.has(value)) return t(field === 'model' ? 'pipeline.settings.history.modelCleared' : 'pipeline.settings.history.effortCleared', { role });
+		if (CLEARED.has(value.toLowerCase())) return t(field === 'model' ? 'pipeline.settings.history.modelCleared' : 'pipeline.settings.history.effortCleared', { role });
 		if (field === 'model') return t('pipeline.settings.history.model', { role, value });
 		return t('pipeline.settings.history.effort', { role, value: t(effortKey(value)) });
 	}

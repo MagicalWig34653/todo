@@ -29,6 +29,10 @@
 
 	const dirty = $derived(!!view.data && !!view.draft && settingsDirty(view.data, view.draft));
 	const problemOf = (field: SettingsProblem['field'], role?: string) => view.problems.find((p) => p.field === field && p.role === role);
+	/** Typing in a field dismisses what was said about it; the next save checks again. */
+	const dismiss = (field: SettingsProblem['field'], role?: string) => {
+		if (view.problems.some((p) => p.field === field && p.role === role)) view.problems = view.problems.filter((p) => !(p.field === field && p.role === role));
+	};
 	let form = $state<HTMLFormElement | null>(null);
 
 	async function submit() {
@@ -104,6 +108,7 @@
 										aria-label={t('pipeline.settings.model', { role: roleName })}
 										aria-invalid={modelProblem ? 'true' : undefined}
 										aria-describedby={modelProblem ? sid(`model-${role}-p`) : undefined}
+										oninput={() => dismiss('model', role)}
 										bind:value={view.draft.roles[role].model}
 									/>
 								</label>
@@ -116,6 +121,7 @@
 										class="text-foreground"
 										aria-label={t('pipeline.settings.effort', { role: roleName })}
 										aria-invalid={effortProblem ? 'true' : undefined}
+										onchange={() => dismiss('effort', role)}
 										bind:value={view.draft.roles[role].effort}
 									>
 										<option value="">{t('pipeline.effort.default')}</option>
@@ -139,6 +145,7 @@
 						autocomplete="off"
 						aria-invalid={problemOf('maxFixRounds') ? 'true' : undefined}
 						aria-describedby={problemOf('maxFixRounds') ? `${sid('rounds-p')} ${sid('rounds-h')}` : sid('rounds-h')}
+						oninput={() => dismiss('maxFixRounds')}
 						bind:value={view.draft.maxFixRounds}
 					/>
 					<p class="text-muted-foreground text-xs" id={sid('rounds-h')}>{t('pipeline.settings.roundsHint')}</p>

@@ -155,6 +155,12 @@ export function needInputKind(action: Pick<ForYouAction, 'requiresInput' | 'inpu
 	return action.inputField === 'answer' || action.inputField === 'note' || action.inputField === 'comment' ? action.inputField : null;
 }
 
+/** The detail line of an entry as plain text: the first line of a plan is often a Markdown heading, shown without its `#` marks. */
+export function needDetailText(n: Pick<ForYouNeed, 'kind' | 'detail'>): string {
+	const detail = n.detail ?? '';
+	return n.kind === 'plan' ? detail.replace(/^\s{0,3}#{1,6}\s+/, '') : detail;
+}
+
 /** i18n key of the label above a needs-you entry; unknown kinds of a newer server get a neutral one instead of nothing. */
 export function needKindKey(kind: string): MessageKey {
 	return (['question', 'review', 'plan', 'blocked', 'overdue', 'due'] as readonly string[]).includes(kind) ? (`forYou.kind.${kind}` as MessageKey) : 'forYou.kind.other';
