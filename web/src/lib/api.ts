@@ -6,6 +6,7 @@ import type { ReviewVariant } from './reviewVariants.js';
 import type { BrainAuditItem, BrainMandate } from './brainMandate.js';
 import type { PipelineStepName, PlanDecisionInput, RetryInput, TaskPipeline } from './pipeline.js';
 import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
+import type { ContinueInput, StartInput } from './pipelineExecution.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
 
 export interface Capabilities {
@@ -1343,6 +1344,12 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		retryPipelineStep: (taskID: string, step: PipelineStepName, { planVersion, note }: RetryInput) =>
 			request<TaskPipeline>('POST', `/tasks/${taskID}/pipeline/steps/${step}/retry`, { planVersion, note: note?.trim() || undefined }),
 		/** `planVersion`: the version the state is based on; the server refuses (`plan_changed`) when the plan moved on. */
+		// Execution on a runner (stage 3, docs/PLAN-PIPELINE-STUFE-3.md section 3).
+		startPipelineExecution: (taskID: string, { id, bindingID }: StartInput) =>
+			request<TaskPipeline>('POST', `/tasks/${taskID}/pipeline/execution`, { id, bindingID }),
+		continuePipelineExecution: (taskID: string, { planVersion }: ContinueInput) =>
+			request<TaskPipeline>('POST', `/tasks/${taskID}/pipeline/execution/continue`, { planVersion }),
+		stopPipelineExecution: (taskID: string) => request<TaskPipeline>('POST', `/tasks/${taskID}/pipeline/execution/stop`, {}),
 		setPipelineStep: (taskID: string, step: PipelineStepName, body: { state: string; note?: string; planVersion?: number }) =>
 			request<TaskPipeline>('PUT', `/tasks/${taskID}/pipeline/steps/${step}`, body),
 		pipelineSettings: (projectID: string) => request<PipelineSettings>('GET', `/projects/${projectID}/pipeline-settings`),

@@ -13,6 +13,7 @@
 		PLAN_COMMENT_MAX,
 		canDecide,
 		effortKey,
+		eventActor,
 		eventText,
 		isEmptyPipeline,
 		offSteps,
@@ -31,10 +32,12 @@
 		type PlanDecision,
 		type PlanState
 	} from '#lib/pipeline.js';
+	import { executionSection, liveStep, retryHintKey } from '#lib/pipelineExecution.js';
 	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import Timestamp from '../Timestamp.svelte';
+	import CardExecution from './CardExecution.svelte';
 	import CardTabEmpty from './CardTabEmpty.svelte';
 	import Markdown from './Markdown.svelte';
 
@@ -46,9 +49,13 @@
 		view: PipelineView;
 		controller: PipelineController;
 		canEdit: boolean;
+		/** The person may start the execution on a runner (project owner). */
+		mayStart: boolean;
+		reviewPending: boolean;
+		onreview: () => void;
 		ondecided: () => void | Promise<void>;
 	}
-	let { view, controller, canEdit, ondecided }: Props = $props();
+	let { view, controller, canEdit, mayStart, reviewPending, onreview, ondecided }: Props = $props();
 
 	const data = $derived(view.data);
 	const plan = $derived(data?.plan ?? null);
@@ -93,6 +100,12 @@
 		if (outcome === 'done') await ondecided();
 	}
 	const counts = $derived(stepCounts(data));
+	const execution = $derived(executionSection(data, view.bindings, mayStart));
+	const live = $derived(liveStep(data));
+	const retryHint = $derived(retryHintKey(data, mayStart));
+	/** The messages of the execution have their own place, in the section "Ausführung". */
+	const message = $derived(view.feedback && view.feedback.scope !== 'execution' ? view.feedback : null);
+	const liveLook = { running: 'text-ui-accent-ink', waiting: 'text-muted-foreground', warning: 'text-warning' } as const;
 	const off = $derived(offSteps(data));
 
 	const heading = 'text-muted-foreground text-xs font-semibold tracking-wide uppercase';
@@ -100,6 +113,10 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-5" data-testid="card-pipeline">
+	<!-- Outside the branches below: the first start must not rebuild the section (focus, announced message). -->
+	{#if view.status === 'ready' && execution.show}
+		<CardExecution {view} {controller} {mayStart} {reviewPending} {onreview} onchanged={ondecided} />
+	{/if}
 	{#if view.status === 'loading'}
 		<p class="text-muted-foreground min-h-16 text-xs" role="status">{t('pipeline.loading')}</p>
 	{:else if view.status === 'failed'}
@@ -126,13 +143,23 @@
 					{@const look = on ? (stepLook[s.state] ?? stepLook.pending) : stepLook.skipped}
 					{@const role = roleLine(s)}
 					{@const offer = retryOffer(data, s.step, canEdit)}
-					<li class={['flex min-w-0 gap-3 px-3 py-2.5', !on && 'text-muted-foreground']} data-testid="pipeline-step" data-step={s.step} data-state={s.state} data-enabled={on ? 'true' : 'false'}>
-						<look.icon class="mt-0.5 size-4 shrink-0 {look.color}" aria-hidden="true" />
+					{@const now = live?.step === s.step ? live : null}
+					<li class={['flex min-w-0 gap-3 px-3 py-2.5', !on && 'text-muted-foreground']} data-testid="pipeline-step" data-step={s.step} data-state={s.state} data-enabled={on ? 'true' : 'false'} data-live={now ? now.tone : undefined} aria-current={now ? 'step' : undefined}>
+						{#if now?.tone === 'running'}
+							<LoaderCircle class="text-ui-accent mt-0.5 size-4 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
+						{:else if now}
+							<Hourglass class="mt-0.5 size-4 shrink-0 {liveLook[now.tone]}" aria-hidden="true" />
+						{:else}
+							<look.icon class="mt-0.5 size-4 shrink-0 {look.color}" aria-hidden="true" />
+						{/if}
 						<div class="flex min-w-0 flex-1 flex-col gap-0.5">
 							<div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
 								<span class="font-medium">{t(stepNameKey(s.step))}</span>
 								<Badge variant={look.badge} data-testid="pipeline-step-state">{on ? t(stepStateKey(s.state)) : t('pipeline.step.off')}</Badge>
 							</div>
+							{#if now}
+								<p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap {liveLook[now.tone]}" data-testid="pipeline-step-live">{t(now.key)}{#if now.progress}{': '}{now.progress}{/if}</p>
+							{/if}
 							{#if role}
 								<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-testid="pipeline-step-role">{t('pipeline.roleLine', { model: role.model ?? t('pipeline.modelDefault'), effort: t(effortKey(role.effort)) })}</p>
 							{/if}
@@ -148,6 +175,7 @@
 									</Button>
 									<span class="text-muted-foreground text-xs" data-testid="pipeline-step-round" data-tabular>{t('pipeline.retry.round', { round: offer.round, max: offer.max })}</span>
 								</div>
+								{#if retryHint}<p class="text-muted-foreground text-xs" data-testid="pipeline-step-retry-hint">{t(retryHint)}</p>{/if}
 							{:else if offer.kind === 'exhausted'}
 								<div class="mt-1 flex flex-col gap-1.5">
 									<div class="flex">
@@ -218,9 +246,9 @@
 			role="status"
 			aria-live="polite"
 			tabindex="-1"
-			class={['focus-visible:ring-ring/60 -mt-3 rounded-lg font-medium [overflow-wrap:anywhere] outline-none empty:-mt-5 focus-visible:ring-2', view.feedback?.tone === 'error' ? 'text-destructive' : view.feedback?.tone === 'success' ? 'text-success' : 'text-foreground']}
+			class={['focus-visible:ring-ring/60 -mt-3 rounded-lg font-medium [overflow-wrap:anywhere] outline-none empty:-mt-5 focus-visible:ring-2', message?.tone === 'error' ? 'text-destructive' : message?.tone === 'success' ? 'text-success' : 'text-foreground']}
 			data-testid="pipeline-feedback"
-		>{view.feedback ? t(view.feedback.key, view.feedback.params) : ''}</p>
+		>{message ? t(message.key, message.params) : ''}</p>
 
 		<!-- Below the message, so nothing moves under the pointer; the second click of a double click is ignored. -->
 		{#if view.confirm && plan && canDecide(data, canEdit)}
@@ -239,7 +267,7 @@
 						<li class="min-w-0" data-testid="pipeline-event">
 							<p class="[overflow-wrap:anywhere]">{eventText(e)}</p>
 							{#if e.note}<p class="text-muted-foreground {prose}">{e.note}</p>{/if}
-							<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-tabular>{e.actorLabel || t('cc.update.anonymous')}{#if e.createdAt}{' · '}<Timestamp value={e.createdAt} />{/if}</p>
+							<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-tabular>{eventActor(e)}{#if e.createdAt}{' · '}<Timestamp value={e.createdAt} />{/if}</p>
 						</li>
 					{/each}
 				</ol>
