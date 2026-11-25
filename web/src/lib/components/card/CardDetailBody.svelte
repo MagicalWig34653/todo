@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { can, roleOf } from '#lib/access.js';
+	import { can, isOwner, roleOf } from '#lib/access.js';
 	import { api, ApiError, type Attachment, type Question, type TaskContext } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { galleryOf, projectChain, type CardRef } from '#lib/cardRef.js';
@@ -139,6 +139,8 @@
 	const projectID = $derived(task?.projectID ?? ctx?.projectID ?? null);
 	const project = $derived(projectID ? workspace.projects.find((p) => p.id === projectID) : null);
 	const canEdit = $derived(project ? can(roleOf(project), 'addTask') : false);
+	/** Starting the pipeline on a runner is the owner's right, edit access never implies it. */
+	const mayStart = $derived(project ? isOwner(project) : false);
 	const management = $derived(projectID ? workspace.modeOf(projectID) === 'management' : false);
 	const isTask = $derived(card.type === 'task');
 	const openQuestions = $derived(ctx?.questions.filter((q) => q.state === 'open') ?? []);
@@ -212,6 +214,28 @@
 		const id = pipelineTask;
 		if (id) untrack(() => void pipelineControl.open(id));
 	});
+	// After the card was opened above: the bindings the person can start with (asked only for the owner).
+	$effect(() => {
+		const id = pipelineTask;
+		const from = projectID;
+		const may = mayStart;
+		if (id) untrack(() => void pipelineControl.loadBindings(from, may));
+	});
+	/** The runner finishes an execution with a review on the card: read the card again so it is there. */
+	const executionState = $derived(pipeline.data?.execution?.state ?? null);
+	$effect(() => {
+		if (executionState !== 'completed') return;
+		untrack(() => {
+			if (data?.ctx && data.ctx.review?.state !== 'pending') void load();
+		});
+	});
+	/** The completed execution points to the review in the overview tab; the focus goes with it. */
+	async function showReview() {
+		await selectTab('overview');
+		await tick();
+		document.getElementById('card-tab-overview')?.focus();
+		tabArea?.querySelector('[data-testid="card-decide"]')?.scrollIntoView({ block: 'nearest' });
+	}
 	// allowInDialog and no editing guard: an agent's changes appear inside the open window while a comment is being typed.
 	onMount(() => startLiveRefresh(() => pipelineControl.refresh(), { allowInDialog: true }));
 	const tabHints = $derived(awaitingApproval(pipeline.data) ? { pipeline: t('pipeline.tab.waiting') } : {});
@@ -498,7 +522,7 @@
 					{:else if tab === 'report' && report}
 						<CardReport {report} />
 					{:else if tab === 'pipeline'}
-						<CardPipeline view={pipeline} controller={pipelineControl} {canEdit} ondecided={changed} />
+						<CardPipeline view={pipeline} controller={pipelineControl} {canEdit} {mayStart} reviewPending={review?.state === 'pending'} onreview={showReview} ondecided={changed} />
 					{:else if tab === 'changes' || tab === 'tests'}
 						<CardTabEmpty title={t(`card.tab.${tab}.emptyTitle` as MessageKey)} text={t(`card.tab.${tab}.emptyText` as MessageKey)} />
 					{/if}
