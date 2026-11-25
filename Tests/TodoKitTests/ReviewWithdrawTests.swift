@@ -315,24 +315,34 @@ final class ReviewWithdrawTests: XCTestCase {
             let accepted = try await reviewTask(e, "Accepted")
             let ok = try await e.f.test.json(.POST, "/v1/tasks/\(accepted.uuidString)/review/decision", ["decision": "accept"], token: e.f.session)
             XCTAssertEqual(ok.status, .ok, "\(ok.body ?? [:])")
-            let reopened = try await call(e, e.agent, "update_task",
-                ["id": accepted.uuidString, "version": try await task(e, accepted).version, "status": "open"])
+            // No `try await` inside collection literals here: the Swift 6.2 compiler on Linux crashed type-checking it.
+            let acceptedVersion = try await task(e, accepted).version
+            let reopenArgs: [String: Any] = ["id": accepted.uuidString, "version": acceptedVersion, "status": "open"]
+            let reopened = try await call(e, e.agent, "update_task", reopenArgs)
             XCTAssertFalse(reopened.isError, reopened.text)
-            let versions = [try await review(e, changes).version, try await review(e, accepted).version]
-            let done = try await call(e, e.agent, "update_task",
-                ["id": changes.uuidString, "version": try await task(e, changes).version, "status": "done"])
+            let changesReview = try await review(e, changes).version
+            let acceptedReview = try await review(e, accepted).version
+            let changesVersion = try await task(e, changes).version
+            let doneArgs: [String: Any] = ["id": changes.uuidString, "version": changesVersion, "status": "done"]
+            let done = try await call(e, e.agent, "update_task", doneArgs)
             XCTAssertFalse(done.isError, done.text)
-            let moved = try await call(e, e.agent, "move_task_to_column",
-                ["id": accepted.uuidString, "version": try await task(e, accepted).version, "columnID": try unwrap(board[.done]).uuidString])
+            let reopenedVersion = try await task(e, accepted).version
+            let column = try unwrap(board[.done]).uuidString
+            let moveArgs: [String: Any] = ["id": accepted.uuidString, "version": reopenedVersion, "columnID": column]
+            let moved = try await call(e, e.agent, "move_task_to_column", moveArgs)
             XCTAssertFalse(moved.isError, moved.text)
-            for (id, state, version) in [(changes, "changes_requested", versions[0]), (accepted, "accepted", versions[1])] {
-                let r = try await review(e, id)
-                XCTAssertEqual(r.state, state)
-                XCTAssertEqual(r.version, version)
-                let events = try await withdrawals(e, id)
-                XCTAssertEqual(events.count, 0)
-            }
+            try await assertUnchanged(e, changes, state: "changes_requested", version: changesReview)
+            try await assertUnchanged(e, accepted, state: "accepted", version: acceptedReview)
         }
+    }
+
+    private func assertUnchanged(_ e: Env, _ taskID: UUID, state: String, version: Int,
+                                 file: StaticString = #filePath, line: UInt = #line) async throws {
+        let r = try await review(e, taskID)
+        XCTAssertEqual(r.state, state, file: file, line: line)
+        XCTAssertEqual(r.version, version, file: file, line: line)
+        let events = try await withdrawals(e, taskID)
+        XCTAssertEqual(events.count, 0, file: file, line: line)
     }
 
     /// Reviews left over from before the automatic withdrawal: the card is done already and must stay exactly as it is.
