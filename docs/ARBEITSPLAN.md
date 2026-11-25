@@ -2,9 +2,9 @@
 
 ## Checkpoint 25.11.2026: Offene Reviews erledigter Karten (Karte `6515CAFA`)
 
-- Stand: umgesetzt und lokal geprüft auf `main` (rot `3d51896`, grün `78cf5c8`), nicht gepusht, nicht deployt. Belege in `docs/STATUS.md` (oberster Nachtrag). Handbuch 1.41.0, Vertrag `command-center.yaml` 1.9.0, keine Migration.
+- Stand: umgesetzt, auf `main` gepusht (rot `3d51896`, grün `78cf5c8`, Compiler-Fix des Tests `68a5089`), CI, Docker publish und E2E auf `68a5089` grün; nicht deployt. Belege in `docs/STATUS.md` (oberster Nachtrag). Handbuch 1.41.0, Vertrag `command-center.yaml` 1.9.0, keine Migration.
 - Nach dem Deploy: die 23 Alt-Reviews vom 12.11. mit `withdraw_review` schließen; geht nur mit derselben Verbindungsfreigabe, die sie angefragt hat.
-- Nächster Schritt: pushen, CI/E2E prüfen, Deploy durch Lino.
+- Nächster Schritt: Deploy durch Lino (Image `sha-68a5089`), danach Alt-Reviews schließen.
 
 ## Checkpoint 25.11.2026: Review-Notiz mit mehreren Zeilen (Karte `DA09D11A`)
 

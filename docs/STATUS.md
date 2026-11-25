@@ -1,6 +1,6 @@
 # Status
 
-## Nachtrag 25.11.2026 (02:51): Offene Reviews erledigter Karten und Rückzug (Karte 6515CAFA; kein Push, kein Deploy)
+## Nachtrag 25.11.2026 (02:51): Offene Reviews erledigter Karten und Rückzug (Karte 6515CAFA; kein Deploy, kein TestFlight)
 
 - Ziel: Eine erledigte Karte hinterlässt keine offene Review; die anfragende Verbindung kann ihre Review selbst zurückziehen; entschiedene Reviews bleiben unverändert.
 - Schon da (`7a1261b`): Erledigen über `update_task`, REST, Spaltenwechsel und Sync zieht offene Reviews zurück. Gegenprobe ohne den Aufruf in `PlanningService.update`: `testSettingTaskDoneWithdrawsPendingReview` rot (rc 1, 4 Fehler), E2E Fall (i) und (ii) rot (rc 1); danach exakt wiederhergestellt.
@@ -10,7 +10,9 @@
 - Bilder hell/dunkel angesehen: `docs/screenshots/review-rueckzug/{person-erledigt,agent-erledigt,agent-zurueckgezogen}-chromium-{hell,dunkel}.png`.
 - Altlasten: Die 23 offenen Reviews vom 12.11. lassen sich nach dem Deploy mit `withdraw_review` schließen, aber nur mit derselben Verbindungsfreigabe (Grant), die sie angefragt hat; eine neu verbundene oder andere Verbindung erhält `not_review_requester` (dann entscheidet die Person oder öffnet und erledigt die Karte erneut).
 - Offen (nicht Teil der Karte): `import_plan` auf `done` erzeugt wie bisher keine Folgeaufgabe wiederkehrender Aufgaben; die PWA beschriftet auch eine zurückgezogene Review mit „entschieden“; liegt neben der eigenen Review noch eine Runner-Review offen, geht die Karte beim Rückzug trotzdem nach `in_progress`.
-- Nächster Schritt: Hauptsession prüft und pusht (danach CI und E2E ansehen, neue Spec in `scripts/e2e-ci.sh` unter MULTI), Lino deployt.
+- Gepusht: rot `3d51896`, grün `78cf5c8`, Doku `7f783d8`. CI auf `7f783d8` war rot, weil der Swift-6.2-Compiler unter Linux beim Typprüfen von `testSettingTheCardDoneLeavesDecidedReviewsUnchanged` abstürzte (Signal 11, `try await` in Collection-Literalen; kein Testfehler). Behoben in `68a5089` (Werte vorher in Variablen); lokal 13/13.
+- CI auf `68a5089` grün: CI 45530707646, Docker publish 45530707620 (Image `ghcr.io/magicalwig34653/todo-backend:sha-68a5089`), E2E 45530845464 (`review-withdraw` in Chromium, Firefox, WebKit). Ein zweiter E2E-Lauf 45532196966 für denselben Stand war einmal rot (`review-note-multiline` Chromium, Setup: `project-tabs` nach Wechsel in die Verwaltungsansicht nicht sichtbar, vor jedem Review-Schritt; Flake aus der Karte DA09D11A, nicht aus dieser Änderung) und nach Wiederholung grün.
+- Nächster Schritt: Lino deployt `sha-68a5089`; danach die Alt-Reviews mit `withdraw_review` schließen. Offener Hinweis: Flake im Setup von `review-note-multiline` beobachten, bei Wiederholung die Verwaltungsansicht dort robuster umschalten.
 
 ## Nachtrag 25.11.2026 (02:00): Kommentar/Notiz mit Aufzählung speicherbar (Karte DA09D11A, Auftrag f-2b2b7a8b; kein Deploy, kein TestFlight)
 
