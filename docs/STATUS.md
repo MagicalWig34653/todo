@@ -1,5 +1,18 @@
 # Status
 
+## Nachtrag 25.11.2026 (21:20): Seite „Jetzt“ als Leitstand neu gestaltet (Karte B0CF5F73; nur PWA; kein Push, kein Deploy)
+
+- Anlass: Review von Lino („Die Jetzt-Seite vielleicht noch ansprechender designen“). Branch `t3/now-seite-leitstand-redesign`. Kein Backend-, Vertrags- oder Apple-Eingriff, keine neue Abhängigkeit, keine Migration.
+- Entscheidung „Leitstand“: vier Zahlen-Kacheln mit Sprung zum Abschnitt; „Läuft gerade“ als Karten-Raster; „Wartet auf dich“ als eine Liste (zuerst 5, Vorschau ohne Markdown); Projekte mit Block standardmäßig zu (gespeicherte Wahl gilt weiter, alter Server: aktive offen); Builds je `buildID` und Plattform gruppiert; Ereignisse zuerst 5. Aufbau und Verhalten: `docs/PWA-JETZT.md`. `NowView.svelte` ist in `web/src/lib/components/now/` zerlegt.
+- Commits: `3f91b5c` (Seed-Daten, Vorher-Bilder), `45145c0` (rot), `a7a436a` (Umsetzung), `775f5b1` (Textabstände, Bilder, WebKit).
+- Rot (vor der Umsetzung): `npx vitest run tests/now-redesign.test.ts` rc 1 (Funktionen fehlten, 0 Tests liefen); Chromium `now-redesign` rc 1 (0 statt 4 Kacheln), `overview-pages` rc 1 (Build-Zeilen), `now` rc 1 (Projekt offen statt zu). Die Specs laufen seriell, belegt ist je nur der erste Fehler.
+- Grün: `npm run check` 0 Fehler; `npx vitest run` 786/786 (60 Dateien); `npm run build` rc 0. Playwright gegen frisches SQLite-Backend mit Produktions-Build (`WEB_ROOT`): `now-redesign` 14 bestanden + 1 übersprungen (Bilder) je Chromium, Firefox, WebKit; `overview-pages` 1/1 je Browser; `now` 15/15, `build-status` 3/3, `for-you` 3/3 (Chromium). `now-redesign` steht in `scripts/e2e-ci.sh` (drei Browser).
+- Tests nach dem Rot-Commit geändert: Fokus in `now-redesign.spec.ts` auf die Schaltfläche statt auf das Listenelement (Testfehler); `serviceWorkers: 'block'` (WebKit wendet sonst `page.route` nicht an); zwei Prüfungen zu Textabständen nachträglich ergänzt (Fehler in den Bildern gesehen, kein eigener Rot-Lauf). Alte Erwartungen angepasst, keine gestrichen: Projektzeilen zu statt offen (`now.spec.ts`), 7 gruppierte Build-Zeilen mit Dateizahl statt 15 (`overview-pages.spec.ts`), Projekt vor der Build-Prüfung öffnen (`build-status.spec.ts`).
+- Bilder (gleiche Seed-Daten): `docs/screenshots/now-redesign/` (`vorher-*`, `nachher-*`, `nachher-offen-*`, 320 px); `docs/screenshots/jetzt/` neu aufgenommen.
+- Nicht geprüft: CI auf Linux und `e2e-ci.sh` mit Docker-Image; übrige E2E-Specs und `swift test` (kein Backend-Code geändert; Backend-Binary aus dem Hauptcheckout, Stand 25.11. 15:40); automatische Kontrastmessung, Screenreader, echtes Telefon; Last mit 100 Einträgen je Liste.
+- Offen: Der Server liefert je Projekt höchstens 5 Build-Dateien, die Dateizahl ist deshalb eine Untergrenze (Hinweis auf der Seite); Fragen/Reviews in den Projektabschnitten kürzt der Server bei 200 Zeichen ohne „…“.
+- Nächster Schritt: Hauptsession prüft, führt nach `main` zusammen, pusht, prüft die CI und stellt das Review. Deploy bleibt bei Lino.
+
 ## Nachtrag 25.11.2026 (16:05): /now zeigte „500 Internal Error“ (Karte B0CF5F73, Auftrag f-078d4123; PWA und additiv Backend; kein Deploy)
 
 - Ursache: kein Serverfehler (`GET /v1/overview/now` antwortet 200), sondern ein Absturz im Browser. `NowView.svelte` nutzte `buildID` als Schlüssel der Build-Liste; mehrere Screenshots eines Builds teilen die `buildID`. Svelte wirft dann `each_key_duplicate` (auch im Production-Build) und SvelteKit zeigt seine Seite „500 Internal Error“. Live-Daten (Abruf per MCP 25.11.): 7 Projekte mit wiederholter `buildID`. Der Schlüssel stammt vom 18.11. (`b3836ae`), nicht aus Pipeline Stufe 2/3; der Fehler hängt an den Daten.

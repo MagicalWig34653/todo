@@ -1,5 +1,12 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026 (21:20): Redesign der Seite „Jetzt“ (Karte `B0CF5F73`)
+
+- Entscheidung: Richtung „Leitstand“ (Kacheln, Karten-Raster, eine Warte-Liste, Projekte zu, Builds gruppiert); nur PWA.
+- Stand: fertig auf `t3/now-seite-leitstand-redesign` (`3f91b5c` … `775f5b1` plus Doku), nicht gemergt, nicht gepusht. Belege: `docs/STATUS.md` (oberster Nachtrag), Aufbau: `docs/PWA-JETZT.md`.
+- Offen: CI-Lauf nach dem Push; Build-Dateizahl durch das Serverlimit von 5 begrenzt.
+- Nächster Schritt: Merge, Push, CI, Review (Hauptsession); Deploy durch Lino (nur Image).
+
 ## Checkpoint 25.11.2026: Absturz der Seite „Jetzt“ (Karte `B0CF5F73`)
 
 - Stand: behoben auf `main` (`a29f7a2`, `a704700`), Belege in `docs/STATUS.md` (oberster Nachtrag); nicht deployt.
