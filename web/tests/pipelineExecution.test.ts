@@ -415,11 +415,13 @@ describe('continue and stop', () => {
 		}
 	});
 
-	it('drops a message about the execution when its state changes later', async () => {
-		const read = vi.fn().mockResolvedValueOnce(pipeline()).mockResolvedValue(pipeline({ execution: execution({ state: 'completed' }) }));
-		const { view, controller } = await opened(fakeApi({ taskPipeline: read }));
-		await controller.startExecution(true);
-		await controller.refresh();
-		expect(view.feedback).toBeNull();
+	it('drops a message about the execution when its state or step changes later', async () => {
+		for (const later of [execution({ state: 'completed' }), execution({ step: 'validation' })]) {
+			const read = vi.fn().mockResolvedValueOnce(pipeline()).mockResolvedValue(pipeline({ execution: later }));
+			const { view, controller } = await opened(fakeApi({ taskPipeline: read }));
+			await controller.startExecution(true);
+			await controller.refresh();
+			expect(view.feedback).toBeNull();
+		}
 	});
 });

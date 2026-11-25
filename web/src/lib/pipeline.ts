@@ -343,7 +343,8 @@ export function createPipelineController(view: PipelineView, api: PipelineApi & 
 		if (replaced || after?.state !== 'proposed') view.confirm = null;
 		if (replaced) view.confirmExecution = null;
 		// A message about the execution belongs to the state it was said about.
-		if (announce && view.acting === null && view.feedback?.scope === 'execution' && view.feedback.tone === 'success' && view.data?.execution?.state !== next?.execution?.state) view.feedback = null;
+		const moved = view.data?.execution?.state !== next?.execution?.state || view.data?.execution?.step !== next?.execution?.step;
+		if (announce && moved && view.acting === null && view.feedback?.scope === 'execution' && view.feedback.tone === 'success') view.feedback = null;
 		// A running decision and the "plan changed" refusal already explain what happens: nothing replaces their message.
 		const explained = view.busy !== null || (view.feedback?.key === 'pipeline.error.planChanged' && after?.state === 'proposed');
 		if (announce && !explained && before && after && (before.version !== after.version || before.state !== after.state)) {
