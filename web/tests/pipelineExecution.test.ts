@@ -105,7 +105,9 @@ describe('execution rules', () => {
 		expect(line({ jobState: 'queued', jobProgress: '' })).toEqual({ step: 'developer', tone: 'waiting', key: 'pipeline.exec.live.queued', progress: null });
 		expect(line({ jobState: 'claimed', jobProgress: null })).toMatchObject({ tone: 'running', key: 'pipeline.exec.live.claimed' });
 		expect(line({ jobState: 'waiting_for_answer', jobProgress: null })).toMatchObject({ tone: 'warning', key: 'pipeline.exec.live.answer' });
-		expect(line({ jobState: 'queued', jobProgress: 'Kontingent-Bremse: rot' })).toEqual({ step: 'developer', tone: 'warning', key: 'pipeline.exec.live.held', progress: 'Kontingent-Bremse: rot' });
+		// The long text of the hold stands once, in the section above; the step only says why it waits.
+		expect(line({ jobState: 'queued', jobProgress: 'Kontingent-Bremse: rot' })).toEqual({ step: 'developer', tone: 'warning', key: 'pipeline.exec.live.held', progress: null });
+		expect(de['pipeline.exec.live.held']).toContain('Kontingent-Bremse');
 		for (const state of ['waiting_approval', 'blocked', 'paused', 'completed', 'stopped'] as const) expect(line({ state })).toBeNull();
 		expect(line({ step: null })).toBeNull();
 		expect(liveStep(pipeline())).toBeNull();

@@ -40,17 +40,18 @@
 
 	let feedback = $state<HTMLParagraphElement | null>(null);
 
-	async function act(action: ExecutionAction) {
+	async function act(action: ExecutionAction, pressed: EventTarget | null) {
 		const outcome: ActOutcome = await (action === 'start' ? controller.startExecution(mayStart) : action === 'continue' ? controller.continueExecution(mayStart) : controller.stopExecution(mayStart));
 		if (outcome === 'ignored') return;
 		await tick();
 		// The button may be gone with the new state, or a second click has to confirm: the focus goes to the message that says so.
-		if (outcome === 'unread' || document.activeElement === document.body || !document.activeElement?.isConnected) feedback?.focus();
+		// Judged by the pressed button, not by the focus: Safari does not focus a button that is clicked.
+		if (outcome === 'unread' || !(pressed as Element | null)?.isConnected) feedback?.focus();
 		if (outcome === 'done') await onchanged();
 	}
 	/** The second click of a double click never confirms. */
 	const once = (action: ExecutionAction) => (e: MouseEvent) => {
-		if (e.detail <= 1) void act(action);
+		if (e.detail <= 1) void act(action, e.currentTarget);
 	};
 
 	const heading = 'text-muted-foreground text-xs font-semibold tracking-wide uppercase';
@@ -58,7 +59,7 @@
 	const button = 'h-auto min-h-9 whitespace-normal max-sm:w-full aria-disabled:opacity-60';
 </script>
 
-<section class="flex min-w-0 flex-col gap-2" aria-labelledby="card-execution-title" data-testid="pipeline-execution" data-state={execution?.state ?? 'none'}>
+<section class="flex min-w-0 scroll-mt-16 flex-col gap-2" aria-labelledby="card-execution-title" data-testid="pipeline-execution" data-state={execution?.state ?? 'none'}>
 	<div class="flex flex-wrap items-center gap-2">
 		<h3 class={heading} id="card-execution-title">{t('pipeline.exec.title')}</h3>
 		{#if execution}<Badge variant={stateBadge[execution.state] ?? 'default'} data-testid="pipeline-execution-state">{t(executionStateKey(execution.state))}</Badge>{/if}
@@ -147,7 +148,7 @@
 				</div>
 				<p class="text-muted-foreground text-xs" id="card-execution-intro">{t('pipeline.exec.intro')}</p>
 			</div>
-		{:else if !active && mayStart && view.bindings.length > 0 && nothingToRun(data)}
+		{:else if !active && execution?.state !== 'completed' && mayStart && view.bindings.length > 0 && nothingToRun(data)}
 			<p class="text-muted-foreground text-xs" data-testid="pipeline-execution-nothing">{t('pipeline.exec.nothingToRun')}</p>
 		{/if}
 	</div>

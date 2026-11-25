@@ -194,7 +194,7 @@ test('start: choose the binding, one request, the running step is marked; an unk
 test('budget hold, claim and progress show up without reloading', async () => {
 	await hold(main, 'developer', HOLD);
 	await expect(panel().getByTestId('pipeline-execution-hold')).toHaveText(HOLD, LIVE);
-	await expect(liveLine('Entwickler')).toContainText('Kontingent-Bremse');
+	await expect(liveLine('Entwickler')).toHaveText('Wartet wegen der Kontingent-Bremse');
 	await expect(step('Entwickler')).toHaveAttribute('data-live', 'warning');
 	const run = await claim(main, 'developer');
 	await expect(panel().getByTestId('pipeline-execution-hold')).toHaveCount(0, LIVE);
@@ -231,6 +231,7 @@ test('a failed step blocks; "Wiederholen" says that it runs again, and the run f
 	await expect(panel().getByTestId('pipeline-step-live')).toHaveCount(0);
 	await expect(stopButton()).toHaveCount(0);
 	await expect(startButton()).toHaveCount(0);
+	await expect(panel().getByTestId('pipeline-execution-nothing')).toHaveCount(0);
 	const history = panel().getByTestId('pipeline-history');
 	await history.locator('summary').click();
 	await expect(history).toContainText('Ausführung gestartet');
@@ -308,7 +309,7 @@ test('a person who may edit sees the state, can mark a retry, but only the owner
 	const guest = await signedInPage(browser, 'Gast mit Bearbeitungsrecht', token);
 	try {
 		const { id } = (await (await guest.request.get('/v1/me')).json()) as { id: string };
-		await call('put', `/v1/projects/${c.project}/grants`, { principalType: 'user', principalID: id, role: 'edit' });
+		await call('put', `/v1/projects/${c.project}/grants`, { principalType: 'person', principalID: id, role: 'edit' });
 		await open(c, guest);
 		await expect(state(guest)).toHaveText('Blockiert');
 		await expect(startButton(guest)).toHaveCount(0);

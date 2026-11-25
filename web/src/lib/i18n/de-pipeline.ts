@@ -122,7 +122,7 @@ export const dePipeline = {
 	'pipeline.exec.live.claimed': 'Vom Runner übernommen',
 	'pipeline.exec.live.running': 'Läuft auf dem Runner',
 	'pipeline.exec.live.answer': 'Wartet auf deine Antwort zu einer Rückfrage',
-	'pipeline.exec.live.held': 'Der Runner wartet',
+	'pipeline.exec.live.held': 'Wartet wegen der Kontingent-Bremse',
 	'pipeline.exec.unsupported': 'Dieses Gerät hat noch keinen Pipeline-Auftrag abgefragt. Prüfe, ob todo-runner dort läuft und aktuell ist, sonst bleibt der Auftrag liegen.',
 	'pipeline.exec.waitingApproval': 'Der Plan wartet auf Freigabe. Nach der Freigabe geht es automatisch weiter.',
 	'pipeline.exec.blocked.step_failed': 'Der Schritt „{step}“ ist fehlgeschlagen. „Wiederholen“ beim Schritt lässt ihn erneut laufen.',

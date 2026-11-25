@@ -158,7 +158,7 @@
 								<Badge variant={look.badge} data-testid="pipeline-step-state">{on ? t(stepStateKey(s.state)) : t('pipeline.step.off')}</Badge>
 							</div>
 							{#if now}
-								<p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap {liveLook[now.tone]}" data-testid="pipeline-step-live">{t(now.key)}{#if now.progress}{': '}{now.progress}{/if}</p>
+								<p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap {liveLook[now.tone]}" data-testid="pipeline-step-live">{t(now.key)}{#if now.progress}{': '}<span class="text-foreground font-normal">{now.progress}</span>{/if}</p>
 							{/if}
 							{#if role}
 								<p class="text-muted-foreground text-xs [overflow-wrap:anywhere]" data-testid="pipeline-step-role">{t('pipeline.roleLine', { model: role.model ?? t('pipeline.modelDefault'), effort: t(effortKey(role.effort)) })}</p>

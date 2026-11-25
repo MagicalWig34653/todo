@@ -63,7 +63,7 @@ export interface LiveStep {
 	step: PipelineStepName;
 	tone: 'running' | 'waiting' | 'warning';
 	key: MessageKey;
-	/** The text the runner sent; shown as plain text. */
+	/** The progress the runner sent, shown as plain text; the long text of a hold is not repeated here. */
 	progress: string | null;
 }
 /** The step a running execution is at, with what its job does right now. */
@@ -71,7 +71,7 @@ export function liveStep(p: TaskPipeline | null): LiveStep | null {
 	const e = p?.execution;
 	if (!e || e.state !== 'running' || !e.step) return null;
 	const line = (tone: LiveStep['tone'], key: MessageKey): LiveStep => ({ step: e.step!, tone, key, progress: e.jobProgress || null });
-	if (isBudgetHold(e)) return line('warning', 'pipeline.exec.live.held');
+	if (isBudgetHold(e)) return { ...line('warning', 'pipeline.exec.live.held'), progress: null };
 	if (e.jobState === 'waiting_for_answer') return line('warning', 'pipeline.exec.live.answer');
 	if (e.jobState === 'claimed') return line('running', 'pipeline.exec.live.claimed');
 	if (e.jobState === 'running') return line('running', 'pipeline.exec.live.running');
