@@ -153,6 +153,11 @@ extension MCPController {
                           "variantID": Schema.string("Id of the chosen variant. Required for accept on a review with variants (variant_required / unknown_variant); refused otherwise (unexpected_variant).", maxLength: 20),
                           "quote": quoteField],
              required: ["taskID", "decision"]),
+        Tool(name: "withdraw_review", scope: "tasks:write",
+             description: "Take back a pending review that THIS connection requested (requested too early, superseded, left over on a finished card). The review becomes withdrawn with your note; a card in in_review returns to in_progress, any other card stays as it is. No brain mandate or quote needed. no_pending_review if nothing is pending, not_review_requester for reviews of the person, another connection or a runner job. Decided reviews are never changed.",
+             properties: ["taskID": taskIDField,
+                          "note": Schema.string("Optional reason shown on the card (up to 4000 characters, line breaks allowed).", maxLength: 4000)],
+             required: ["taskID"]),
         Tool(name: "apply_agent_workflow_columns", scope: "tasks:write",
              description: "Create the standard agent workflow columns (Backlog, Bereit, In Arbeit, Frage offen, Review, Erledigt) on a project that has no own columns; existing tasks are placed by status. Fails with columns_exist otherwise. Ask the user before changing a project's board.",
              properties: ["projectID": Schema.uuid("Project id.")], required: ["projectID"]),
@@ -339,6 +344,8 @@ extension MCPController {
         case "decide_review":
             return try .encoded(try await service.decideReview(uuid(a["taskID"]), decision: requiredString(a, "decision"),
                 note: optionalString(a, "note"), variantID: optionalString(a, "variantID"), quote: optionalString(a, "quote"), actor: actor))
+        case "withdraw_review":
+            return try .encoded(try await service.withdrawReview(uuid(a["taskID"]), note: optionalString(a, "note"), actor: actor))
         case "apply_agent_workflow_columns":
             let projectID = try uuid(a["projectID"])
             return try await db.transaction { tx in

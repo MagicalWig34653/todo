@@ -602,6 +602,32 @@ struct WorkflowService: Sendable {
         }
     }
 
+    /// The requesting connection takes its own pending review back (MCP `withdraw_review`, card 6515CAFA). It is not a
+    /// decision, so it needs no brain mandate; reviews of others (person, other connection, runner job) stay with them.
+    /// A card waiting in review returns to work; any other card (for example a done one with a stale review) is not touched.
+    func withdrawReview(_ taskID: UUID, note rawNote: String?, actor: WorkflowActor) async throws -> ReviewDTO {
+        let note = try Self.optionalNote(rawNote, reason: "invalid_note")
+        let owner = user
+        return try await mutate(taskID, role: .edit) { task, tx in
+            let id = try task.requireID()
+            let pending = try await TaskReview.query(on: tx).filter(\.$taskID == id).filter(\.$state == "pending").all()
+            guard !pending.isEmpty else { throw Abort(.conflict, reason: "no_pending_review") }
+            guard let r = pending.first(where: { $0.isOwnRequest(of: actor.type, actor.id) }) else {
+                throw Abort(.forbidden, reason: "not_review_requester")
+            }
+            r.state = "withdrawn"; r.decidedAt = Date()
+            r.decisionNote = note ?? "Von der anfragenden Verbindung zurückgezogen"; r.version += 1
+            try await r.save(on: tx)
+            if task.status == "in_review" {
+                try await Self.applyStatus(task, "in_progress", actor: actor, on: tx)
+                try await Self.place(task, role: .working, on: tx)
+                try await Self.commit(task, owner: owner, on: tx)
+            }
+            try await appendActivity(taskID: id, actorType: actor.type, actorID: actor.id, kind: "review.withdrawn", subjectID: r.id, on: tx)
+            return try ReviewDTO(r)
+        }
+    }
+
     func reviews(projectID: UUID?, state: String, includeSubprojects: Bool = true, limit: Int = 100,
                  brainRecommended: Bool? = nil) async throws -> [ReviewDTO] {
         guard ["pending", "all"].contains(state) || ["accepted", "changes_requested", "withdrawn"].contains(state),

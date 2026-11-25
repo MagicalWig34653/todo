@@ -219,7 +219,8 @@ struct ColumnService: Sendable {
 
     /// Puts `task` into `target` (nil = unassigned) at `index` (nil = end), renumbers the target densely and applies
     /// the done-column status rule. The task's version is bumped when `bumpVersion` and nothing else bumped it.
-    private func place(_ task: TodoTask, in target: ProjectColumn?, at index: Int?, bumpVersion: Bool) async throws {
+    private func place(_ task: TodoTask, in target: ProjectColumn?, at index: Int?, bumpVersion: Bool,
+                       integrationGrant: UUID? = nil) async throws {
         let taskID = try task.requireID()
         var needsStatus: String?
         if let target {
@@ -231,7 +232,8 @@ struct ColumnService: Sendable {
         if let status = needsStatus {
             // Same code path as PATCH, so activity, recurrence and sync stay consistent.
             _ = try await PlanningService(user: user, db: db).update(taskID, body: UpdateTaskRequest(
-                version: task.version, title: nil, description: nil, status: status, projectID: nil), reconcileColumn: false)
+                version: task.version, title: nil, description: nil, status: status, projectID: nil), reconcileColumn: false,
+                integrationGrant: integrationGrant)
             guard let fresh = try await TodoTask.find(taskID, on: db) else { throw Abort(.notFound) }
             current = fresh; bumped = true
         }
@@ -247,7 +249,9 @@ struct ColumnService: Sendable {
         try await current.save(on: db)
     }
 
-    func move(_ taskID: UUID, _ body: MoveTaskRequest) async throws -> TaskDTO {
+    /// `integrationGrant` is set by MCP: a move into or out of a done column then follows the agent rules of
+    /// `PlanningService.update` (foreign review: `brain_mandate_required`) and is booked as the integration.
+    func move(_ taskID: UUID, _ body: MoveTaskRequest, integrationGrant: UUID? = nil) async throws -> TaskDTO {
         try await lockSharingGraph(on: db)
         try await lockRow(table: TodoTask.schema, id: taskID, on: db)
         let task = try await access.task(taskID, role: .edit)
@@ -258,7 +262,7 @@ struct ColumnService: Sendable {
             guard let c = try await ProjectColumn.find(cid, on: db), c.projectID == task.projectID else { throw Abort(.notFound) }
             target = c
         }
-        try await place(task, in: target, at: body.index, bumpVersion: true)
+        try await place(task, in: target, at: body.index, bumpVersion: true, integrationGrant: integrationGrant)
         guard let fresh = try await TodoTask.find(taskID, on: db) else { throw Abort(.notFound) }
         return try TaskDTO(fresh)
     }

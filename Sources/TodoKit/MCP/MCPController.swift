@@ -268,7 +268,7 @@ struct MCPController: RouteCollection {
                 try await lockSharingGraph(on: db)
                 let t = try await ProjectAccess(user: user, db: db).task(id)
                 _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
-                return try .encoded(try await ColumnService(user: user, db: db).move(id, request))
+                return try .encoded(try await ColumnService(user: user, db: db).move(id, request, integrationGrant: grant.requireID()))
             }
         case "create_column":
             let projectID = try uuid(a["projectID"])

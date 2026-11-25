@@ -173,7 +173,7 @@ struct PlanningService: Sendable {
             // Withdrawing its own review by settling the card stays possible; settling another connection's review is a decision.
             if body.status == "done", t.status != "done", let grant = integrationGrant {
                 let foreign = try await TaskReview.query(on: db).filter(\.$taskID == id).filter(\.$state == "pending").all()
-                    .filter { !($0.requestedByType == .integration && $0.requestedByID == grant) }
+                    .filter { !$0.isOwnRequest(of: .integration, grant) }
                 if !foreign.isEmpty { throw Abort(.forbidden, reason: "brain_mandate_required") }
             }
             if let target = body.projectID, target != t.projectID {

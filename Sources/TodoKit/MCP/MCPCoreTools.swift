@@ -63,7 +63,7 @@ extension MCPController {
              description: "Read the project's kanban board: columns in order with their tasks, plus tasks without a column. A project without own columns returns virtual status columns (mode status). See get_manual section 'Board columns' for the standard agent workflow columns.",
              properties: ["projectID": Schema.uuid("Project id.")], required: ["projectID"]),
         Tool(name: "move_task_to_column", scope: "tasks:write",
-             description: "Move a task to a column of its own project at a position (columnID null = no column). Moving into a done column completes the task; moving out of one reopens it.",
+             description: "Move a task to a column of its own project at a position (columnID null = no column). Moving into a done column completes the task; moving out of one reopens it. Completing withdraws your own pending review; a review of someone else gives brain_mandate_required and nothing changes.",
              properties: ["id": Schema.uuid("Task id."), "version": versionField,
                           "columnID": Schema.nullable("string", "Target column id of the task's project, or null for 'no column'."),
                           "index": Schema.integer("0-based position in the target column; default end.", min: 0)],

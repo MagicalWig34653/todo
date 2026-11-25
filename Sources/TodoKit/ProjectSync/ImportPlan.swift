@@ -31,7 +31,9 @@ struct ImportedItem: Content {
     let parentKey: String?
     /// `created` | `updated` | `unchanged`
     let outcome: String
-    /// What changed on an `updated` item (title, description, status, blocked, parent, kind, criteria:+n).
+    /// What changed on an `updated` item (title, description, status, blocked, parent, kind, criteria:+n). The marker
+    /// `status_skipped_open_review` says that `done` was not applied because the card has a pending review this connection
+    /// did not request; it is not a change, so alone it leaves the item `unchanged`.
     let changes: [String]
 }
 
@@ -70,6 +72,7 @@ extension ProjectSyncService {
     }
 
     private struct DryRunRollback: Error { let result: ImportPlanResult }
+    private static let statusSkipped = "status_skipped_open_review"
 
     static func cleanKey(_ raw: String) throws -> String {
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -173,7 +176,15 @@ extension ProjectSyncService {
                 if existing.title != entry.title { existing.title = entry.title; changes.append("title"); dirty = true }
                 if let d = entry.description, existing.details != d { existing.details = d; changes.append("description"); dirty = true }
                 if entry.status == "done", existing.status != "done" {
-                    try await WorkflowService.applyStatus(existing, "done", actor: actor, on: tx); changes.append("status"); dirty = true
+                    // Same rule as update_task: an agent never settles a card with a review that is not its own.
+                    let pending = try await TaskReview.query(on: tx)
+                        .filter(\.$taskID == existing.requireID()).filter(\.$state == "pending").all()
+                    if actor.type == .integration, pending.contains(where: { !$0.isOwnRequest(of: actor.type, actor.id) }) {
+                        changes.append(Self.statusSkipped)
+                    } else {
+                        try await WorkflowService.applyStatus(existing, "done", actor: actor, on: tx); changes.append("status"); dirty = true
+                        try await WorkflowMirror.withdrawPendingReviews(taskID: existing.requireID(), actorType: actor.type, actorID: actor.id, on: tx)
+                    }
                 }
                 if changes.contains("title") || changes.contains("description") {
                     try await AutoStartService.contentChanged(taskID: existing.requireID(), actorType: actor.type, actorID: actor.id, on: tx)
@@ -235,7 +246,7 @@ extension ProjectSyncService {
                 if added > 0, !created { changes.append("criteria:+\(added)") }
             }
             items.append(ImportedItem(externalKey: entry.key, taskID: taskID, title: task.title, parentKey: entry.parentKey,
-                outcome: created ? "created" : (changes.isEmpty ? "unchanged" : "updated"), changes: changes))
+                outcome: created ? "created" : (changes.allSatisfy { $0 == Self.statusSkipped } ? "unchanged" : "updated"), changes: changes))
         }
         return ImportPlanResult(projectID: projectID, dryRun: dryRun,
             created: items.filter { $0.outcome == "created" }.count, updated: items.filter { $0.outcome == "updated" }.count,

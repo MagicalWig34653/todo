@@ -69,7 +69,7 @@ extension MCPController {
              properties: ["projectID": Schema.uuid("Optional: only this project and its sub-projects."),
                           "includeUnbound": Schema.boolean("Also list projects without a repository binding (default false).")]),
         Tool(name: "import_plan", scope: "tasks:write",
-             description: "Idempotent bulk upsert of a plan: features with subtasks, tasks, acceptance criteria and blocked reasons, matched by externalKey (so running it twice creates nothing new). Reports created/updated/unchanged per item. Never deletes, reopens or unticks anything. All-or-nothing in one transaction (up to 300 items); dryRun previews without writing. Use it for onboarding a repository's plan and for reconciling later.",
+             description: "Idempotent bulk upsert of a plan: features with subtasks, tasks, acceptance criteria and blocked reasons, matched by externalKey (so running it twice creates nothing new). Reports created/updated/unchanged per item. Never deletes, reopens or unticks anything. Setting a task done withdraws its pending review; if that review is not this connection's own, the status stays (change marker status_skipped_open_review) and the rest is applied. All-or-nothing in one transaction (up to 300 items); dryRun previews without writing. Use it for onboarding a repository's plan and for reconciling later.",
              properties: ["projectID": Schema.uuid("Project id (edit rights needed)."),
                           "items": .object(["type": .string("array"), "minItems": .number(1), "maxItems": .number(300),
                               "description": .string("Top-level features and tasks, each optionally with children (subtasks, one level)."),

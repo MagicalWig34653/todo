@@ -69,6 +69,11 @@ final class TaskReview: Model, @unchecked Sendable {
     /// Variant picked when the review was accepted; only set on `accepted` reviews with variants.
     @OptionalField(key: "chosen_variant_id") var chosenVariantID: String?
     init() {}
+
+    /// Asked for by this integration itself. Runner-backed reviews belong to their job and are nobody's "own".
+    func isOwnRequest(of type: ActivityActorType, _ id: UUID) -> Bool {
+        type == .integration && agentJobID == nil && requestedByType == .integration && requestedByID == id
+    }
 }
 
 /// One option of a review with variants (card 1D9C8B0C). `attachmentID` points at an attachment (image) of the same task.
