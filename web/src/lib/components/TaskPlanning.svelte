@@ -143,7 +143,28 @@
 	}
 	onMount(() => startLiveRefresh(refreshQuiet));
 
+	let saving = false;
+	let saveAgain = false;
+	/**
+	 * One save at a time. A change made while a save is in flight (e.g. a second weekday tapped at once) is not sent
+	 * in parallel, which would report the first save as a conflict; it triggers one more save with the latest form.
+	 */
 	async function save() {
+		if (saving) {
+			saveAgain = true;
+			return;
+		}
+		saving = true;
+		try {
+			do {
+				saveAgain = false;
+				await saveOnce();
+			} while (saveAgain);
+		} finally {
+			saving = false;
+		}
+	}
+	async function saveOnce() {
 		if (!current) return;
 		invalid = recurrenceNeedsDate(recurrenceNow(current.recurrence?.timeZone), due, planned);
 		if (invalid) return;
@@ -173,7 +194,13 @@
 				recurrence,
 				reminders
 			});
-			if (my === loadSeq) adopt(saved);
+			if (my === loadSeq) {
+				// A newer change is waiting: keep the form as the user left it, only move the merge base forward.
+				if (saveAgain) {
+					current = saved;
+					base = planningForm(saved);
+				} else adopt(saved);
+			}
 		}, load);
 		if (held) {
 			if (heldFields.length > 0) announceConflicts(heldFields);
