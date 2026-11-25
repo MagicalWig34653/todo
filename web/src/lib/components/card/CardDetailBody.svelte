@@ -10,7 +10,7 @@
 	import type { ActionRequest, ForYouConfirmation } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, notice } from '#lib/notice.svelte.js';
 	import Timestamp from '../Timestamp.svelte';
 	import IdChip from '../IdChip.svelte';
 	import { formatWhen } from '#lib/planning.js';
@@ -118,6 +118,12 @@
 		untrack(() => void load());
 	});
 	onMount(() => startLiveRefresh(() => load()));
+	/** A message of a refused action belongs to its card. Primitive on purpose: a reload must not remove it (card DA09D11A). */
+	const cardKey = $derived(`${card.type}:${card.id}`);
+	$effect(() => {
+		void cardKey;
+		untrack(() => notice.clear());
+	});
 
 	async function changed() {
 		rev++;

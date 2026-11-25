@@ -3,7 +3,7 @@
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Label } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { collectAll } from '#lib/planning.js';
 	import { onMount } from 'svelte';
 	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
@@ -23,11 +23,11 @@
 			collectAll((c) => api.listLabels(c))
 		]);
 	}
-	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (a needless refetch). */
 	const taskKey = $derived(taskID);
 	$effect(() => {
 		void taskKey;
-		untrack(() => attempt(load));
+		untrack(() => attemptLoad(load));
 	});
 	onMount(() =>
 		startLiveRefresh(async () => {

@@ -86,6 +86,7 @@ export const de = {
 	'error.generic': 'Etwas ist schiefgelaufen. Bitte versuche es erneut.',
 	'error.network': 'Der Server ist nicht erreichbar.',
 	'error.invalid_text': 'Der Text ist leer oder zu lang. Kommentare dürfen höchstens 10 000 Zeichen haben; dein Text steht noch im Feld.',
+	'error.invalid_note': 'Die Notiz wurde nicht gespeichert: höchstens 4 000 Zeichen, keine Steuerzeichen. Dein Text steht noch im Feld.',
 	'error.payload_too_large': 'Die Eingabe ist zu groß. Bitte kürze den Text; er steht noch im Feld.',
 	'error.unauthorized': 'Bitte melde dich an.',
 	'error.invalid_token': 'Der Code ist ungültig, abgelaufen oder bereits verwendet.',

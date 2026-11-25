@@ -69,7 +69,7 @@ extension WorkflowService {
         }
         guard !rawIDs.isEmpty else { throw Abort(.badRequest, reason: "no_reviews") }
         guard rawIDs.count <= WorkflowLimits.reviewBatchMaxItems else { throw Abort(.badRequest, reason: "too_many_reviews") }
-        let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
+        let note = try Self.optionalNote(rawNote, reason: "invalid_note")
 
         var seen = Set<String>()
         var items: [ReviewBatchItemDTO] = []

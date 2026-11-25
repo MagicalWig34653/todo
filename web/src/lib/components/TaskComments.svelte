@@ -4,7 +4,7 @@
 	import Timestamp from './Timestamp.svelte';
 	import { auth } from '#lib/auth.svelte.js';
 	import { t } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { personName } from '#lib/people.js';
 	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -97,14 +97,14 @@
 	}
 	// The chat lives in the card window (a dialog); it must keep refreshing there. Refresh never touches the draft.
 	onMount(() => startLiveRefresh(refresh, { allowInDialog: chat }));
-	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (a needless refetch). */
 	const taskKey = $derived(taskID);
 	$effect(() => {
 		void taskKey;
 		void threadKey;
 		editingID = null;
 		loaded = false;
-		untrack(() => attempt(load));
+		untrack(() => attemptLoad(load));
 	});
 
 	async function add(e: Event) {

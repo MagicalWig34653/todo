@@ -3,7 +3,7 @@
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type Task } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { candidateTasks } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 
@@ -24,7 +24,7 @@
 	$effect(() => {
 		void taskKey;
 		pick = '';
-		untrack(() => attempt(load));
+		untrack(() => attemptLoad(load));
 	});
 
 	async function add(e: Event) {

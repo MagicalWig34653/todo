@@ -150,7 +150,7 @@ extension WorkflowService {
     /// An agent connection may review too (on behalf of the person steering it) but never its own decision.
     func reviewDecision(_ decisionID: UUID, _ body: DecisionVerdictRequest, actor: WorkflowActor) async throws -> DecisionDTO {
         guard ["ok", "rollback"].contains(body.verdict) else { throw Abort(.badRequest, reason: "invalid_verdict") }
-        let note = try Self.optionalLabel(body.note, max: WorkflowLimits.maxText, reason: "invalid_note")
+        let note = try Self.optionalNote(body.note, reason: "invalid_note")
         if body.verdict == "rollback", note == nil { throw Abort(.badRequest, reason: "note_required") }
         guard let existing = try await TaskDecision.find(decisionID, on: db) else { throw Abort(.notFound) }
         let userID = try user.requireID()

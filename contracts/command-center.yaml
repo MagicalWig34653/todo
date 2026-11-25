@@ -73,7 +73,7 @@ paths:
     post:
       operationId: reviewDecision
       summary: Entscheidung als ok markieren oder zurücknehmen (edit; MCP review_decision, tasks:write)
-      description: 'verdict ok|rollback; rollback verlangt note (note_required) und bleibt als Präzedenzfall abrufbar. Markiert nur; das Zurückrollen (git) ist separate Arbeit. Eine MCP-Verbindung darf eigene Entscheidungen nicht prüfen (403 cannot_review_own_decision).'
+      description: 'verdict ok|rollback; rollback verlangt note (note_required) und bleibt als Präzedenzfall abrufbar. note darf mehrzeilig sein (wie die Review-Notiz). Markiert nur; das Zurückrollen (git) ist separate Arbeit. Eine MCP-Verbindung darf eigene Entscheidungen nicht prüfen (403 cannot_review_own_decision).'
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [verdict], properties: {verdict: {type: string, enum: [ok, rollback]}, note: {type: string, maxLength: 4000}}}}}}
       responses: {'200': {description: DecisionDTO}, '400': {description: 'invalid_verdict, note_required'}, '403': {description: cannot_review_own_decision}, '404': {description: unsichtbar}}
   /v1/projects/{id}/structure:
@@ -115,7 +115,7 @@ paths:
     post:
       operationId: decideReviewsBatch
       summary: 'Sammelentscheidung {decisions: [{reviewID}] (1 bis 50), decision: accept|changes_requested, note?}'
-      description: 'Nur Sitzung/Person (REST/PWA); es gibt dafür kein MCP-Werkzeug. Jede Review läuft nacheinander durch denselben Fachpfad wie POST /v1/tasks/{id}/review/decision (gleiche Rechte, gleiche Notiz, gleiche Aktivität review.accepted|review.changes_requested je Review); kein Gesamt-Rollback. Antwort 200 {decision, results: [{reviewID, result, reason?, review?}], summary: {ok, forbidden, notFound, alreadyDecided, invalid}}, results in Eingabereihenfolge, doppelte IDs nur einmal. result: ok (review = ReviewDTO), forbidden (zu geringe Rolle oder not_the_reviewer / cannot_decide_own_review in reason), not_found (unbekannt oder nicht sichtbar, nicht unterscheidbar), already_decided (nicht mehr pending; Wiederholung ist gefahrlos, keine zweite Aktivität), invalid (reviewID kein UUID oder anderer 4xx der Einzelentscheidung, reason; accept auf eine Review mit Varianten: reason variant_required, die Review bleibt pending). request_changes wird als Alias für changes_requested angenommen. Gemeinsame Notiz höchstens 4000 Zeichen. Gesamtfehler: 400 no_reviews, too_many_reviews, invalid_decision, invalid_note; 429 review_batch_rate_limited (20 Aufrufe je Konto und 10 Minuten, Retry-After); ein unerwarteter Serverfehler (5xx) bricht den Rest ab, bereits entschiedene bleiben entschieden, Wiederholen ist gefahrlos.'
+      description: 'Nur Sitzung/Person (REST/PWA); es gibt dafür kein MCP-Werkzeug. Jede Review läuft nacheinander durch denselben Fachpfad wie POST /v1/tasks/{id}/review/decision (gleiche Rechte, gleiche Notiz, gleiche Aktivität review.accepted|review.changes_requested je Review); kein Gesamt-Rollback. Antwort 200 {decision, results: [{reviewID, result, reason?, review?}], summary: {ok, forbidden, notFound, alreadyDecided, invalid}}, results in Eingabereihenfolge, doppelte IDs nur einmal. result: ok (review = ReviewDTO), forbidden (zu geringe Rolle oder not_the_reviewer / cannot_decide_own_review in reason), not_found (unbekannt oder nicht sichtbar, nicht unterscheidbar), already_decided (nicht mehr pending; Wiederholung ist gefahrlos, keine zweite Aktivität), invalid (reviewID kein UUID oder anderer 4xx der Einzelentscheidung, reason; accept auf eine Review mit Varianten: reason variant_required, die Review bleibt pending). request_changes wird als Alias für changes_requested angenommen. Gemeinsame Notiz höchstens 4000 Zeichen, mehrzeilig (Zeilenumbrüche und Tabs erlaubt, andere Steuerzeichen invalid_note). Gesamtfehler: 400 no_reviews, too_many_reviews, invalid_decision, invalid_note; 429 review_batch_rate_limited (20 Aufrufe je Konto und 10 Minuten, Retry-After); ein unerwarteter Serverfehler (5xx) bricht den Rest ab, bereits entschiedene bleiben entschieden, Wiederholen ist gefahrlos.'
       responses: {'200': {description: 'ReviewBatchResponse'}, '400': {description: 'no_reviews, too_many_reviews, invalid_decision, invalid_note'}, '429': {description: review_batch_rate_limited}}
   /v1/tasks/{id}/context:
     get:
@@ -156,7 +156,7 @@ paths:
   /v1/tasks/{id}/review/decision:
     post:
       operationId: decideReview
-      summary: '{decision: accept|request_changes, note?, variantID?}'
+      summary: '{decision: accept|request_changes, note?, variantID?}; note höchstens 4000 Zeichen, mehrzeilig (Zeilenumbrüche und Tabs bleiben erhalten), andere Steuerzeichen 400 invalid_note'
       description: 'Bei einer Review mit Varianten braucht accept variantID (Wahl, wird als chosenVariantID gespeichert); request_changes braucht keine.'
       responses: {'200': {description: 'ReviewDTO (undoUntil = Ende des Rückgängig-Fensters, nur bei Entscheidung durch eine Person; chosenVariantID nach Annahme mit Varianten)'}, '409': {description: no_pending_review}, '422': {description: 'variant_required, unknown_variant, unexpected_variant'}}
   /v1/tasks/{id}/review/undo:

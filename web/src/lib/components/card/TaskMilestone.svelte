@@ -3,7 +3,7 @@
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { api, type MilestoneWithTasks } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
 	import X from '@lucide/svelte/icons/x';
 
@@ -18,13 +18,13 @@
 	async function load() {
 		items = await api.milestones(projectID);
 	}
-	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (a needless refetch). */
 	const taskKey = $derived(taskID);
 	const projectKey = $derived(projectID);
 	$effect(() => {
 		void taskKey;
 		void projectKey;
-		untrack(() => attempt(load));
+		untrack(() => attemptLoad(load));
 	});
 
 	async function assign(id: string) {

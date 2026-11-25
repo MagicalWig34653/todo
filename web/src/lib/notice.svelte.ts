@@ -23,6 +23,18 @@ export const notice = new Notice();
  */
 export async function attempt(action: () => Promise<unknown>, refresh?: () => Promise<unknown>): Promise<boolean> {
 	notice.clear();
+	return run(action, refresh);
+}
+
+/**
+ * A section loading its own data (on mount or after a change elsewhere), not a user action: it reports its own failure but
+ * never removes the message of the action before it. The card reloads its sections after a refused review decision (card DA09D11A).
+ */
+export function attemptLoad(load: () => Promise<unknown>): Promise<boolean> {
+	return run(load);
+}
+
+async function run(action: () => Promise<unknown>, refresh?: () => Promise<unknown>): Promise<boolean> {
 	try {
 		await action();
 		return true;

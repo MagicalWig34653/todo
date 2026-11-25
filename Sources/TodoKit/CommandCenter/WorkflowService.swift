@@ -120,6 +120,18 @@ struct WorkflowService: Sendable {
         return value
     }
 
+    /// Free text a person types (review note, verdict note): line breaks and tabs belong to it, other control characters
+    /// do not. `optionalLabel` is for one-line values only; using it here refused every multi-line note (card DA09D11A).
+    static func optionalNote(_ raw: String?, reason: String) throws -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { return nil }
+        guard value.count <= WorkflowLimits.maxText, !value.unicodeScalars.contains(where: {
+            $0.properties.generalCategory == .control && !"\n\r\t".unicodeScalars.contains($0)
+        }) else { throw Abort(.badRequest, reason: reason) }
+        return value
+    }
+
     // MARK: Task state helpers (caller holds the sharing graph and task row locks)
 
     static func workflow(_ taskID: UUID, on db: any Database) async throws -> TaskWorkflow {
@@ -431,7 +443,7 @@ struct WorkflowService: Sendable {
 
     func decideReview(_ taskID: UUID, decision: String, note rawNote: String?, variantID rawVariantID: String? = nil, quote: String? = nil, actor: WorkflowActor, expectedReviewID: UUID? = nil) async throws -> ReviewDTO {
         guard ["accept", "request_changes"].contains(decision) else { throw Abort(.badRequest, reason: "invalid_decision") }
-        let note = try Self.optionalLabel(rawNote, max: WorkflowLimits.maxText, reason: "invalid_note")
+        let note = try Self.optionalNote(rawNote, reason: "invalid_note")
         let readable = try await readableTask(taskID, role: .edit)
         let kind = decision == "accept" ? "review.accepted" : "review.changes_requested"
         let variantID = rawVariantID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty

@@ -2,7 +2,7 @@
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { workspace } from '#lib/workspace.svelte.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attemptLoad } from '#lib/notice.svelte.js';
 	import Dialog from '../app/Dialog.svelte';
 	import CardDetailBody from './CardDetailBody.svelte';
 	import CardHeader from './CardHeader.svelte';
@@ -36,7 +36,8 @@
 			onopentask={(p, id) => leaveTo(() => onopentask(p, id))}
 			onopenproject={(p) => leaveTo(() => onopenproject(p))}
 			onchanged={async () => {
-				await attempt(() => workspace.refreshLive());
+				// Not `attempt`: this reload also runs after a refused action (a review note, a comment) and must not wipe its message.
+				await attemptLoad(() => workspace.refreshLive());
 			}}
 		/>
 	{:else}

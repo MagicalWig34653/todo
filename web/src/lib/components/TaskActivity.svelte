@@ -4,7 +4,7 @@
 	import { api, type Activity } from '#lib/api.js';
 	import { de } from '#lib/i18n/de.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { personName } from '#lib/people.js';
 	import { newerThan, startLiveRefresh } from '#lib/liveRefresh.js';
@@ -37,13 +37,13 @@
 		} else if (fresh.length > 0) items = [...fresh, ...items];
 	}
 	onMount(() => startLiveRefresh(refresh));
-	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (a needless refetch). */
 	const taskKey = $derived(taskID);
 	$effect(() => {
 		void taskKey;
 		loaded = false;
 		void refreshKey;
-		untrack(() => attempt(() => load()));
+		untrack(() => attemptLoad(() => load()));
 	});
 
 	function label(kind: string): string {

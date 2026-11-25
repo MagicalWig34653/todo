@@ -4,7 +4,7 @@
 	import { api, type Attachment, type AttachmentRole } from '#lib/api.js';
 	import { ATTACHMENT_ROLES, checkFile, formatSize, isImage, sha256Hex } from '#lib/attachments.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { onMount } from 'svelte';
 	import { sameList, startLiveRefresh } from '#lib/liveRefresh.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -30,12 +30,12 @@
 			loaded = true;
 		}
 	}
-	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (and `attempt` would wipe the notice of a failed action). */
+	/** Primitive on purpose: `taskID={task.id}` reads `task`, so a reloaded task list would rerun the effect (a needless refetch). */
 	const taskKey = $derived(taskID);
 	$effect(() => {
 		void taskKey;
 		loaded = false;
-		untrack(() => attempt(load));
+		untrack(() => attemptLoad(load));
 	});
 	onMount(() =>
 		startLiveRefresh(async () => {

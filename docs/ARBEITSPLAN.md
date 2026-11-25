@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Review-Notiz mit mehreren Zeilen (Karte `DA09D11A`)
+
+- Stand: umgesetzt und getestet (Details und Belege in `docs/STATUS.md`, Nachtrag 25.11.2026 02:00), auf `main`. Nur Backend und PWA; kein Deploy, kein TestFlight-Build aus diesem Auftrag.
+- Folge: Der Server braucht das Image mit dem Fix; bis dahin schlägt die Review-Notiz mit Zeilenumbruch live weiter mit `400 invalid_note` fehl.
+- Lehre für künftige Tests: Ein Feld, das wie ein Chat aussieht, ist nicht der Chat; jedes Texteingabefeld einer Karte (Review-Notiz, Antwort, Sammelleiste) mit mehrzeiligem Text prüfen, nicht nur den Kommentar-Endpunkt.
+
 ## Checkpoint 24.11.2026: Brain-Vollmacht, Projektfreigaben eigener Verbindungen per MCP (Karte `E71B0FF1`)
 
 - Stand: umgesetzt auf dem Worktree-Branch `worktree-agent-a5d26e5525b4532e5` (von `45d1b36`), nicht gepusht, nicht gemergt. `list_connections` und `set_connection_projects` (Handbuch 1.39.0), Audit in `brain_connection_audits`, `contracts/connections.yaml` 1.3.0, ADR 0032 Nachtrag, E2E `scripts/connection-projects-e2e.sh` samt CI-Schritt. Belege und Zahlen: STATUS.md (oberster Nachtrag).
