@@ -686,7 +686,7 @@ final class PipelineTests: XCTestCase {
     func testContractAndManualDescribeThePipeline() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let contract = (try? String(contentsOf: root.appendingPathComponent("contracts/pipeline.yaml"), encoding: .utf8)) ?? ""
-        XCTAssertTrue(contract.contains("version: 1.0.0"))
+        XCTAssertTrue(contract.contains("version: 1.1.0"))
         let app = try await Application.make(.testing)
         do { try routes(app) } catch { try? await app.asyncShutdown(); throw error }
         let registered = Set(app.routes.all.map { r in r.method.rawValue + " /" + r.path.map(\.description).joined(separator: "/") })
@@ -700,7 +700,7 @@ final class PipelineTests: XCTestCase {
                        "cannot_decide_own_plan", "brain_mandate_required", "invalid_step", "step_managed", "invalid_state", "plan_not_approved", "invalid_note"] {
             XCTAssertTrue(contract.contains(reason), reason)
         }
-        XCTAssertEqual(AgentManual.version, "1.43.0")
+        XCTAssertEqual(AgentManual.version, "1.44.0")
         for tool in ["get_task_pipeline", "set_task_plan", "decide_plan", "set_pipeline_step"] {
             XCTAssertTrue(AgentManual.markdown.contains("`\(tool)`"), tool)
         }
