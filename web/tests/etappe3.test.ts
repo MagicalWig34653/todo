@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, createApi, type FetchLike, type Task } from '../src/lib/api';
 import { describeError } from '../src/lib/errors';
+import { attempt, attemptLoad, notice } from '../src/lib/notice.svelte';
 import { de } from '../src/lib/i18n/de';
 import { memberLabel, personName } from '../src/lib/people';
 import {
@@ -144,5 +145,20 @@ describe('error texts', () => {
 		expect(describeError(new ApiError(413, 'Payload Too Large'))).toBe(de['error.payload_too_large']);
 		expect(de['error.invalid_text']).toContain('10 000');
 		expect(describeError(new ApiError(500, 'Internal Server Error'))).toBe(de['error.generic']);
+	});
+
+	// Bug DA09D11A: the reloads after a refused action cleared its message before the person could read it.
+	it('keeps the message of a refused action while sections reload, and clears it for the next action', async () => {
+		await attempt(() => Promise.reject(new ApiError(400, 'invalid_note')));
+		await attemptLoad(async () => undefined);
+		expect(notice.text).toBe(de['error.invalid_note']);
+		await attempt(async () => undefined);
+		expect(notice.text).toBeNull();
+	});
+
+	// Bug DA09D11A: a refused review note (400 invalid_note) only said "Etwas ist schiefgelaufen".
+	it('says why a review note was refused', () => {
+		expect(describeError(new ApiError(400, 'invalid_note'))).not.toBe(de['error.generic']);
+		expect(describeError(new ApiError(400, 'invalid_note'))).toContain('4 000');
 	});
 });
