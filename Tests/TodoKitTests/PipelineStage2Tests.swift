@@ -499,6 +499,23 @@ final class PipelineStage2Tests: XCTestCase {
         }
     }
 
+    /// A plan that was still waiting when the approval step was switched off must not stay stuck: writing it again approves it.
+    func testSwitchingApprovalOffDoesNotLeaveAWaitingPlanStuck() async throws {
+        try await run { e in
+            let task = try await newTask(e)
+            expect(try await putPlan(e, task, "Same"), .ok)
+            expect(try await patch(e, ["revision": 0, "steps": ["approval": false]]), .ok)
+            let again = try await putPlan(e, task, "Same")
+            expect(again, .ok)
+            XCTAssertEqual(plan(again.body)?["state"] as? String, "approved")
+            XCTAssertEqual(plan(again.body)?["decidedByType"] as? String, "system")
+            XCTAssertEqual(plan(again.body)?["version"] as? Int, 2)
+            // Repeating it once more changes nothing.
+            let third = try await putPlan(e, task, "Same")
+            XCTAssertEqual(plan(third.body)?["version"] as? Int, 2)
+        }
+    }
+
     func testWorkStepsOffAreSkippedRefusedAndKeepStoredState() async throws {
         try await run { e in
             let task = try await approvedTask(e)
