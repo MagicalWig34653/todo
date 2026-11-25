@@ -193,6 +193,12 @@ Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflic
 Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.
 
 
+## Offene Reviews beim Erledigen und Rückzug (25.11.2026, Handbuch 1.41.0, Karte 6515CAFA)
+
+- `withdraw_review` (`taskID`, `note?`; Scope `tasks:write`, Klasse B; ReviewDTO) gibt es nur über MCP: Nur die anfragende Verbindung zieht ihre eigene offene Review zurück (`state` `withdrawn`, `decidedBy` leer, Aktivität `review.withdrawn`; Karte in `in_review` zurück nach `in_progress`/"In Arbeit", sonst unverändert). Fehler `no_pending_review` (409), `not_review_requester` (403, auch für Runner-Reviews), `invalid_note`, `not_found` außerhalb des Grants. Keine Vollmacht, kein Zitat: ein Rückzug ist keine Entscheidung. Kein REST-Pendant, weil REST nur die Person kennt und diese entscheidet (`/review/decision`) oder die Karte erledigt (Review wird automatisch zurückgezogen).
+- `move_task_to_column` in eine Erledigt-Spalte folgt `update_task`: fremde offene Review `brain_mandate_required` (nichts ändert sich), eigene wird zurückgezogen, Buchung auf die Verbindung. REST/PWA und das von der Person bestätigte `delete_column` bleiben wie bisher.
+- `import_plan` mit Status `done`: Person und eigene Review: erledigt, Review zurückgezogen. Verbindung mit fremder offener Review (Person, andere Verbindung, Runner): Status bleibt, übriger Import wird angewendet, `changes` enthält `status_skipped_open_review` (allein kein `updated`). Runner-Reviews werden nie automatisch zurückgezogen.
+
 ## Umgesetzt: Stapel 8 (Einstellungen, Benachrichtigungen, Verbindung, Admin lesend)
 
 Stand 3.11.2026, Code `Sources/TodoKit/MCP/MCPAccountTools.swift`, Tests `MCPAccountToolsTests`. Neue Scopes `account:read`, `account:write`, `admin:read` (Registry, Discovery, Zustimmungsseite, `scope.*` in de.ts); bestehende Verbindungen bekommen sie nicht automatisch. Handbuch noch nicht nachgezogen (Hauptsession; der Handbuch-Test schlägt bis dahin für die sieben neuen Tools fehl).

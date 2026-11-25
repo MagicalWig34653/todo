@@ -1,7 +1,7 @@
 #!/bin/sh
 # Browser E2E against a published backend image (production bundle, SQLite), one fresh container and database per spec and
 # browser: the bootstrap account is single use and the specs share state, so a spec never meets another spec's data.
-# Used by .github/workflows/e2e.yml (cards D434B3FD, 330C57F8, A7865053, DA09D11A); runs the same way on a Mac with Docker.
+# Used by .github/workflows/e2e.yml (cards D434B3FD, 330C57F8, A7865053, DA09D11A, 6515CAFA); runs the same way on a Mac with Docker.
 # Usage: scripts/e2e-ci.sh <image> [spec:browser,browser ...]      e.g. scripts/e2e-ci.sh ghcr.io/magicalwig34653/todo-backend:sha-5e609bd
 # Without specs the curated list below runs. Needs Docker, curl and `npx playwright install` for the browsers in web/.
 set -u
@@ -12,7 +12,7 @@ ORIGIN="http://localhost:$PORT"
 # only browser the rest supports, see web/playwright.config.ts). New specs join (2) automatically; each run gets its own database.
 # Not run: mail and server-settings (need an SMTP sink and a specially configured backend), review-variants-demo (only produces
 # example pictures for the owner's review).
-MULTI="timestamps repo-line-refresh comment-limits comment-compare menus-and-modes review-note-multiline"
+MULTI="timestamps repo-line-refresh comment-limits comment-compare menus-and-modes review-note-multiline review-withdraw"
 SKIP=" mail server-settings review-variants-demo repo-line-stability "
 # Advisory: run and reported, but a red result does not fail the run. Only passkey-flow is left: its "invited person" test hangs
 # for 90 s in the guest browser in roughly 1 of 20 Linux runs (cause not proven, cards CB70D313 and 188D611F). calendar and

@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Offene Reviews erledigter Karten (Karte `6515CAFA`)
+
+- Stand: umgesetzt und lokal geprüft auf `main` (rot `3d51896`, grün `78cf5c8`), nicht gepusht, nicht deployt. Belege in `docs/STATUS.md` (oberster Nachtrag). Handbuch 1.41.0, Vertrag `command-center.yaml` 1.9.0, keine Migration.
+- Nach dem Deploy: die 23 Alt-Reviews vom 12.11. mit `withdraw_review` schließen; geht nur mit derselben Verbindungsfreigabe, die sie angefragt hat.
+- Nächster Schritt: pushen, CI/E2E prüfen, Deploy durch Lino.
+
 ## Checkpoint 25.11.2026: Review-Notiz mit mehreren Zeilen (Karte `DA09D11A`)
 
 - Stand: umgesetzt und getestet (Details und Belege in `docs/STATUS.md`, Nachtrag 25.11.2026 02:00), auf `main`. Nur Backend und PWA; kein Deploy, kein TestFlight-Build aus diesem Auftrag.
