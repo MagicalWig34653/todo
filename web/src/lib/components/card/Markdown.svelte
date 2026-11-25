@@ -2,8 +2,8 @@
 	import { parseMarkdown, type MdInline } from '#lib/miniMarkdown.js';
 
 	/** Renders the safe Markdown subset (paragraphs, bullet lists, headings, code) as text nodes only. */
-	let { text, class: className = '' }: { text: string; class?: string } = $props();
-	const blocks = $derived(parseMarkdown(text));
+	let { text, class: className = '', ordered = false }: { text: string; class?: string; ordered?: boolean } = $props();
+	const blocks = $derived(parseMarkdown(text, { ordered }));
 </script>
 
 {#snippet inline(parts: MdInline[])}
@@ -18,6 +18,10 @@
 			<p class="font-semibold">{@render inline(b.inline)}</p>
 		{:else if b.kind === 'paragraph'}
 			<p>{@render inline(b.inline)}</p>
+		{:else if b.kind === 'list' && b.ordered}
+			<ol class="flex list-decimal flex-col gap-1 pl-5" start={b.start}>
+				{#each b.items as item}<li>{@render inline(item)}</li>{/each}
+			</ol>
 		{:else if b.kind === 'list'}
 			<ul class="flex list-disc flex-col gap-1 pl-5">
 				{#each b.items as item}<li>{@render inline(item)}</li>{/each}

@@ -10,6 +10,7 @@
 	import type { ActionRequest, ForYouConfirmation } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
+	import { awaitingApproval, createPipelineController, emptyPipelineView } from '#lib/pipeline.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
 	import Timestamp from '../Timestamp.svelte';
 	import IdChip from '../IdChip.svelte';
@@ -37,6 +38,7 @@
 	import TaskPlanning from '../TaskPlanning.svelte';
 	import CardConversation from './CardConversation.svelte';
 	import CardHeader from './CardHeader.svelte';
+	import CardPipeline from './CardPipeline.svelte';
 	import CardReport from './CardReport.svelte';
 	import CardTabEmpty from './CardTabEmpty.svelte';
 	import CardTabs from './CardTabs.svelte';
@@ -200,6 +202,20 @@
 	}
 	const impact = $derived(request?.impact ?? null);
 
+	/** Loaded with the card, not only with its tab: the tab announces a waiting approval. The draft lives here, so tab changes keep it. */
+	const pipeline = $state(emptyPipelineView());
+	const pipelineControl = createPipelineController(pipeline, api);
+	/** Primitive on purpose: a reloaded task must not restart the pipeline (and drop the typed comment). */
+	const pipelineTask = $derived(task?.id ?? null);
+	// Before the DOM updates: the next card never shows the previous card's plan or draft.
+	$effect.pre(() => {
+		const id = pipelineTask;
+		if (id) untrack(() => void pipelineControl.open(id));
+	});
+	// allowInDialog and no editing guard: an agent's changes appear inside the open window while a comment is being typed.
+	onMount(() => startLiveRefresh(() => pipelineControl.refresh(), { allowInDialog: true }));
+	const tabHints = $derived(awaitingApproval(pipeline.data) ? { pipeline: t('pipeline.tab.waiting') } : {});
+
 	let statusBusy = $state(false);
 	async function toggleDone() {
 		if (!task || statusBusy || !canEdit) return;
@@ -337,7 +353,7 @@
 
 				{#if ctx && task}
 					<div class="flex flex-col gap-5" bind:this={tabArea} data-testid="card-tabarea">
-					<CardTabs value={tab} onchange={selectTab} />
+					<CardTabs value={tab} onchange={selectTab} hints={tabHints} />
 					<div
 						role="tabpanel"
 						id="card-tabpanel"
@@ -481,7 +497,9 @@
 						</section>
 					{:else if tab === 'report' && report}
 						<CardReport {report} />
-					{:else if tab === 'pipeline' || tab === 'changes' || tab === 'tests'}
+					{:else if tab === 'pipeline'}
+						<CardPipeline view={pipeline} controller={pipelineControl} {canEdit} ondecided={changed} />
+					{:else if tab === 'changes' || tab === 'tests'}
 						<CardTabEmpty title={t(`card.tab.${tab}.emptyTitle` as MessageKey)} text={t(`card.tab.${tab}.emptyText` as MessageKey)} />
 					{/if}
 					</div>

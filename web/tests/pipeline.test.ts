@@ -258,8 +258,8 @@ describe('pipeline controller', () => {
 		expect(await ctl.decide('request_changes', true)).toBe('invalid');
 		expect(api.decidePlan).not.toHaveBeenCalled();
 		expect(view.problem).toBe('comment_required');
-		view.comment = 'x';
-		ctl.edited();
+		ctl.type('x');
+		expect(view.comment).toBe('x');
 		expect(view.problem).toBeNull();
 		await ctl.decide('request_changes', true);
 		expect(view.feedback?.key).toBe('pipeline.feedback.changesRequested');
@@ -293,6 +293,20 @@ describe('pipeline controller', () => {
 		expect(view.feedback).toEqual({ tone: 'error', key: 'pipeline.error.planChanged' });
 		expect(api.decidePlan).toHaveBeenCalledTimes(1);
 		expect(view.busy).toBeNull();
+	});
+
+	it('keeps the plan_changed message while a decision is still open and drops it once someone else decided', async () => {
+		const { view, ctl, api, server } = setup();
+		await ctl.open('t1');
+		api.decidePlan.mockRejectedValue(new ApiError(409, 'plan_changed'));
+		server.current = proposed({ version: 2 });
+		await ctl.decide('approve', true);
+		server.current = proposed({ version: 3 });
+		await ctl.refresh();
+		expect(view.feedback?.key).toBe('pipeline.error.planChanged');
+		server.current = proposed({ version: 3, state: 'approved' });
+		await ctl.refresh();
+		expect(view.feedback).toBeNull();
 	});
 
 	it('keeps the comment and the plan on other errors and allows a retry', async () => {

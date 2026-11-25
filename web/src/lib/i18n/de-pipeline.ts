@@ -1,0 +1,66 @@
+// German strings of the card tab "Pipeline" (card 74EC341D, lib/pipeline.ts, card/CardPipeline.svelte).
+export const dePipeline = {
+	'pipeline.tab.waiting': ', Freigabe wartet',
+	'pipeline.loading': 'Pipeline wird geladen …',
+	'pipeline.loadFailed': 'Die Pipeline konnte nicht geladen werden.',
+	'pipeline.steps': 'Schritte',
+
+	'pipeline.step.planner': 'Planer',
+	'pipeline.step.approval': 'Freigabe',
+	'pipeline.step.developer': 'Entwickler',
+	'pipeline.step.validation': 'Validierung',
+	'pipeline.step.tester': 'Tester',
+	'pipeline.step.review': 'Review',
+	'pipeline.step.unknown': 'Weiterer Schritt',
+
+	'pipeline.state.pending': 'Offen',
+	'pipeline.state.running': 'Läuft',
+	'pipeline.state.waiting': 'Wartet auf Freigabe',
+	'pipeline.state.changes_requested': 'Änderungen angefragt',
+	'pipeline.state.done': 'Fertig',
+	'pipeline.state.failed': 'Fehlgeschlagen',
+	'pipeline.state.skipped': 'Übersprungen',
+	'pipeline.state.unknown': 'Unbekannt',
+
+	'pipeline.plan': 'Plan',
+	'pipeline.planState.proposed': 'Wartet auf Freigabe',
+	'pipeline.planState.approved': 'Freigegeben',
+	'pipeline.planState.changes_requested': 'Änderungen angefragt',
+	'pipeline.version': 'Version {version}',
+	'pipeline.by': 'von {who}',
+	'pipeline.written': 'geschrieben',
+	'pipeline.approvedBy': 'Freigegeben von {who}',
+	'pipeline.changesBy': 'Änderungen angefragt von {who}',
+
+	'pipeline.comment': 'Kommentar (optional)',
+	'pipeline.commentHint': 'Für „Änderungen“ ist ein Kommentar nötig.',
+	'pipeline.approve': 'Plan freigeben',
+	'pipeline.changes': 'Änderungen',
+	'pipeline.sending': 'Wird gesendet …',
+	'pipeline.readOnly': 'Zum Freigeben oder für Änderungen brauchst du Bearbeitungsrecht in diesem Projekt.',
+
+	'pipeline.feedback.approved': 'Plan freigegeben.',
+	'pipeline.feedback.changesRequested': 'Änderungen angefragt. Der Planer ist wieder an der Reihe.',
+	'pipeline.feedback.newVersion': 'Neue Planversion {version}. Bitte lies sie, bevor du entscheidest.',
+
+	'pipeline.error.commentRequired': 'Beschreibe im Kommentar, was am Plan geändert werden soll.',
+	'pipeline.error.invalidComment': 'Der Kommentar ist ungültig oder länger als 4000 Zeichen.',
+	'pipeline.error.planChanged': 'Der Plan wurde inzwischen geändert. Es wurde nichts entschieden: bitte lies die neue Fassung und entscheide erneut.',
+	'pipeline.error.notPending': 'Über diesen Plan wurde bereits entschieden. Der aktuelle Stand wird angezeigt.',
+	'pipeline.error.noPlan': 'Für diese Karte gibt es keinen Plan mehr.',
+	'pipeline.error.forbidden': 'Dafür fehlt dir die Berechtigung.',
+	'pipeline.error.network': 'Der Server ist nicht erreichbar. Dein Kommentar bleibt stehen.',
+	'pipeline.error.generic': 'Die Entscheidung konnte nicht gesendet werden. Bitte versuche es erneut.',
+
+	'pipeline.history': 'Verlauf ({count})',
+	'pipeline.event.planWritten': 'Plan Version {version} geschrieben',
+	'pipeline.event.planApproved': 'Plan Version {version} freigegeben',
+	'pipeline.event.planChanges': 'Änderungen zu Plan Version {version} angefragt',
+	'pipeline.event.step': '{step}: {state}',
+	'pipeline.event.other': 'Pipeline geändert',
+
+	'activity.kind.plan.written': 'Plan geschrieben',
+	'activity.kind.plan.approved': 'Plan freigegeben',
+	'activity.kind.plan.changes_requested': 'Änderungen am Plan angefragt',
+	'activity.kind.pipeline.step': 'Pipeline-Schritt geändert'
+} as const;

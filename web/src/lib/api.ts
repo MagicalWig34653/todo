@@ -4,6 +4,7 @@ import type { ActionRequest, ForYouPage } from './forYou.js';
 import type { BatchResponse } from './reviewBulk.js';
 import type { ReviewVariant } from './reviewVariants.js';
 import type { BrainAuditItem, BrainMandate } from './brainMandate.js';
+import type { PlanDecisionInput, TaskPipeline } from './pipeline.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
 
 export interface Capabilities {
@@ -1328,6 +1329,11 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 			request<Review>('POST', `/tasks/${taskID}/review/decision`, { decision, note: note || undefined, variantID: variantID || undefined }),
 		undoReviewDecision: (taskID: string) => request<Review>('POST', `/tasks/${taskID}/review/undo`),
 		taskContext: (taskID: string) => request<TaskContext>('GET', `/tasks/${taskID}/context`),
+
+		// Plan approval and pipeline of a card (contracts/pipeline.yaml); older servers answer 404.
+		taskPipeline: (taskID: string) => request<TaskPipeline>('GET', `/tasks/${taskID}/pipeline`),
+		decidePlan: (taskID: string, { decision, version, comment }: PlanDecisionInput) =>
+			request<TaskPipeline>('POST', `/tasks/${taskID}/plan/decision`, { decision, version, comment: comment || undefined }),
 		setTaskStructure: (taskID: string, body: { kind?: string; parentTaskID?: string | null }) => request<unknown>('PUT', `/tasks/${taskID}/structure`, body),
 		projectStructure: (projectID: string) => request<ProjectStructure>('GET', `/projects/${projectID}/structure`),
 		getAgentBrief: (projectID: string) => request<AgentBrief>('GET', `/projects/${projectID}/agent-brief`),

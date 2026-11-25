@@ -7,6 +7,7 @@ import { deNow } from './de-now.js';
 import { deBrainMandate } from './de-brain-mandate.js';
 import { deWebhook } from './de-webhook.js';
 import { deVoicePrivacy } from './de-voice-privacy.js';
+import { dePipeline } from './de-pipeline.js';
 
 export const de = {
 	...deVoicePrivacy,
@@ -17,6 +18,7 @@ export const de = {
 	...deNow,
 	...deBrainMandate,
 	...deWebhook,
+	...dePipeline,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',

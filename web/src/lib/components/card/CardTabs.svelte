@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { CARD_TABS, tabAfterKey, type CardTab } from '#lib/cardTabs.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
+	import Hourglass from '@lucide/svelte/icons/hourglass';
 
 	/**
 	 * Tab bar of the card window (ARIA tabs pattern): roving tabindex, arrows/Home/End move and activate, the bar scrolls
 	 * sideways on narrow screens and keeps the selected tab in view. The panel is rendered by the parent (id `card-tabpanel`).
 	 */
-	let { value, onchange }: { value: CardTab; onchange: (tab: CardTab) => void } = $props();
+	interface Props {
+		value: CardTab;
+		onchange: (tab: CardTab) => void;
+		/** A tab that waits for the person: shows a marker and appends the text to the tab's spoken name. */
+		hints?: Partial<Record<CardTab, string>>;
+	}
+	let { value, onchange, hints = {} }: Props = $props();
 
 	let list = $state<HTMLDivElement | null>(null);
 
@@ -49,6 +56,7 @@
 				id="card-tab-{tab}"
 				aria-selected={selected}
 				aria-controls="card-tabpanel"
+				aria-label={hints[tab] ? t(`card.tab.${tab}` as MessageKey) + hints[tab] : undefined}
 				tabindex={selected ? 0 : -1}
 				data-testid="card-tab-{tab}"
 				class={[
@@ -60,6 +68,7 @@
 				onclick={() => onchange(tab)}
 			>
 				{t(`card.tab.${tab}` as MessageKey)}
+				{#if hints[tab]}<span class="text-warning ml-1.5 inline-flex" data-testid="card-tab-hint-{tab}"><Hourglass class="size-3.5" aria-hidden="true" /></span>{/if}
 			</button>
 		{/each}
 	</div>
