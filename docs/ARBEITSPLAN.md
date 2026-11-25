@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Wiederholungsregeln erweitert (Karte `21CF716D`)
+
+- Stand: Backend und MCP umgesetzt und getestet (rot `bf62ca4`, grün `edcaa86`, Doku folgt im selben Branch `worktree-agent-ad5e5999cbe069850`); Belege in `docs/STATUS.md` (oberster Nachtrag). Vertrag `planning-ext.yaml` 1.3.0, `sync.yaml` 1.6.0, `oauth-mcp.yaml` 1.7.0, Handbuch 1.42.0, keine Migration.
+- Offen: PWA-Oberfläche (anderer Worker), Apple-Unterstützung (Folgekarte `A18F3FF7`; alte Stände verlieren die neuen Felder beim Neuschreiben einer Regel), Merge und CI auf `main`.
+
 ## Checkpoint 25.11.2026: Offene Reviews erledigter Karten (Karte `6515CAFA`)
 
 - Stand: umgesetzt, auf `main` gepusht (rot `3d51896`, grün `78cf5c8`, Compiler-Fix des Tests `68a5089`), CI, Docker publish und E2E auf `68a5089` grün; nicht deployt. Belege in `docs/STATUS.md` (oberster Nachtrag). Handbuch 1.41.0, Vertrag `command-center.yaml` 1.9.0, keine Migration.
