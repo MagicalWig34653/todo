@@ -1,6 +1,7 @@
 /** Reference to the card shown in the large detail window (`?card=<type>:<id>`) and pure helpers around it. */
 import { t } from './i18n/index.js';
 import { formatTimestamp } from './planning.js';
+import type { CardTab } from './cardTabs.js';
 import type { ForYouNeed, ForYouPost } from './forYou.js';
 
 export type CardType = 'task' | 'question' | 'review' | 'confirmation';
@@ -36,6 +37,10 @@ export function cardOfNeed(n: Pick<ForYouNeed, 'kind' | 'taskID' | 'questionID'>
 export function cardOfPost(p: Pick<ForYouPost, 'kind' | 'taskID'>): CardRef {
 	return p.kind === 'review' ? { type: 'review', id: p.taskID } : { type: 'task', id: p.taskID };
 }
+
+/** The tab a card opens on from a list entry: plans lead to the Pipeline tab, everything else to the default (undefined). */
+export const cardTabOfNeed = (n: Pick<ForYouNeed, 'kind'>): CardTab | undefined => (n.kind === 'plan' ? 'pipeline' : undefined);
+export const cardTabOfPost = (p: Pick<ForYouPost, 'kind'>): CardTab | undefined => (p.kind === 'plan' ? 'pipeline' : undefined);
 
 export function cardOfConfirmation(c: { id: string }): CardRef {
 	return { type: 'confirmation', id: c.id };

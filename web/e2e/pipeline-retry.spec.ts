@@ -179,6 +179,7 @@ test('approval switched off: the plan is released at once, the step says "Aus" a
 	await open(tasks.noApproval);
 	await expect(panel().getByTestId('pipeline-plan-state')).toHaveText('Freigegeben');
 	await expect(stepState('Freigabe')).toHaveText('Aus');
+	await expect(panel().getByTestId('pipeline-plan-decided')).toContainText('Automatisch freigegeben');
 	await expect(panel().getByRole('button', { name: 'Plan freigeben', exact: true })).toHaveCount(0);
 	await expect(tab()).toHaveAccessibleName('Pipeline');
 	await expect(dialog().getByTestId('card-tab-hint-pipeline')).toHaveCount(0);

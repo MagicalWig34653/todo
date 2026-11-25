@@ -3,8 +3,8 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { api, ApiError } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
-	import { cardOfConfirmation, cardOfNeed, cardOfPost, uniqueCards } from '#lib/cardRef.js';
-	import { actionRequest, appendPosts, mergeFirstPage, postTitleKey, type ActionRequest, type ForYouAccessRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
+	import { cardOfConfirmation, cardOfNeed, cardOfPost, cardTabOfNeed, cardTabOfPost, uniqueCards } from '#lib/cardRef.js';
+	import { actionRequest, appendPosts, mergeFirstPage, needInputKind, needKindKey, postTitleKey, type ActionRequest, type ForYouAccessRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { startLiveRefresh, sameList } from '#lib/liveRefresh.js';
@@ -46,6 +46,8 @@
 	let busy = $state<Set<string>>(new Set());
 	let texts = $state<Record<string, string>>({});
 	let noteFor = $state<string | null>(null);
+	/** Entries whose mandatory comment (plan changes) is still missing. */
+	let missing = $state<Set<string>>(new Set());
 	let sentinel = $state<HTMLElement | null>(null);
 	let zoom = $state<ForYouImage | null>(null);
 	let zoomOpen = $state(false);
@@ -111,6 +113,11 @@
 
 	async function run(item: ForYouNeed, action: ForYouAction) {
 		const req = actionRequest(action, texts[item.id] ?? '');
+		if (!req && needInputKind(action) === 'comment') {
+			missing = new Set(missing).add(item.id);
+			await tick();
+			document.getElementById(`need-i-${item.id}`)?.focus();
+		}
 		if (!req || busy.has(item.id)) return;
 		busy = new Set(busy).add(item.id);
 		await attempt(async () => {
@@ -137,9 +144,14 @@
 		void attempt(() => workspace.refreshLive());
 	}
 	function click(item: ForYouNeed, action: ForYouAction) {
-		if (action.requiresInput && action.inputField === 'note' && noteFor !== item.id) noteFor = item.id;
-		else void run(item, action);
+		const kind = needInputKind(action);
+		if ((kind === 'note' || kind === 'comment') && noteFor !== item.id) {
+			noteFor = item.id;
+			if (kind === 'comment') void tick().then(() => document.getElementById(`need-i-${item.id}`)?.focus());
+		} else void run(item, action);
 	}
+	/** The comment of a plan change is mandatory, the note of a review optional: they ask with different words. */
+	const asksComment = (item: ForYouNeed) => item.actions.some((a) => needInputKind(a) === 'comment');
 	function onDecided(item: ForYouConfirmation, result: ActionRequest) {
 		decided[item.id] = { item, result };
 		confirmations = confirmations.filter((c) => c.id !== item.id);
@@ -154,7 +166,6 @@
 	function actor(p: ForYouPost): string {
 		return p.actor.name ?? (p.actor.type === 'Person' ? '' : t('forYou.agent'));
 	}
-	const kindKey = (k: string) => `forYou.kind.${k}` as MessageKey;
 </script>
 
 <section class="flex flex-col gap-4" data-testid="for-you">
@@ -180,8 +191,8 @@
 				{/each}
 				{#each needs as item (item.id)}
 					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards)}>
-							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(kindKey(item.kind))}</span>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards, cardTabOfNeed(item))}>
+							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(needKindKey(item.kind))}</span>
 							<span id="need-t-{item.id}" class="text-sm font-semibold">{item.title}</span>
 							{#if item.detail}<span class="text-muted-foreground text-sm">{item.detail}</span>{/if}
 							<span id="need-d-{item.id}" class="text-muted-foreground text-xs">
@@ -206,7 +217,19 @@
 									onpick={(i) => click(item, item.actions[Number(i)])}
 								/>
 								{#if noteFor === item.id}
-									<Input placeholder={t('forYou.notePlaceholder')} aria-label={t('forYou.notePlaceholder')} bind:value={texts[item.id]} />
+									{@const comment = asksComment(item)}
+									<Input
+										id="need-i-{item.id}"
+										placeholder={t(comment ? 'forYou.planCommentPlaceholder' : 'forYou.notePlaceholder')}
+										aria-label={t(comment ? 'forYou.planCommentPlaceholder' : 'forYou.notePlaceholder')}
+										aria-invalid={comment && missing.has(item.id) && !(texts[item.id] ?? '').trim() ? 'true' : undefined}
+										aria-describedby={comment && missing.has(item.id) ? `need-p-${item.id}` : undefined}
+										oninput={() => { if (missing.has(item.id)) { const m = new Set(missing); m.delete(item.id); missing = m; } }}
+										bind:value={texts[item.id]}
+									/>
+									{#if comment && missing.has(item.id)}
+										<p class="text-destructive text-xs font-medium" role="alert" id="need-p-{item.id}">{t('forYou.planCommentRequired')}</p>
+									{/if}
 								{/if}
 							{/if}
 						{/if}
@@ -220,7 +243,7 @@
 				<h3 class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{t('forYou.posts')}</h3>
 				{#each posts as post (post.id)}
 					<article class="bg-card flex flex-col gap-2 rounded-xl border p-3" data-testid="post-card" data-kind={post.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="post-t-{post.id}" aria-describedby="post-d-{post.id}" onclick={() => cardDetail.open(cardOfPost(post), orderedCards)}>
+						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="post-t-{post.id}" aria-describedby="post-d-{post.id}" onclick={() => cardDetail.open(cardOfPost(post), orderedCards, cardTabOfPost(post))}>
 							<span id="post-t-{post.id}" class="text-sm font-semibold">{actor(post)} {t(postTitleKey(post) as MessageKey)}</span>
 							{#if post.event === 'build.status_changed' && buildStatusOf(post.status)}
 								<span class="inline-flex flex-wrap items-center gap-1 text-sm" data-testid="post-build-status">{t(...buildEventHead(post.text))} <BuildStatusBadge status={post.status} /></span>

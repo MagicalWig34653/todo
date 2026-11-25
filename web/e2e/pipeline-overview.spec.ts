@@ -187,7 +187,7 @@ test('the overview marks the card of a plan waiting for approval and counts it; 
 	await expect(page.locator('[data-testid="oc-card"]').filter({ hasText: 'Karte ohne Plan' }).getByTestId('oc-plan-waiting')).toHaveCount(0);
 	// "Plan wird überholt" (version 2) and "Plan im Überblick" are waiting; the other plans are decided.
 	await expect(page.getByTestId('cc-plans-waiting')).toContainText('2');
-	await expect(page.getByTestId('cc-plans-waiting')).toContainText('Plan');
+	await expect(page.getByTestId('cc-plans-waiting')).toContainText('Pläne');
 	// The marker opens the card on the Pipeline tab.
 	await card.getByTestId('oc-plan-waiting').click();
 	await expect(page.getByTestId('card-dialog').getByTestId('card-tab-pipeline')).toHaveAttribute('aria-selected', 'true');

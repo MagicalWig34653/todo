@@ -41,7 +41,8 @@ const failedTester = () => pipeline({}, PIPELINE_STEPS.map((s) => (s === 'tester
 
 describe('switched-off steps', () => {
 	it('treats a missing enabled flag (older server) as on', () => {
-		expect(stepOn({ step: 'tester', state: 'pending' })).toBe(true);
+		const older: PipelineStep = { step: 'tester', state: 'pending' };
+		expect(stepOn(older)).toBe(true);
 		expect(stepOn(step('tester', 'pending', { enabled: false }))).toBe(false);
 	});
 
@@ -244,7 +245,7 @@ describe('retry controller', () => {
 	it('retries the failed step with the shown plan version and shows the new state', async () => {
 		const { view, ctl, api } = setup();
 		await ctl.open('t1');
-		expect(await ctl.retry('tester', true)).toBe('done');
+		expect(await ctl.retryStep('tester', true)).toBe('done');
 		expect(api.retryPipelineStep).toHaveBeenCalledWith('t1', 'tester', { planVersion: 2 });
 		expect(view.data?.steps.find((s) => s.step === 'tester')?.state).toBe('pending');
 		expect(view.data?.fixRounds?.used).toBe(2);
@@ -255,19 +256,19 @@ describe('retry controller', () => {
 	it('never retries without permission, at a step that did not fail, when exhausted, or twice at once', async () => {
 		const { view, ctl, api, server } = setup();
 		await ctl.open('t1');
-		expect(await ctl.retry('tester', false)).toBe('ignored');
-		expect(await ctl.retry('developer', true)).toBe('ignored');
+		expect(await ctl.retryStep('tester', false)).toBe('ignored');
+		expect(await ctl.retryStep('developer', true)).toBe('ignored');
 		server.current = pipeline({ fixRounds: { used: 3, max: 3, remaining: 0 } }, [step('tester', 'failed')]);
 		await ctl.refresh();
-		expect(await ctl.retry('tester', true)).toBe('ignored');
+		expect(await ctl.retryStep('tester', true)).toBe('ignored');
 		expect(api.retryPipelineStep).not.toHaveBeenCalled();
 		server.current = failedTester();
 		await ctl.refresh();
 		let release!: () => void;
 		api.retryPipelineStep.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(pipeline()))));
-		const one = ctl.retry('tester', true);
+		const one = ctl.retryStep('tester', true);
 		expect(view.retrying).toBe('tester');
-		expect(await ctl.retry('tester', true)).toBe('ignored');
+		expect(await ctl.retryStep('tester', true)).toBe('ignored');
 		release();
 		await one;
 		expect(api.retryPipelineStep).toHaveBeenCalledTimes(1);
@@ -279,7 +280,7 @@ describe('retry controller', () => {
 			await ctl.open('t1');
 			api.retryPipelineStep.mockRejectedValueOnce(new ApiError(409, reason));
 			server.current = pipeline({ plan: { version: 3, body: 'Neu', state: 'approved' }, fixRounds: { used: 0, max: 3, remaining: 3 } }, [step('tester', 'pending')]);
-			expect(await ctl.retry('tester', true)).toBe('failed');
+			expect(await ctl.retryStep('tester', true)).toBe('failed');
 			expect(view.data?.plan?.version).toBe(3);
 			expect(view.feedback?.tone).toBe('error');
 			expect(view.feedback?.key).toBe(retryErrorKey(new ApiError(409, reason)));
@@ -292,10 +293,10 @@ describe('retry controller', () => {
 		const { view, ctl, api } = setup();
 		await ctl.open('t1');
 		api.retryPipelineStep.mockRejectedValueOnce(new ApiError(0, 'network'));
-		expect(await ctl.retry('tester', true)).toBe('failed');
+		expect(await ctl.retryStep('tester', true)).toBe('failed');
 		expect(view.feedback).toEqual({ tone: 'error', key: 'pipeline.error.networkRetry' });
 		expect(view.data?.steps.find((s) => s.step === 'tester')?.state).toBe('failed');
-		expect(await ctl.retry('tester', true)).toBe('done');
+		expect(await ctl.retryStep('tester', true)).toBe('done');
 	});
 
 	it('reads the card again when the answer is no pipeline', async () => {
@@ -303,7 +304,7 @@ describe('retry controller', () => {
 		await ctl.open('t1');
 		api.retryPipelineStep.mockResolvedValueOnce({} as TaskPipeline);
 		server.current = pipeline({ fixRounds: { used: 2, max: 3, remaining: 1 } }, [step('tester', 'pending')]);
-		expect(await ctl.retry('tester', true)).toBe('done');
+		expect(await ctl.retryStep('tester', true)).toBe('done');
 		expect(view.data?.fixRounds?.used).toBe(2);
 	});
 
@@ -312,7 +313,7 @@ describe('retry controller', () => {
 		await ctl.open('t1');
 		let release!: () => void;
 		api.retryPipelineStep.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(pipeline()))));
-		const pending = ctl.retry('tester', true);
+		const pending = ctl.retryStep('tester', true);
 		server.current = pipeline({ taskID: 't2' }, [step('tester', 'running')]);
 		await ctl.open('t2');
 		release();
@@ -325,7 +326,7 @@ describe('retry controller', () => {
 	it('forgets a retry message when another card opens', async () => {
 		const { view, ctl } = setup();
 		await ctl.open('t1');
-		await ctl.retry('tester', true);
+		await ctl.retryStep('tester', true);
 		await ctl.open('t2');
 		expect(view.feedback).toBeNull();
 	});
