@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026 (21:46): Leitstand gepusht, Review offen (Karte `B0CF5F73`)
+
+- `5e1b738` auf `main`; CI, Docker publish, Pages und E2E grün. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Nächster Schritt: Linos Entscheidung zum Review `DD3CC99D` und Deploy `sha-5e1b738`. Folgekarten offen: `21A79A08` (Apple, Build-IDs), `A1A4690B` (429), `BEE2417E` (Apple, Pipeline-Ausführung).
+
 ## Checkpoint 25.11.2026 (21:20): Redesign der Seite „Jetzt“ (Karte `B0CF5F73`)
 
 - Entscheidung: Richtung „Leitstand“ (Kacheln, Karten-Raster, eine Warte-Liste, Projekte zu, Builds gruppiert); nur PWA.

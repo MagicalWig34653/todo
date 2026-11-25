@@ -1,5 +1,11 @@
 # Status
 
+## Nachtrag 25.11.2026 (21:46): Leitstand auf `main`, CI grün, Review angefragt (Karte B0CF5F73)
+
+- `main` und `origin/main`: Code `5e1b738` (Fast-Forward, Worktree entfernt, Branch bleibt). Davor auf `main` wiederholt: `npm run check` 0 Fehler, vitest 786/786, `npm run build` rc 0.
+- Auf `5e1b738` grün: CI 45694267959, Docker publish 45694267956 (Image `sha-5e1b738`), Pages 45694268058, E2E 45694536986 („E2E OK (85 runs)“; `now-redesign` und `overview-pages` in Chromium, Firefox, WebKit). Damit sind die unten als offen genannten CI-Prüfungen erledigt.
+- Review `DD3CC99D` mit Vorher-/Nachher-Bildern offen. Deploy `sha-5e1b738` (nur Image, keine Migration) bleibt bei Lino.
+
 ## Nachtrag 25.11.2026 (21:20): Seite „Jetzt“ als Leitstand neu gestaltet (Karte B0CF5F73; nur PWA; kein Push, kein Deploy)
 
 - Anlass: Review von Lino („Die Jetzt-Seite vielleicht noch ansprechender designen“). Branch `t3/now-seite-leitstand-redesign`. Kein Backend-, Vertrags- oder Apple-Eingriff, keine neue Abhängigkeit, keine Migration.
