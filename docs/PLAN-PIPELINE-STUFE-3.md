@@ -89,3 +89,19 @@ Pipeline-Tab, Abschnitt „Ausführung“: für Startberechtigte mit Bindung Aus
 ## Grenzen
 
 Apple-App zeigt die Ausführung noch nicht (Folgekarte). „Änderungen“ am Schluss-Review setzt keine Schritte zurück (neuer Plan oder neuer Start). Befehlsausgaben der Validierung sind nur lokal sichtbar.
+
+## Klarstellung Backend
+
+Wo der Vertrag offen war, gilt die engere Auslegung:
+
+1. **Einreihen nur mit Startrecht.** Auslöser ohne Startrecht (Person mit Bearbeitungs- oder Verwaltungsrecht, jede Verbindung) reihen nie etwas ein; wäre ein Auftrag fällig, wird die Ausführung `paused` mit `plan_needs_owner`, `task_changed` oder `continue_required`. Das gilt auch für „Änderungen“ am Plan (startet den Planer nur auf Wunsch der Person mit Startrecht; unter Brain-Vollmacht nur die **Freigabe**, und nur wenn das Konto der Verbindung das Startrecht hat) und für Plan-Schreiben bei ausgeschaltetem Planer.
+2. **Keine automatische Wiederholung.** Ein Auftragsabschluss reiht keinen Schritt erneut ein, der in dieser Ausführung für dieselbe Planversion schon gelaufen ist (z. B. von Hand auf `pending` zurückgesetzt): `paused`/`continue_required`.
+3. **Fortsetzen ohne `planVersion`** nimmt nur den Karteninhalt an, keinen neuen Plan.
+4. **Claim mit veraltetem Plan** (Version seit dem Einreihen neu oder nicht angenommen): Auftrag `cancelled`, 409 `plan_changed`, danach `advance`. Karte in ein anderes Projekt verschoben: Ausführung `stopped`, 409 `task_changed`.
+5. **`planBody`/`planVersion`** im Runner-Detail nur, wenn die Planversion die des Auftrags ist; bei Arbeitsschritten nur der angenommene Plan und nie bei ausgeschaltetem Planer. `feedback`: Notiz des letzten Wiederholens dieses Schritts und dieser Planversion, sonst (Planer) der Kommentar zu „Änderungen“.
+6. **Gerät widerrufen, Konto gesperrt** (wie Besitzerwechsel): Ausführung `stopped`, auch wartende Pipeline-Aufträge werden `cancelled`.
+7. **`nothing_to_run`** nur, wenn alle eingeschalteten Arbeitsschritte erledigt sind **und** kein Planer-Lauf aussteht (Planer an ohne freigegebenen Plan darf starten).
+8. **`jobID`/`jobState`** zeigen den offenen Auftrag, bei `completed` den mit wartendem Review, sonst fehlen sie. `jobProgress` nur für Betrachter mit Startrecht. Fehlende Werte fehlen im JSON.
+9. Start verbraucht die Karten-Erlaubnis `autoStart`. Pausieren und Blockieren haben keine eigenen Protokollaktionen. Zusätzliche Spalte `agent_jobs.pipeline_plan_version`.
+10. MCP `start_pipeline_execution` mit ungültiger `executionID`: `invalid_execution_id`. Die Review-Zusammenfassung läuft durch den Secret-Filter.
+

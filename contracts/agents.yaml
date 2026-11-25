@@ -1,10 +1,16 @@
 openapi: 3.1.0
 info:
   title: Todolino Agentenaufträge und Runner-API
-  version: 1.2.0
+  version: 1.3.0
   description: Serververtrag gemäß ADR 0008 (1.1.0 - capabilities, disabledCapabilities, lastSeenAt am Gerät, ADR 0030; 1.2.0 - ADR 0033 Stufe C: Freigabe über MCP start_agent_job mit releaseID und origin manual|scheduler, Job-Ereignis released trägt bei origin scheduler detail {origin, catchup, delayMinutes, plannedAt}; die Freigabe löscht autoStart der Karte und setzt bei scheduler autoStartedAt; die REST-Freigabe bleibt unverändert und kennt nur origin manual). Menschliche Sitzungen und Geräte-Token
     sind getrennt. Keine automatischen Wiederholungen lokaler Coding-Läufe. Listen
     sind zunächst vollständig ohne Cursor; Skalierung und Aufbewahrung sind Folgearbeit.
+  x-pipeline: '1.3.0 (Karte F5DD1C00, additiv; docs/PLAN-PIPELINE-STUFE-3.md): Pipeline-Aufträge sieht und übernimmt nur ein
+    Runner mit ?pipeline=1; Claim eines Pipeline-Auftrags ohne den Parameter 409 pipeline_runner_required. Job zusätzlich
+    pipelineStep und pipelineExecutionID. Beim Claim zählt der Inhalts-Hash der Karte statt der Aufgabenrevision (409
+    task_changed; neuerer Plan 409 plan_changed; der Auftrag ist dann cancelled), taskRevision wird aktualisiert. submit eines
+    Pipeline-Auftrags verlangt outcome (400 outcome_required) und beim Planer mit passed plan (400 plan_required). hold
+    setzt den Fortschritt eines wartenden Auftrags. Alte Runner und manuelle Aufträge unverändert.'
 paths:
   /v1/agents/devices:
     get:
@@ -427,6 +433,15 @@ paths:
       operationId: get_runner_jobs
       security:
       - runnerToken: []
+      parameters:
+      - name: pipeline
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '1'
+        description: Liefert zusätzlich Pipeline-Aufträge; ohne den Parameter nie.
       responses:
         '200':
           description: Erfolg
@@ -446,6 +461,47 @@ paths:
           $ref: '#/components/responses/Error409'
         '410':
           $ref: '#/components/responses/Error410'
+  /v1/runner/jobs/{id}/hold:
+    post:
+      summary: Wartenden Auftrag mit Begründung zurückstellen
+      operationId: post_runner_jobs_id_hold
+      security:
+      - runnerToken: []
+      description: Nur eigener Auftrag im Zustand queued (409 job_not_queued). Setzt progress (Secret-Filter); Ereignis held
+        nur bei geändertem Text. Der Claim leert progress.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+      responses:
+        '200':
+          description: Erfolg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
   /v1/runner/jobs/{id}:
     get:
       summary: Aufgabenkontext und Antworten lesen
@@ -505,6 +561,14 @@ paths:
         in: path
         required: true
         schema: *id001
+      - name: pipeline
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '1'
+        description: Pflicht für Pipeline-Aufträge (409 pipeline_runner_required).
       description: 'Höchstens ein nicht abgeschlossener Lauf pro Gerät und Repository-UUID
         über alle Bindings. Auch abgelaufene Leases blockieren neue Claims. Lease:
         90 Sekunden, Generation beginnt bei 1. Bei verlorener Antwort GET runs abgleichen;
@@ -810,6 +874,16 @@ paths:
                   minimum: 1
                 result:
                   $ref: '#/components/schemas/Result'
+                outcome:
+                  type: string
+                  enum:
+                  - passed
+                  - failed
+                  description: Pflicht bei Pipeline-Aufträgen (400 outcome_required), sonst ohne Wirkung.
+                plan:
+                  type: string
+                  maxLength: 20000
+                  description: Pflicht beim Schritt planner mit passed (400 plan_required).
       parameters:
       - name: id
         in: path
@@ -1133,6 +1207,16 @@ components:
         progress: *id002
         result:
           $ref: '#/components/schemas/Result'
+        pipelineStep:
+          type: string
+          enum:
+          - planner
+          - developer
+          - validation
+          - tester
+          - review
+          description: Nur bei Pipeline-Aufträgen.
+        pipelineExecutionID: *id001
     Run:
       type: object
       required:
@@ -1208,6 +1292,28 @@ components:
       - questions
       - events
       properties:
+        pipeline:
+          type: object
+          description: Nur GET /v1/runner/jobs/{id} eines Pipeline-Auftrags. Fehlende Felder gelten als null.
+          required:
+          - step
+          properties:
+            step:
+              type: string
+            planBody:
+              type: string
+              description: Nur der Plan, für den der Auftrag eingereiht wurde, bei Arbeitsschritten nur der angenommene.
+            planVersion:
+              type: integer
+            feedback:
+              type: string
+            model:
+              type: string
+            effort:
+              type: string
+            resumeSessionReference:
+              type: string
+              description: Letzter Checkpoint derselben Ausführung und Bindung aus planner oder developer; nur für diese Schritte.
         job:
           $ref: '#/components/schemas/Job'
         task:

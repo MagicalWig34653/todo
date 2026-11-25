@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Pipeline je Karte (Plan, Freigabe, Schrittstatus)
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Karte 74EC341D, Stufe 1. Je Aufgabe ein aktueller Plan (Markdown) mit Version und Freigabe, der Status von sechs festen
     Schritten (planner, approval, developer, validation, tester, review) und ein Protokoll. Es wird nichts ausgeführt und es
@@ -41,6 +41,17 @@ info:
     Protokolleintrag (Version und Kommentar des Zeitpunkts); älteres Verhalten (Plan als subjectID) wird noch gelesen.
     Fehlercodes neu: invalid_pipeline_settings, invalid_model, invalid_effort, invalid_plan_version, revision_conflict,
     step_disabled, step_not_failed, fix_rounds_exhausted; plan_changed gilt jetzt auch für Schritte.
+
+    1.2.0 (Karte F5DD1C00, Stufe 3, rein additiv; docs/PLAN-PIPELINE-STUFE-3.md inklusive Klarstellung Backend): ein gekoppelter
+    Runner führt die Schritte aus. Start, Fortsetzen und Stoppen nur mit dem Startrecht (Projekteigentümer), Bearbeitungsrecht
+    startet nie etwas. Je Karte höchstens eine Ausführung (Tabelle task_pipeline_executions); der Server reiht je Schritt einen
+    Runner-Auftrag ein (agents.yaml 1.3.0). Pipeline der Karte zusätzlich execution (fehlt ohne Ausführung). Protokoll neu:
+    execution_started, execution_continued, execution_stopped, execution_completed; Schrittänderungen des Runners als
+    step_changed mit actorType run, Name Runner. Start, Fortsetzen und Stoppen sind zusätzlich Aktivität pipeline.execution.
+    state running|waiting_approval|blocked|paused|completed|stopped; reason bei paused plan_needs_owner, task_changed,
+    continue_required, bei blocked step_failed, fix_rounds_exhausted. retry durch Verbindung oder Person ohne Startrecht setzt
+    paused/continue_required. MCP start_pipeline_execution (runs:write). Neue Fehlercodes: execution_id_conflict,
+    execution_active, nothing_to_run, no_execution.
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -105,6 +116,70 @@ paths:
         '403': {description: 'kein Bearbeitungsrecht; cannot_decide_own_plan, brain_mandate_required, outside_brain_mandate'}
         '404': {description: Aufgabe unbekannt oder unsichtbar}
         '409': {description: 'no_plan, plan_changed, plan_not_pending'}
+  /v1/tasks/{taskID}/pipeline/execution:
+    post:
+      operationId: startPipelineExecution
+      summary: Pipeline der Karte auf einem eigenen Mac starten (Startrecht)
+      description: >-
+        id vom Client (Idempotenz: gleiche id mit gleichen Daten liefert den Stand, abweichend 409 execution_id_conflict).
+        Die Bindung gehört zum Projekt der Karte und zum eigenen, nicht widerrufenen Gerät (404). Andere aktive Ausführung
+        409 execution_active; kein offener Schritt 409 nothing_to_run. Ein beim Start freigegebener Plan gilt als angenommen.
+        Eine beendete Ausführung wird ersetzt. Die einmalige Karten-Erlaubnis autoStart wird verbraucht. MCP
+        start_pipeline_execution (Argumente taskID, bindingID, executionID?).
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, bindingID]
+              properties:
+                id: {type: string, format: uuid}
+                bindingID: {type: string, format: uuid}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Startrecht}
+        '404': {description: Aufgabe oder Bindung unbekannt}
+        '409': {description: 'execution_id_conflict, execution_active, nothing_to_run'}
+  /v1/tasks/{taskID}/pipeline/execution/continue:
+    post:
+      operationId: continuePipelineExecution
+      summary: Pausierte Ausführung fortsetzen (nimmt Plan und Karteninhalt an)
+      description: >-
+        planVersion benennt den angesehenen Plan (409 plan_changed, wenn nicht aktuell) und nimmt ihn an, wenn er freigegeben
+        ist. Ohne planVersion wird nur der Karteninhalt angenommen, kein neuer Plan. Nur Startrecht; keine aktive Ausführung
+        409 no_execution. Kein MCP-Werkzeug.
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planVersion: {type: integer, minimum: 1}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Startrecht}
+        '404': {description: Aufgabe unbekannt}
+        '409': {description: 'no_execution, plan_changed'}
+  /v1/tasks/{taskID}/pipeline/execution/stop:
+    post:
+      operationId: stopPipelineExecution
+      summary: Ausführung stoppen (offener Auftrag wird abgebrochen, keine Fix-Runde)
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Startrecht}
+        '404': {description: Aufgabe unbekannt}
+        '409': {description: no_execution}
   /v1/projects/{projectID}/pipeline-settings:
     get:
       operationId: getPipelineSettings
@@ -224,6 +299,25 @@ components:
         settings: {$ref: '#/components/schemas/PipelineSettingsSummary'}
         fixRounds: {$ref: '#/components/schemas/FixRounds'}
         waitingApproval: {type: boolean, description: Der Plan ist proposed und das Projekt hat einen Freigabeschritt}
+        execution: {$ref: '#/components/schemas/Execution'}
+    Execution:
+      type: object
+      description: Stufe 3; fehlt, solange die Karte nie gestartet wurde.
+      required: [id, state, bindingID, bindingLabel, deviceLabel, runnerSupportsPipeline, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        state: {type: string, enum: [running, waiting_approval, blocked, paused, completed, stopped]}
+        reason: {type: string, enum: [plan_needs_owner, task_changed, continue_required, step_failed, fix_rounds_exhausted]}
+        step: {$ref: '#/components/schemas/StepName'}
+        bindingID: {type: string, format: uuid}
+        bindingLabel: {type: string, description: Leer, wenn die Bindung entfernt wurde}
+        deviceLabel: {type: string}
+        runnerSupportsPipeline: {type: boolean, description: Das Gerät hat schon einmal mit pipeline=1 angefragt}
+        jobID: {type: string, format: uuid, description: Offener Auftrag; bei completed der Auftrag mit wartendem Review}
+        jobState: {type: string}
+        jobProgress: {type: string, description: Fortschritt bzw. Kontingent-Bremse; nur für Betrachter mit Startrecht}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     Plan:
       type: object
       required: [version, body, state, authorType, writtenAt]
@@ -255,7 +349,7 @@ components:
       required: [id, action, actorType, createdAt]
       properties:
         id: {type: string, format: uuid}
-        action: {type: string, enum: [plan_written, plan_approved, plan_changes_requested, step_changed, step_retried]}
+        action: {type: string, enum: [plan_written, plan_approved, plan_changes_requested, step_changed, step_retried, execution_started, execution_continued, execution_stopped, execution_completed]}
         planVersion: {type: integer, description: Fehlt bei Schrittmeldungen ohne Plan}
         step: {$ref: '#/components/schemas/StepName'}
         state: {$ref: '#/components/schemas/StepState'}

@@ -597,6 +597,27 @@ final class PipelineExecutionTests: XCTestCase {
         }
     }
 
+    func testBrainMandateApprovalStartsAndMovedCardStops() async throws {
+        try await run { e in
+            let task = try await newTask(e)
+            expect(try await start(e, task), .ok)
+            try await work(e, "planner", plan: "Plan")
+            expect(try await req(e, .PUT, "/v1/settings/brain-mandate", ["grantID": e.agentGrant.uuidString, "projectIDs": [e.pid]]), .ok)
+            let decided = try await call(e, e.agent, "decide_plan", ["taskID": task, "decision": "approve", "version": 1, "quote": "Yes, go"])
+            XCTAssertFalse(decided.isError, decided.text)
+            let job = try await queuedJob(e, "developer")
+            let stored = try await TodoTask.find(UUID(uuidString: task), on: e.db)
+            let card = try XCTUnwrap(stored)
+            card.projectID = try e.f.other.requireID(); card.version += 1
+            try await card.save(on: e.db)
+            expect(try await claimReply(e, job), .conflict, "task_changed")
+            let state = try await jobState(job, e)
+            XCTAssertEqual(state, "cancelled")
+            let execution = try await TaskPipelineExecution.query(on: e.db).filter(\.$taskID == card.requireID()).first()
+            XCTAssertEqual(execution?.state, "stopped")
+        }
+    }
+
     // MARK: Start checks and idempotency
 
     func testStartChecksAndIdempotency() async throws {

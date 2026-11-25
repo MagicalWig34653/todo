@@ -775,7 +775,7 @@ final class PipelineStage2Tests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         func read(_ name: String) -> String { (try? String(contentsOf: root.appendingPathComponent("contracts/\(name)"), encoding: .utf8)) ?? "" }
         let pipeline = read("pipeline.yaml")
-        XCTAssertTrue(pipeline.contains("version: 1.1.0"))
+        XCTAssertTrue(pipeline.contains("version: 1.2.0"))
         for path in ["/v1/projects/{projectID}/pipeline-settings:", "/v1/tasks/{taskID}/pipeline/steps/{step}/retry:"] {
             XCTAssertTrue(pipeline.contains("  \(path)"), path)
         }
@@ -784,12 +784,12 @@ final class PipelineStage2Tests: XCTestCase {
                      "get_pipeline_settings", "update_pipeline_settings", "retry_pipeline_step", "pipeline.settings", "maxFixRounds"] {
             XCTAssertTrue(pipeline.contains(word), word)
         }
-        XCTAssertTrue(read("oauth-mcp.yaml").contains("version: 1.9.0"))
+        XCTAssertTrue(read("oauth-mcp.yaml").contains("version: 1.10.0"))
         XCTAssertTrue(read("oauth-mcp.yaml").contains("retry_pipeline_step"))
         XCTAssertTrue(read("feed.yaml").contains("plan.written") && read("feed.yaml").contains("kind=question|review|plan"))
         XCTAssertTrue(read("command-center.yaml").contains("planWaiting") && read("command-center.yaml").contains("plansWaiting"))
         XCTAssertTrue(read("connections.yaml").contains("pipeline.settings"))
-        XCTAssertEqual(AgentManual.version, "1.44.0")
+        XCTAssertEqual(AgentManual.version, "1.45.0")
         for tool in ["get_pipeline_settings", "update_pipeline_settings", "retry_pipeline_step"] {
             XCTAssertTrue(AgentManual.markdown.contains("`\(tool)`"), tool)
         }

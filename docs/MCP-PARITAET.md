@@ -215,6 +215,7 @@ Vertrag `contracts/pipeline.yaml` 1.1.0, `oauth-mcp.yaml` 1.9.0, Code `Sources/T
 | `get_pipeline_settings` | projects:read | A | `GET /v1/projects/{id}/pipeline-settings` | |
 | `update_pipeline_settings` | projects:write | B | `PATCH /v1/projects/{id}/pipeline-settings` | `invalid_pipeline_settings`, `invalid_model`, `invalid_effort`, `revision_conflict`, `brain_mandate_required`, `outside_brain_mandate`, `quote_required`, `invalid_quote` |
 | `retry_pipeline_step` | tasks:write | A | `POST /v1/tasks/{id}/pipeline/steps/{step}/retry` | `invalid_step`, `step_managed`, `invalid_plan_version`, `invalid_note`, `plan_changed`, `step_disabled`, `step_not_failed`, `plan_not_approved`, `fix_rounds_exhausted` |
+| `start_pipeline_execution` | runs:write | B | `POST /v1/tasks/{id}/pipeline/execution` | `execution_id_conflict`, `execution_active`, `nothing_to_run`, `invalid_execution_id` |
 
 Unterschied zwischen den Wegen: `update_pipeline_settings` verlangt über MCP die Brain-Vollmacht der Verbindung für das Projekt und ein Zitat (Protokoll `pipeline.settings`), das Recht `manage` der Person gilt zusätzlich; REST ist Personen mit `manage` vorbehalten und braucht weder Vollmacht noch Zitat. Beide rufen `WorkflowService.updatePipelineSettings` auf (gleiche Validierung, Revision, Verlauf).
 

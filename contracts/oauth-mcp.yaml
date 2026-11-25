@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.9.0
+  version: 1.10.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -27,6 +27,10 @@ info:
     retry_pipeline_step (tasks:write); set_pipeline_step nimmt optional planVersion; get_task_pipeline liefert zusätzlich settings, fixRounds,
     waitingApproval und je Schritt enabled, planVersion, role. Neue Fehlercodes: invalid_pipeline_settings, invalid_model, invalid_effort,
     invalid_plan_version, revision_conflict, step_disabled, step_not_failed, fix_rounds_exhausted. Keine neuen Scopes.
+    1.10.0 (Karte F5DD1C00, Pipeline Stufe 3, additiv, Handbuch 1.45.0, contracts/pipeline.yaml 1.2.0): neues Werkzeug start_pipeline_execution
+    (runs:write, Rechte und Prüfungen wie start_agent_job); get_task_pipeline liefert zusätzlich execution; retry_pipeline_step durch eine
+    Verbindung startet nichts (paused/continue_required). Kein Fortsetzen über MCP. Neue Fehlercodes: execution_id_conflict, execution_active,
+    nothing_to_run, invalid_execution_id. Keine neuen Scopes.
 servers:
   - url: http://localhost:28080
 paths:
@@ -291,6 +295,7 @@ x-mcp-tools:
   list_progress_notes: {scope: 'tasks:read', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
   list_agent_jobs: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Nur Projekte des Eigentümers.'}
   start_agent_job: {scope: 'runs:write', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7 und Wächter-Start. Nur über bestehende Bindung; Pairing nur in der PWA. Optional releaseID (UUID) und origin (manual|scheduler).'}
+  start_pipeline_execution: {scope: 'runs:write', required: [taskID, bindingID], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, bindingID, executionID?. Nur Projekteigentümer und eigene Bindung; execution_active, execution_id_conflict, nothing_to_run. REST POST /v1/tasks/{id}/pipeline/execution.'}
   stop_agent_job: {scope: 'runs:write', required: [jobID], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7.'}
   list_runner_devices: {scope: 'runs:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Stapel 7. Ohne Tokens.'}
   list_channel_messages: {scope: 'channels:read', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Kanal #brain und contracts/voice.yaml. Kontobezogen, kein Projekt-Grant.'}

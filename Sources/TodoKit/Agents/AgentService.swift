@@ -154,7 +154,9 @@ struct AgentService {
             guard try await AgentRun.query(on: db).filter(\.$bindingID ~~ ids).filter(\.$endedAt == nil).count() == 0 else {
                 throw Abort(.conflict, reason: "repository_busy_reconcile_first")
             }
-            guard let task = try await TodoTask.find(job.taskID, on: db), task.projectID == job.projectID else {
+            // A moved card is refused as before for manual jobs; for a pipeline job it ends the execution below.
+            guard let task = try await TodoTask.find(job.taskID, on: db),
+                  job.pipelineExecutionID != nil || task.projectID == job.projectID else {
                 throw Abort(.conflict, reason: "task_revision_changed")
             }
             if job.pipelineExecutionID != nil {
@@ -191,7 +193,7 @@ struct AgentService {
 
     /// A waiting job the runner cannot take right now (for example the budget brake): the reason becomes its progress.
     static func hold(jobID: UUID, deviceID: UUID, reason: String, on database: any Database) async throws -> AgentJobDTO {
-        let value = SecretFilter.redact(try text(reason, max: PipelineExecution.maxHold)).text
+        let value = SecretFilter.redactLong(try text(reason, max: PipelineExecution.maxHold))
         return try await database.transaction { db in
             try await lockRow(table: RunnerDevice.schema, id: deviceID, on: db)
             guard let device = try await RunnerDevice.find(deviceID, on: db), device.revokedAt == nil,

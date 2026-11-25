@@ -211,6 +211,10 @@ enum PipelineExecution {
     /// reason; the caller commits and then answers 409.
     static func refuseClaim(_ job: AgentJob, task: TodoTask, on db: any Database) async throws -> String? {
         let taskID = try task.requireID()
+        if let execution = try await active(of: job, on: db), task.projectID != execution.projectID {
+            try await stop(execution, actor: systemActor(try execution.requireID()), on: db)
+            return "task_changed"
+        }
         guard let execution = try await active(of: job, on: db), let step = job.pipelineStep.flatMap(PipelineStepName.init(rawValue:)) else {
             try await cancel(job, kind: "execution_stopped", on: db)
             return "job_not_queued"
@@ -308,7 +312,7 @@ enum PipelineExecution {
                 let finished = Set(rows.filter { [PipelineStepState.done, PipelineStepState.skipped].contains($0.state) }.map(\.step))
                 if workSteps.allSatisfy({ !settings.enabled($0) || finished.contains($0.rawValue) }) {
                     job.state = "awaiting_review"
-                    try await WorkflowMirror.runnerSubmitted(job: job, runID: runID, summary: submission.summary, on: db)
+                    try await WorkflowMirror.runnerSubmitted(job: job, runID: runID, summary: SecretFilter.redactLong(submission.summary), on: db)
                 }
             }
         }
@@ -376,7 +380,7 @@ enum PipelineExecution {
         // The progress text of a runner is for those who may run agents.
         var progress: String?
         if let job, !job.progress.isEmpty, try await canStart(viewer, projectID: execution.projectID, on: db) {
-            progress = SecretFilter.redact(job.progress).text
+            progress = SecretFilter.redactLong(job.progress)
         }
         return PipelineExecutionDTO(id: id, state: execution.state, reason: execution.reason, step: execution.step,
             bindingID: execution.bindingID, bindingLabel: binding?.label ?? "", deviceLabel: device?.label ?? "",
