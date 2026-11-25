@@ -109,7 +109,7 @@ test('a tile leads to its section by mouse and keyboard; "Ohne Lebenszeichen" op
 	}
 	const silent = block().getByTestId('now-silent');
 	await expect(silent).toHaveJSProperty('open', false);
-	await tile('silent').focus();
+	await tile('silent').getByRole('button').focus();
 	await page.keyboard.press('Enter');
 	await expect(silent).toHaveJSProperty('open', true);
 	await expect(silent.locator('summary')).toBeFocused();

@@ -67,5 +67,20 @@ export const deNow = {
 	'now.entry.runningOne': '1 läuft',
 	'now.entry.running': '{count} laufen',
 	'now.entry.waiting': '{count} warten auf dich',
-	'now.entry.waitingOne': '1 wartet auf dich'
+	'now.entry.waitingOne': '1 wartet auf dich',
+	'now.tiles': 'Zahlen zum Stand',
+	'now.tile.label': '{label}: {count}',
+	'now.tile.silent': 'Ohne Lebenszeichen',
+	'now.percent': '{percent} %',
+	'now.block.doneShown': '{shown} von {count} gezeigt',
+	'now.waiting.all': 'Alle {count} anzeigen',
+	'now.waiting.allLoaded': 'Alle {count} geladenen anzeigen',
+	'now.waiting.less': 'Weniger anzeigen',
+	'now.waiting.more': '{count} weitere sind mitgezählt, werden hier aber nicht aufgeführt.',
+	'now.waiting.moreOne': '1 weiterer Eintrag ist mitgezählt, wird hier aber nicht aufgeführt.',
+	'now.build.files': '{count} Dateien',
+	'now.build.filesOne': '1 Datei',
+	'now.build.limit': 'Gezählt sind die neuesten {count} Dateien dieses Projekts.',
+	'now.events.more': 'Mehr anzeigen',
+	'now.events.less': 'Weniger anzeigen'
 } as const;

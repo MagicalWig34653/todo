@@ -2,7 +2,7 @@
 import type { MessageKey } from './i18n/de.js';
 import { t } from './i18n/index.js';
 import type { CardRef } from './cardRef.js';
-import type { NowActive, NowBlock, NowDone, NowWaiting, OverviewBuild, OverviewNow, OverviewProject, OverviewRunningTask, OverviewSession } from './api.js';
+import type { BuildStatus, NowActive, NowBlock, NowDone, NowWaiting, OverviewBuild, OverviewNow, OverviewProject, OverviewRunningTask, OverviewSession } from './api.js';
 
 export const QUIET_AFTER_MS = 24 * 3600 * 1000;
 export const ORPHAN_AFTER_SECONDS = 30 * 60;
@@ -25,7 +25,7 @@ export function visibleSessions(p: OverviewProject): OverviewSession[] {
 }
 
 export function projectStats(p: OverviewProject): NowStats {
-	return { running: p.runningTasks.length, sessions: visibleSessions(p).length, waiting: p.openQuestions.length + p.pendingReviews.length, builds: p.builds.length };
+	return { running: p.runningTasks.length, sessions: visibleSessions(p).length, waiting: p.openQuestions.length + p.pendingReviews.length, builds: groupBuilds(p.builds).length };
 }
 
 const timeOf = (p: OverviewProject) => {
@@ -58,9 +58,10 @@ export function groupProjects(projects: readonly OverviewProject[], now: Date): 
 	return { active, quiet };
 }
 
-export const defaultExpanded = (quiet: boolean): boolean => !quiet;
-export function isExpanded(map: ExpandedMap, id: string, quiet: boolean): boolean {
-	return typeof map[id] === 'boolean' ? map[id]! : defaultExpanded(quiet);
+/** Below the block "Jetzt" every row starts closed; without it (old server) the rows are the only view and active ones start open. */
+export const defaultExpanded = (quiet: boolean, hasBlock = false): boolean => !quiet && !hasBlock;
+export function isExpanded(map: ExpandedMap, id: string, quiet: boolean, hasBlock = false): boolean {
+	return typeof map[id] === 'boolean' ? map[id]! : defaultExpanded(quiet, hasBlock);
 }
 
 const defaultStorage = (): StorageLike | null => {
@@ -99,14 +100,48 @@ export function percentOf(task: OverviewRunningTask | NowActive): number | null 
 	return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : null;
 }
 
-export function buildSummary(b: OverviewBuild): string {
+export function buildSummary(b: Partial<OverviewBuild> & { buildID: string }): string {
 	return [b.label, b.platform].filter((x): x is string => !!x).join(' · ') || b.buildID;
 }
 
 /** First 7 characters of the optional build commit, otherwise null. */
-export function buildCommit(b: OverviewBuild): string | null {
+export function buildCommit(b: Partial<OverviewBuild>): string | null {
 	const c = typeof b.commit === 'string' ? b.commit.trim() : '';
 	return c ? c.slice(0, 7) : null;
+}
+
+/** The server sends at most this many build files per project (contracts/session-status.yaml). */
+export const BUILD_FILE_LIMIT = 5;
+
+/** One build of one platform; `files` counts its artifacts (screenshots) in the answer. */
+export interface BuildGroup {
+	key: string;
+	buildID: string;
+	platform: string | null;
+	label: string | null;
+	status: BuildStatus | null;
+	commit: string | null;
+	createdAt: string;
+	files: number;
+}
+
+/** Builds by `buildID` and platform, newest first; label, status and commit come from the newest file that has one. */
+export function groupBuilds(builds: readonly OverviewBuild[]): BuildGroup[] {
+	const at = (b: OverviewBuild) => new Date(b.createdAt).getTime() || 0;
+	const groups = new Map<string, BuildGroup>();
+	for (const b of [...builds].sort((x, y) => at(y) - at(x))) {
+		const key = JSON.stringify([b.buildID, b.platform || '']);
+		const g = groups.get(key);
+		if (!g) {
+			groups.set(key, { key, buildID: b.buildID, platform: b.platform || null, label: b.label || null, status: b.status ?? null, commit: b.commit || null, createdAt: b.createdAt, files: 1 });
+			continue;
+		}
+		g.files += 1;
+		g.label ??= b.label || null;
+		g.status ??= b.status ?? null;
+		g.commit ??= b.commit || null;
+	}
+	return [...groups.values()];
 }
 
 export type BuildStatusTone = 'info' | 'ok' | 'danger';
@@ -190,12 +225,14 @@ export function dueInfo(dueAt: string | undefined, ref: Date): { text: string; o
 	return { overdue: false, text: t('now.block.due', { date: dueFormat().format(new Date(ms)) }) };
 }
 
+const doneTime = (d: NowDone) => new Date(d.doneAt).getTime();
+const withinDoneWindow = (d: NowDone, ref: Date) => !Number.isNaN(doneTime(d)) && ref.getTime() - doneTime(d) <= NOW_DONE_WINDOW_MS;
+
 /** Cards done in the last 6 hours, newest first, at most 5 visible. */
 export function recentDone(list: readonly NowDone[], ref: Date): NowDone[] {
-	const at = (d: NowDone) => new Date(d.doneAt).getTime();
 	return list
-		.filter((d) => !Number.isNaN(at(d)) && ref.getTime() - at(d) <= NOW_DONE_WINDOW_MS)
-		.sort((a, b) => at(b) - at(a))
+		.filter((d) => withinDoneWindow(d, ref))
+		.sort((a, b) => doneTime(b) - doneTime(a))
 		.slice(0, NOW_DONE_LIMIT);
 }
 
@@ -220,8 +257,28 @@ export function cleanBlock(b: NowBlock): NowBlock {
 export function blockOf(data: OverviewNow | null, ref: Date): NowBlock | null {
 	if (!data?.now) return null;
 	const b = cleanBlock(data.now);
-	return { ...b, recentlyDone: recentDone(b.recentlyDone, ref) };
+	// The total follows the server; only entries that left the 6 hour window since the answer are taken off.
+	const aged = b.recentlyDone.filter((d) => !withinDoneWindow(d, ref)).length;
+	const recentlyDone = recentDone(b.recentlyDone, ref);
+	return { ...b, recentlyDone, counts: { ...b.counts, recentlyDone: Math.max(recentlyDone.length, b.counts.recentlyDone - aged) } };
 }
+
+export type NowTileID = 'waiting' | 'running' | 'done' | 'silent';
+/** The four numbers on top of the page, in display order. */
+export function nowTiles(b: NowBlock): { id: NowTileID; count: number }[] {
+	return [
+		{ id: 'waiting', count: b.counts.waiting },
+		{ id: 'running', count: b.counts.running },
+		{ id: 'done', count: b.counts.recentlyDone },
+		{ id: 'silent', count: b.counts.silent }
+	];
+}
+
+/** Entries the server counted but did not send (its lists are cut). */
+export const notListed = (counted: number, delivered: number): number => Math.max(0, counted - delivered);
+
+export const NOW_WAITING_FIRST = 5;
+export const NOW_EVENTS_FIRST = 5;
 
 const blockHasContent = (b: NowBlock) => b.running.length + b.waiting.length + b.recentlyDone.length + b.silent.length + b.counts.silent > 0;
 /** The page-wide empty state: no project content and nothing in the block. */
