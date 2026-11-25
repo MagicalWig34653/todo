@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { Select } from '#lib/components/ui/select/index.js';
+	import RecurrenceFields from './RecurrenceFields.svelte';
+	import { describeRecurrence, type RecurrenceBasis } from '#lib/recurrence.js';
 	import { api, type PlanningTask } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -33,6 +35,9 @@
 		frequency: 'planning.recurrence',
 		interval: 'planning.recurrence',
 		until: 'planning.recurrence',
+		weekdays: 'planning.recurrence.weekdays',
+		basis: 'planning.recurrence.basis',
+		monthDay: 'planning.recurrence.monthDay',
 		reminders: 'planning.reminders'
 	};
 
@@ -52,17 +57,22 @@
 	let frequency = $state<Frequency>('none');
 	let interval = $state(1);
 	let until = $state('');
+	let weekdays = $state<number[]>([]);
+	let basis = $state<RecurrenceBasis>('due');
+	let monthDay = $state<number | null>(null);
 	let reminders = $state<string[]>([]);
 	let newReminder = $state('');
 	let invalid = $state(false);
 	let conflictText = $state('');
 
-	const FREQUENCIES: Frequency[] = ['none', 'daily', 'weekly', 'monthly'];
+	const extrasNow = () => ({ weekdays, basis, monthDay });
+	const recurrenceNow = (timeZone?: string) => buildRecurrence(frequency, interval, until, timeZone, extrasNow());
+	const summary = $derived(describeRecurrence(frequency, interval, { weekdays, basis, monthDay }));
 
 	/** What the form was last synchronised with; the base for the three-way merge with newer server state. */
 	let base: PlanningForm | null = null;
 
-	const formNow = (): PlanningForm => ({ due, planned, priority, frequency, interval, until, reminders: [...reminders] });
+	const formNow = (): PlanningForm => ({ due, planned, priority, frequency, interval, until, weekdays: [...weekdays], basis, monthDay, reminders: [...reminders] });
 	function apply(f: PlanningForm) {
 		due = f.due;
 		planned = f.planned;
@@ -70,6 +80,9 @@
 		frequency = f.frequency as Frequency;
 		interval = f.interval;
 		until = f.until;
+		weekdays = [...f.weekdays];
+		basis = f.basis;
+		monthDay = f.monthDay;
 		reminders = [...f.reminders];
 	}
 	/** Replaces the whole form with the stored planning (first load, after a save). */
@@ -130,9 +143,30 @@
 	}
 	onMount(() => startLiveRefresh(refreshQuiet));
 
+	let saving = false;
+	let saveAgain = false;
+	/**
+	 * One save at a time. A change made while a save is in flight (e.g. a second weekday tapped at once) is not sent
+	 * in parallel, which would report the first save as a conflict; it triggers one more save with the latest form.
+	 */
 	async function save() {
+		if (saving) {
+			saveAgain = true;
+			return;
+		}
+		saving = true;
+		try {
+			do {
+				saveAgain = false;
+				await saveOnce();
+			} while (saveAgain);
+		} finally {
+			saving = false;
+		}
+	}
+	async function saveOnce() {
 		if (!current) return;
-		invalid = recurrenceNeedsDate(buildRecurrence(frequency, interval, until, current.recurrence?.timeZone), due, planned);
+		invalid = recurrenceNeedsDate(recurrenceNow(current.recurrence?.timeZone), due, planned);
 		if (invalid) return;
 		const my = ++loadSeq;
 		let held = false;
@@ -147,7 +181,7 @@
 				return;
 			}
 			// Keep the stored time zone of an existing rule; new rules use the browser's.
-			const recurrence = buildRecurrence(frequency, interval, until, current?.recurrence?.timeZone);
+			const recurrence = recurrenceNow(current?.recurrence?.timeZone);
 			invalid = recurrenceNeedsDate(recurrence, due, planned);
 			if (invalid) {
 				held = true;
@@ -160,7 +194,13 @@
 				recurrence,
 				reminders
 			});
-			if (my === loadSeq) adopt(saved);
+			if (my === loadSeq) {
+				// A newer change is waiting: keep the form as the user left it, only move the merge base forward.
+				if (saveAgain) {
+					current = saved;
+					base = planningForm(saved);
+				} else adopt(saved);
+			}
 		}, load);
 		if (held) {
 			if (heldFields.length > 0) announceConflicts(heldFields);
@@ -193,28 +233,20 @@
 		</Select>
 	</div>
 </div>
-<fieldset class="mt-2 flex flex-wrap items-end gap-2" data-testid="recurrence-form">
+<fieldset class="mt-2 flex flex-col gap-1" data-testid="recurrence-form">
 	<legend class="text-sm font-medium">{t('planning.recurrence')}</legend>
-	<Select
-		
-		aria-label={t('planning.recurrence.frequency')}
+	<RecurrenceFields
+		class="flex flex-wrap items-end gap-2"
+		{taskID}
 		disabled={!current}
-		bind:value={frequency}
-	>
-		{#each FREQUENCIES as f (f)}
-			<option value={f}>{t(`planning.recurrence.${f}` as MessageKey)}</option>
-		{/each}
-	</Select>
-	{#if frequency !== 'none'}
-		<div class="flex flex-col gap-1">
-			<Label for="interval-{taskID}">{t('planning.recurrence.interval', { unit: t(`planning.recurrence.unit.${frequency}` as MessageKey) })}</Label>
-			<Input id="interval-{taskID}" class="w-24" type="number" min="1" max="1000" bind:value={interval} />
-		</div>
-		<div class="flex flex-col gap-1">
-			<Label for="until-{taskID}">{t('planning.recurrence.until')}</Label>
-			<Input id="until-{taskID}" type="datetime-local" bind:value={until} />
-		</div>
-	{/if}
+		bind:frequency
+		bind:interval
+		bind:until
+		bind:weekdays
+		bind:basis
+		bind:monthDay
+	/>
+	{#if summary}<p class="text-muted-foreground text-xs" data-testid="recurrence-summary">{summary}</p>{/if}
 </fieldset>
 {#if conflictText}
 	<p class="text-warning mt-1 text-xs" role="status" data-testid="planning-conflict">{conflictText}</p>
@@ -272,6 +304,9 @@
 			frequency = 'none';
 			interval = 1;
 			until = '';
+			weekdays = [];
+			basis = 'due';
+			monthDay = null;
 			reminders = [];
 		}}>{t('planning.clear')}</Button
 	>
@@ -338,26 +373,23 @@
 		</SideSection>
 
 		<SideSection title={t('planning.recurrence')} addLabel={t('card.side.recurrenceEdit')} onadd={() => (editRecur = !editRecur)} active={editRecur} testid="side-recurrence">
-			{#if frequency !== 'none'}
-				<p data-testid="side-recurrence-value">{t(`planning.recurrence.${frequency}` as MessageKey)}{interval > 1 ? ` · ${t('planning.recurrence.interval', { unit: t(`planning.recurrence.unit.${frequency}` as MessageKey) })} ${interval}` : ''}</p>
+			{#if summary}
+				<p data-testid="side-recurrence-value">{summary}</p>
 			{/if}
 			{#if editRecur}
-				<div class="flex flex-col gap-2" data-testid="recurrence-form">
-					<Select aria-label={t('planning.recurrence.frequency')} disabled={!current} value={frequency} onchange={(e) => { frequency = e.currentTarget.value as Frequency; void save(); }}>
-						{#each FREQUENCIES as f (f)}
-							<option value={f}>{t(`planning.recurrence.${f}` as MessageKey)}</option>
-						{/each}
-					</Select>
-					{#if frequency !== 'none'}
-						<div class="flex flex-col gap-1">
-							<Label for="interval-{taskID}">{t('planning.recurrence.interval', { unit: t(`planning.recurrence.unit.${frequency}` as MessageKey) })}</Label>
-							<Input id="interval-{taskID}" class="w-24" type="number" min="1" max="1000" bind:value={interval} onchange={() => void save()} />
-						</div>
-						<div class="flex flex-col gap-1">
-							<Label for="until-{taskID}">{t('planning.recurrence.until')}</Label>
-							<Input id="until-{taskID}" type="datetime-local" bind:value={until} onchange={() => void save()} />
-						</div>
-					{/if}
+				<div data-testid="recurrence-form">
+				<RecurrenceFields
+					class="flex flex-col gap-2"
+					{taskID}
+					disabled={!current}
+					bind:frequency
+					bind:interval
+					bind:until
+					bind:weekdays
+					bind:basis
+					bind:monthDay
+					onchange={() => void save()}
+				/>
 				</div>
 			{/if}
 		</SideSection>

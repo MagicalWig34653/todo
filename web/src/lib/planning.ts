@@ -1,4 +1,5 @@
 import type { Page, PlanningTask, Recurrence, Task, TaskStatus } from './api.js';
+import { extrasPayload, NO_EXTRAS, type RecurrenceExtras } from './recurrence.js';
 
 export const STATUSES: TaskStatus[] = ['open', 'in_progress', 'in_review', 'done'];
 export const PRIORITIES = [0, 1, 2, 3] as const;
@@ -79,11 +80,20 @@ export function browserTimeZone(): string {
 
 export type Frequency = 'none' | 'daily' | 'weekly' | 'monthly';
 
-/** Form state (local inputs) -> API recurrence; `none` or a missing anchor date yields null. */
-export function buildRecurrence(frequency: Frequency, interval: number, until: string, timeZone = browserTimeZone()): Recurrence | null {
+/**
+ * Form state (local inputs) -> API recurrence; `none` yields null. `weekdays`, `basis` and `monthDay` are only sent
+ * when they are set and fit the frequency, so a rule without them is sent exactly as before.
+ */
+export function buildRecurrence(
+	frequency: Frequency,
+	interval: number,
+	until: string,
+	timeZone = browserTimeZone(),
+	extras: RecurrenceExtras = NO_EXTRAS
+): Recurrence | null {
 	if (frequency === 'none') return null;
 	const n = Math.min(1000, Math.max(1, Math.trunc(Number.isFinite(interval) ? interval : 1)));
-	return { frequency, interval: n, timeZone, until: fromLocalInput(until) };
+	return { frequency, interval: n, timeZone, until: fromLocalInput(until), ...extrasPayload(frequency, extras) };
 }
 
 /** A recurrence needs a due or planned date (backend: `recurrence_requires_date`). */
