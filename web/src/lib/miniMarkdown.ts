@@ -3,7 +3,7 @@ export type MdInline = { kind: 'text' | 'code' | 'strong'; text: string };
 export type MdBlock =
 	| { kind: 'heading'; level: 1 | 2 | 3; inline: MdInline[] }
 	| { kind: 'paragraph'; inline: MdInline[] }
-	| { kind: 'list'; items: MdInline[][] }
+	| { kind: 'list'; items: MdInline[][]; ordered?: true; start?: number }
 	| { kind: 'code'; text: string };
 
 export function parseInline(s: string): MdInline[] {
@@ -19,14 +19,15 @@ export function parseInline(s: string): MdInline[] {
 	return out;
 }
 
-export function parseMarkdown(src: string): MdBlock[] {
+/** `ordered`: also read numbered lists (plans); without it numbered lines stay paragraph text. */
+export function parseMarkdown(src: string, { ordered = false }: { ordered?: boolean } = {}): MdBlock[] {
 	const blocks: MdBlock[] = [];
 	const lines = src.replace(/\r\n/g, '\n').split('\n');
 	let para: string[] = [];
-	let list: MdInline[][] | null = null;
+	let list: Extract<MdBlock, { kind: 'list' }> | null = null;
 	const flush = () => {
 		if (para.length) blocks.push({ kind: 'paragraph', inline: parseInline(para.join(' ')) });
-		if (list) blocks.push({ kind: 'list', items: list });
+		if (list) blocks.push(list);
 		para = [];
 		list = null;
 	};
@@ -46,12 +47,11 @@ export function parseMarkdown(src: string): MdBlock[] {
 			continue;
 		}
 		const li = /^\s*[-*]\s+(.*)$/.exec(line);
-		if (li) {
-			if (para.length) {
-				blocks.push({ kind: 'paragraph', inline: parseInline(para.join(' ')) });
-				para = [];
-			}
-			(list ??= []).push(parseInline(li[1]!));
+		const num = ordered && !li ? /^\s*(\d{1,9})[.)]\s+(.*)$/.exec(line) : null;
+		if (li || num) {
+			if (para.length || (list && !!list.ordered !== !!num)) flush();
+			list ??= num ? { kind: 'list', ordered: true, start: Number(num[1]), items: [] } : { kind: 'list', items: [] };
+			list.items.push(parseInline(num ? num[2]! : li![1]!));
 			continue;
 		}
 		if (line.trim() === '') {

@@ -12,7 +12,7 @@ ORIGIN="http://localhost:$PORT"
 # only browser the rest supports, see web/playwright.config.ts). New specs join (2) automatically; each run gets its own database.
 # Not run: mail and server-settings (need an SMTP sink and a specially configured backend), review-variants-demo (only produces
 # example pictures for the owner's review).
-MULTI="timestamps repo-line-refresh comment-limits comment-compare menus-and-modes review-note-multiline review-withdraw recurrence-rules"
+MULTI="timestamps repo-line-refresh comment-limits comment-compare menus-and-modes review-note-multiline review-withdraw recurrence-rules plan-approval"
 SKIP=" mail server-settings review-variants-demo repo-line-stability "
 # Advisory: run and reported, but a red result does not fail the run. Only passkey-flow is left: its "invited person" test hangs
 # for 90 s in the guest browser in roughly 1 of 20 Linux runs (cause not proven, cards CB70D313 and 188D611F). calendar and
