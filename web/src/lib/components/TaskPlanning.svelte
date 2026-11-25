@@ -187,6 +187,7 @@
 				held = true;
 				return;
 			}
+			const sentForm = JSON.stringify(formNow());
 			const saved = await api.putPlanning(taskID, {
 				dueAt: fromLocalInput(due),
 				plannedAt: fromLocalInput(planned),
@@ -195,8 +196,9 @@
 				reminders
 			});
 			if (my === loadSeq) {
-				// A newer change is waiting: keep the form as the user left it, only move the merge base forward.
-				if (saveAgain) {
+				// A newer change is waiting, or a value was typed while the answer was on its way (its change event
+				// follows): keep the form as the user left it, only move the merge base forward.
+				if (saveAgain || JSON.stringify(formNow()) !== sentForm) {
 					current = saved;
 					base = planningForm(saved);
 				} else adopt(saved);
