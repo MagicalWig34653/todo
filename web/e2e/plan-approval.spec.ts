@@ -44,7 +44,7 @@ interface Pipeline {
 	plan?: { version: number; state: string; decisionComment?: string | null } | null;
 	steps: { step: string; state: string; note?: string | null }[];
 }
-let ids = { main: '', empty: '', shots: '', run: '' };
+let ids = { main: '', empty: '', shots: '', run: '', long: '' };
 
 async function call<T>(method: 'post' | 'put', path: string, data: unknown): Promise<T> {
 	const r = await page.request[method](path, { ...json, data });
@@ -68,6 +68,9 @@ const comment = () => panel().getByLabel('Kommentar (optional)');
 const approve = () => panel().getByRole('button', { name: 'Plan freigeben', exact: true });
 const changes = () => panel().getByRole('button', { name: 'Änderungen', exact: true });
 const feedback = () => panel().getByTestId('pipeline-feedback');
+/** Offered after the first click on a version that replaced the one the person had before them. */
+const confirmApprove = (version: number) => panel().getByRole('button', { name: `Gelesen: Version ${version} freigeben`, exact: true });
+const confirmChanges = (version: number) => panel().getByRole('button', { name: `Gelesen: Änderungen zu Version ${version} senden`, exact: true });
 const open = async (id: string, slug: string | null = 'pipeline') => {
 	await page.goto(`/for-you?card=task:${id}${slug ? `&tab=${slug}` : ''}`);
 	await expect(dialog()).toBeVisible();
@@ -97,7 +100,7 @@ test.beforeAll(async ({ browser }) => {
 	page = await signedInPage(browser, 'Plan Tester');
 	const project = await call<{ id: string }>('post', '/v1/projects', { name: 'Planprojekt' });
 	const mk = async (title: string) => (await call<{ id: string }>('post', '/v1/tasks', { projectID: project.id, title })).id;
-	ids = { main: await mk('Karte mit Plan'), empty: await mk('Karte ohne Plan'), shots: await mk('Plan wartet auf Freigabe'), run: await mk('Pipeline läuft') };
+	ids = { main: await mk('Karte mit Plan'), empty: await mk('Karte ohne Plan'), shots: await mk('Plan wartet auf Freigabe'), run: await mk('Pipeline läuft'), long: await mk('Langer Plan') };
 });
 test.afterAll(async () => {
 	await page?.context().close();
@@ -197,6 +200,18 @@ test('a live refresh keeps the typed comment and announces the new version', asy
 	await dialog().getByTestId('card-tab-overview').click();
 	await tab().click();
 	await expect(comment()).toHaveValue('Bleibt beim Aktualisieren stehen');
+	// The version changed under the person: no click on the usual buttons sends anything, not even a double click.
+	expect(await decisionsSent(() => approve().click())).toBe(0);
+	await expect(feedback()).toContainText('Neue Fassung – bitte erst lesen');
+	await expect(confirmApprove(3)).toBeVisible();
+	await expect(confirmApprove(3)).toBeInViewport();
+	await expect(approve()).toBeEnabled();
+	expect(await decisionsSent(() => approve().dblclick())).toBe(0);
+	expect(await decisionsSent(() => changes().dblclick())).toBe(0);
+	await expect(confirmChanges(3)).toBeVisible();
+	await expect(confirmApprove(3)).toHaveCount(0);
+	await expect(comment()).toHaveValue('Bleibt beim Aktualisieren stehen');
+	expect((await read(ids.main)).plan).toMatchObject({ version: 3, state: 'proposed' });
 });
 
 test('asking for changes sends one request and shows the decision with its comment', async () => {
@@ -230,6 +245,15 @@ test('a new plan returns live; approval works with the keyboard and step states 
 	const macWebKit = process.platform === 'darwin' && page.context().browser()?.browserType().name() === 'webkit';
 	await page.keyboard.press(macWebKit ? 'Alt+Tab' : 'Tab');
 	await expect(approve()).toBeFocused();
+	// The plan changed while the old version was open: the first Enter only asks to read, pressing it again sends nothing.
+	expect(await decisionsSent(async () => {
+		await page.keyboard.press('Enter');
+		await expect(feedback()).toBeFocused();
+		await page.keyboard.press('Enter');
+	})).toBe(0);
+	await expect(feedback()).toContainText('Neue Fassung – bitte erst lesen');
+	await page.keyboard.press(macWebKit ? 'Alt+Tab' : 'Tab');
+	await expect(confirmApprove(4)).toBeFocused();
 	const sent = await decisionsSent(() => page.keyboard.press('Enter'));
 	expect(sent).toBe(1);
 	await expect(plan().getByTestId('pipeline-plan-state')).toHaveText('Freigegeben');
@@ -290,5 +314,34 @@ for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['mobile
 			}
 		}
 		await page.emulateMedia({ colorScheme: 'light' });
+	});
+}
+
+/** Scrolls the open panel under the pinned tab bar and lists what shows through between the top of the scroll area and the bar. */
+const leaksAboveTabs = () =>
+	dialog().getByTestId('card-tabs').evaluate((bar) => {
+		let box = bar.parentElement!;
+		while (!(/auto|scroll/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight)) box = box.parentElement!;
+		const area = bar.parentElement!;
+		box.scrollTop += area.getBoundingClientRect().top - box.getBoundingClientRect().top + 200;
+		const top = box.getBoundingClientRect().top;
+		const r = bar.getBoundingClientRect();
+		const leaks: string[] = [];
+		for (const dy of [1, 8, 16, 23])
+			for (const x of [r.left + 40, r.left + r.width / 2, r.right - 40]) {
+				const hit = document.elementFromPoint(x, top + dy);
+				if (!bar.contains(hit)) leaks.push(`${dy}px: ${hit?.textContent?.trim().slice(0, 30)}`);
+			}
+		return { scrolledPast: area.getBoundingClientRect().top < top - 100, barOffset: Math.round(r.top - top), leaks };
+	});
+
+for (const [label, size] of [['desktop', { width: 1280, height: 800 }], ['mobile', { width: 390, height: 844 }]] as const) {
+	test(`${label}: nothing shows through above the pinned tab bar while a long panel scrolls`, async () => {
+		await page.setViewportSize(size);
+		await writePlan(ids.long, Array.from({ length: 60 }, (_, i) => `${i + 1}. Schritt ${i + 1} des langen Plans`).join('\n'));
+		await open(ids.long);
+		await expect(plan()).toContainText('Schritt 60');
+		expect(await leaksAboveTabs()).toEqual({ scrolledPast: true, barOffset: 0, leaks: [] });
+		await expect(tab()).toBeInViewport();
 	});
 }
