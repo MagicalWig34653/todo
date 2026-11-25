@@ -436,6 +436,26 @@ final class PipelineTests: XCTestCase {
         }
     }
 
+    /// No HTTP route reaches the service as a runner; the rule is checked on the shared method.
+    func testRunnerActorsNeverDecideAndTheBrainLabelIsReserved() async throws {
+        try await run { e in
+            let task = try await newTask(e)
+            expect(try await putPlan(e, task, ["body": "A", "agentName": "Brain im Auftrag von OAuth User"]), .badRequest, "invalid_agent_name")
+            expect(try await putPlan(e, task, ["body": "A"]), .ok)
+            try await mandate(e)
+            let runner = WorkflowActor(type: .run, id: e.brainGrant, label: "runner", via: "runner")
+            do {
+                _ = try await WorkflowService(user: e.f.user, db: e.db).decidePlan(XCTUnwrap(UUID(uuidString: task)),
+                    PlanDecisionRequest(decision: "approve", version: 1), quote: "ja", actor: runner)
+                XCTFail("a runner must not decide")
+            } catch let error as any AbortError {
+                XCTAssertEqual(error.reason, "brain_mandate_required")
+            }
+            let r = try await get(e, task)
+            XCTAssertEqual(plan(r)?["state"] as? String, "proposed")
+        }
+    }
+
     // MARK: Steps
 
     func testStepRulesAndLocks() async throws {
@@ -449,7 +469,7 @@ final class PipelineTests: XCTestCase {
             for state in ["done", "skipped"] {
                 expect(try await putStep(e, task, "planner", ["state": state]), .conflict, "step_managed")
             }
-            for bad in [String(repeating: "n", count: 2001), "a\u{0}b"] {
+            for bad in [String(repeating: "n", count: 2001), "a\u{0}b", "a" + String(repeating: "\u{301}", count: 40_000)] {
                 expect(try await putStep(e, task, "planner", ["state": "running", "note": bad]), .badRequest, "invalid_note")
             }
             for name in ["developer", "validation", "tester", "review"] {

@@ -50,6 +50,11 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
           scripts/recurrence-rules-e2e.sh "$RUNNER_TEMP/recurrence-rules-e2e"
+      # Card pipeline, stage 1 (card 74EC341D): plan, approval, step states, brain mandate; real backend, REST + MCP with OAuth tokens.
+      - name: Pipeline E2E (plan approval, step states)
+        run: |
+          apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
+          scripts/pipeline-e2e.sh "$RUNNER_TEMP/pipeline-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)
