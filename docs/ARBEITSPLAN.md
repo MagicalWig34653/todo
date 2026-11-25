@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Pipeline Stufe 2 (Karte `B926E7D8`)
+
+- Stand: Backend, MCP und PWA auf `main` (rot `fd2e158`/`8ff39ec`, grün `e5f0beb`/`ceb44c9`, Phase 2 `e8979cd`); Belege in `docs/STATUS.md` (oberster Nachtrag). Migrationen `CreateProjectPipelineSettings`, `AddPlanVersionToPipelineSteps`, Handbuch 1.44.0, Vertrag `pipeline.yaml` 1.1.0; nicht deployt.
+- Offen: Stufe 3 (Ausführung über den Runner, `F5DD1C00`), Apple-Oberfläche inkl. Push-Kategorie `TODO_PLAN`, Live-Hinweis bei Einstellungsänderung, Badge für wartende Pläne.
+- Nächster Schritt: Deploy durch Lino (vor `serve` `App migrate --yes`), danach Stufe 3.
+
 ## Checkpoint 25.11.2026: Plan-Freigabe und Pipeline-Status, Stufe 1 (Karte `74EC341D`)
 
 - Stand: Backend, MCP und PWA auf `main`; Belege in `docs/STATUS.md` (oberster Nachtrag). Migration `CreateTaskPipeline`, Handbuch 1.43.0, Vertrag `pipeline.yaml` 1.0.0; nicht deployt.
