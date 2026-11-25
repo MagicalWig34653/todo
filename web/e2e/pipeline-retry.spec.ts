@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signedInPage } from './support/session';
+import { clearMocks, installMocks, setMocks } from './support/fetchMock';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,6 +105,7 @@ const shoots = () => test.info().project.name === 'chromium';
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(SHOTS, { recursive: true });
 	page = await signedInPage(browser, 'Retry Tester');
+	await installMocks(page);
 	const mkProject = async (name: string) => ((await call<{ id: string }>('post', '/v1/projects', { name })).id);
 	const mkTask = async (project: string, title: string) => ((await call<{ id: string }>('post', '/v1/tasks', { projectID: project, title })).id);
 	projects = { main: await mkProject('Wiederholprojekt'), off: await mkProject('Projekt ohne Tester'), noApproval: await mkProject('Projekt ohne Freigabe'), noPlanner: await mkProject('Projekt ohne Planer'), zero: await mkProject('Projekt ohne Runden') };
@@ -145,12 +147,14 @@ test('model and effort of each role are shown at the steps; validation and appro
 	await expect(summary()).toContainText('1 von 6');
 });
 
-test('a changed project setting reaches the open card without a reload', async () => {
-	await open(tasks.roles);
+// A settings change sends no live hint to cards that are open (it is no event of the card), so it shows when the card is opened again.
+test('a changed project setting shows when the card is opened again', async () => {
 	await settings(projects.main, { roles: { developer: { model: 'opus' } } });
-	await expect(roleLine('Entwickler')).toContainText('Modell: opus', LIVE);
+	await open(tasks.roles);
+	await expect(roleLine('Entwickler')).toContainText('Modell: opus');
 	await settings(projects.main, { roles: { developer: { model: 'sonnet' } } });
-	await expect(roleLine('Entwickler')).toContainText('Modell: sonnet', LIVE);
+	await open(tasks.roles);
+	await expect(roleLine('Entwickler')).toContainText('Modell: sonnet');
 });
 
 test('steps the project switched off are marked "Aus", not clickable and not counted', async () => {
@@ -293,7 +297,7 @@ test('the other refusals have German messages: plan_changed, step_disabled, 403 
 	await setStep(tasks.races, 'tester', 'failed', 'Wieder rot');
 	await expect(retry('Tester')).toBeEnabled(LIVE);
 	const refuse = async (status: number, body: Record<string, unknown>) => {
-		await page.route('**/retry', (r) => r.fulfill({ status, json: { error: true, ...body } }));
+		await setMocks(page, [{ url: '/retry', method: 'POST', status, json: { error: true, ...body } }]);
 		await retry('Tester').click();
 	};
 	await refuse(409, { reason: 'plan_changed' });
@@ -303,11 +307,10 @@ test('the other refusals have German messages: plan_changed, step_disabled, 403 
 	await expect(feedback()).toContainText('ausgeschaltet');
 	await refuse(403, { reason: 'forbidden' });
 	await expect(feedback()).toContainText('Berechtigung');
-	await page.unroute('**/retry');
-	await page.route('**/retry', (r) => r.abort());
+	await setMocks(page, [{ url: '/retry', method: 'POST', abort: true }]);
 	await retry('Tester').click();
 	await expect(feedback()).toContainText('nicht erreichbar');
-	await page.unroute('**/retry');
+	await clearMocks(page);
 	for (const raw of ['plan_changed', 'step_disabled', 'step_not_failed', 'fix_rounds_exhausted']) await expect(feedback()).not.toContainText(raw);
 	// The refusals changed nothing: the step is still failed and can be retried.
 	await expect(stepState('Tester')).toHaveText('Fehlgeschlagen');

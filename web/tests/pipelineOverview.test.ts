@@ -3,6 +3,7 @@ import { cardOfNeed, cardOfPost, cardTabOfNeed, cardTabOfPost } from '../src/lib
 import { attentionCount, updateKind } from '../src/lib/commandCenter';
 import {
 	actionRequest,
+	needDetailText,
 	needInputKind,
 	needKindKey,
 	postTitleKey,
@@ -65,6 +66,16 @@ describe('needs-you entry of kind plan', () => {
 		expect(cardTabOfNeed(planNeed())).toBe('pipeline');
 		expect(cardTabOfNeed({ kind: 'review' })).toBeUndefined();
 		expect(cardTabOfNeed({ kind: 'question' })).toBeUndefined();
+	});
+});
+
+describe('detail line of a plan entry', () => {
+	it('shows a Markdown heading without its marks and leaves other kinds alone', () => {
+		expect(needDetailText({ kind: 'plan', detail: '## Ziel' })).toBe('Ziel');
+		expect(needDetailText({ kind: 'plan', detail: '1. Bauen' })).toBe('1. Bauen');
+		expect(needDetailText({ kind: 'plan', detail: '#kein Titel' })).toBe('#kein Titel');
+		expect(needDetailText({ kind: 'plan', detail: null })).toBe('');
+		expect(needDetailText({ kind: 'review', detail: '## bleibt' })).toBe('## bleibt');
 	});
 });
 

@@ -35,9 +35,9 @@ Nicht gelaufen: `mobile-chrome`.
 | oauth-consent | 8 grün | 8 grün | 8 grün | 8 grün |
 | passkey-flow | 21 grün | 21 übersprungen | 21 übersprungen | 21 übersprungen |
 | permissions | 8 grün | 8 übersprungen | 8 übersprungen | 8 übersprungen |
-| pipeline-overview | noch nicht gelaufen (25.11., Karte B926E7D8) | noch nicht gelaufen | noch nicht gelaufen | - |
-| pipeline-retry | noch nicht gelaufen (25.11., Karte B926E7D8) | noch nicht gelaufen | noch nicht gelaufen | - |
-| pipeline-settings | noch nicht gelaufen (25.11., Karte B926E7D8) | noch nicht gelaufen | noch nicht gelaufen | - |
+| pipeline-overview | 12 grün (25.11., Karte B926E7D8) | 10 grün, 2 übersprungen (Bilder nur Chromium) | 10 grün, 2 übersprungen | - |
+| pipeline-retry | 15 grün (25.11., Karte B926E7D8) | 13 grün, 2 übersprungen (Bilder nur Chromium) | 13 grün, 2 übersprungen | - |
+| pipeline-settings | 15 grün (25.11., Karte B926E7D8) | 13 grün, 2 übersprungen (Bilder nur Chromium) | 13 grün, 2 übersprungen | - |
 | project-repository | 4 grün | 4 übersprungen | 4 übersprungen | 4 übersprungen |
 | question-overflow | 7 grün | 7 übersprungen | 7 übersprungen | 7 übersprungen |
 | repo-line-stability | 2 grün | 2 grün | 2 grün | 2 grün |

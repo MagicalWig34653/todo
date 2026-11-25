@@ -4,9 +4,9 @@
 	import { api, ApiError } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { cardOfConfirmation, cardOfNeed, cardOfPost, cardTabOfNeed, cardTabOfPost, uniqueCards } from '#lib/cardRef.js';
-	import { actionRequest, appendPosts, mergeFirstPage, needInputKind, needKindKey, postTitleKey, type ActionRequest, type ForYouAccessRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
+	import { actionRequest, appendPosts, mergeFirstPage, needDetailText, needInputKind, needKindKey, postTitleKey, type ActionRequest, type ForYouAccessRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
-	import { attempt } from '#lib/notice.svelte.js';
+	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
 	import { startLiveRefresh, sameList } from '#lib/liveRefresh.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { workspace } from '#lib/workspace.svelte.js';
@@ -133,8 +133,9 @@
 				busy = b;
 			}
 		});
-		await attempt(load);
-		void attempt(() => workspace.refreshLive());
+		// Not `attempt`: it would wipe the message of a refused action (for example a plan that changed in the meantime).
+		await attemptLoad(load);
+		void attemptLoad(() => workspace.refreshLive());
 	}
 	/** Answered through the shared question controls (options or own text): drop the card, then reload. */
 	async function answered(item: ForYouNeed) {
@@ -194,7 +195,7 @@
 						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards, cardTabOfNeed(item))}>
 							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(needKindKey(item.kind))}</span>
 							<span id="need-t-{item.id}" class="text-sm font-semibold">{item.title}</span>
-							{#if item.detail}<span class="text-muted-foreground text-sm">{item.detail}</span>{/if}
+							{#if item.detail}<span class="text-muted-foreground text-sm">{needDetailText(item)}</span>{/if}
 							<span id="need-d-{item.id}" class="text-muted-foreground text-xs">
 								{[item.projectName, item.kind === 'question' || item.kind === 'review' ? item.taskTitle : '', item.dueAt ? formatWhen(item.dueAt) : ''].filter(Boolean).join(' · ')}
 							</span>

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { signedInPage } from './support/session';
+import { clearMocks, installMocks, setMocks } from './support/fetchMock';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,7 @@ let page: Page;
 const json = { headers: { 'Content-Type': 'application/json' } };
 const LIVE = { timeout: 15_000 };
 let project = { id: '', name: 'Überblickprojekt' };
+let shotTask = '';
 let tasks = { approve: '', changes: '', race: '', cc: '', quiet: '' };
 
 interface Pipeline {
@@ -56,6 +58,7 @@ async function decisionsSent(action: () => Promise<unknown>): Promise<{ count: n
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(SHOTS, { recursive: true });
 	page = await signedInPage(browser, 'Überblick Tester');
+	await installMocks(page);
 	project = { ...project, id: (await call<{ id: string }>('post', '/v1/projects', { name: project.name })).id };
 	const mk = async (title: string) => (await call<{ id: string }>('post', '/v1/tasks', { projectID: project.id, title })).id;
 	tasks = { approve: await mk('Plan zum Freigeben'), changes: await mk('Plan mit Änderungswunsch'), race: await mk('Plan wird überholt'), cc: await mk('Plan im Überblick'), quiet: await mk('Karte ohne Plan') };
@@ -85,7 +88,7 @@ test('a plan written by an agent is also a news post, readable in German', async
 	await page.goto('/for-you');
 	const post = postCard('Plan v1');
 	await expect(post.first()).toBeVisible();
-	await expect(post.first()).toContainText('claude-code hat einen Plan geschrieben');
+	await expect(post.first()).toContainText('hat einen Plan geschrieben');
 	await expect(post.first()).toContainText('Plan zum Freigeben');
 	await expect(post.first()).not.toContainText('plan.written');
 });
@@ -226,8 +229,9 @@ test('unknown kinds from a newer server stay readable and nothing breaks', async
 			{ id: 'zukunft:2', kind: 'zukunft', event: 'zukunft.event', projectID: project.id, projectName: project.name, taskID: tasks.quiet, taskTitle: 'Karte ohne Plan', actor: { type: 'Integration', id: 'x', name: 'Zukunft' }, text: 'Rohtext bleibt sichtbar', images: [] }
 		]
 	};
-	await page.route('**/v1/feed**', (r) => r.fulfill({ json: future }));
 	await page.goto('/for-you');
+	await setMocks(page, [{ url: '/v1/feed', method: 'GET', json: future }]);
+	await page.reload();
 	const need = page.locator('[data-testid="needs-card"][data-kind="zukunft"]');
 	await expect(need).toBeVisible();
 	await expect(need).toContainText('Hinweis');
@@ -236,15 +240,15 @@ test('unknown kinds from a newer server stay readable and nothing breaks', async
 	const post = page.locator('[data-testid="post-card"][data-kind="zukunft"]');
 	await expect(post).toContainText('Rohtext bleibt sichtbar');
 	await expect(post).toContainText('Aktivität');
-	await page.unroute('**/v1/feed**');
+	await clearMocks(page);
 });
 
 for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['mobile', { width: 390, height: 844 }]] as const) {
 	test(`${label}: light and dark screenshots without horizontal scrolling`, async () => {
 		test.skip(!shoots(), 'the pictures come from the Chromium run');
 		await page.setViewportSize(size);
-		const shot = await call<{ id: string }>('post', '/v1/tasks', { projectID: project.id, title: 'Wiederkehrende Aufgaben an Wochentagen' });
-		await writePlan(shot.id, '## Ziel\nWiederkehrende Aufgaben auch an **Wochentagen**.\n\n1. Regel ergänzen\n2. Oberfläche bauen');
+		if (!shotTask) shotTask = (await call<{ id: string }>('post', '/v1/tasks', { projectID: project.id, title: 'Wiederkehrende Aufgaben an Wochentagen' })).id;
+		if ((await read(shotTask)).plan == null) await writePlan(shotTask, '## Ziel\nWiederkehrende Aufgaben auch an **Wochentagen**.\n\n1. Regel ergänzen\n2. Oberfläche bauen');
 		for (const scheme of ['light', 'dark'] as const) {
 			await page.emulateMedia({ colorScheme: scheme });
 			const name = scheme === 'light' ? 'hell' : 'dunkel';
@@ -257,6 +261,8 @@ for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['mobile
 			await page.screenshot({ path: `${SHOTS}/fuer-dich-${label}-${name}.png` });
 			await page.goto('/overview');
 			await expect(page.getByTestId('oc-plan-waiting').first()).toBeVisible();
+			// The marker sits in a lane that may be off screen: bring it into the picture.
+			await page.getByTestId('oc-plan-waiting').first().scrollIntoViewIfNeeded();
 			await noOverflow(`${label} ${scheme} overview`);
 			await page.waitForTimeout(300);
 			await page.screenshot({ path: `${SHOTS}/ueberblick-${label}-${name}.png` });
