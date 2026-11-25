@@ -103,13 +103,27 @@ async function markDone() {
 	await dialog().getByRole('checkbox', { name: 'Als erledigt markieren', exact: true }).click();
 	await expect(dialog().getByTestId('card-status')).toHaveText('Erledigt');
 }
+/** Light and dark pictures at 1280 px and, with the editor open, at 390 px (the page must not scroll sideways). */
 async function pictures(name: string) {
 	mkdirSync(SHOTS, { recursive: true });
+	// The sidebar scrolls inside the card window: bring the whole recurrence block (all fields) into view first.
+	const reveal = () => side().evaluate((el) => el.scrollIntoView({ block: 'end' }));
+	await reveal();
 	for (const scheme of ['light', 'dark'] as const) {
 		await page.emulateMedia({ colorScheme: scheme });
 		await page.waitForTimeout(300);
 		await page.screenshot({ path: join(SHOTS, `${name}-${scheme === 'light' ? 'hell' : 'dunkel'}.png`) });
 	}
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.waitForTimeout(300);
+	await reveal();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${name}: page scrolls sideways at 390 px`).toBe(true);
+	for (const scheme of ['light', 'dark'] as const) {
+		await page.emulateMedia({ colorScheme: scheme });
+		await page.waitForTimeout(300);
+		await page.screenshot({ path: join(SHOTS, `${name}-390-${scheme === 'light' ? 'hell' : 'dunkel'}.png`) });
+	}
+	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.emulateMedia({ colorScheme: null });
 }
 
