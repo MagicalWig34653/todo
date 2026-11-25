@@ -81,18 +81,9 @@ async function retriesSent(action: () => Promise<unknown>): Promise<{ count: num
 }
 /** Freezes what the browser reads of the pipeline until it sends the retry, so the click really is based on an old state. */
 async function frozenUntilRetry(id: string) {
-	const url = `**/v1/tasks/${id}/pipeline`;
 	const stale = await read(id);
-	let frozen = true;
-	await page.route(url, (r) => (frozen ? r.fulfill({ json: stale }) : r.continue()));
-	await page.route('**/retry', (r) => {
-		frozen = false;
-		return r.continue();
-	});
-	return async () => {
-		await page.unroute(url);
-		await page.unroute('**/retry');
-	};
+	await setMocks(page, [{ url: `/v1/tasks/${id}/pipeline`, method: 'GET', json: stale, until: '/retry' }]);
+	return () => clearMocks(page);
 }
 const noOverflow = async (label: string) => {
 	const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }));

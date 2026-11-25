@@ -13,6 +13,8 @@ export interface MockRule {
 	abort?: boolean;
 	status?: number;
 	json?: unknown;
+	/** The rule ends as soon as a request with this substring in its URL is sent (that request already sees no rule). */
+	until?: string;
 }
 const KEY = 'e2e-fetch-mocks';
 
@@ -22,12 +24,14 @@ export async function installMocks(page: Page): Promise<void> {
 		window.fetch = async (input, init) => {
 			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 			const method = (init?.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
-			let rules: { url: string; method?: string; abort?: boolean; status?: number; json?: unknown }[] = [];
+			let rules: { url: string; method?: string; abort?: boolean; status?: number; json?: unknown; until?: string }[] = [];
 			try {
 				rules = JSON.parse(sessionStorage.getItem(key) ?? '[]');
 			} catch {
 				/* no rules */
 			}
+			const left = rules.filter((r) => !(r.until && url.includes(r.until)));
+			if (left.length !== rules.length) sessionStorage.setItem(key, JSON.stringify((rules = left)));
 			const rule = rules.find((r) => url.includes(r.url) && (!r.method || r.method.toUpperCase() === method));
 			if (!rule) return real(input, init);
 			if (rule.abort) throw new TypeError('Failed to fetch');

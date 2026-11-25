@@ -236,6 +236,8 @@ test('asking for changes sends one request and shows the decision with its comme
 
 test('a new plan returns live; approval works with the keyboard and step states follow the agent', async () => {
 	await open(ids.main);
+	// The person must have seen the old version, otherwise the new one is simply the first they read and needs no confirmation.
+	await expect(plan()).toContainText('Version 3');
 	await writePlan(ids.main, '1. Tests zuerst\n2. Umsetzung');
 	await expect(plan()).toContainText('Version 4', LIVE);
 	await expect(stepState('Freigabe')).toHaveText('Wartet auf Freigabe');
