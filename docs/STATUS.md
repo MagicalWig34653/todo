@@ -1,5 +1,18 @@
 # Status
 
+## Nachtrag 25.11.2026 (10:00): Plan-Freigabe und Pipeline-Status je Karte, Stufe 1 (Karte 74EC341D; Backend, MCP, PWA; kein Deploy)
+
+- Ziel und Umfang (Linos Antwort 17.11.: „Egal hauptsache wird fertig“, damit Stufe 1 laut Plan-Notiz vom 14.11.): Plan an der Karte, „Plan freigeben“ (Kommentar optional) oder „Änderungen“ (Kommentar Pflicht), Status je Schritt Planer, Freigabe, Entwickler, Validierung, Tester, Review. Nicht enthalten: Runner-Ausführung (Stufe 3), Projekt-Einstellungen (Stufe 2), Apple-Oberfläche.
+- Stand davor (`39cba1a`): nur der PWA-Tab „Pipeline“ mit Leerzustand.
+- Backend: `Sources/TodoKit/Pipeline/`, Migration `CreateTaskPipeline` (additiv, drei Tabellen; vor `serve` `App migrate --yes`), REST `GET /v1/tasks/{id}/pipeline`, `PUT .../plan`, `POST .../plan/decision`, `PUT .../pipeline/steps/{step}`; MCP `get_task_pipeline`, `set_task_plan`, `decide_plan`, `set_pipeline_step`; Audit je Änderung plus Karten-Aktivität; Vertrag `pipeline.yaml` 1.0.0, `oauth-mcp.yaml` 1.8.0, `connections.yaml` 1.4.0, Handbuch 1.43.0, ADR 0032 Nachtrag.
+- Rechte: Schreiben braucht Bearbeitungsrecht. Entscheiden: Personen; Verbindungen nur mit Brain-Vollmacht und Zitat, nie für den eigenen Plan. Folge: bereits erteilte Vollmachten gelten damit auch für Pläne (Texte der Vollmacht-Seite ergänzt).
+- PWA: Pipeline-Tab mit Schrittliste, Plan, Freigabe-Knöpfen, Verlauf; Sanduhr am Tab, solange eine Freigabe wartet; wechselt die Planversion bei offener Karte, wird erst nach Bestätigung entschieden; Tab-Leiste haftet am Desktop wieder bündig (vorher schien Inhalt durch).
+- Tests rot: Backend `2052cb9` (Filter `PipelineTests|AgentManualTests|ChatThreadTests|CommandCenterTests`, rc 1), PWA `725550a` (`npx vitest run tests/pipeline.test.ts`, rc 1); Befunde der Prüfung rot `8ae8046`, `4a820d0`, `deb893a` (rc 1, 39 Fehlschläge) und `df6e1b3` (vitest 14 rot, E2E rc 1).
+- Tests grün auf dem zusammengeführten Stand: siehe „Gesamtlauf“ unten.
+- Gesamtlauf auf `d16b69a` (25.11. 09:26 bis 09:43): `swift test` (SQLite) 927 Tests, 21 übersprungen, 0 Fehler; `scripts/pipeline-e2e.sh` 45 ok, 0 FAIL; Playwright gegen das echte Backend `plan-approval` je 12/12 in Chromium, Firefox, WebKit, `card-tabs` 11/11 und `brain-mandate` 10/10 (Chromium); `npm run check`, `npm run build` rc 0, `npm test` 661/661; MariaDB (Dev-Container, Wegwerf-Datenbank) `PipelineTests` 21/21, die neue Migration läuft dort also. Bilder hell/dunkel 1280 und 390 unter `docs/screenshots/plan-freigabe/`, angesehen.
+- Offen/Grenzen: neue Aktivitätsarten erscheinen nicht in Überblick-Updates, Feed, Webhook oder Push (keine Benachrichtigung bei wartender Freigabe); `set_pipeline_step` ist nicht an eine Planversion gebunden; Secret-Filter erkennt Werte über etwa 1024 Zeichen an einer Schnittstelle nicht; ältere Apple-Stände zeigen die rohen Aktivitätsnamen (z. B. `plan.written`).
+- Nächster Schritt: Deploy durch Lino (Migration), danach Stufe 2, Stufe 3 und Apple als Folgekarten.
+
 ## Nachtrag 25.11.2026 (06:00): Wiederholungsregeln mit Wochentagen, Basis Erledigung und Monatsstichtag (Karte 21CF716D; Backend und MCP, kein Deploy)
 
 - Ziel: Die Wiederholungsregel kann `weekdays` (ISO 1 Montag bis 7 Sonntag, nur `weekly`), `basis` (`due` Standard | `completion`) und `monthDay` (1 bis 31, nur `monthly`). Rein additiv; PWA macht ein anderer Worker, Apple ist ausgenommen.

@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 25.11.2026: Plan-Freigabe und Pipeline-Status, Stufe 1 (Karte `74EC341D`)
+
+- Stand: Backend, MCP und PWA auf `main`; Belege in `docs/STATUS.md` (oberster Nachtrag). Migration `CreateTaskPipeline`, Handbuch 1.43.0, Vertrag `pipeline.yaml` 1.0.0; nicht deployt.
+- Offen: Stufe 2 (Schritte je Projekt an/aus, Modell/Effort je Rolle, max. Fix-Runden, „Wiederholen“), Stufe 3 (Ausführung über den Runner, Validierung ohne Agent, Kontingent-Bremse), Apple-Oberfläche, Benachrichtigung bei wartender Freigabe.
+- Nächster Schritt: Deploy durch Lino (vor `serve` `App migrate --yes`), danach Folgekarten.
+
 ## Checkpoint 25.11.2026: Wiederholungsregeln erweitert (Karte `21CF716D`)
 
 - Stand: Backend und MCP umgesetzt und getestet (rot `bf62ca4`, grün `edcaa86`, Doku folgt im selben Branch `worktree-agent-ad5e5999cbe069850`); Belege in `docs/STATUS.md` (oberster Nachtrag). Vertrag `planning-ext.yaml` 1.3.0, `sync.yaml` 1.6.0, `oauth-mcp.yaml` 1.7.0, Handbuch 1.42.0, keine Migration.
