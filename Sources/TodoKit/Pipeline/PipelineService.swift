@@ -20,8 +20,11 @@ extension WorkflowService {
             // A retry of the write that is still waiting for its decision changes nothing, whatever version it expected.
             let settings = try await PipelineSettingsStore.values(task.projectID, on: tx)
             let autoApprove = !settings.enabled(.approval)
-            if let existing, existing.body == body,
-               existing.state == PlanState.proposed || (autoApprove && existing.state == PlanState.approved && existing.decidedByType == Self.systemDecider) {
+            // Without an approval step the text that is still waiting is not a retry: writing it again approves it.
+            let unchanged = autoApprove
+                ? existing?.state == PlanState.approved && existing?.decidedByType == Self.systemDecider
+                : existing?.state == PlanState.proposed
+            if let existing, existing.body == body, unchanged {
                 return try await Self.pipelineDTO(id, projectID: task.projectID, on: tx)
             }
             if let expected = request.expectedVersion, expected != (existing?.version ?? 0) {
