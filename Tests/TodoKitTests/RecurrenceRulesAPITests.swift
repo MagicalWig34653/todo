@@ -60,7 +60,11 @@ final class RecurrenceRulesAPITests: XCTestCase {
     /// JSON equality that works for nested arrays and numbers (`[String: Any]` is not Equatable).
     private func assertSame(_ actual: Any?, _ expected: [String: Any], file: StaticString = #filePath, line: UInt = #line) {
         guard let actual = actual as? [String: Any] else { return XCTFail("not an object: \(String(describing: actual))", file: file, line: line) }
-        XCTAssertTrue(NSDictionary(dictionary: actual).isEqual(to: expected), "\(actual) != \(expected)", file: file, line: line)
+        // Compare the canonical JSON text: NSDictionary equality treats `[Int]` and bridged `[NSNumber]` as different on Linux.
+        func canonical(_ value: [String: Any]) -> String? {
+            (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) }
+        }
+        XCTAssertEqual(canonical(actual), canonical(expected), "\(actual) != \(expected)", file: file, line: line)
     }
 
     private func call(_ f: OAuthFixture, _ name: String, _ args: [String: Any], _ token: String) async throws -> (Bool, String, Any?) {
