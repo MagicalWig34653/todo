@@ -23,7 +23,10 @@ struct OverviewNow: Content {
         let orphaned: Bool
     }
     struct Job: Content { let jobID: UUID; let taskID: UUID; let state: String; let mode: String; let progress: String }
-    struct Build: Content { let taskID: UUID; let buildID: String; let label: String?; let platform: String?; let createdAt: String
+    struct Build: Content {
+        /// Id of the build artifact (one screenshot). Unique per entry, unlike `buildID`, which screenshots of one build share.
+        let id: UUID
+        let taskID: UUID; let buildID: String; let label: String?; let platform: String?; let createdAt: String
         /// The build ID when it looks like a commit hash (7-40 lowercase hex characters), else nil. Not a CI status.
         let commit: String?
         /// building | succeeded | failed; absent when the agent never reported one.
@@ -305,7 +308,7 @@ struct OverviewNowService: Sendable {
             entries.append((last, OverviewNow.Entry(
                 projectID: pid, projectName: project.name, lastActivityAt: iso(last == .distantPast ? clock : last),
                 runningTasks: runningTasks, sessions: sessions, agentJobs: jobs,
-                builds: try builds.map { OverviewNow.Build(taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock), commit: $0.commit ?? Self.commit(from: $0.buildID), status: $0.status) },
+                builds: try builds.map { OverviewNow.Build(id: try $0.requireID(), taskID: $0.taskID, buildID: $0.buildID, label: $0.label, platform: $0.platform, createdAt: iso($0.createdAt ?? clock), commit: $0.commit ?? Self.commit(from: $0.buildID), status: $0.status) },
                 openQuestions: questions, pendingReviews: reviews,
                 recentActivity: try events.map { e in
                     let b = Self.buildEventKinds.contains(e.kind) ? e.subjectID.flatMap { eventBuilds[$0] } : nil

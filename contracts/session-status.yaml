@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Session-Status ohne Karte und Übersicht "Jetzt"
-  version: 1.4.0
+  version: 1.5.0
   description: 'ADR 0034. Ein Agent meldet ohne geclaimte Karte, woran seine Sitzung gerade im Projekt arbeitet (ein Satz, höchstens 300 Zeichen).
     Eine Zeile je (Konto, Projekt, Sitzungsname), jeder Aufruf überschreibt sie (Upsert). Der Text läuft vor dem Speichern durch den Secrets-Filter
     ([gefiltert]). Rate-Limit: höchstens ein Schreibvorgang je 10 s und (Konto, Projekt, Sitzungsname) (429 rate_limited, Retry-After); höchstens 20
@@ -15,6 +15,7 @@ info:
     Seit 1.4.0 (Karte 692891DF, ADR 0034 Nachtrag 24.11.): additives Feld `now` (Block "Jetzt" über alle lesbaren Projekte: running = Lebenszeichen höchstens 30 Minuten,
     waiting = offene Fragen und ausstehende Reviews, recentlyDone = in den letzten 6 Stunden erledigte Karten, silent = Karten in Arbeit und Sitzungen ohne Lebenszeichen),
     Sitzungsstatus beenden (`ended: true` löscht die Zeile) und kompakte Antwort (`compact=true`, `limit`). Sitzungen, deren Satz mit "Beendet" beginnt, zählen in `now` nie als laufend.
+    Seit 1.5.0 (Karte B0CF5F73): additives Feld `projects[].builds[].id` (UUID des Build-Artefakts, je Eintrag eindeutig; `buildID` wiederholt sich bei mehreren Screenshots eines Builds).
     Alles Bisherige bleibt unverändert.'
 security:
 - bearerAuth: []
@@ -192,7 +193,7 @@ components:
           type: array
           items:
             type: object
-            properties: {taskID: {type: string, format: uuid}, buildID: {type: string}, label: {type: string, nullable: true}, platform: {type: string, nullable: true}, createdAt: {type: string, format: date-time}, commit: {type: string, nullable: true, pattern: '^[0-9a-f]{7,40}$', description: 'buildID, wenn sie wie ein Commit-Hash aussieht (7 bis 40 Hex-Zeichen, Kleinbuchstaben); sonst fehlt das Feld. Seit 1.2.0 zuerst das explizite Feld aus register_build.'}, status: {type: string, nullable: true, enum: [building, succeeded, failed], description: 'Seit 1.2.0: von register_build gemeldeter Status; fehlt, wenn nie gemeldet.'}}
+            properties: {id: {type: string, format: uuid, description: 'Seit 1.5.0: Id des Build-Artefakts (ein Screenshot), je Eintrag eindeutig. buildID wiederholt sich, wenn mehrere Screenshots zu einem Build gehören (je Karte und je Projekt); als Listenschlüssel id verwenden.'}, taskID: {type: string, format: uuid}, buildID: {type: string}, label: {type: string, nullable: true}, platform: {type: string, nullable: true}, createdAt: {type: string, format: date-time}, commit: {type: string, nullable: true, pattern: '^[0-9a-f]{7,40}$', description: 'buildID, wenn sie wie ein Commit-Hash aussieht (7 bis 40 Hex-Zeichen, Kleinbuchstaben); sonst fehlt das Feld. Seit 1.2.0 zuerst das explizite Feld aus register_build.'}, status: {type: string, nullable: true, enum: [building, succeeded, failed], description: 'Seit 1.2.0: von register_build gemeldeter Status; fehlt, wenn nie gemeldet.'}}
         openQuestions:
           type: array
           items: {$ref: '#/components/schemas/OverviewOpenItem'}
