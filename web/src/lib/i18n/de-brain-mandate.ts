@@ -1,11 +1,11 @@
 // German strings of the settings page "Brain-Vollmacht" (ADR 0032, lib/brainMandate.ts, settings/BrainMandatePage.svelte).
 export const deBrainMandate = {
 	'settings.brain-vollmacht': 'Brain-Vollmacht',
-	'settings.brain-vollmacht.description': 'Welche deiner Verbindungen in deinem Auftrag Reviews und Fragen entscheiden darf, je Verbindung mit eigener Projektliste.',
+	'settings.brain-vollmacht.description': 'Welche deiner Verbindungen in deinem Auftrag Reviews, Fragen und Pläne entscheiden darf, je Verbindung mit eigener Projektliste.',
 
 	'brainMandate.page': 'Brain-Vollmacht verwalten',
-	'brainMandate.intro.allows': 'Mit einer Vollmacht darf eine deiner Verbindungen, zum Beispiel das Brain oder Codex, in deinem Auftrag Reviews entscheiden und Fragen beantworten. Jede Verbindung bekommt ihre eigene Vollmacht mit eigener Projektliste und lässt sich einzeln widerrufen. Entschieden wird nur mit einem Pflichtzitat deiner eigenen Worte; im Verlauf steht jede Entscheidung als „Brain im Auftrag von {name}“.',
-	'brainMandate.intro.limits': 'Nicht erlaubt: Die Vollmacht gilt nur für die Projekte, die du ausdrücklich wählst, nicht für deren Unterprojekte, und nie für Reviews oder Fragen, die die Verbindung selbst gestellt hat. Eine Verbindung ohne eigene Vollmacht kann keine fremden Reviews oder Fragen entscheiden.',
+	'brainMandate.intro.allows': 'Mit einer Vollmacht darf eine deiner Verbindungen, zum Beispiel das Brain oder Codex, in deinem Auftrag Reviews entscheiden, Fragen beantworten und Pläne freigeben oder Änderungen daran verlangen. Jede Verbindung bekommt ihre eigene Vollmacht mit eigener Projektliste und lässt sich einzeln widerrufen. Entschieden wird nur mit einem Pflichtzitat deiner eigenen Worte; im Verlauf steht jede Entscheidung als „Brain im Auftrag von {name}“.',
+	'brainMandate.intro.limits': 'Nicht erlaubt: Die Vollmacht gilt nur für die Projekte, die du ausdrücklich wählst, nicht für deren Unterprojekte, und nie für Reviews oder Fragen, die die Verbindung selbst gestellt hat, und nie für Pläne, die sie selbst geschrieben hat. Eine Verbindung ohne eigene Vollmacht kann keine fremden Reviews, Fragen oder Pläne entscheiden.',
 	'brainMandate.loadFailed': 'Die Vollmacht konnte nicht geladen werden.',
 	'brainMandate.retry': 'Erneut versuchen',
 
@@ -84,6 +84,8 @@ export const deBrainMandate = {
 	'brainMandate.audit.kind.accepted': 'Review angenommen',
 	'brainMandate.audit.kind.changes': 'Änderungen angefordert',
 	'brainMandate.audit.kind.answered': 'Frage beantwortet',
+	'brainMandate.audit.kind.planApproved': 'Plan freigegeben',
+	'brainMandate.audit.kind.planChanges': 'Änderungen am Plan verlangt',
 	'brainMandate.audit.kind.projectAdded': 'Projekt freigegeben',
 	'brainMandate.audit.kind.projectRemoved': 'Projekt entzogen',
 	'brainMandate.audit.kind.other': 'Entscheidung',

@@ -132,9 +132,13 @@ export interface PipelineView {
 	problem: DecisionProblem | null;
 	busy: PlanDecision | null;
 	feedback: PipelineFeedback | null;
+	/** The shown plan replaced the version the person had before them: deciding needs a confirmation. */
+	unread: boolean;
+	/** The decision that was tried on an unread version and is now offered for confirmation. */
+	confirm: PlanDecision | null;
 }
-export const emptyPipelineView = (): PipelineView => ({ taskID: null, data: null, status: 'loading', comment: '', problem: null, busy: null, feedback: null });
-export type DecideOutcome = 'done' | 'invalid' | 'failed' | 'ignored';
+export const emptyPipelineView = (): PipelineView => ({ taskID: null, data: null, status: 'loading', comment: '', problem: null, busy: null, feedback: null, unread: false, confirm: null });
+export type DecideOutcome = 'done' | 'unread' | 'invalid' | 'failed' | 'ignored';
 
 /** Drives `view` (a `$state` object in the component, a plain object in tests). */
 export function createPipelineController(view: PipelineView, api: PipelineApi) {
@@ -167,6 +171,10 @@ export function createPipelineController(view: PipelineView, api: PipelineApi) {
 		if (my !== seq) return;
 		const before = view.data?.plan;
 		const after = next?.plan;
+		const replaced = !!before && !!after && before.version !== after.version;
+		if (replaced) view.unread = true;
+		// A confirmation belongs to exactly the version it was offered for.
+		if (replaced || after?.state !== 'proposed') view.confirm = null;
 		// A running decision and the "plan changed" refusal already explain what happens: nothing replaces their message.
 		const explained = view.busy !== null || (view.feedback?.key === 'pipeline.error.planChanged' && after?.state === 'proposed');
 		if (announce && !explained && before && after && (before.version !== after.version || before.state !== after.state)) {
@@ -175,6 +183,45 @@ export function createPipelineController(view: PipelineView, api: PipelineApi) {
 		}
 		apply(next);
 		view.status = 'ready';
+	}
+
+	/** `confirmed`: the person used the confirmation for the shown version. */
+	async function send(decision: PlanDecision, canEdit: boolean, confirmed: boolean): Promise<DecideOutcome> {
+		const taskID = view.taskID;
+		const plan = view.data?.plan;
+		if (!taskID || !plan || view.busy || !canDecide(view.data, canEdit)) return 'ignored';
+		// A click aimed at the old version never decides the new one, however often it is repeated.
+		if (view.unread && !confirmed) {
+			view.problem = null;
+			view.confirm = decision;
+			view.feedback = { tone: 'info', key: 'pipeline.feedback.readFirst', params: { version: plan.version } };
+			return 'unread';
+		}
+		view.problem = decisionProblem(decision, view.comment);
+		if (view.problem) return 'invalid';
+		const my = card;
+		view.busy = decision;
+		view.feedback = null;
+		try {
+			const sent = view.comment;
+			const next = await api.decidePlan(taskID, { decision, version: plan.version, comment: sent.trim() || undefined });
+			if (my !== card) return 'ignored';
+			seq++; // reads started before this answer carry the old state
+			apply(next);
+			view.unread = false;
+			view.confirm = null;
+			if (view.comment === sent) view.comment = '';
+			view.feedback = { tone: 'success', key: decision === 'approve' ? 'pipeline.feedback.approved' : 'pipeline.feedback.changesRequested' };
+			return 'done';
+		} catch (e) {
+			if (my !== card) return 'ignored';
+			if (OUTDATED.includes(httpError(e).reason ?? '')) await read(false);
+			if (my !== card) return 'ignored';
+			view.feedback = { tone: 'error', key: decisionErrorKey(e) };
+			return 'failed';
+		} finally {
+			if (my === card) view.busy = null;
+		}
 	}
 
 	return {
@@ -194,34 +241,9 @@ export function createPipelineController(view: PipelineView, api: PipelineApi) {
 			view.comment = text;
 			view.problem = null;
 		},
-		async decide(decision: PlanDecision, canEdit: boolean): Promise<DecideOutcome> {
-			const taskID = view.taskID;
-			const plan = view.data?.plan;
-			if (!taskID || !plan || view.busy || !canDecide(view.data, canEdit)) return 'ignored';
-			view.problem = decisionProblem(decision, view.comment);
-			if (view.problem) return 'invalid';
-			const my = card;
-			view.busy = decision;
-			view.feedback = null;
-			try {
-				const sent = view.comment;
-				const next = await api.decidePlan(taskID, { decision, version: plan.version, comment: sent.trim() || undefined });
-				if (my !== card) return 'ignored';
-				seq++; // reads started before this answer carry the old state
-				apply(next);
-				if (view.comment === sent) view.comment = '';
-				view.feedback = { tone: 'success', key: decision === 'approve' ? 'pipeline.feedback.approved' : 'pipeline.feedback.changesRequested' };
-				return 'done';
-			} catch (e) {
-				if (my !== card) return 'ignored';
-				if (OUTDATED.includes(httpError(e).reason ?? '')) await read(false);
-				if (my !== card) return 'ignored';
-				view.feedback = { tone: 'error', key: decisionErrorKey(e) };
-				return 'failed';
-			} finally {
-				if (my === card) view.busy = null;
-			}
-		}
+		decide: (decision: PlanDecision, canEdit: boolean): Promise<DecideOutcome> => send(decision, canEdit, false),
+		/** The person has read the new version and confirms the offered decision. */
+		confirm: async (canEdit: boolean): Promise<DecideOutcome> => (view.confirm ? send(view.confirm, canEdit, true) : 'ignored')
 	};
 }
 export type PipelineController = ReturnType<typeof createPipelineController>;

@@ -188,6 +188,10 @@ export function auditKindKey(kind: string): MessageKey {
 			return 'brainMandate.audit.kind.changes';
 		case 'question.answered':
 			return 'brainMandate.audit.kind.answered';
+		case 'plan.approved':
+			return 'brainMandate.audit.kind.planApproved';
+		case 'plan.changes_requested':
+			return 'brainMandate.audit.kind.planChanges';
 		case 'connection.project_added':
 			return 'brainMandate.audit.kind.projectAdded';
 		case 'connection.project_removed':

@@ -37,8 +37,10 @@
 	});
 </script>
 
-<!-- Sticky so the tab bar stays reachable while a long panel scrolls; full width of the column through negative margins. -->
-<div class="bg-popover sticky top-0 z-10 -mx-4 border-b px-4 md:-mx-8 md:px-8" data-testid="card-tabs">
+<!-- Sticky so the tab bar stays reachable while a long panel scrolls; full width of the column through negative margins.
+     Sticky offsets count from inside the scroll container's padding: on desktop the column scrolls with `md:py-6`, so the
+     negative top pins the bar to its upper edge and nothing shows through above it. On phones the scroller has no padding. -->
+<div class="bg-popover sticky top-0 z-10 -mx-4 border-b px-4 md:-top-6 md:-mx-8 md:px-8" data-testid="card-tabs">
 	<div
 		bind:this={list}
 		role="tablist"
