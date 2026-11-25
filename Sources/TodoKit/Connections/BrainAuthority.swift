@@ -78,7 +78,9 @@ extension WorkflowService {
         row.kind = kind; row.taskID = try task.requireID(); row.projectID = task.projectID; row.subjectID = subjectID
         row.quote = authority.quote; row.note = note; row.createdAt = Date()
         try await row.save(on: tx)
-        let target: CommentService.Target = kind.hasPrefix("question.") ? .init(questionID: subjectID) : .init(reviewID: subjectID)
+        // Plan decisions have no thread of their own: their entry goes into the chat of the card.
+        let target: CommentService.Target = kind.hasPrefix("question.") ? .init(questionID: subjectID)
+            : kind.hasPrefix("review.") ? .init(reviewID: subjectID) : .init()
         _ = try await CommentService.create(taskID: row.taskID, user: user,
             body: "Entscheidung von \(user.displayName) (Zitat): „\(authority.quote)“", idempotencyKey: nil,
             actor: (actor.type, actor.id), target: target, agentLabel: Self.brainLabel(user),

@@ -74,6 +74,34 @@ enum SecretFilter {
         return first
     }
 
+    /// Long texts that must not be cut (card plans): private key blocks are masked on the whole text, everything else piece
+    /// by piece (whole lines up to `maxInputScalars`). A piece without a finding stays byte for byte as written.
+    static func redactLong(_ raw: String) -> String {
+        let keys = rules[0].regex.stringByReplacingMatches(in: raw, options: [], range: NSRange(location: 0, length: (raw as NSString).length), withTemplate: rules[0].template)
+        return pieces(of: keys).map { piece in
+            let result = redact(piece)
+            return result.didRedact ? result.text : piece
+        }.joined()
+    }
+
+    /// Cuts after the last line break that fits, else after the last space or tab, else hard at the limit.
+    private static func pieces(of text: String) -> [String] {
+        let scalars = Array(text.unicodeScalars)
+        var result: [String] = []
+        var start = 0
+        while start < scalars.count {
+            var end = min(start + maxInputScalars, scalars.count)
+            if end < scalars.count {
+                let window = scalars[start..<end]
+                if let cut = window.lastIndex(of: "\n") ?? window.lastIndex(where: { $0 == " " || $0 == "\t" }) { end = cut + 1 }
+            }
+            var view = String.UnicodeScalarView(); view.append(contentsOf: scalars[start..<end])
+            result.append(String(view))
+            start = end
+        }
+        return result
+    }
+
     private static func normalize(_ raw: String) -> String {
         var scalars = String.UnicodeScalarView()
         for u in raw.unicodeScalars.prefix(maxInputScalars) { scalars.append(u) }

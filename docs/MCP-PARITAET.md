@@ -193,6 +193,19 @@ Fehler: `insufficient_scope`, `not_found`, `version_conflict`, `revision_conflic
 Bewusst nur REST/PWA (`POST /v1/tasks/{id}/review/undo`). Agenten brauchen kein Undo: sie dürfen die eigene Review nicht entscheiden, und ein Agent-Eingriff nach der Personen-Entscheidung (Fortschritt, Frage, Claim) schließt das Rückgängigmachen aus (`already_acted_on`). Kein neues Tool, kein neuer Scope.
 
 
+## Pipeline je Karte, Stufe 1 (25.11.2026, Handbuch 1.43.0, Karte 74EC341D)
+
+Vertrag `contracts/pipeline.yaml` 1.0.0, Code `Sources/TodoKit/Pipeline/` und `MCP/MCPPipelineTools.swift`, Tests `PipelineTests`, E2E `scripts/pipeline-e2e.sh`. REST und MCP rufen dieselben Methoden in `WorkflowService` auf.
+
+| Tool | Scope | Klasse | REST | Fehlercodes |
+| --- | --- | --- | --- | --- |
+| `get_task_pipeline` | tasks:read | A | `GET /v1/tasks/{id}/pipeline` | |
+| `set_task_plan` | tasks:write | B | `PUT /v1/tasks/{id}/plan` | `invalid_plan`, `plan_changed`, `invalid_agent_name` |
+| `decide_plan` | tasks:write | B | `POST /v1/tasks/{id}/plan/decision` | `invalid_decision`, `invalid_comment`, `comment_required`, `invalid_version`, `no_plan`, `plan_changed`, `plan_not_pending`, `cannot_decide_own_plan`, `brain_mandate_required`, `outside_brain_mandate`, `quote_required`, `invalid_quote` |
+| `set_pipeline_step` | tasks:write | A | `PUT /v1/tasks/{id}/pipeline/steps/{step}` | `invalid_step`, `invalid_state`, `step_managed`, `plan_not_approved`, `invalid_note`, `invalid_agent_name` |
+
+Unterschied zwischen den Wegen: `quote` gibt es nur über MCP (Personen entscheiden per REST ohne Zitat). `wait_for_events` meldet die Hinweisarten `plan` und `pipeline`. Runner-Ausführung und Projekteinstellungen sind nicht Teil dieser Stufe.
+
 ## Wiederholungsregeln (25.11.2026, Handbuch 1.42.0, Karte 21CF716D)
 
 - `update_task_planning.recurrence` und `get_task_planning` tragen optional `weekdays` (Array 1 bis 7, nur `weekly`), `basis` (`due`|`completion`) und `monthDay` (1 bis 31, nur `monthly`); gleiche Fachregel und Validierung wie REST `PUT /v1/planning/tasks/{id}` und Sync `task.planning` (`RecurrenceRule.validate`, `invalid_recurrence`). Kein neues Werkzeug, kein neuer Scope. `null` für ein neues Feld gilt als nicht gesetzt; ohne die Felder bleibt die Antwort byte-gleich.

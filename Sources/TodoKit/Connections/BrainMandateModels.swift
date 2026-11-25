@@ -29,11 +29,11 @@ final class BrainDecisionAudit: Model, @unchecked Sendable {
     @Field(key: "mandate_id") var mandateID: UUID
     @Field(key: "user_id") var userID: UUID
     @Field(key: "grant_id") var grantID: UUID
-    /// `review.accepted` | `review.changes_requested` | `question.answered`
+    /// `review.accepted` | `review.changes_requested` | `question.answered` | `plan.approved` | `plan.changes_requested`
     @Field(key: "kind") var kind: String
     @Field(key: "task_id") var taskID: UUID
     @Field(key: "project_id") var projectID: UUID
-    /// Review or question id.
+    /// Review, question or plan id.
     @Field(key: "subject_id") var subjectID: UUID
     @Field(key: "quote") var quote: String
     /// Review note or the given answer.

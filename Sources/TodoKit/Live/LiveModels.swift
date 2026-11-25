@@ -70,6 +70,7 @@ func registerLiveMiddleware(_ app: Application) {
     use(PlanningDependency.self); use(PlanningMilestone.self); use(PlanningMilestoneTask.self)
     use(UserPreferences.self); use(ActionRequest.self); use(SystemStatus.self)
     use(TaskLiveSession.self); use(TaskLiveEvent.self); use(SessionStatus.self)
+    use(TaskPlan.self); use(TaskPipelineStep.self)
     // Sharing: invitations, membership changes, team projects and grants must reach the other account's open views.
     use(Team.self); use(TeamMembership.self); use(ProjectGrant.self)
     // Repository bindings and their sync state (bind, unbind, threshold, record_sync): the open repository line and sync chip follow them.

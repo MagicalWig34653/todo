@@ -21,6 +21,8 @@ extension MCPController {
         switch table {
         case "task_questions": return "question"
         case "task_reviews": return "review"
+        case "task_plans": return "plan"
+        case "task_pipeline_steps": return "pipeline"
         case "comments": return "comment"
         case "task_progress_notes": return "progress"
         case "acceptance_criteria": return "criterion"

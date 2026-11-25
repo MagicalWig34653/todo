@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: Todolino Pipeline je Karte (Plan, Freigabe, Schrittstatus)
+  version: 1.0.0
+  description: >-
+    Karte 74EC341D, Stufe 1. Je Aufgabe ein aktueller Plan (Markdown) mit Version und Freigabe, der Status von sechs festen
+    Schritten (planner, approval, developer, validation, tester, review) und ein Protokoll. Es wird nichts ausgeführt und es
+    gibt keine Projekteinstellungen. Rein additiv: Aufgabenstatus, Board-Spalte, Aufgabenversion, Sync-Format und bestehende
+    DTOs ändern sich nicht. Lesen braucht Leserecht am Projekt, jedes Schreiben Bearbeitungsrecht (unsichtbar oder fremd 404,
+    sichtbar ohne Recht 403). nil-Felder fehlen im JSON; Clients behandeln fehlend wie null. actorType und authorType sind
+    klein geschrieben (person, integration, run). actorLabel, authorLabel, decidedByLabel: agentName, sonst Name der
+    Verbindung (OAuth-Client) bzw. der Person. Plan, Kommentar, Notiz und agentName laufen vor dem Speichern durch den
+    Secrets-Filter ([gefiltert]); Zeilenumbrüche und Tabs sind erlaubt, andere Steuerzeichen nicht. Jede Änderung ist
+    zusätzlich eine Aktivität der Karte (kind plan.written, plan.approved, plan.changes_requested, pipeline.step); Clients
+    müssen unbekannte kinds anzeigen können. Live (ADR 0022): das Live-Token ändert sich, MCP wait_for_events liefert die
+    Hinweise kind plan und kind pipeline mit taskID. Pläne gehören zur Aufgabe: Löschen von Aufgabe oder Projekt löscht sie,
+    das Löschen eines Kontos lässt sie auf weiterbestehenden Karten stehen.
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/tasks/{taskID}/pipeline:
+    get:
+      operationId: getTaskPipeline
+      summary: Plan, die sechs Schritte und die letzten 50 Protokolleinträge
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '401': {description: nicht angemeldet}
+        '404': {description: Aufgabe unbekannt oder unsichtbar}
+  /v1/tasks/{taskID}/plan:
+    put:
+      operationId: putTaskPlan
+      summary: Plan schreiben (neue Version, Status proposed)
+      description: >-
+        body getrimmt 1 bis 20000 Zeichen. Neue Version = alte + 1, Status proposed, Entscheidungsfelder leer; planner done,
+        approval waiting, developer bis review zurück auf pending ohne Notiz; Protokoll plan_written. Auch ein freigegebener
+        Plan darf ersetzt werden. Derselbe Text (nach Trimmen und Filter) bei Status proposed ändert nichts (Wiederholung),
+        unabhängig von expectedVersion; sonst gilt expectedVersion (0 = noch kein Plan).
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetPlanRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '400': {description: 'invalid_plan, invalid_agent_name'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Bearbeitungsrecht}
+        '404': {description: Aufgabe unbekannt oder unsichtbar}
+        '409': {description: plan_changed}
+  /v1/tasks/{taskID}/plan/decision:
+    post:
+      operationId: decideTaskPlan
+      summary: Plan freigeben oder Änderungen verlangen
+      description: >-
+        Prüfreihenfolge: invalid_decision, invalid_comment, comment_required (request_changes ohne Kommentar),
+        invalid_version (version fehlt), Rechte, no_plan, bei Integrationen cannot_decide_own_plan und die Brain-Vollmacht wie
+        bei decide_review (brain_mandate_required, outside_brain_mandate, quote_required, invalid_quote; nur MCP), dann
+        plan_changed und plan_not_pending. approve: Plan approved, approval done. request_changes: Plan changes_requested,
+        approval changes_requested, planner pending. Der Kommentar steht als Notiz am Schritt approval. Eine Entscheidung
+        unter Vollmacht erzeugt zusätzlich einen Protokolleintrag der Vollmacht (kind plan.approved oder
+        plan.changes_requested, subjectID = Plan) und einen Eintrag im Karten-Chat. Runner und andere Akteure
+        brain_mandate_required.
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlanDecisionRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '400': {description: 'invalid_decision, invalid_comment, comment_required, invalid_version'}
+        '401': {description: nicht angemeldet}
+        '403': {description: 'kein Bearbeitungsrecht; cannot_decide_own_plan, brain_mandate_required, outside_brain_mandate'}
+        '404': {description: Aufgabe unbekannt oder unsichtbar}
+        '409': {description: 'no_plan, plan_changed, plan_not_pending'}
+  /v1/tasks/{taskID}/pipeline/steps/{step}:
+    put:
+      operationId: putTaskPipelineStep
+      summary: Status eines Schritts melden
+      description: >-
+        step approval ist verwaltet (step_managed), ebenso planner mit done oder skipped. developer, validation, tester und
+        review brauchen für jeden Status außer pending einen freigegebenen Plan (plan_not_approved). Die Notiz wird ersetzt
+        (fehlt sie, wird sie gelöscht), höchstens 2000 Zeichen. Derselbe Status mit derselben Notiz ändert nichts.
+      parameters:
+      - {$ref: '#/components/parameters/TaskID'}
+      - {name: step, in: path, required: true, schema: {$ref: '#/components/schemas/StepName'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetPipelineStepRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Pipeline'}
+        '400': {description: 'invalid_step, invalid_state, invalid_note, invalid_agent_name'}
+        '401': {description: nicht angemeldet}
+        '403': {description: kein Bearbeitungsrecht}
+        '404': {description: Aufgabe unbekannt oder unsichtbar}
+        '409': {description: 'step_managed, plan_not_approved'}
+x-mcp-tools:
+  get_task_pipeline: {scope: 'tasks:read', required: [taskID], result: Pipeline}
+  set_task_plan: {scope: 'tasks:write', required: [taskID, plan], arguments: {taskID: UUID, plan: 'Markdown, 1 bis 20000 Zeichen', expectedVersion: 'int >= 0', agentName: 'bis 100 Zeichen'}, result: Pipeline}
+  decide_plan: {scope: 'tasks:write', required: [taskID, decision, version], arguments: {taskID: UUID, decision: 'approve|request_changes', version: int, comment: 'bis 4000 Zeichen', quote: 'Pflicht für Integrationen (Brain-Vollmacht)'}, result: Pipeline}
+  set_pipeline_step: {scope: 'tasks:write', required: [taskID, step, state], arguments: {taskID: UUID, step: 'planner|developer|validation|tester|review', state: 'pending|running|done|failed|skipped', note: 'bis 2000 Zeichen', agentName: 'bis 100 Zeichen'}, result: Pipeline}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  parameters:
+    TaskID: {name: taskID, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Pipeline:
+      description: Der Stand nach dem Aufruf
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Pipeline'}
+  schemas:
+    StepName:
+      type: string
+      enum: [planner, approval, developer, validation, tester, review]
+    StepState:
+      type: string
+      description: waiting und changes_requested kommen nur beim Schritt approval vor.
+      enum: [pending, running, waiting, changes_requested, done, failed, skipped]
+    Pipeline:
+      type: object
+      required: [taskID, steps, events]
+      properties:
+        taskID: {type: string, format: uuid}
+        plan: {$ref: '#/components/schemas/Plan'}
+        steps: {type: array, minItems: 6, maxItems: 6, description: Immer alle sechs in fester Reihenfolge, items: {$ref: '#/components/schemas/Step'}}
+        events: {type: array, maxItems: 50, description: Neueste zuerst, items: {$ref: '#/components/schemas/Event'}}
+    Plan:
+      type: object
+      required: [version, body, state, authorType, writtenAt]
+      properties:
+        version: {type: integer, minimum: 1}
+        body: {type: string, description: Markdown}
+        state: {type: string, enum: [proposed, approved, changes_requested]}
+        authorType: {type: string, enum: [person, integration, run]}
+        authorLabel: {type: string}
+        writtenAt: {type: string, format: date-time}
+        decidedAt: {type: string, format: date-time}
+        decidedByLabel: {type: string}
+        decisionComment: {type: string}
+    Step:
+      type: object
+      required: [step, state]
+      properties:
+        step: {$ref: '#/components/schemas/StepName'}
+        state: {$ref: '#/components/schemas/StepState'}
+        note: {type: string}
+        actorLabel: {type: string}
+        updatedAt: {type: string, format: date-time}
+    Event:
+      type: object
+      required: [id, action, actorType, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        action: {type: string, enum: [plan_written, plan_approved, plan_changes_requested, step_changed]}
+        planVersion: {type: integer, description: Fehlt bei Schrittmeldungen ohne Plan}
+        step: {$ref: '#/components/schemas/StepName'}
+        state: {$ref: '#/components/schemas/StepState'}
+        note: {type: string, description: Schrittnotiz bzw. Entscheidungskommentar}
+        actorType: {type: string, enum: [person, integration, run]}
+        actorLabel: {type: string}
+        createdAt: {type: string, format: date-time}
+    SetPlanRequest:
+      type: object
+      required: [body]
+      properties:
+        body: {type: string, minLength: 1, maxLength: 20000}
+        expectedVersion: {type: integer, minimum: 0}
+        agentName: {type: string, maxLength: 100}
+    PlanDecisionRequest:
+      type: object
+      required: [decision, version]
+      properties:
+        decision: {type: string, enum: [approve, request_changes]}
+        version: {type: integer, minimum: 1}
+        comment: {type: string, maxLength: 4000, description: Pflicht bei request_changes}
+    SetPipelineStepRequest:
+      type: object
+      required: [state]
+      properties:
+        state: {type: string, enum: [pending, running, done, failed, skipped]}
+        note: {type: string, maxLength: 2000}
+        agentName: {type: string, maxLength: 100}
