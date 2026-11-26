@@ -1,10 +1,9 @@
 # Arbeitsplan
 
-## Checkpoint 26.11.2026 (13:00): Projektgruppen (Karte `BEF08998`, Teil 3)
+## Checkpoint 26.11.2026 (13:35): Projektgruppen (Karte `BEF08998`, Teil 3) – auf dem Branch umgesetzt
 
-- Stand: `t3/projektgruppen-vollmacht-verbindungen`, Server, Verträge, ADR 0037 und PWA committet; Nachweise in `docs/STATUS.md`.
-- Offen: Zustimmungsseite, voller `swift test`, E2E und Bilder, MariaDB gezielt, `npm run build`, Handbuch-/Paritätsdoku; Apple-Karte `80738AEA`.
-- Nächster Schritt: Zustimmungsseite committen, dann E2E-Spec.
+- Stand: `t3/projektgruppen-vollmacht-verbindungen`; Nachweise und Merge-Hinweise in `docs/STATUS.md`.
+- Offen: Merge mit `main` (Konflikte, Versionsnummern, Übernahme-Logik), danach Prüfungen wiederholen; Linos Entscheidungen zu ADR 0037; Apple-Karte `80738AEA`.
 
 ## Checkpoint 26.11.2026 (08:30): Vollmacht übersteht Neuanmeldung (Karte `BEF08998`, Teil 1 und 2)
 

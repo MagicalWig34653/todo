@@ -1,13 +1,17 @@
 # Status
 
-## Nachtrag 26.11.2026 (13:00): Projektgruppen, Teil 3 weitgehend umgesetzt (Karte BEF08998; kein Push, kein Deploy)
+## Nachtrag 26.11.2026 (13:35): Projektgruppen, Teil 3 auf dem Branch umgesetzt (Karte BEF08998; kein Push, kein Deploy)
 
-- Branch `t3/projektgruppen-vollmacht-verbindungen` (von `dc842e3`): `28a89b1` (Tests rot), `9f97449` (Server), `30dacf7` (ADR 0037, Verträge, Handbuch 1.48.0), `063cf0d`, `5742ed3` (PWA). Der Entwurfsordner ist entfernt.
-- Neu: Projektgruppen mit Auswahlregel „gewählt“ oder „alle meine außer“ für Brain-Vollmacht und Verbindungen; eine Auflösung (`ProjectSelectionResolver`); REST `/v1/project-groups`; MCP nur lesend (`list_project_groups`, `get_connection`); PWA-Seite „Projektgruppen“, Auswahl in Vollmacht und Verbindungen, Gruppenwahl beim Anlegen und in den Projekteinstellungen. `connections.yaml` 1.7.0, `oauth-mcp.yaml` 1.12.0. Migration `CreateProjectGroups` (additiv; `App migrate --yes` vor `serve`; Rückfall siehe ADR 0037).
+- Branch `t3/projektgruppen-vollmacht-verbindungen` (von `dc842e3`): `28a89b1` (Tests rot), `9f97449` (Server), `30dacf7` (ADR 0037, Verträge, Handbuch), `063cf0d`, `5742ed3` (PWA), `595ef00` (Doku), `13052f6` (Zustimmungsseite), `4a474df`, `db05f5b` (E2E und Bilder).
+- Neu: Projektgruppen mit Auswahl „gewählt“ oder „alle meine außer“ für Brain-Vollmacht, Verbindungen und Zustimmungsseite; eine Auflösung (`ProjectSelectionResolver`); REST `/v1/project-groups`; MCP nur lesend (`list_project_groups`, `get_connection`); PWA-Seite „Projektgruppen“, Gruppenwahl beim Anlegen und in den Projekteinstellungen. Migration `CreateProjectGroups` (additiv; `App migrate --yes` vor `serve`; Rückfall-Vorbehalt in ADR 0037).
 - Vorläufig, Lino entscheidet im Review (ADR 0037): von Agenten angelegte Projekte fallen nicht automatisch unter „alle außer“; Teamprojekte zählen nicht als eigene.
-- Rot: swift 13 Tests/26 Fehler rc 1, vitest rc 1. Grün: gezielte `swift test` (SQLite) 230 Tests, 6 übersprungen, 0 Fehler; `npm run check` 0/0; vitest 811/811.
-- Offen: Gruppenwahl auf der Zustimmungsseite (in Arbeit), voller `swift test`, E2E-Spec mit Bildern, MariaDB gezielt, `npm run build`, Handbuch-/Paritätsdoku. Apple-Karte `80738AEA`.
-- Nächster Schritt: `ConsentPage.swift` prüfen und committen, dann `web/e2e/project-groups.spec.ts` in `scripts/e2e-ci.sh`.
+- Rot: swift 13 Tests/26 Fehler rc 1, vitest rc 1. Zustimmungsseite und E2E-Spec entstanden ohne eigenen Rotlauf.
+- Grün: volle `swift test` (SQLite) 1021 Tests, 24 übersprungen, 2 Fehler (nur alte Versions-Prüfzeilen, behoben, danach gezielt grün); MariaDB 12.3 (Wegwerf-Container, entfernt) `ProjectGroup|OAuth|ConnectionTests|BrainMandate|ConnectionProjectsByMandate|ActionRequest|PipelineTests|MCPSync` rc 0, 0 Fehler; `npm run check` 0/0, vitest 811/811, `npm run build` rc 0.
+- E2E gegen natives Backend mit frischer SQLite: `project-groups` 7/7 und `mandate-relogin` 7/7 in Chromium, Firefox, WebKit; `brain-mandate` 10/10 Chromium und Firefox, WebKit 5 von 6 Läufen grün (einmal blieb in Test (e) die Widerrufsmeldung 5 s leer; Ursache nicht belegt); Chromium `passkey-flow` 21/21, `settings-hub` 11, `menus-and-modes` 11, `ui-nav` 6, `sidebar-rename` 3, `connections` 5, `oauth-consent` 8 (auch WebKit).
+- Bilder hell/dunkel Desktop/mobil: `docs/screenshots/projektgruppen/` (Stichprobe angesehen; 320 px nur auf Querscrollen geprüft).
+- **Merge mit `main` (31835d1, Security-Korrekturen) steht aus, 8 Konfliktdateien:** `ConsentPage.swift`, `OAuthTakeover.swift`, beide Verträge, STATUS, ARBEITSPLAN, `brainMandate.ts`, `BrainMandatePage.svelte`. Dabei: Versionen sind doppelt vergeben (connections 1.7.0, oauth-mcp 1.12.0, Handbuch 1.48.0) → 1.8.0, 1.13.0, 1.49.0. `main` schneidet die übernommene Vollmacht mit der Auswahl (`∩ chosen`); mit Regel muss deshalb jedes Vollmacht-Projekt, das nicht gewählt ist, in der neuen Regel ausgeschlossen werden. `main` wählt alle Vollmacht-Projekte auf der Zustimmungsseite vor: bei einer Regel nur ausdrücklich genannte anhaken, sonst werden Gruppenmitglieder festgeschrieben.
+- Nicht geprüft: Docker-Image/Linux, CI, volle MariaDB-Suite, übrige E2E-Specs, echter MCP-Client, Apple-App (Karte `80738AEA`).
+- Nächster Schritt: Merge durch die Hauptsession, danach `swift test`, E2E `project-groups`, `mandate-relogin`; Review stellt die Hauptsession.
 
 ## Nachtrag 26.11.2026 (08:30): Neuanmeldung ohne erneute Projektauswahl, Teil 1 und 2 (Karte BEF08998; kein Push, kein Deploy)
 
