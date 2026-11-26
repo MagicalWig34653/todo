@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 26.11.2026 (13:15): Security-Review zu BEF08998 behoben (kein Push, kein Deploy)
+
+- Branch `t3/oauth-rotation-security-fixes` ab `dc842e3`: rot `70bf96f`, grün `2d3d895`, `0aab3cd`. Details: ADR 0036, Nachtrag.
+- Behoben: Geschwister-Entwertung nur noch zeilenweise per Primärschlüssel plus Index `rotated_from` (vorher Deadlock 1213/1020 zwischen fremden Verbindungen); Übernahme nur 7 Tage ab Widerruf, kein Namenstreffer bei `MCP Client`/leer; Vollmacht folgt der bestätigten Projektauswahl, Zustimmungstext vollständig; Log `oauth.refresh_repeated`/`oauth.replay_revoked`, Audit auch ohne gemeinsames Projekt, höchstens 5 Wiederholungen.
+- Migration neu: `AddOAuthRotatedFromIndex` (idempotent). Altstand `cf4237e` (echtes Image) → neu auf MariaDB 12.3: Spalten und Index vorhanden. Handbuch 1.48.0, `oauth-mcp.yaml` 1.12.0, `connections.yaml` 1.7.0.
+- Rot: SQLite 7 Tests mit 30 Fehlern; MariaDB Nebenläufigkeit 500er. Grün: volle `swift test` (SQLite) 1011 Tests, 24 übersprungen, 8 Fehler allein aus veralteten Versionserwartungen in 5 Tests; nach Anpassung diese gezielt plus `ChatThreadTests` 8 Tests, 0 Fehler (volle Suite nicht wiederholt); MariaDB `OAuth|BrainMandate|Connection|MariaDB|Migration` 151 Tests, 1 übersprungen, 0 Fehler, nach `0aab3cd` gezielt 23/0; `npm run check` 0/0, vitest 799/799, build rc 0; Playwright `mandate-relogin` 7/7 Chromium, Firefox, WebKit; Bilder neu (5 angesehen).
+- Nicht geprüft: volle MariaDB-Suite, Docker-Image/Linux, SQLite-Upgrade mit altem Image, Apple-App, echter MCP-Client.
+- Nächster Schritt: Hauptsession prüft und führt zusammen (Konfliktstelle Projektgruppen: `OAuthTakeover`), Deploy ohne Überlappung alter und neuer Instanzen.
+
 ## Nachtrag 26.11.2026 (08:30): Neuanmeldung ohne erneute Projektauswahl, Teil 1 und 2 (Karte BEF08998; kein Push, kein Deploy)
 
 - Branch `t3/oauth-replay-vollmacht-reauth`: Teil 1 `90f3d00` (rot), `a3e7941` (grün); Teil 2 `36482d7`, `1277d22` (rot), `6438a98` (grün), `be7f09d` (E2E und Bilder). Teil 3 (Projektgruppen) nicht begonnen.

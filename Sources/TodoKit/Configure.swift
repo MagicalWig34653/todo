@@ -81,6 +81,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(AddOAuthClientCreatedAt())
     app.migrations.add(AddOAuthReuseAndRevocation())
     app.migrations.add(AddOAuthGrantLineage())
+    app.migrations.add(AddOAuthRotatedFromIndex())
     configureConnections(app)
     configureIdentity(app)
     configurePreferences(app)

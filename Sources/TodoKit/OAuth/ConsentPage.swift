@@ -88,8 +88,9 @@ enum ConsentPage {
         el('p', (n === 1 ? '1 Projekt ist' : n + ' Projekte sind') + ' unten vorausgewählt. Die bisherige Verbindung „' + old.name + '“ wird dabei beendet.' + (old.reason === 'replay' ? ' Sie wurde zuvor aus Sicherheitsgründen abgemeldet.' : ''), tc, 'muted');
         if (old.mandate) {
           const m = old.mandate.project_names;
-          el('p', 'Brain-Vollmacht: Die neue Verbindung darf dann in deinem Auftrag entscheiden in ' + (m.length === 1 ? 'diesem Projekt' : 'diesen ' + m.length + ' Projekten') + ': ' + m.join(', ') + '.', tc, 'mandate');
-          el('p', 'Projekte, die du unten abwählst, fallen auch aus der Vollmacht.', tc, 'muted');
+          el('p', 'Brain-Vollmacht in ' + (m.length === 1 ? 'diesem Projekt' : 'diesen ' + m.length + ' Projekten') + ': ' + m.join(', ') + '.', tc, 'mandate');
+          el('p', 'Die neue Verbindung darf dort in deinem Auftrag Reviews entscheiden, Fragen beantworten, Pläne freigeben oder Änderungen verlangen, die Pipeline-Einstellungen ändern und diese Projekte für deine anderen Verbindungen freigeben oder entziehen.', tc, 'mandate');
+          el('p', 'Alle Vollmacht-Projekte sind unten vorausgewählt, auch solche, die bisher nicht freigegeben waren. Was du unten abwählst, fällt auch aus der Vollmacht.', tc, 'muted');
         }
         if (old.match === 'name') el('p', 'Achtung: Nur am gleichen Namen erkannt. Dieses Programm hat sich neu angemeldet, und Namen kann jedes Programm frei wählen. Übernimm nur, wenn du diese Anmeldung gerade selbst auf deinem Gerät gestartet hast.', tc, 'warning');
       } else if (d.takeover_ambiguous) {
