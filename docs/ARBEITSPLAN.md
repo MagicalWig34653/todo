@@ -3,7 +3,8 @@
 ## Checkpoint 26.11.2026 (23:25): UX-Umbau Schritt 1 „Lesbarkeit“ umgesetzt (Karte `8B820AA8`)
 
 - Stand und Belege: `docs/STATUS.md` (oberster Nachtrag), `design/ux-konzept/schritt-1/README.md`.
-- Offen: Board-Einträge nachtragen, sobald Todolino-MCP angemeldet ist; Deploy bei Lino (Review `74A1862B`).
+- GitHub `381784c` vollständig grün. Offen: Brain-Validierung; Board-Einträge aus `design/ux-konzept/schritt-1/kartentexte.md` nachtragen (Todolino-MCP war nicht angemeldet).
+- Deploy-Stand laut Lino `sha-0d2bb78` (enthält `da95daf`); Schritt 1 ist nicht deployt.
 - Nächster Schritt: Schritt 2 „Ein Kartenfenster“ nur auf Auftrag.
 
 ## Checkpoint 26.11.2026 (20:55): UX-Konzept angenommen, Umbau wartet auf Auftrag (Karte `607DB96E`)
