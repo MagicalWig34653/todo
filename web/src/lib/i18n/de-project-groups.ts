@@ -52,6 +52,7 @@ export const deProjectGroups = {
 	'projectGroups.selection.after': 'Nachher',
 	'projectGroups.selection.addedList': 'Neu dabei: {projects}',
 	'projectGroups.selection.removedList': 'Fällt weg: {projects}',
+	'projectGroups.selection.excludedActive': 'Ausgenommen (Haken entfernen hebt den Ausschluss auf)',
 	'projectGroups.selection.excludeWins': 'Ausschlüsse gewinnen immer.',
 	'projectGroups.selection.projects': 'Einzelne Projekte',
 	'projectGroups.selection.search': 'Projekte suchen',

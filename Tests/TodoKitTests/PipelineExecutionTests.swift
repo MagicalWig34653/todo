@@ -748,7 +748,7 @@ final class PipelineExecutionTests: XCTestCase {
         for word in ["/v1/runner/jobs/{id}/hold:", "pipeline_runner_required", "outcome_required", "plan_required", "pipelineStep", "resumeSessionReference"] {
             XCTAssertTrue(agents.contains(word), word)
         }
-        XCTAssertTrue(read("contracts/oauth-mcp.yaml").contains("version: 1.11.0"))
+        XCTAssertTrue(read("contracts/oauth-mcp.yaml").contains("version: 1.12.0"))
         XCTAssertTrue(read("contracts/oauth-mcp.yaml").contains("start_pipeline_execution"))
         XCTAssertEqual(AgentManual.version, "1.48.0")
         XCTAssertTrue(AgentManual.markdown.contains("`start_pipeline_execution`"))

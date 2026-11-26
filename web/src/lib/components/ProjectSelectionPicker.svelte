@@ -148,6 +148,18 @@
 	{:else}
 		<p class={sub}>{t('projectGroups.selection.groups')}</p>
 		{@render groupList('groupIDs', 'group')}
+		{#if selection.excludedProjectIDs.length || selection.excludedGroupIDs.length}
+			<!-- Exclusions of a saved rule act in this mode too: they must be visible and removable. -->
+			<p class={sub}>{t('projectGroups.selection.excludedActive')}</p>
+			<ul class={box} data-testid="{testid}-active-exclusions">
+				{#each selection.excludedGroupIDs as id (id)}
+					<li><label class={row}><Checkbox checked onchange={() => flip('excludedGroupIDs', id)} data-testid="{testid}-excluded-group" /><span class="min-w-0 break-words">{groups.find((g) => hasID([g.id], id))?.name ?? id.slice(0, 8).toLowerCase()}</span></label></li>
+				{/each}
+				{#each selection.excludedProjectIDs as id (id)}
+					<li><label class={row}><Checkbox checked onchange={() => flip('excludedProjectIDs', id)} data-testid="{testid}-excluded-project" /><span class="min-w-0 break-words">{label(id)}</span></label></li>
+				{/each}
+			</ul>
+		{/if}
 		<p class={sub}>{t('projectGroups.selection.projects')}</p>
 	{/if}
 
