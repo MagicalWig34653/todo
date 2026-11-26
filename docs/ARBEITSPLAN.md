@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026: App-Icon-Entwürfe, Wahl offen (Karte `75EAE344`)
+
+- Stand: vier Entwürfe in `design/icon/entwuerfe-2026-11/` auf `t3/app-icon-entwuerfe` (`18f7251` rot, `55f46b0` grün, `node --test …/check.test.mjs` 25/25); nichts eingebaut, nicht gepusht.
+- Offen: Linos Wahl (Empfehlung C „Duett“); Befund zum verdeckten Haken im heutigen Apple-Icon (Details in `docs/STATUS.md`).
+- Nächster Schritt: Review durch die Hauptsession; nach der Wahl Einbau laut `README.md` im Entwurfsordner (Apple und PWA), dann Xcode-Build und Geräteprüfung.
+
 ## Checkpoint 25.11.2026 (21:46): Leitstand gepusht, Review offen (Karte `B0CF5F73`)
 
 - `5e1b738` auf `main`; CI, Docker publish, Pages und E2E grün. Belege: `docs/STATUS.md` (oberster Nachtrag).

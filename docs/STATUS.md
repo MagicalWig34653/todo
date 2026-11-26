@@ -1,5 +1,14 @@
 # Status
 
+## Nachtrag 26.11.2026: Vier neue App-Icon-Entwürfe liegen vor (Karte 75EAE344; Wahl offen, nichts eingebaut)
+
+- Branch `t3/app-icon-entwuerfe`, `18f7251` (Tests rot), `55f46b0` (Entwürfe, grün). Kein Push, kein Deploy; `design/icon/Todo.icon`, `web/static` und Apple-Repo unverändert.
+- `design/icon/entwuerfe-2026-11/`: A Nest, B Schwung, C Duett, D Bausteine; je `.icon`, Ebenen-SVG, PWA-Dateien, `tafel.png`, dazu `uebersicht.png`. Empfehlung C; Stärken, Schwächen und Einbau-Schritte in der `README.md` dort.
+- Rot: `node --test design/icon/entwuerfe-2026-11/check.test.mjs` rc 1 (0/25). Grün: derselbe Befehl rc 0 (25/25) nach `node design/icon/entwuerfe-2026-11/render.mjs`.
+- Apple-Ansichten mit `ictool` 27.2 (iOS Default/Dark/ClearDark/TintedDark, macOS, watchOS). Nicht geprüft: Icon-Composer-Oberfläche, Xcode-Build, Geräte, Favicon-Dunkelmodus im Browser, Markenrecherche.
+- Befund am heutigen Icon (`design/icon/Todo.icon`, Apple `App/Icon/AppIcon.icon`): im `ictool`-Rendering (iOS hell und dunkel) liegt die hintere Karte vorn, der Haken ist verdeckt, die eigenen Dunkel-Farben greifen nicht. Nicht geändert; `actool`-Build nicht geprüft.
+- Nächster Schritt: Hauptsession stellt das Review; Lino wählt A bis D; danach Einbau in Apple und PWA.
+
 ## Nachtrag 25.11.2026 (21:46): Leitstand auf `main`, CI grün, Review angefragt (Karte B0CF5F73)
 
 - `main` und `origin/main`: Code `5e1b738` (Fast-Forward, Worktree entfernt, Branch bleibt). Davor auf `main` wiederholt: `npm run check` 0 Fehler, vitest 786/786, `npm run build` rc 0.
