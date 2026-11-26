@@ -45,7 +45,7 @@ Mail, Push, Speicher, Anmeldung, Limits, Live, Aufräumen, Instanz, Apple, Syste
 
 | Element | Anzahl | Beleg |
 |---|---:|---|
-| Einträge der Seitenleiste vor den Projekten | 11 + „Mehr“ mit 5 | `Sidebar.svelte:251-272`, `menu-seitenleiste-mehr-desktop-hell` |
+| Menüziele der Seitenleiste | 15 (10 sichtbar + 5 unter „Mehr“), davor „Aufgabe hinzufügen“ | `Sidebar.svelte:251-272`, `menu-seitenleiste-mehr-desktop-hell` |
 | Abschnitte darunter | bis zu 4 (Favoriten, Meine Projekte, Mit mir geteilt, Teams) | `Sidebar.svelte:275-347` |
 | Handy-Tableiste | 5 (Für dich, Heute, Anstehend, Suche, Menü) + Plus-Knopf + Menü oben links | `Workspace.svelte:398-417` |
 | Dialoge (`<Dialog>`) | 18 Verwendungen in 12 Dateien | ProjectPage 6, Workspace 2, je 1: Calendar, ForYou, ProjectBoard, QuickAdd, Sidebar, CardDetailDialog, AdminAccounts, DataPage, ProjectTransfer, VoicePrivacy |
