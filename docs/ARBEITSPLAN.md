@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (14:35): BEF08998 fertig bis auf Abnahme und Deploy
+
+- `4a3f2ec` auf `main`, CI/E2E grün, Review `F402CFD8` offen. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Offen: Sicherheitsprüfung Teil 3 vor dem Deploy (Freigabe Brain/Lino); Apple `80738AEA`.
+- Nächster Schritt: ab 17:00 UX-Konzept (`607DB96E`, Auftrag f-f7d094a6) samt Zeitleisten-Ansicht (`8F6C48E2`); nur Konzept, kein Umbau.
+
 ## Checkpoint 26.11.2026 (13:55): Projektgruppen (Karte `BEF08998`, Teil 3) mit `main` zusammengeführt
 
 - Stand: `t3/projektgruppen-vollmacht-verbindungen` enthält `main` 31835d1; Nachweise in `docs/STATUS.md`.

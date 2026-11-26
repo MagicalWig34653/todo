@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 26.11.2026 (14:35): BEF08998 komplett in `main`, CI grün, Review offen (kein Deploy)
+
+- Projektgruppen (Teil 3) gemergt und gepusht: `4a3f2ec` (Dateistand identisch mit geprüftem Branchstand `d803ff4`: swift 1034 Tests, 26 übersprungen, 0 Fehler; MariaDB gezielt 214/0; vitest 812/812; check/build ok; E2E `project-groups` je 9/9 und `mandate-relogin` je 7/7 in Chromium, Firefox, WebKit).
+- GitHub auf `4a3f2ec` grün: CI 45824905814, Docker publish 45824906488, Pages 45824905842, E2E 45826888179 („E2E OK (94 runs)“). Vorher `31835d1` ebenfalls grün.
+- Review an Lino: `F402CFD8` (ersetzt `B1662D78`). Empfehlung: Deploy `sha-4a3f2ec` erst nach eigener Sicherheitsprüfung von Teil 3 (nicht beauftragt). Teil 1+2 wurden geprüft, Befunde behoben.
+- Offen: Sicherheitsprüfung Teil 3; Restrisiko MariaDB-Bereichssperre auf Gruppenmitgliedern (ADR 0037); ein unsteter WebKit-Lauf in `brain-mandate` (lokal, Ursache nicht belegt); echter Claude-Code-Client; Apple-Karte `80738AEA`; Audit-Lücke Wiederholung/Replay-Widerruf (nur Server-Log).
+- Deploy (Lino): `App migrate --yes` vor `serve`, alte und neue Instanz nicht gleichzeitig, Brain-Vollmacht einmal neu erteilen; Rückschritt auf ein altes Image ignoriert Gruppenregeln und Ausschlüsse.
+
 ## Nachtrag 26.11.2026 (13:55): Projektgruppen, Teil 3 mit `main` (31835d1) zusammengeführt (Karte BEF08998; kein Push, kein Deploy)
 
 - Branch `t3/projektgruppen-vollmacht-verbindungen`: Umsetzung `28a89b1` bis `78aaa26`; Merge `4b03e8c`; Übernahme mit Regeln `b039742` (rot), `3068b9a` (grün); MariaDB-Sperren (rot, dann `56dd0f0` grün); Bilder `c8c6d26`. Versionen: `connections.yaml` 1.8.0, `oauth-mcp.yaml` 1.13.0, Handbuch 1.49.0.
