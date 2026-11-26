@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (12:25): Projektgruppen (Karte `BEF08998`, Teil 3) – unfertig
+
+- Stand: `t3/projektgruppen-vollmacht-verbindungen`, Tests plus nicht kompilierter Entwurf; nicht mergen. Details: `docs/entwurf-projektgruppen/README.md`.
+- Nächster Schritt: neue Umsetzungssitzung nach dieser README (Rot belegen, Server, alle Lesestellen, PWA, E2E, ADR 0037).
+
 ## Checkpoint 26.11.2026 (08:30): Vollmacht übersteht Neuanmeldung (Karte `BEF08998`, Teil 1 und 2)
 
 - Entscheidung ADR 0036: 300 s Nachlauffenster beim Refresh; Übernahme von Projekten und Vollmacht nur per Zustimmung der Person.
