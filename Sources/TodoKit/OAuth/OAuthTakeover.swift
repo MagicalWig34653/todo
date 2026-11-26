@@ -100,8 +100,6 @@ enum OAuthTakeover {
         old.revoke(.superseded, now: now); try await old.save(on: db)
 
         let chosen = Set(try await new.resolveProjects(on: db, locking: true))
-        // A project the person unchecked leaves the mandate as well.
-        let unchecked = Set(old.effectiveProjects).subtracting(chosen)
         // Only what the person confirmed keeps the mandate (also mandate projects that were not in the old list: the page
         // preselects them, unchecking them drops them).
         let carried = Set(candidate.mandateProjects.compactMap(\.id)).intersection(offer.mandateProjects).intersection(chosen)
@@ -109,14 +107,17 @@ enum OAuthTakeover {
         var mandateID: UUID?
         if !carried.isEmpty {
             // ADR 0037: a mandate rule moves along as shown on the page. Only the explicitly named projects stay explicit
-            // (group members must still follow their group); what the person did not get to see or unchecked now is excluded,
-            // so the new mandate never starts wider than the click.
+            // (group members must still follow their group). Every project of the old mandate that was not on the page or
+            // was not confirmed, and every old project the person unchecked, is excluded: no later group membership and no
+            // "all except" brings it back.
             var rule = offer.mandateRule
             var explicit = carried
             if rule != nil {
                 let named = Set(candidate.mandate?.explicitProjects ?? [])
-                let unseen = named.union(candidate.mandateProjects.compactMap(\.id)).subtracting(offer.mandateProjects)
-                let excluded = Set(rule!.excludedProjectIDs).union(unseen).union(unchecked)
+                let shown = Set(offer.mandateProjects)
+                let belonged = named.union(candidate.mandateProjects.compactMap(\.id)).union(shown)
+                let excluded = Set(rule!.excludedProjectIDs).union(belonged.subtracting(shown))
+                    .union(belonged.union(old.effectiveProjects).subtracting(chosen))
                 rule!.excludedProjectIDs = excluded.sorted { $0.uuidString < $1.uuidString }
                 explicit = carried.filter { named.contains($0) }
             }

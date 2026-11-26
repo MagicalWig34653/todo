@@ -76,7 +76,8 @@ enum ConsentPage {
 
       // ADR 0036: what this sign-in would take over has to be readable before the click.
       const old = d.takeover;
-      let take = null;
+      let take = null, lostLine = null;
+      const has = (ids, value) => ids.some(id => id.toUpperCase() === value.toUpperCase());
       if (old) {
         const tc = card(); tc.id = 'takeover';
         const what = old.mandate ? 'Projekte und Brain-Vollmacht' : 'Projekte';
@@ -85,13 +86,17 @@ enum ConsentPage {
         take = el('input', '', row); take.type = 'checkbox'; take.id = 'takebox'; take.checked = true;
         el('span', what + ' von „' + old.name + '“ übernehmen', row, 'pname');
         const n = old.project_ids.length;
-        el('p', (n === 1 ? '1 Projekt ist' : n + ' Projekte sind') + ' unten vorausgewählt. Die bisherige Verbindung „' + old.name + '“ wird dabei beendet.' + (old.reason === 'replay' ? ' Sie wurde zuvor aus Sicherheitsgründen abgemeldet.' : ''), tc, 'muted');
+        const chosen = old.selection || (old.mandate && old.mandate.selection)
+          ? 'Die bisherige Auswahl ist unten voreingestellt: Angehakt sind nur ausdrücklich genannte Projekte, Gruppen und Ausnahmen gelten als Regel.'
+          : (n === 1 ? '1 Projekt ist' : n + ' Projekte sind') + ' unten vorausgewählt.';
+        el('p', chosen + ' Die bisherige Verbindung „' + old.name + '“ wird dabei beendet.' + (old.reason === 'replay' ? ' Sie wurde zuvor aus Sicherheitsgründen abgemeldet.' : ''), tc, 'muted');
         if (old.mandate) {
           const m = old.mandate.project_names;
           el('p', 'Brain-Vollmacht in ' + (m.length === 1 ? 'diesem Projekt' : 'diesen ' + m.length + ' Projekten') + ': ' + m.join(', ') + '.', tc, 'mandate');
           el('p', 'Die neue Verbindung darf dort in deinem Auftrag Reviews entscheiden, Fragen beantworten, Pläne freigeben oder Änderungen verlangen, die Pipeline-Einstellungen ändern und diese Projekte für deine anderen Verbindungen freigeben oder entziehen.', tc, 'mandate');
-          el('p', 'Alle Vollmacht-Projekte sind unten vorausgewählt, auch solche, die bisher nicht freigegeben waren. Was du unten abwählst, fällt auch aus der Vollmacht.', tc, 'muted');
-          if (old.mandate.selection) el('p', 'Die Vollmacht folgt einer Regel (Projektgruppen oder „alle außer“): Neue Projekte, die darunter fallen, kommen automatisch dazu.', tc, 'mandate');
+          if (old.mandate.selection) el('p', 'Die Vollmacht folgt einer Regel (Projektgruppen oder „alle außer“): Neue Projekte, die darunter fallen, kommen automatisch dazu. Vollmacht-Projekte, die unten weder angehakt noch über die Regel der neuen Verbindung dabei sind, fallen dauerhaft aus der Vollmacht.', tc, 'mandate');
+          else el('p', 'Alle Vollmacht-Projekte sind unten vorausgewählt, auch solche, die bisher nicht freigegeben waren. Was du unten abwählst, fällt auch aus der Vollmacht.', tc, 'muted');
+          lostLine = el('p', '', tc, 'warning'); lostLine.id = 'lost'; lostLine.hidden = true; lostLine.setAttribute('aria-live', 'polite');
         }
         if (old.match === 'name') el('p', 'Achtung: Nur am gleichen Namen erkannt. Dieses Programm hat sich neu angemeldet, und Namen kann jedes Programm frei wählen. Übernimm nur, wenn du diese Anmeldung gerade selbst auf deinem Gerät gestartet hast.', tc, 'warning');
       } else if (d.takeover_ambiguous) {
@@ -193,7 +198,7 @@ enum ConsentPage {
           const cb = el('input', '', row); cb.type = 'checkbox'; cb.value = p.id;
           el('span', p.name, row, 'pname');
           row.dataset.name = p.name.toLowerCase();
-          cb.addEventListener('change', () => update());
+          cb.addEventListener('change', () => { exclusionFollows(cb); update(); });
           boxes.push(cb);
           walk(p.id, depth + 1);
         });
@@ -217,10 +222,26 @@ enum ConsentPage {
           excludedProjectIDs: checked(exProjects.boxes), excludedGroupIDs: checked(exGroups.boxes) };
         return all || r.groupIDs.length || r.excludedProjectIDs.length || r.excludedGroupIDs.length ? r : undefined;
       }
+      // A taken-over project the person unticks must leave even if a group or "all except" still brings it.
+      function exclusionFollows(cb) {
+        if (!cb.dataset.taken) return;
+        const ex = exProjects.boxes.find(b => b.value === cb.value);
+        if (!ex) return;
+        const brought = modeAll.checked || groups.some(g => checked(inGroups.boxes).includes(g.id) && has(g.project_ids, cb.value));
+        ex.checked = !cb.checked && brought;
+      }
+      // ADR 0036/0037: what the mandate loses with this choice is said before the click.
+      function showLost(ids) {
+        if (!lostLine) return;
+        const lost = take.checked && ids ? old.mandate.project_names.filter((name, i) => !has(ids, old.mandate.project_ids[i])) : [];
+        lostLine.hidden = !lost.length;
+        lostLine.textContent = lost.length ? 'Fällt mit dieser Auswahl aus der Vollmacht: ' + lost.join(', ') + '.' : '';
+      }
       let asked = 0;
       async function preview() {
         const mine = ++asked, r = rule();
-        if (!r) { effective.textContent = ''; return; }
+        if (!r) { effective.textContent = ''; showLost(checked(boxes)); return; }
+        showLost(null);
         effective.textContent = 'Wirksame Projekte werden berechnet …';
         const res = await fetch('/v1/project-selection/preview', { method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectIDs: checked(boxes), selection: r }) });
@@ -234,11 +255,12 @@ enum ConsentPage {
         let text = list.length ? 'Wirksam jetzt: ' + (list.length === 1 ? '1 Projekt' : list.length + ' Projekte') + ': ' + list.join(', ') + '.' : 'Wirksam jetzt: kein Projekt.';
         if (out.agentCreatedProjectIDs.length) text += ' Nicht enthalten, weil von einem Agenten angelegt: ' + out.agentCreatedProjectIDs.map(label).join(', ') + '.';
         effective.textContent = text;
+        showLost(out.projectIDs);
       }
       function update() {
         const all = modeAll.checked;
         // A taken-over choice may carry exclusions in mode "selected" too; then they are shown.
-        const excluding = all || checked(exProjects.boxes).length > 0 || checked(exGroups.boxes).length > 0;
+        const excluding = all || checked(inGroups.boxes).length > 0 || checked(exProjects.boxes).length > 0 || checked(exGroups.boxes).length > 0;
         if (inGroups.wrap) { inGroups.wrap.hidden = all; exGroups.wrap.hidden = !excluding; }
         exProjects.wrap.hidden = !excluding;
         extra.textContent = all ? 'Zusätzlich (zum Beispiel geteilte Projekte)' : 'Einzelne Projekte';
@@ -250,12 +272,16 @@ enum ConsentPage {
       }
       if (take) {
         const fresh = nameInput.value;
-        // With a rule only its named projects are checked; groups and exclusions are taken over as a rule, not frozen.
-        const old_rule = old.selection;
-        const named = old_rule ? old_rule.projectIDs : old.project_ids;
-        const has = (ids, value) => ids.some(id => id.toUpperCase() === value.toUpperCase());
+        // Only what was named is ticked, in the connection and in the mandate; groups and exclusions move as a rule,
+        // their members are not frozen into the list.
+        const old_rule = old.selection, m = old.mandate;
+        const named = old.explicit_project_ids.concat(m ? (m.selection ? m.selection.projectIDs : m.project_ids) : []);
         const apply = () => {
-          boxes.forEach(b => { if (has(old.project_ids, b.value) || has(named, b.value)) b.checked = take.checked && has(named, b.value); });
+          boxes.forEach(b => {
+            if (!has(old.project_ids, b.value) && !has(named, b.value)) return;
+            b.checked = take.checked && has(named, b.value);
+            b.dataset.taken = b.checked ? '1' : '';
+          });
           if (old_rule) {
             const on = take.checked;
             (on && old_rule.mode === 'all_except' ? modeAll : modeSelected).checked = true;

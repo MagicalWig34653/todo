@@ -141,6 +141,8 @@ struct OAuthController: RouteCollection {
             body["takeover"] = .object(["grant_id": .string(try candidate.grant.requireID().uuidString), "name": .string(candidate.name),
                 "match": .string(candidate.match.rawValue), "reason": .string(candidate.grant.revoked ? "replay" : "active"),
                 "project_ids": .strings(try candidate.projects.map { try $0.requireID().uuidString }),
+                // ADR 0037: what the old connection names itself, apart from group members and mandate additions.
+                "explicit_project_ids": .strings(candidate.projects.compactMap(\.id).filter(Set(candidate.grant.explicitProjects).contains).map(\.uuidString)),
                 "selection": try SelectionDTO(explicit: candidate.grant.explicitProjects, rule: candidate.grantRule).map { try .encoded($0) } ?? .null,
                 "mandate": candidate.mandate == nil ? .null : .object([
                     "project_ids": .strings(try candidate.mandateProjects.map { try $0.requireID().uuidString }),

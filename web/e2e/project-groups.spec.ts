@@ -233,3 +233,124 @@ test('the connected app shows its rule; deleting the group withdraws it', async 
 	await expect(page.getByTestId('pg-empty')).toBeVisible();
 	expect(await connectionProjects()).toEqual([]);
 });
+
+interface Tokens { access: string; refresh: string }
+async function openConsent(clientID: string): Promise<string> {
+	const verifier = randomBytes(32).toString('base64url');
+	const query = new URLSearchParams({
+		response_type: 'code', client_id: clientID, redirect_uri: CALLBACK, scope: 'projects:read projects:write tasks:read', state: 's',
+		code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256'
+	});
+	await page.goto(`/oauth/authorize?${query}`);
+	await expect(page.getByRole('button', { name: 'Erlauben' })).toBeVisible({ timeout: 20_000 });
+	return verifier;
+}
+async function allow(clientID: string, verifier: string): Promise<Tokens> {
+	const arrived = page.waitForRequest((r) => r.url().startsWith(CALLBACK));
+	await page.getByRole('button', { name: 'Erlauben' }).click();
+	const code = new URL((await arrived).url()).searchParams.get('code');
+	const t = await page.request.post('/oauth/token', { form: { grant_type: 'authorization_code', client_id: clientID, code: code!, redirect_uri: CALLBACK, code_verifier: verifier } });
+	expect(t.ok(), await t.text()).toBeTruthy();
+	const body = (await t.json()) as { access_token: string; refresh_token: string };
+	return { access: body.access_token, refresh: body.refresh_token };
+}
+const refresh = (clientID: string, token: string) => page.request.post('/oauth/token', { form: { grant_type: 'refresh_token', client_id: clientID, refresh_token: token } });
+
+test('signing in again takes a rule over without freezing group members', async () => {
+	const made = await page.request.post('/v1/project-groups', { data: { name: 'Technik', projectIDs: [heizung, lager] } });
+	expect(made.ok(), await made.text()).toBeTruthy();
+	const technik = ((await made.json()) as { group: { id: string } }).group.id;
+	const name = 'Claude Code (Technik)';
+	const reg = await page.request.post('/oauth/register', { data: { client_name: name, redirect_uris: [CALLBACK], token_endpoint_auth_method: 'none' } });
+	const clientID = ((await reg.json()) as { client_id: string }).client_id;
+	// The main project list; group and exclusion lists sit in their own wrappers.
+	const own = (project: string) => page.locator('fieldset > .plist').getByRole('checkbox', { name: project });
+	const grouped = page.locator('.grouplist').getByRole('checkbox', { name: 'Technik' });
+
+	const verifier = await openConsent(clientID);
+	await own('Heizung').check();
+	await own('Privat').check();
+	await grouped.check();
+	const first = await allow(clientID, verifier);
+	const grantID = async () => ((await (await page.request.get('/v1/settings/brain-mandate')).json()) as { mandates: { grantID: string; grantName: string; active: boolean }[] })
+		.mandates.find((m) => m.grantName === name && m.active)!.grantID;
+	const grant = ((await (await page.request.get('/oauth/grants')).json()) as { id: string; name?: string; connection_name?: string }[]).find((g) => JSON.stringify(g).includes(name))!;
+	const put = await page.request.put('/v1/settings/brain-mandate', {
+		data: { grantID: grant.id, projectIDs: [], selection: { mode: 'selected', groupIDs: [technik], excludedProjectIDs: [], excludedGroupIDs: [] } }
+	});
+	expect(put.ok(), await put.text()).toBeTruthy();
+	// Replay detection signs the client out: the old refresh token comes back although its successor was used.
+	const second = (await (await refresh(clientID, first.refresh)).json()) as { refresh_token: string };
+	expect((await refresh(clientID, second.refresh_token)).ok()).toBeTruthy();
+	expect((await refresh(clientID, first.refresh)).status()).toBe(400);
+
+	const again = await openConsent(clientID);
+	const card = page.locator('#takeover');
+	await expect(grouped).toBeChecked();
+	await expect(own('Heizung')).toBeChecked();
+	await expect(own('Privat')).toBeChecked();
+	// Brought by the group only: not ticked, so it is not frozen.
+	await expect(own('Lager')).not.toBeChecked();
+	await expect(card).toContainText('Angehakt sind nur ausdrücklich genannte Projekte');
+	await expect(card).toContainText('Reviews entscheiden, Fragen beantworten');
+	await expect(card).toContainText('Die Vollmacht folgt einer Regel');
+	await expect(page.locator('#effective')).toContainText('3 Projekte: Heizung, Lager, Privat.');
+	await expect(card.locator('#lost')).toBeHidden();
+	// Unticking a project the group brings as well excludes it; the page says what leaves the mandate.
+	await own('Heizung').uncheck();
+	await expect(page.locator('.exprojectlist').getByRole('checkbox', { name: 'Heizung' })).toBeChecked();
+	await expect(page.locator('#effective')).toContainText('2 Projekte: Lager, Privat.');
+	await expect(card.locator('#lost')).toHaveText('Fällt mit dieser Auswahl aus der Vollmacht: Heizung.');
+	await consentShots('zustimmung-uebernahme-regel');
+	token = (await allow(clientID, again)).access;
+
+	const now = async () => {
+		const grants = (await (await page.request.get('/oauth/grants')).json()) as { id: string; project_ids: string[] }[];
+		const id = (await grantID()).toLowerCase();
+		return sorted(grants.find((g) => g.id.toLowerCase() === id)!.project_ids);
+	};
+	expect(await now()).toEqual(sorted([lager, privat]));
+	expect(await mandateProjects()).toEqual(sorted([lager]));
+	// Out of the group and back in: the unticked project stays out, for the connection and for the mandate.
+	for (const projectIDs of [[], [heizung, lager]]) expect((await page.request.patch(`/v1/project-groups/${technik}`, { data: { projectIDs } })).ok()).toBeTruthy();
+	expect(await now()).toEqual(sorted([lager, privat]));
+	expect(await mandateProjects()).toEqual(sorted([lager]));
+	// A group member that was not frozen leaves with the group.
+	expect((await page.request.patch(`/v1/project-groups/${technik}`, { data: { projectIDs: [heizung] } })).ok()).toBeTruthy();
+	expect(await now()).toEqual(sorted([privat]));
+	expect(await mandateProjects()).toEqual([]);
+});
+
+test('a mandate rule alone is not frozen into the connection; choosing the group keeps the mandate', async () => {
+	const made = await page.request.post('/v1/project-groups', { data: { name: 'Netz', projectIDs: [heizung, lager] } });
+	expect(made.ok(), await made.text()).toBeTruthy();
+	const netz = ((await made.json()) as { group: { id: string } }).group.id;
+	const name = 'Claude Code (Netz)';
+	const reg = await page.request.post('/oauth/register', { data: { client_name: name, redirect_uris: [CALLBACK], token_endpoint_auth_method: 'none' } });
+	const clientID = ((await reg.json()) as { client_id: string }).client_id;
+	const own = (project: string) => page.locator('fieldset > .plist').getByRole('checkbox', { name: project });
+
+	const verifier = await openConsent(clientID);
+	await own('Privat').check();
+	await allow(clientID, verifier);
+	const grant = ((await (await page.request.get('/oauth/grants')).json()) as { id: string }[]).find((g) => JSON.stringify(g).includes(name))!;
+	const put = await page.request.put('/v1/settings/brain-mandate', {
+		data: { grantID: grant.id, projectIDs: [], selection: { mode: 'selected', groupIDs: [netz], excludedProjectIDs: [], excludedGroupIDs: [] } }
+	});
+	expect(put.ok(), await put.text()).toBeTruthy();
+
+	const again = await openConsent(clientID);
+	const card = page.locator('#takeover');
+	await expect(own('Privat')).toBeChecked();
+	await expect(own('Heizung')).not.toBeChecked();
+	await expect(own('Lager')).not.toBeChecked();
+	// Without the group the mandate would end; the page says so before the click.
+	await expect(card.locator('#lost')).toHaveText('Fällt mit dieser Auswahl aus der Vollmacht: Heizung, Lager.');
+	await page.locator('.grouplist').getByRole('checkbox', { name: 'Netz' }).check();
+	await expect(card.locator('#lost')).toBeHidden();
+	await expect(page.locator('#effective')).toContainText('3 Projekte: Heizung, Lager, Privat.');
+	token = (await allow(clientID, again)).access;
+	expect(await mandateProjects()).toEqual(sorted([heizung, lager]));
+	expect((await page.request.patch(`/v1/project-groups/${netz}`, { data: { projectIDs: [heizung] } })).ok()).toBeTruthy();
+	expect(await mandateProjects()).toEqual(sorted([heizung]));
+});
