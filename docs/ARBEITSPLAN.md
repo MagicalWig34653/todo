@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (20:35): UX-Konzept der PWA mit Zeitleiste liegt vor (Karte `607DB96E`; kein Umbau)
+
+- Konzept: `design/ux-konzept/konzept.md` (Ist-Aufnahme, Wireframes, `tafel.png`). Merge von `t3/ux-konzept-pwa-zeitleiste`; `node --test design/ux-konzept/check.test.mjs` 5/5. Klickzahlen „nachher“ stammen aus dem Konzept, nicht gemessen.
+- Offen: Linos Review mit drei Entscheidungen (Navigation, Feld „Beginn“, Modus Klassisch/Projektmanagement); Zeitleisten-Karte `8F6C48E2`.
+- Nächster Schritt: nach dem Review Umbau in den 9 Schritten aus dem Konzept, jeder einzeln auslieferbar.
+
 ## Checkpoint 26.11.2026 (19:35): Projektgruppen sicherheitsgeprüft, Deploy `sha-da95daf` bei Lino
 
 - Belege: `docs/STATUS.md` (oberster Nachtrag), Karte `0E5CCA05`.
