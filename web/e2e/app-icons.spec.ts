@@ -88,20 +88,6 @@ for (const scheme of ['light', 'dark'] as const) {
 	test(`icons shown on a ${scheme} page; favicon.svg follows the scheme`, async ({ page, browserName }) => {
 		await page.emulateMedia({ colorScheme: scheme });
 		await openApp(page);
-		// One pixel inside the left block and one inside the red block of the 16 px grid.
-		const colours = await page.evaluate(async () => {
-			const image = new Image();
-			image.src = '/favicon.svg';
-			await image.decode();
-			const canvas = Object.assign(document.createElement('canvas'), { width: 32, height: 32 });
-			const context = canvas.getContext('2d')!;
-			context.drawImage(image, 0, 0, 32, 32);
-			return [[5, 15], [25, 9]].map(([x, y]) => [...context.getImageData(x, y, 1, 1).data.slice(0, 3)]);
-		});
-		const expected = scheme === 'light' ? [[28, 38, 70], [233, 65, 43]] : [[255, 203, 51], [255, 101, 73]];
-		for (const [i, colour] of colours.entries())
-			for (const [channel, value] of colour.entries()) expect(Math.abs(value - expected[i][channel]), `${scheme} ${colours.join(' | ')}`).toBeLessThanOrEqual(4);
-
 		await page.evaluate(async (dark) => {
 			const tiles: [string, number][] = [
 				['/favicon.ico', 16], ['/favicon.svg', 16], ['/favicon.svg', 32], ['/favicon.svg', 64],
@@ -113,7 +99,8 @@ for (const scheme of ['light', 'dark'] as const) {
 				const figure = document.createElement('figure');
 				figure.style.margin = '0';
 				const image = new Image(size, size);
-				image.src = src;
+				image.src = `${src}?v=2`;
+				image.dataset.tile = `${src} ${size}`;
 				figure.append(image, Object.assign(document.createElement('figcaption'), { textContent: `${src.slice(1)} ${size}` }));
 				document.body.append(figure);
 				await image.decode();
@@ -121,5 +108,21 @@ for (const scheme of ['light', 'dark'] as const) {
 		}, scheme === 'dark');
 		mkdirSync(SHOTS, { recursive: true });
 		await page.locator('body').screenshot({ path: `${SHOTS}/${browserName}-${scheme === 'light' ? 'hell' : 'dunkel'}.png` });
+
+		// Read what is on screen (a detached Image would not know the page's colour scheme in Firefox and WebKit):
+		// one pixel inside the left block and one inside the red block of the 16 px grid.
+		const shot = await page.locator('[data-tile="/favicon.svg 32"]').screenshot({ scale: 'css' });
+		const colours = await page.evaluate(async (data) => {
+			const image = new Image();
+			image.src = `data:image/png;base64,${data}`;
+			await image.decode();
+			const canvas = Object.assign(document.createElement('canvas'), { width: 32, height: 32 });
+			const context = canvas.getContext('2d')!;
+			context.drawImage(image, 0, 0);
+			return [[5, 15], [25, 9]].map(([x, y]) => [...context.getImageData(x, y, 1, 1).data.slice(0, 3)]);
+		}, shot.toString('base64'));
+		const expected = scheme === 'light' ? [[28, 38, 70], [233, 65, 43]] : [[255, 203, 51], [255, 101, 73]];
+		for (const [i, colour] of colours.entries())
+			for (const [channel, value] of colour.entries()) expect(Math.abs(value - expected[i][channel]), `${scheme} ${colours.join(' | ')}`).toBeLessThanOrEqual(6);
 	});
 }

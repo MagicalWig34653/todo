@@ -1,5 +1,4 @@
 <script lang="ts">
-	import favicon from '#lib/assets/favicon.svg';
 	import './layout.css';
 	import { onMount } from 'svelte';
 	import { auth } from '#lib/auth.svelte.js';
@@ -37,7 +36,6 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
 	<title>Todolino</title>
 </svelte:head>
 

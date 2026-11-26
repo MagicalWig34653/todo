@@ -1,7 +1,7 @@
 # Todolino – vier Icon-Entwürfe (November 2026)
 
-Karte `75EAE344`. Stand 26.11.2026: **Entwürfe liegen vor, Wahl offen, nichts eingebaut.**
-`design/icon/Todo.icon`, `web/static` und das Apple-Repository sind unverändert.
+Karte `75EAE344`. **Archiv.** Lino hat am 26.11.2026 Entwurf D gewählt; die fertige Fassung steht in
+[`design/icon/`](../README.md). Der Text unten beschreibt den Stand vor der Wahl.
 
 ![Übersicht](uebersicht.png)
 
