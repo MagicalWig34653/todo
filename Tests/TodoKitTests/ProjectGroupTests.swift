@@ -619,6 +619,46 @@ extension ProjectGroupTests {
         }
     }
 
+    /// Lesson of the token rotation (security review 26.11.2026): the locks of a group change must stay on the person's own
+    /// rows. Without a fitting index order MariaDB walks the whole primary key and locks other people's mandates.
+    func testGroupChangeLocksOnlyThePersonsRows() async throws {
+        guard TestApp.useMariaDB else { throw XCTSkip("row locks required (MariaDB)") }
+        let t = try await TestApp.make()
+        do {
+            let app = t.app, db = app.db
+            let client = OAuthClient(name: "locks", redirects: []); try await client.save(on: db)
+            let clientID = try client.requireID()
+            func person(_ connections: Int) async throws -> (user: UUID, mandate: UUID, grant: UUID) {
+                let u = User(displayName: "locks \(UUID())", isAdmin: false); try await u.save(on: db)
+                let userID = try u.requireID()
+                var last = (mandate: UUID(), grant: UUID())
+                for _ in 0..<connections {
+                    let g = OAuthGrant(userID: userID, clientID: clientID, resource: "r", scopes: [], projects: []); try await g.save(on: db)
+                    let m = BrainMandate(userID: userID, grantID: try g.requireID(), projects: []); try await m.save(on: db)
+                    last = (try m.requireID(), try g.requireID())
+                }
+                return (userID, last.mandate, last.grant)
+            }
+            // One person owns nearly every row: the case in which the optimiser prefers the primary key.
+            let a = try await person(60), b = try await person(2)
+            let sql = try XCTUnwrap(db as? any SQLDatabase)
+            try await sql.raw("ANALYZE TABLE brain_mandates, oauth_grants").run()
+            var loops = app.eventLoopGroup.makeIterator()
+            let first = try XCTUnwrap(loops.next()), second = try XCTUnwrap(loops.next())
+            let holding = try XCTUnwrap(app.databases.database(logger: app.logger, on: first))
+            let asking = try XCTUnwrap(app.databases.database(logger: app.logger, on: second))
+            try await holding.transaction { holder in
+                try await ProjectGroupService.lock(userID: a.user, on: holder)
+                try await asking.transaction { other in
+                    try await (other as! any SQLDatabase).raw("SET innodb_lock_wait_timeout = 1").run()
+                    try await lockRow(table: BrainMandate.schema, id: b.mandate, on: other)
+                    try await lockRow(table: OAuthGrant.schema, id: b.grant, on: other)
+                }
+            }
+        } catch { await t.shutdown(); XCTFail("\(String(reflecting: error))"); return }
+        await t.shutdown()
+    }
+
     /// Group changes lock mandates before grants like decisions do; on MariaDB a wrong order shows up as a deadlock error.
     func testGroupChangesDecisionsAndAccessChangesAtOnce() async throws {
         guard TestApp.useMariaDB else { throw XCTSkip("row locks required (MariaDB)") }

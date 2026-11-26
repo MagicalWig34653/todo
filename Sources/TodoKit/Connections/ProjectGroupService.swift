@@ -47,7 +47,7 @@ enum ProjectGroupService {
         let explicit: [UUID]
     }
 
-    private static func lock(userID: UUID, on db: any Database) async throws {
+    static func lock(userID: UUID, on db: any Database) async throws {
         guard let sql = db as? any SQLDatabase else { throw Abort(.internalServerError) }
         guard sql.dialect.name != "sqlite" else { return }
         for table in [BrainMandate.schema, OAuthGrant.schema] {
