@@ -99,3 +99,8 @@ Plan: `docs/PLAN-PIPELINE-STUFE-2.md`, Vertrag `contracts/pipeline.yaml` 1.1.0. 
 - **Schritt-aus-Semantik** (Plan Abschnitt 1) und **Fix-Runden** (`retry` zählt je Planversion, Grenze `maxFixRounds`, 0 bis 10) sind reine Statusregeln im gemeinsamen Dienst `WorkflowService`; REST und MCP rufen dieselben Methoden. `planVersion` an Schrittmeldungen verhindert, dass ein Agent mit altem Plan neue Schritte überschreibt.
 - **Benachrichtigung bei wartender Freigabe**: Feed, Command Center, Updates und Push richten sich nach dem Recht `edit` und den Projekteinstellungen; Push mit Nachprüfung vor dem Senden (entschieden, ersetzt, ausgeschaltet oder Recht verloren = übersprungen), Kategorie `agent_reviews`, nie mit dem Plantext.
 - **Angriffsfläche**: Rechteausweitung nicht möglich (Vollmacht UND `manage` der Person); Selbsthochstufung über Modell/Effort nur mit Zitat der Person; Widerruf wirkt beim nächsten Aufruf; Modellnamen können keine Geheimnisse oder Befehle transportieren (enges Zeichenmuster, 100 Zeichen); Revision verhindert stilles Überschreiben.
+
+## Nachtrag 26.11.2026: Übernahme bei Neuanmeldung (Karte `BEF08998`)
+
+Entscheidung 1 bleibt (Identität = Grant-ID). Die Person kann beim erneuten Zustimmen eine Vollmacht von der früheren auf die neue Verbindung übertragen; eigene Anfragen der Vorgänger bleiben gesperrt. Details und Abwägung: [ADR 0036](0036-oauth-nachlauffenster-uebernahme.md).
+

@@ -20,7 +20,9 @@
 		selectionProblem,
 		toggleProject,
 		type BrainAuditItem,
-		type BrainMandate
+		type BrainMandate,
+		isTakeover,
+		listedMandates
 	} from '#lib/brainMandate.js';
 	import { describeError } from '#lib/errors.js';
 	import { t } from '#lib/i18n/index.js';
@@ -78,6 +80,7 @@
 	const chosenName = $derived(nameOfGrant(grantID));
 	const changing = $derived(!!chosenMandate && mandateStatus(chosenMandate) === 'active');
 	const shownAudit = $derived(showAllAudit ? audit : audit.slice(0, AUDIT_PREVIEW));
+	const listed = $derived(listedMandates(mandates));
 
 	function nameOfGrant(id: string | null | undefined, fallback?: string | null): string {
 		const g = id ? grants.find((x) => x.id.toLowerCase() === id.toLowerCase()) : undefined;
@@ -275,26 +278,32 @@
 			<div><Button size="sm" variant="outline" onclick={init}>{t('brainMandate.retry')}</Button></div>
 		</div>
 	{:else}
-		<section class={card} aria-labelledby="bm-list-title" data-testid="bm-list" data-count={mandates.length} tabindex="-1" bind:this={listEl}>
+		<section class={card} aria-labelledby="bm-list-title" data-testid="bm-list" data-count={listed.length} tabindex="-1" bind:this={listEl}>
 			<h3 id="bm-list-title" class={heading} data-testid="bm-list-title">{t('brainMandate.list.title')}</h3>
-			{#if mandates.length === 0}
+			{#if listed.length === 0}
 				<div class="text-muted-foreground flex flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-8 text-center text-sm" data-testid="bm-empty">
 					<p class="text-foreground font-medium">{t('brainMandate.current.empty.title')}</p>
 					<p>{t('brainMandate.current.empty.text')}</p>
 				</div>
 			{:else}
 				<ul class="flex flex-col gap-3">
-					{#each mandates as m (m.grantID)}
+					{#each listed as m (m.grantID)}
 						{@const st = mandateStatus(m)}
 						{@const name = nameOfGrant(m.grantID, m.grantName)}
 						{@const scope = resolveScope(m.projectIDs, projects)}
 						<li class="flex flex-col gap-3 rounded-lg border p-3 sm:p-4" class:opacity-80={st !== 'active'} data-testid="bm-mandate" data-grant-id={m.grantID.toLowerCase()} data-status={st}>
 							<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 								<h4 class="min-w-0 text-sm font-semibold break-words" data-testid="bm-grant-name">{name}</h4>
-								<Badge variant={st === 'active' ? 'success' : st === 'revoked' ? 'outline' : 'warning'} data-testid="bm-status">{st === 'active' ? t('brainMandate.status.active') : st === 'revoked' ? t('brainMandate.status.revoked') : t('brainMandate.status.grantRevoked')}</Badge>
+								<Badge variant={st === 'active' ? 'success' : st === 'revoked' ? 'outline' : 'warning'} data-testid="bm-status">{st === 'active' ? t('brainMandate.status.active') : st === 'revoked' ? t('brainMandate.status.revoked') : st === 'recoverable' ? t('brainMandate.status.recoverable') : t('brainMandate.status.grantRevoked')}</Badge>
 							</div>
 							{#if st === 'grant_revoked'}
 								<p class="bg-warning-soft text-warning rounded-lg px-3 py-2 text-sm" data-testid="bm-void">{t('brainMandate.status.grantRevoked.text', { name })}</p>
+							{/if}
+							{#if st === 'recoverable'}
+								<p class="bg-warning-soft text-warning rounded-lg px-3 py-2 text-sm" data-testid="bm-recoverable">{t('brainMandate.status.recoverable.text', { name })}</p>
+							{/if}
+							{#if m.takenOver}
+								<p class="bg-success-soft text-success rounded-lg px-3 py-2 text-sm break-words" data-testid="bm-taken-over">{t('brainMandate.current.takenOver', { name: m.takenOver.fromName, when: formatWhen(m.takenOver.at) })}</p>
 							{/if}
 							{#if st === 'revoked' && m.revokedAt}
 								<p class={muted} data-testid="bm-was-revoked">{t('brainMandate.current.wasRevoked', { name, when: formatWhen(m.revokedAt) })}</p>
@@ -331,7 +340,9 @@
 								</div>
 							{:else}
 								<div class="flex flex-wrap gap-2">
-									{#if st === 'active'}
+									{#if st === 'recoverable'}
+										<Button size="sm" variant="destructive" type="button" onclick={() => askRevoke(m.grantID)} disabled={busy} aria-label={t('brainMandate.revoke.buttonFor', { name })} data-testid="bm-revoke">{t('brainMandate.revoke.button')}</Button>
+									{:else if st === 'active'}
 										<Button size="sm" variant="outline" type="button" onclick={() => edit(m.grantID)} disabled={busy} aria-label={t('brainMandate.current.editFor', { name })} data-testid="bm-edit">{t('brainMandate.current.edit')}</Button>
 										<Button size="sm" variant="destructive" type="button" onclick={() => askRevoke(m.grantID)} disabled={busy} aria-label={t('brainMandate.revoke.buttonFor', { name })} data-testid="bm-revoke">{t('brainMandate.revoke.button')}</Button>
 									{:else if eligible.some((g) => g.id.toLowerCase() === m.grantID.toLowerCase())}
@@ -467,8 +478,12 @@
 									<span class="text-muted-foreground text-xs">{formatWhen(a.createdAt)}</span>
 									<span class="text-muted-foreground text-xs" data-testid="bm-audit-via">{t('brainMandate.audit.via', { name: via })}</span>
 								</div>
-								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}{#if !a.taskID} · <span data-testid="bm-audit-target">{t('brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
-								<blockquote class="border-l-2 pl-2 break-words whitespace-pre-wrap" aria-label={t('brainMandate.audit.quote')}>{a.quote}</blockquote>
+								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}{#if !a.taskID}{' · '}<span data-testid="bm-audit-target">{t(isTakeover(a.kind) ? 'brainMandate.audit.from' : 'brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
+								{#if isTakeover(a.kind)}
+									<p class="break-words">{a.quote}</p>
+								{:else}
+									<blockquote class="border-l-2 pl-2 break-words whitespace-pre-wrap" aria-label={t('brainMandate.audit.quote')}>{a.quote}</blockquote>
+								{/if}
 								{#if a.note}<p class="text-muted-foreground text-xs break-words whitespace-pre-wrap"><span class="font-medium">{t('brainMandate.audit.note')}:</span> {a.note}</p>{/if}
 								{#if a.taskID}
 									{@const taskID = a.taskID}

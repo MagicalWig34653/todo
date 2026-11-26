@@ -88,7 +88,7 @@ struct OAuthController: RouteCollection {
         var allowed = CharacterSet.alphanumerics; allowed.insert(charactersIn: "-._~")
         return URLQueryItem(name: name, value: value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
     }
-    struct Pending: Codable { var userID: UUID; var request: Authorization }
+    struct Pending: Codable { var userID: UUID; var request: Authorization; var takeover: OAuthTakeover.Offer? = nil }
     static func pack<T: Encodable>(_ value: T) throws -> String { String(decoding: try JSONEncoder().encode(value), as: UTF8.self) }
     /// Browsers (Accept: text/html) get the consent page; it talks to the JSON contract below.
     @Sendable func authorize(_ req: Request) async throws -> Response {
@@ -120,14 +120,36 @@ struct OAuthController: RouteCollection {
               Set(scope.split(separator: " ").map(String.init)).isSubset(of: Set(Self.scopes)),
               let c = try await OAuthClient.find(b.client_id, on: req.db), c.redirects.contains(b.redirect_uri)
         else { throw Abort(.badRequest, reason: "invalid_request") }
+        // ADR 0036: what this sign-in may take over. Only shown here; it moves with the person's click.
+        let found = try await OAuthTakeover.find(user: user, client: c, redirect: b.redirect_uri, resource: req.application.settings.oauthResource, on: req.db)
+        var offer: OAuthTakeover.Offer?
+        if case .one(let candidate) = found {
+            offer = .init(grantID: try candidate.grant.requireID(), mandateProjects: candidate.mandateProjects.compactMap(\.id))
+        }
         let raw = AuthSupport.randomToken()
-        try await OAuthSecret(raw: raw, kind: "consent", payload: Self.pack(Pending(userID: try user.requireID(), request: b)), lifetime: 300).save(on: req.db)
-        let projects = try await Project.query(on: req.db).filter(\.$ownerID == user.requireID()).all()
-        return .object(["consent_token": .string(raw), "client_name": .string(c.name), "client_id": .string(b.client_id.uuidString), "default_name": .string(ConnectionNames.defaultName(c.name)),
-            "redirect_uri": .string(b.redirect_uri), "scopes": .strings(scope.split(separator: " ").map(String.init)),
-            "projects": try .encoded(projects.map(ProjectDTO.init))])
+        try await OAuthSecret(raw: raw, kind: "consent", payload: Self.pack(Pending(userID: try user.requireID(), request: b, takeover: offer)), lifetime: 300).save(on: req.db)
+        var projects = try await Project.query(on: req.db).filter(\.$ownerID == user.requireID()).all()
+        var body: [String: JSONValue] = ["consent_token": .string(raw), "client_name": .string(c.name), "client_id": .string(b.client_id.uuidString), "default_name": .string(ConnectionNames.defaultName(c.name)),
+            "redirect_uri": .string(b.redirect_uri), "scopes": .strings(scope.split(separator: " ").map(String.init))]
+        switch found {
+        case .none: break
+        case .ambiguous: body["takeover_ambiguous"] = .bool(true)
+        case .one(let candidate):
+            // Shared projects of the old connection have to be visible (and uncheckable) too.
+            let listed = Set(projects.compactMap(\.id))
+            projects += candidate.projects.filter { p in p.id.map { !listed.contains($0) } ?? false }
+            body["takeover"] = .object(["grant_id": .string(try candidate.grant.requireID().uuidString), "name": .string(candidate.name),
+                "match": .string(candidate.match.rawValue), "reason": .string(candidate.grant.revoked ? "replay" : "active"),
+                "project_ids": .strings(try candidate.projects.map { try $0.requireID().uuidString }),
+                "mandate": candidate.mandate == nil ? .null : .object([
+                    "project_ids": .strings(try candidate.mandateProjects.map { try $0.requireID().uuidString }),
+                    "project_names": .strings(candidate.mandateProjects.map(\.name))])])
+        }
+        body["projects"] = try .encoded(projects.map(ProjectDTO.init))
+        return .object(body)
     }
-    struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool; var connection_name: String? }
+    /// `takeover_grant_id` (ADR 0036): the offered connection the person decided to take over; absent means none.
+    struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool; var connection_name: String?; var takeover_grant_id: UUID? }
     @Sendable func consent(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
         let b = try req.content.decode(Consent.self)
@@ -140,8 +162,17 @@ struct OAuthController: RouteCollection {
         // Look the row up before the transaction: MariaDB's snapshot isolation fails a locking read that follows
         // a plain read in the same transaction when the row changed in between ("Record has changed since last read").
         guard let found = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(b.consent_token)).first() else { throw Abort(.badRequest) }
+        let userID = try user.requireID()
         return try await req.db.transaction { db in
             try await lockRow(table: OAuthSecret.schema, id: found.requireID(), on: db)
+            // All locks before the first plain read (MariaDB snapshot), in the order of the mandate service:
+            // sharing graph, person, mandate, connection.
+            if b.approve, let old = b.takeover_grant_id {
+                try await lockSharingGraph(on: db)
+                try await lockRow(table: User.schema, id: userID, on: db)
+                _ = try await lockedMandate(userID: userID, grantID: old, on: db)
+                try await lockRow(table: OAuthGrant.schema, id: old, on: db)
+            }
             guard let s = try await OAuthSecret.find(found.id, on: db), s.kind == "consent", !s.consumed, s.expiresAt > Date() else { throw Abort(.badRequest) }
             let pending = try JSONDecoder().decode(Pending.self, from: Data(s.payload.utf8))
             guard pending.userID == user.id else { throw Abort(.notFound) }
@@ -155,11 +186,27 @@ struct OAuthController: RouteCollection {
                 let mayCreateProjects = (a.scope ?? "").split(separator: " ").contains("projects:write")
                 guard !b.project_ids.isEmpty || mayCreateProjects else { throw Abort(.badRequest, reason: "projects_required") }
                 for id in b.project_ids { _ = try await ProjectAccess(user: user, db: db).project(id) }
-                let clientName = try await OAuthClient.find(a.client_id, on: db)?.name
-                let g = OAuthGrant(userID: try user.requireID(), clientID: a.client_id, resource: req.application.settings.oauthResource,
+                guard let client = try await OAuthClient.find(a.client_id, on: db) else { throw Abort(.badRequest) }
+                var takeover: (OAuthTakeover.Candidate, OAuthTakeover.Offer)?
+                if let old = b.takeover_grant_id {
+                    // Checked again now: it must still be exactly the connection the page offered.
+                    guard let offer = pending.takeover, offer.grantID == old,
+                          // A fresh read of the account: the session user was loaded before the lock.
+                          let person = try await User.find(userID, on: db),
+                          case .one(let candidate) = try await OAuthTakeover.find(user: person, client: client, redirect: a.redirect_uri,
+                                                                                    resource: req.application.settings.oauthResource, on: db),
+                          candidate.grant.id == old else { throw Abort(.conflict, reason: "takeover_changed") }
+                    takeover = (candidate, offer)
+                }
+                let g = OAuthGrant(userID: userID, clientID: a.client_id, resource: req.application.settings.oauthResource,
                                    scopes: (a.scope ?? "").split(separator: " ").map(String.init), projects: Array(Set(b.project_ids)),
-                                   name: chosenName ?? ConnectionNames.defaultName(clientName))
+                                   name: chosenName ?? ConnectionNames.defaultName(client.name))
+                if let (candidate, _) = takeover {
+                    g.predecessors = (candidate.grant.predecessors ?? []) + [try candidate.grant.requireID()]
+                    g.takenOverAt = Date()
+                }
                 try await g.save(on: db)
+                if let (candidate, offer) = takeover { try await OAuthTakeover.handOver(candidate, to: g, offer: offer, user: user, on: db) }
                 let code = AuthSupport.randomToken()
                 try await OAuthSecret(raw: code, kind: "code", grantID: g.requireID(), payload: Self.pack(a), lifetime: 120).save(on: db)
                 items.append(Self.encodedItem("code", code))

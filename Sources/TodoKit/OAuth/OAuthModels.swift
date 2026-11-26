@@ -28,6 +28,9 @@ final class OAuthGrant: Model, @unchecked Sendable {
     /// `OAuthRevocation`; nil for live grants and for grants revoked before ADR 0036 (cause unknown).
     @OptionalField(key: "revoked_reason") var revokedReason: String?
     @OptionalField(key: "revoked_at") var revokedAt: Date?
+    /// Connections this one took over, oldest first (ADR 0036); nil for a connection that took over nothing.
+    @OptionalField(key: "predecessors") var predecessors: [UUID]?
+    @OptionalField(key: "taken_over_at") var takenOverAt: Date?
     init() {}
     init(userID: UUID, clientID: UUID, resource: String, scopes: [String], projects: [UUID], name: String? = nil) {
         self.userID = userID; self.clientID = clientID; self.resource = resource

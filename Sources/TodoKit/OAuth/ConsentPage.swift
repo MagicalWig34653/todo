@@ -74,6 +74,30 @@ enum ConsentPage {
       const back = el('p', 'Danach geht es zurück zu: ', head, 'back');
       el('span', d.redirect_uri, back, 'uri');
 
+      // ADR 0036: what this sign-in would take over has to be readable before the click.
+      const old = d.takeover;
+      let take = null;
+      if (old) {
+        const tc = card(); tc.id = 'takeover';
+        const what = old.mandate ? 'Projekte und Brain-Vollmacht' : 'Projekte';
+        el('h2', what + ' übernehmen', tc);
+        const row = el('label', '', tc, 'prow takerow');
+        take = el('input', '', row); take.type = 'checkbox'; take.id = 'takebox'; take.checked = true;
+        el('span', what + ' von „' + old.name + '“ übernehmen', row, 'pname');
+        const n = old.project_ids.length;
+        el('p', (n === 1 ? '1 Projekt ist' : n + ' Projekte sind') + ' unten vorausgewählt. Die bisherige Verbindung „' + old.name + '“ wird dabei beendet.' + (old.reason === 'replay' ? ' Sie wurde zuvor aus Sicherheitsgründen abgemeldet.' : ''), tc, 'muted');
+        if (old.mandate) {
+          const m = old.mandate.project_names;
+          el('p', 'Brain-Vollmacht: Die neue Verbindung darf dann in deinem Auftrag entscheiden in ' + (m.length === 1 ? 'diesem Projekt' : 'diesen ' + m.length + ' Projekten') + ': ' + m.join(', ') + '.', tc, 'mandate');
+          el('p', 'Projekte, die du unten abwählst, fallen auch aus der Vollmacht.', tc, 'muted');
+        }
+        if (old.match === 'name') el('p', 'Achtung: Nur am gleichen Namen erkannt. Dieses Programm hat sich neu angemeldet, und Namen kann jedes Programm frei wählen. Übernimm nur, wenn du diese Anmeldung gerade selbst auf deinem Gerät gestartet hast.', tc, 'warning');
+      } else if (d.takeover_ambiguous) {
+        const tc = card(); tc.id = 'takeover';
+        el('h2', 'Nichts wird übernommen', tc);
+        el('p', 'Mehrere frühere Verbindungen passen zu dieser Anmeldung. Wähle die Projekte unten selbst; eine Brain-Vollmacht erteilst du danach in den Einstellungen.', tc, 'muted');
+      }
+
       const nc = card();
       const nl = el('label', 'Name der Verbindung', nc, 'fieldlabel'); nl.htmlFor = 'conname';
       const nameInput = el('input', '', nc, 'search namefield'); nameInput.id = 'conname'; nameInput.type = 'text'; nameInput.maxLength = 80; nameInput.autocomplete = 'off';
@@ -151,6 +175,16 @@ enum ConsentPage {
         none.onclick = () => setVisible(false);
       }
       function update() { count.textContent = boxes.filter(b => b.checked).length + ' von ' + boxes.length + ' Projekten ausgewählt'; }
+      if (take) {
+        const fresh = nameInput.value;
+        const apply = () => {
+          boxes.forEach(b => { if (old.project_ids.includes(b.value)) b.checked = take.checked; });
+          nameInput.value = take.checked ? String(old.name).slice(0, 80) : fresh;
+          update();
+        };
+        take.addEventListener('change', apply);
+        apply();
+      }
       update();
 
       const bar = el('div', '', root, 'bar');
@@ -162,8 +196,12 @@ enum ConsentPage {
         msg.textContent = ''; ok.disabled = true; no.disabled = true;
         const res = await fetch('/oauth/consent', { method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ consent_token: d.consent_token, approve: approve, project_ids: approve ? ids : [], connection_name: approve ? nameInput.value : undefined }) });
-        if (!res.ok) { msg.textContent = 'Fehlgeschlagen (' + res.status + ').'; ok.disabled = false; no.disabled = false; return; }
+          body: JSON.stringify({ consent_token: d.consent_token, approve: approve, project_ids: approve ? ids : [], connection_name: approve ? nameInput.value : undefined,
+            takeover_grant_id: approve && take && take.checked ? old.grant_id : undefined }) });
+        if (!res.ok) {
+          msg.textContent = res.status === 409 ? 'Die bisherige Verbindung hat sich inzwischen geändert. Lade die Seite neu und prüfe die Übernahme.' : 'Fehlgeschlagen (' + res.status + ').';
+          ok.disabled = false; no.disabled = false; return;
+        }
         const out = await res.json();
         location.href = out.redirect_uri;
       }
@@ -219,6 +257,10 @@ enum ConsentPage {
     .prow:hover{background:var(--secondary)}
     .prow input{flex:none;width:1.25rem;height:1.25rem;accent-color:var(--accent)}
     .pname{min-width:0;overflow-wrap:break-word;hyphens:auto}
+    .takerow{padding-left:0;font-weight:600}
+    .takerow:hover{background:none}
+    .mandate{font-size:.95rem;overflow-wrap:anywhere}
+    .warning{margin-top:.75rem;padding:.75rem;border-radius:var(--radius);background:var(--warn-soft);border:1px solid var(--warn);font-weight:600;font-size:.95rem}
     .count{font-size:.9rem;font-weight:600;color:var(--accent-ink)}
     .msg{color:var(--warn);font-weight:600;margin:0}
     .msg:empty{display:none}

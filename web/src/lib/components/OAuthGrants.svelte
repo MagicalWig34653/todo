@@ -2,7 +2,7 @@
 	import { api, type OAuthGrant, type Project } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
-	import { connectionName, mayBeEmpty, nextGrantProjects, resolveGrantProjects, scopeLabel, sortGrants } from '#lib/oauth.js';
+	import { connectionName, mayBeEmpty, nextGrantProjects, resolveGrantProjects, revocationKey, scopeLabel, sortGrants } from '#lib/oauth.js';
 	import { createKeyedGate, createLatest } from '#lib/serial.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -95,13 +95,20 @@
 				<div class="flex flex-wrap items-center gap-2">
 					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']} data-testid="oauth-name"><strong>{connectionName(g)}</strong>{#if g.client_name && g.client_name !== connectionName(g)} <span class="text-muted-foreground text-xs">({g.client_name})</span>{/if}</span>
 					{#if g.revoked}
-						<span class="text-muted-foreground text-xs">{t('account.oauth.revoked')}</span>
+						<span class="text-muted-foreground text-xs" data-testid="oauth-revoked">{t(revocationKey(g))}</span>
 					{:else}
 						<Button size="xs" variant="outline" disabled={busyIDs.includes(g.id)} onclick={() => startRename(g)} data-testid="oauth-rename">{t('account.oauth.rename')}</Button>
 						<Button size="xs" variant="outline" disabled={busyIDs.includes(g.id)} onclick={() => edit(g)} data-testid="oauth-edit">{t('account.oauth.editProjects')}</Button>
 						<Button size="xs" variant="destructive" disabled={busyIDs.includes(g.id)} onclick={() => (confirmID = g.id)}>{t('account.oauth.revoke')}</Button>
 					{/if}
 				</div>
+				{#if g.revoked_reason === 'replay'}
+					<div class="bg-warning-soft text-warning mt-1 flex flex-col items-start gap-2 rounded-lg px-3 py-2 text-sm" data-testid="oauth-replay">
+						<p>{t('account.oauth.revoked.replay.text')}</p>
+						<!-- Ends it for good: a revocation by the person is never taken over. -->
+						<Button size="xs" variant="outline" disabled={busyIDs.includes(g.id)} onclick={() => revoke(g)} data-testid="oauth-replay-end">{t('account.oauth.revoked.replay.end')}</Button>
+					</div>
+				{/if}
 				{#if renameID === g.id}
 					<form class="mt-1 flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); void saveName(g); }}>
 						<Input class="min-w-40 flex-1" maxlength={80} aria-label={t('account.oauth.name')} bind:value={nameDraft} data-testid="oauth-name-input" />

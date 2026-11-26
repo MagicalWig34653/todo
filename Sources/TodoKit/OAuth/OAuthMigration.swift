@@ -28,6 +28,19 @@ struct AddOAuthReuseAndRevocation: AsyncMigration {
     }
 }
 
+/// ADR 0036: which connections a connection took over after a new sign-in. Additive and nullable; same ordering rule as
+/// `AddOAuthReuseAndRevocation`.
+struct AddOAuthGrantLineage: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema("oauth_grants").field("predecessors", .json).update()
+        try await db.schema("oauth_grants").field("taken_over_at", .datetime).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema("oauth_grants").deleteField("predecessors").update()
+        try await db.schema("oauth_grants").deleteField("taken_over_at").update()
+    }
+}
+
 struct CreateOAuthSchema: AsyncMigration {
     func prepare(on db: any Database) async throws {
         try await db.schema("oauth_clients").id().field("name", .string, .required)

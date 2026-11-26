@@ -88,7 +88,8 @@ extension WorkflowService {
             guard let plan = try await TaskPlan.query(on: tx).filter(\.$taskID == id).first() else {
                 throw Abort(.conflict, reason: "no_plan")
             }
-            if actor.type == .integration, plan.authorType == .integration, plan.authorID == actor.id {
+            if actor.type == .integration, plan.authorType == .integration,
+               try await OAuthGrant.isSameRequester(plan.authorID, as: actor.id, on: tx) {
                 throw Abort(.forbidden, reason: "cannot_decide_own_plan")
             }
             let authority = try await brainAuthority(for: actor, projectID: task.projectID, quote: quote, on: tx)

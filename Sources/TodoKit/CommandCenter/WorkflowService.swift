@@ -349,7 +349,8 @@ struct WorkflowService: Sendable {
         let owner = user, userID = try user.requireID()
         return try await mutate(initial.taskID, role: .comment) { task, tx in
             guard let q = try await TaskQuestion.find(questionID, on: tx) else { throw Abort(.notFound) }
-            if actor.type == .integration, q.askedByType == .integration, q.askedByID == actor.id {
+            if actor.type == .integration, q.askedByType == .integration,
+               try await OAuthGrant.isSameRequester(q.askedByID, as: actor.id, on: tx) {
                 throw Abort(.forbidden, reason: "cannot_answer_own_question")
             }
             let authority = try await brainAuthority(for: actor, projectID: task.projectID, quote: quote, on: tx)
@@ -481,7 +482,8 @@ struct WorkflowService: Sendable {
             }
             // The caller selected one specific review; a newer pending one must not be decided in its place.
             if let expectedReviewID, r.id != expectedReviewID { throw Abort(.conflict, reason: "no_pending_review") }
-            if actor.type == .integration, r.requestedByType == .integration, r.requestedByID == actor.id {
+            if actor.type == .integration, r.requestedByType == .integration,
+               try await OAuthGrant.isSameRequester(r.requestedByID, as: actor.id, on: tx) {
                 throw Abort(.forbidden, reason: "cannot_decide_own_review")
             }
             let authority = try await brainAuthority(for: actor, projectID: task.projectID, quote: quote, on: tx)

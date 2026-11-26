@@ -48,7 +48,7 @@ enum ReviewBrain {
             let reviewIDs = Set(candidates.compactMap(\.reviewID))
             guard !reviewIDs.isEmpty else { continue }
             let own = Set(try await TaskReview.query(on: db).filter(\.$id ~~ Array(reviewIDs)).filter(\.$requestedByType == .integration)
-                .filter(\.$requestedByID == mandate.grantID).all().compactMap(\.id))
+                .filter(\.$requestedByID ~~ ([mandate.grantID] + (grant.predecessors ?? []))).all().compactMap(\.id))
             result.formUnion(reviewIDs.subtracting(own))
         }
         return result
