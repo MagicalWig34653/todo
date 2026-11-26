@@ -1,5 +1,12 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (20:55): UX-Konzept angenommen, Umbau wartet auf Auftrag (Karte `607DB96E`)
+
+- Lino hat Review `94EDB61F` am 26.11. 20:30 angenommen, ohne Notiz; Karte auf „done“.
+- Deutung des Brains (kein Wortlaut von Lino): Es gelten die Empfehlungen (a) zu den offenen Entscheidungen in `design/ux-konzept/konzept.md`: fünf Bereiche, neues Datum „Beginn“, Modus Klassisch/Projektmanagement entfällt.
+- GitHub `6137ef5` grün: CI 45884011105, E2E 45884120789, Docker publish 45884011125, Pages 45884011530.
+- Nächster Schritt: Umbau nicht von selbst beginnen; das Brain beauftragt die Schritte einzeln nach Kapazität, zuerst Schritt 1 (Lesbarkeit).
+
 ## Checkpoint 26.11.2026 (20:35): UX-Konzept der PWA mit Zeitleiste liegt vor (Karte `607DB96E`; kein Umbau)
 
 - Konzept: `design/ux-konzept/konzept.md` (Ist-Aufnahme, Wireframes, `tafel.png`). Merge von `t3/ux-konzept-pwa-zeitleiste`; `node --test design/ux-konzept/check.test.mjs` 5/5. Klickzahlen „nachher“ stammen aus dem Konzept, nicht gemessen.
