@@ -1,6 +1,6 @@
 # Status
 
-## Nachtrag 26.11.2026 (20:35): UX-Konzept PWA mit Zeitleiste liegt vor (Karte `607DB96E`; nur Konzept, kein Umbau, kein Push)
+## Nachtrag 26.11.2026 (20:30): UX-Konzept PWA mit Zeitleiste liegt vor (Karte `607DB96E`; nur Konzept, kein Umbau, kein Push)
 
 - Branch `t3/ux-konzept-pwa-zeitleiste` ab `d429788`, alles unter `design/ux-konzept/`: `ist-aufnahme.md` (+ `ist/`), `konzept.md`, `wireframes/` (32 PNGs), `tafel.png`. Nichts unter `Sources/` oder `web/src` geändert.
 - Empfehlung: 5 Bereiche, ein Kartenfenster, Seiten zusammenlegen, Zeitleiste mit neuem Feld „Beginn“ (`start_on`) und Lese-Endpunkt; 9 Schritte, geschätzt 25–32 Agententage.
