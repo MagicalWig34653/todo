@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.10.0
+  version: 1.11.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -31,6 +31,9 @@ info:
     (runs:write, Rechte und Prüfungen wie start_agent_job); get_task_pipeline liefert zusätzlich execution; retry_pipeline_step durch eine
     Verbindung startet nichts (paused/continue_required). Kein Fortsetzen über MCP. Neue Fehlercodes: execution_id_conflict, execution_active,
     nothing_to_run, invalid_execution_id. Keine neuen Scopes.
+    1.11.0 (Karte BEF08998, ADR 0036, additiv, Handbuch 1.47.0): ein gerade rotiertes Refresh-Token darf 300 s lang erneut vorgelegt werden,
+    solange keiner seiner Nachfolger benutzt wurde; GET /oauth/authorize kann takeover bzw. takeover_ambiguous liefern, POST /oauth/consent nimmt
+    takeover_grant_id (409 takeover_changed); Grants tragen revoked_reason.
 servers:
   - url: http://localhost:28080
 paths:
@@ -94,6 +97,11 @@ paths:
             consent_token (5 Minuten, einmalig), client_name, default_name (Vorschlag für den Namen der Verbindung), client_id, redirect_uri,
             scopes und projects als ProjectDTO-Liste. Consent-Client muss Aktionen und
             Redirect-Ziel anzeigen und explizite Projektauswahl verlangen.
+            Seit 1.11.0 optional takeover {grant_id, name, match: client|name, reason: active|replay, project_ids[], mandate: null |
+            {project_ids[], project_names[]}}: genau eine frühere Verbindung derselben Person kann übernommen werden; projects enthält dann auch
+            ihre freigegebenen (geteilten) Projekte. takeover_ambiguous=true statt takeover, wenn mehrere passen. match=name: neu registrierter
+            Client mit gleichem Namen, nur zwischen Loopback-Redirects und nur für eine durch Replay-Erkennung beendete Verbindung. Der
+            Consent-Client muss Quelle, Vollmacht und match=name vor der Zustimmung deutlich anzeigen.
         '400': {description: Ungültige Anfrage; keine Weiterleitung bei ungültigem Redirect.}
         '401': {description: Bestehender Benutzerlogin erforderlich.}
   /oauth/consent:
@@ -110,6 +118,7 @@ paths:
                 consent_token: {type: string}
                 approve: {type: boolean}
                 connection_name: {type: string, maxLength: 80, description: 'Name der Verbindung; leer = Clientname; ungültig = 400 invalid_name.'}
+                takeover_grant_id: {type: string, format: uuid, description: 'Seit 1.11.0: die angebotene Verbindung (takeover.grant_id), deren Projekte und Vollmacht übernommen werden; ohne das Feld wird nichts übernommen. Die alte Verbindung wird beendet (revoked_reason superseded). project_ids bleibt die verbindliche Projektliste; abgewählte frühere Projekte fallen auch aus der Vollmacht.'}
                 project_ids:
                   type: array
                   items: {type: string, format: uuid}
@@ -121,6 +130,7 @@ paths:
             ein aktuell erlaubtes Projekt. Keine automatische Unterprojektfreigabe.
         '400': {description: Abgelaufener oder bereits verbrauchter Consent; fehlende Auswahl.}
         '404': {description: Fremdes Projekt oder fremder Consent.}
+        '409': {description: 'takeover_changed: die genannte Verbindung ist nicht (mehr) die angebotene und übernehmbare. Nichts wird angelegt, der Consent-Token bleibt unverbraucht.'}
   /oauth/token:
     post:
       requestBody:
@@ -134,15 +144,17 @@ paths:
         '200':
           description: >-
             access_token, refresh_token, token_type=Bearer, expires_in=900, scope.
-            Cache-Control no-store. Refresh rotiert mit neuer 30-Tage-Frist.
+            Cache-Control no-store. Refresh rotiert mit neuer 30-Tage-Frist. Seit 1.11.0: das verbrauchte Refresh-Token darf 300 s ab seiner
+            ersten Benutzung erneut kommen (gleicher Client, nicht abgelaufen, Verbindung aktiv, kein Nachfolger benutzt) und liefert ein
+            weiteres Paar; die erste Benutzung eines Nachfolgers entwertet dessen Geschwister.
         '400':
-          description: invalid_grant; Replay verbrauchter Codes/Refresh-Tokens widerruft den Grant.
+          description: invalid_grant; Replay verbrauchter Codes und Refresh-Tokens (außerhalb des Nachlauffensters) widerruft den Grant (revoked_reason replay).
   /oauth/grants:
     get:
       security: [{userSession: []}]
       responses:
         '200':
-          description: Eigene Grants mit id, client_id, client_name (bei der Registrierung angegeben, leer wenn unbekannt), name (Name der Verbindung, Standard Clientname), last_used_at (letzte MCP-Nutzung, höchstens alle 5 Minuten geschrieben, sonst null), scopes, project_ids und revoked.
+          description: Eigene Grants mit id, client_id, client_name (bei der Registrierung angegeben, leer wenn unbekannt), name (Name der Verbindung, Standard Clientname), last_used_at (letzte MCP-Nutzung, höchstens alle 5 Minuten geschrieben, sonst null), scopes, project_ids, revoked und revoked_reason (person|replay|superseded|account_locked, null wenn aktiv oder Ursache unbekannt).
   /oauth/grants/{id}:
     patch:
       security: [{userSession: []}]
@@ -161,7 +173,7 @@ paths:
       parameters:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
       responses:
-        '204': {description: Grant und damit alle zugehörigen Tokens widerrufen.}
+        '204': {description: 'Grant und damit alle zugehörigen Tokens widerrufen (revoked_reason person). Auch auf bereits widerrufene Grants: danach nie mehr übernehmbar.'}
         '404': {description: Fremder oder unbekannter Grant.}
   /oauth/grants/{id}/projects:
     put:

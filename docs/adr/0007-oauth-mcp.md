@@ -38,3 +38,8 @@ Testnachweise und die reale Claude-Code-Prüfung stehen in docs/STATUS.md (Absch
 - `get_progress` ist bewusst nur lesend und wie `GET /v1/agents/jobs/:id` dem Projekteigentümer vorbehalten (Agentenstart ist eine eigene Fähigkeit). Fortschritt und Checkpoints schreibt weiterhin ausschließlich der Runner mit Geräte-Token, Lease und Generationsprüfung; ein MCP-Schreibweg würde diese Absicherung umgehen.
 - Anhänge nur als Metadaten abgeschlossener Dateien; Inhalt bleibt beim authentifizierten REST-Download. Upload über MCP ist nicht umgesetzt.
 - Wartung: `App cleanup-expired [--grace-seconds N] [--batch-size N]` löscht abgelaufene Sitzungen, Challenges, Einladungen, Recovery-Grants, Rate-Limit-Fenster, OAuth-Secrets und Pairing-Codes (Standard: 24 h Nachlauf, damit verbrauchte Refresh-Tokens für die Replay-Erkennung noch kurz bleiben). Replikatsicher: idempotente Batches nach sortierter ID, keine langen Transaktionen, Rate-Limit-Zeit aus der Datenbankuhr. Ein Scheduler fehlt weiterhin (Aufruf per Cron/Swarm-Job).
+
+## Nachtrag 26.11.2026 – Nachlauffenster und Übernahme (Karte `BEF08998`)
+
+Die Regel „Wiederverwendung widerruft den gesamten Grant“ hat seit ADR 0036 eine enge Ausnahme für das gerade rotierte Refresh-Token, und eine Neuanmeldung kann Projekte und Vollmacht übernehmen: [0036-oauth-nachlauffenster-uebernahme.md](0036-oauth-nachlauffenster-uebernahme.md).
+

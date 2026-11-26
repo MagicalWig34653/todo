@@ -11,6 +11,16 @@ struct BrainMandateDTO: Content {
     let updatedAt: Date
     let revokedAt: Date?
     let lastUsedAt: Date?
+    /// ADR 0036: why the connection was revoked (`person`, `replay`, `superseded`, `account_locked`); absent otherwise.
+    let grantRevokedReason: String?
+    /// ADR 0036: set when this connection took the mandate over from an earlier one after a new sign-in.
+    let takenOver: BrainTakeoverDTO?
+}
+
+struct BrainTakeoverDTO: Content {
+    let fromGrantID: UUID
+    let fromName: String
+    let at: Date
 }
 
 /// One entry per connection that holds (or held) a mandate, most recently changed first; `[]` without any.
@@ -63,9 +73,15 @@ enum BrainMandateService {
         let grant = try await OAuthGrant.find(m.grantID, on: db)
         var client: String?
         if let grant { client = try await OAuthClient.find(grant.clientID, on: db)?.name }
+        var takenOver: BrainTakeoverDTO?
+        if let grant, let from = grant.predecessors?.last, let at = grant.takenOverAt, let old = try await OAuthGrant.find(from, on: db) {
+            let oldClient = try await OAuthClient.find(old.clientID, on: db)?.name
+            takenOver = BrainTakeoverDTO(fromGrantID: from, fromName: ConnectionNames.display(old, clientName: oldClient), at: at)
+        }
         return BrainMandateDTO(grantID: m.grantID, grantName: grant.map { ConnectionNames.display($0, clientName: client) },
             projectIDs: m.projects, active: m.revokedAt == nil && grant?.revoked == false,
-            createdAt: m.createdAt, updatedAt: m.updatedAt, revokedAt: m.revokedAt, lastUsedAt: grant?.lastUsedAt)
+            createdAt: m.createdAt, updatedAt: m.updatedAt, revokedAt: m.revokedAt, lastUsedAt: grant?.lastUsedAt,
+            grantRevokedReason: grant?.revoked == true ? grant?.revokedReason : nil, takenOver: takenOver)
     }
 
     static func list(userID: UUID, db: any Database) async throws -> [BrainMandateDTO] {

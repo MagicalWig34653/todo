@@ -1,5 +1,12 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (08:30): Vollmacht übersteht Neuanmeldung (Karte `BEF08998`, Teil 1 und 2)
+
+- Entscheidung ADR 0036: 300 s Nachlauffenster beim Refresh; Übernahme von Projekten und Vollmacht nur per Zustimmung der Person.
+- Stand: fertig auf `t3/oauth-replay-vollmacht-reauth` (`90f3d00` … `be7f09d` plus Doku), nicht gemergt, nicht gepusht. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Offen: Teil 3 (Projektgruppen/Tags); Docker/Linux- und CI-Lauf; Prüfung mit echtem Claude-Code-Client; Grenzen laut ADR 0036 („Offen“).
+- Nächster Schritt: Hauptsession prüft, mergt, pusht und stellt das Review; Lino deployt (Image plus zwei additive Migrationen).
+
 ## Checkpoint 26.11.2026 (08:05): Icon D fertig, PWA eingebaut (Karte `75EAE344`)
 
 - Lino wählte D (Kommentar 26.11. 07:46). `t3/icon-entwurf-d-bausteine`: `945e26a` rot, `cedf26a` grün; vitest 792/792, check 0, E2E `app-icons` 3 Browser grün. Nicht gepusht. Details: `docs/STATUS.md` (oberster Nachtrag).

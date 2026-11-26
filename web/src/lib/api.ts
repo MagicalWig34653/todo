@@ -541,6 +541,8 @@ export interface OAuthGrant {
 	scopes: string[];
 	project_ids: string[];
 	revoked: boolean;
+	/** ADR 0036: `person`, `replay`, `superseded` or `account_locked`; null/absent when unknown or not revoked. */
+	revoked_reason?: string | null;
 	/** Name of the connection (default: client name); absent on older servers. */
 	name?: string;
 	/** Last MCP request, ISO date; null/absent when never used. */

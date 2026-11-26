@@ -13,6 +13,34 @@ struct AddOAuthClientCreatedAt: AsyncMigration {
     }
 }
 
+/// ADR 0036 (card BEF08998): reuse window of rotated refresh tokens and the cause of a revocation. Additive and nullable:
+/// tokens rotated before get no window, connections revoked before keep an unknown cause and are never taken over. Runs
+/// before `AddOAuthGrantNameAndUsage`, which reads whole grant rows.
+struct AddOAuthReuseAndRevocation: AsyncMigration {
+    private static let columns: [(String, FieldKey, DatabaseSchema.DataType)] = [
+        ("oauth_secrets", "consumed_at", .datetime), ("oauth_secrets", "rotated_from", .uuid),
+        ("oauth_grants", "revoked_reason", .string), ("oauth_grants", "revoked_at", .datetime)]
+    func prepare(on db: any Database) async throws {
+        for (table, field, type) in Self.columns { try await db.schema(table).field(field, type).update() }
+    }
+    func revert(on db: any Database) async throws {
+        for (table, field, _) in Self.columns { try await db.schema(table).deleteField(field).update() }
+    }
+}
+
+/// ADR 0036: which connections a connection took over after a new sign-in. Additive and nullable; same ordering rule as
+/// `AddOAuthReuseAndRevocation`.
+struct AddOAuthGrantLineage: AsyncMigration {
+    func prepare(on db: any Database) async throws {
+        try await db.schema("oauth_grants").field("predecessors", .json).update()
+        try await db.schema("oauth_grants").field("taken_over_at", .datetime).update()
+    }
+    func revert(on db: any Database) async throws {
+        try await db.schema("oauth_grants").deleteField("predecessors").update()
+        try await db.schema("oauth_grants").deleteField("taken_over_at").update()
+    }
+}
+
 struct CreateOAuthSchema: AsyncMigration {
     func prepare(on db: any Database) async throws {
         try await db.schema("oauth_clients").id().field("name", .string, .required)

@@ -83,8 +83,10 @@ enum AccountLock {
         try await AuthChallenge.query(on: db).filter(\.$userID == uid).delete()
         try await RecoveryGrant.query(on: db).filter(\.$userID == uid).delete()
         try await Invitation.query(on: db).filter(\.$createdBy == uid).filter(\.$usedAt == nil).delete()
-        for grant in try await OAuthGrant.query(on: db).filter(\.$userID == uid).filter(\.$revoked == false).all() {
-            grant.revoked = true
+        // Connections ended by replay detection too: a locked account takes nothing over later (ADR 0036).
+        for grant in try await OAuthGrant.query(on: db).filter(\.$userID == uid).all()
+        where !grant.revoked || grant.revokedReason == OAuthRevocation.replay.rawValue {
+            grant.revoke(.accountLocked, now: now)
             try await grant.save(on: db)
         }
         for device in try await PushDevice.query(on: db).filter(\.$userID == uid).filter(\.$revokedAt == nil).all() {

@@ -14,6 +14,10 @@ export interface BrainMandate {
 	updatedAt: string;
 	revokedAt: string | null;
 	lastUsedAt: string | null;
+	/** ADR 0036: why the connection was revoked; absent when it is alive or the cause is unknown. */
+	grantRevokedReason?: string | null;
+	/** ADR 0036: this connection took the mandate over from an earlier one after a new sign-in. */
+	takenOver?: { fromGrantID: string; fromName: string; at: string } | null;
 }
 
 /** One row of `GET /v1/settings/brain-mandate/audit`. */
@@ -34,13 +38,22 @@ export interface BrainAuditItem {
 /** Server ceiling of projects in one mandate (`invalid_projects` above). */
 export const MAX_PROJECTS = 200;
 
-export type MandateStatus = 'active' | 'revoked' | 'grant_revoked';
+/** `recoverable`: signed out by replay detection, a new sign-in may take it over. `superseded`: a new sign-in did. */
+export type MandateStatus = 'active' | 'revoked' | 'grant_revoked' | 'recoverable' | 'superseded';
 
 /** Revoked by the person, or void because the connection itself was revoked (the backend reports both as `active: false`). */
 export function mandateStatus(m: BrainMandate): MandateStatus {
+	if (m.grantRevokedReason === 'superseded') return 'superseded';
 	if (m.revokedAt) return 'revoked';
-	return m.active ? 'active' : 'grant_revoked';
+	if (m.active) return 'active';
+	return m.grantRevokedReason === 'replay' ? 'recoverable' : 'grant_revoked';
 }
+
+/** The list of the settings page: mandates that moved to a newer connection stay only in the protocol. */
+export const listedMandates = (mandates: readonly BrainMandate[]) => mandates.filter((m) => mandateStatus(m) !== 'superseded');
+
+/** Protocol entries of a takeover: their `quote` is a note of the server, `subjectID` the earlier connection. */
+export const isTakeover = (kind: string) => kind === 'mandate.taken_over' || kind === 'connection.taken_over';
 
 const key = (id: string) => id.toLowerCase();
 const sameID = (a: string, b: string) => key(a) === key(b);
@@ -196,6 +209,10 @@ export function auditKindKey(kind: string): MessageKey {
 			return 'brainMandate.audit.kind.projectAdded';
 		case 'connection.project_removed':
 			return 'brainMandate.audit.kind.projectRemoved';
+		case 'mandate.taken_over':
+			return 'brainMandate.audit.kind.takenOver';
+		case 'connection.taken_over':
+			return 'brainMandate.audit.kind.accessTakenOver';
 		default:
 			return 'brainMandate.audit.kind.other';
 	}

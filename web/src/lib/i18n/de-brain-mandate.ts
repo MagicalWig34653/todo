@@ -28,6 +28,12 @@ export const deBrainMandate = {
 	'brainMandate.status.active': 'Aktiv',
 	'brainMandate.status.revoked': 'Widerrufen',
 	'brainMandate.status.grantRevoked': 'Verbindung widerrufen, Vollmacht wirkungslos',
+	'brainMandate.status.recoverable': 'Sicherheitsabmeldung',
+	'brainMandate.status.recoverable.text': 'Die Verbindung „{name}“ wurde aus Sicherheitsgründen abgemeldet, weil ein verbrauchtes Anmelde-Token erneut vorgelegt wurde. Melde sie neu an: Auf der Zustimmungsseite kannst du Projekte und Vollmacht übernehmen. Widerrufst du die Vollmacht hier, wird sie nicht übernommen.',
+	'brainMandate.current.takenOver': 'Übernommen von „{name}“ bei der Neuanmeldung am {when}.',
+	'brainMandate.audit.kind.takenOver': 'Vollmacht übernommen',
+	'brainMandate.audit.kind.accessTakenOver': 'Projektzugriff übernommen',
+	'brainMandate.audit.from': 'von Verbindung „{name}“',
 	'brainMandate.status.grantRevoked.text': 'Die Verbindung „{name}“ wurde selbst widerrufen, deshalb wirkt die Vollmacht nicht mehr. Melde die Verbindung neu an und erteile ihr dann eine neue Vollmacht.',
 
 	'brainMandate.revoke.button': 'Vollmacht widerrufen',

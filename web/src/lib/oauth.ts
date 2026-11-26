@@ -48,6 +48,13 @@ export function sortGrants(grants: OAuthGrant[]): OAuthGrant[] {
 	return [...grants].sort((a, b) => Number(a.revoked) - Number(b.revoked));
 }
 
+/** Label of a revoked connection; only the causes with a different consequence get their own wording (ADR 0036). */
+export function revocationKey(grant: OAuthGrant): 'account.oauth.revoked' | 'account.oauth.revoked.replay' | 'account.oauth.revoked.superseded' {
+	if (grant.revoked_reason === 'replay') return 'account.oauth.revoked.replay';
+	if (grant.revoked_reason === 'superseded') return 'account.oauth.revoked.superseded';
+	return 'account.oauth.revoked';
+}
+
 /** Whether a grant may be saved with an empty project list (only connections that may create projects). */
 export function mayBeEmpty(grant: OAuthGrant): boolean {
 	return grant.scopes.includes('projects:write');

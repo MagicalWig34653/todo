@@ -79,6 +79,8 @@ public func configureMigrations(_ app: Application) {
 
     app.migrations.add(CreateOAuthSchema())
     app.migrations.add(AddOAuthClientCreatedAt())
+    app.migrations.add(AddOAuthReuseAndRevocation())
+    app.migrations.add(AddOAuthGrantLineage())
     configureConnections(app)
     configureIdentity(app)
     configurePreferences(app)
