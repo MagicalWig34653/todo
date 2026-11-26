@@ -189,10 +189,14 @@ struct OAuthController: RouteCollection {
                   let g = try await OAuthGrant.find(gid, on: db), !g.revoked,
                   g.clientID == b.client_id, g.resource == b.resource,
                   s.kind == (b.grant_type == "authorization_code" ? "code" : "refresh") else { return nil }
-            if s.consumed {
-                g.revoked = true; try await g.save(on: db); return nil
+            // ADR 0036: a used secret revokes the connection unless it is the just rotated refresh token coming again.
+            let now = Date(), repeated = s.consumed
+            if repeated {
+                guard try await OAuthRotation.mayRepeat(s, now: now, on: db) else {
+                    g.revoke(.replay, now: now); try await g.save(on: db); return nil
+                }
             }
-            guard s.expiresAt > Date() else { return nil }
+            guard s.expiresAt > now else { return nil }
             if s.kind == "code" {
                 let a = try JSONDecoder().decode(Authorization.self, from: Data(s.payload.utf8))
                 guard let v = b.code_verifier, (43...128).contains(v.count),
@@ -202,10 +206,15 @@ struct OAuthController: RouteCollection {
                 else { return nil }
             }
             if let scope = b.scope, Set(scope.split(separator: " ").map(String.init)) != Set(g.scopes) { return nil }
-            s.consumed = true; try await s.save(on: db)
+            if !repeated {
+                s.consumed = true; s.consumedAt = now; try await s.save(on: db)
+                try await OAuthRotation.retireSiblings(of: s, on: db)
+            }
             let access = AuthSupport.randomToken(), refresh = AuthSupport.randomToken()
             try await OAuthSecret(raw: access, kind: "access", grantID: gid, lifetime: 900).save(on: db)
-            try await OAuthSecret(raw: refresh, kind: "refresh", grantID: gid, lifetime: 30 * 86400).save(on: db)
+            let next = OAuthSecret(raw: refresh, kind: "refresh", grantID: gid, lifetime: 30 * 86400)
+            if s.kind == "refresh" { next.rotatedFrom = try s.requireID() }
+            try await next.save(on: db)
             return .object(["access_token": .string(access), "refresh_token": .string(refresh), "token_type": .string("Bearer"),
                             "expires_in": .number(900), "scope": .string(g.scopes.joined(separator: " "))])
         }
@@ -222,6 +231,7 @@ struct OAuthController: RouteCollection {
     private static func grantJSON(_ g: OAuthGrant, clientName: String? = nil) throws -> JSONValue {
         .object(["id": .string(try g.requireID().uuidString), "client_id": .string(g.clientID.uuidString), "client_name": .string(clientName ?? ""),
                  "scopes": .strings(g.scopes), "project_ids": .strings(g.projects.map(\.uuidString)), "revoked": .bool(g.revoked),
+                 "revoked_reason": g.revokedReason.map { .string($0) } ?? .null,
                  "name": .string(ConnectionNames.display(g, clientName: clientName)),
                  "last_used_at": g.lastUsedAt.map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null])
     }
@@ -262,7 +272,8 @@ struct OAuthController: RouteCollection {
         try await req.db.transaction { db in
             try await lockRow(table: OAuthGrant.schema, id: id, on: db)
             guard let g = try await OAuthGrant.find(id, on: db), g.userID == user.id else { throw Abort(.notFound) }
-            g.revoked = true; try await g.save(on: db)
+            // Also on an already revoked connection: the person's own decision ends any takeover (ADR 0036).
+            g.revoke(.person); try await g.save(on: db)
         }
         return .noContent
     }

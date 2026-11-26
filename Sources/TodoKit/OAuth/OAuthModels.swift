@@ -25,11 +25,24 @@ final class OAuthGrant: Model, @unchecked Sendable {
     @OptionalField(key: "name") var name: String?
     /// Last MCP request with this connection; written at most every few minutes.
     @OptionalField(key: "last_used_at") var lastUsedAt: Date?
+    /// `OAuthRevocation`; nil for live grants and for grants revoked before ADR 0036 (cause unknown).
+    @OptionalField(key: "revoked_reason") var revokedReason: String?
+    @OptionalField(key: "revoked_at") var revokedAt: Date?
     init() {}
     init(userID: UUID, clientID: UUID, resource: String, scopes: [String], projects: [UUID], name: String? = nil) {
         self.userID = userID; self.clientID = clientID; self.resource = resource
         self.scopes = scopes; self.projects = projects; revoked = false; self.name = name
     }
+    /// Every revocation names its cause (ADR 0036); the latest decision wins.
+    func revoke(_ reason: OAuthRevocation, now: Date = Date()) {
+        revoked = true; revokedReason = reason.rawValue; revokedAt = now
+    }
+}
+
+/// Why a connection was revoked. Only `replay` leaves it open for a later takeover by the same person (ADR 0036).
+enum OAuthRevocation: String {
+    case person, replay, superseded
+    case accountLocked = "account_locked"
 }
 
 /// Codes and refresh tokens remain as consumed tombstones for replay detection.
@@ -42,6 +55,11 @@ final class OAuthSecret: Model, @unchecked Sendable {
     @Field(key: "payload") var payload: String
     @Field(key: "expires_at") var expiresAt: Date
     @Field(key: "consumed") var consumed: Bool
+    /// When a rotation used this secret; nil for unused secrets, for refresh tokens made useless by a sibling and for rows
+    /// from before ADR 0036. Without it there is no reuse window.
+    @OptionalField(key: "consumed_at") var consumedAt: Date?
+    /// The refresh token this refresh token replaced.
+    @OptionalField(key: "rotated_from") var rotatedFrom: UUID?
     init() {}
     init(raw: String, kind: String, grantID: UUID? = nil, payload: String = "", lifetime: Double) {
         hash = AuthSupport.hash(raw); self.kind = kind; self.grantID = grantID; self.payload = payload

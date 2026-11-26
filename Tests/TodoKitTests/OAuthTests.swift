@@ -93,8 +93,11 @@ final class OAuthTests: XCTestCase {
             let tokens = try await f.tokens()
             let rotated = try await f.refresh(tokens.refresh)
             XCTAssertEqual(rotated.status, .ok)
-            let newRefresh = try XCTUnwrap(rotated.body?["refresh_token"] as? String)
-            XCTAssertNotEqual(newRefresh, tokens.refresh)
+            let second = try XCTUnwrap(rotated.body?["refresh_token"] as? String)
+            XCTAssertNotEqual(second, tokens.refresh)
+            // Once the successor was used, the first token is a replay at once (ADR 0036, no reuse window anymore).
+            let again = try await f.refresh(second)
+            let newRefresh = try XCTUnwrap(again.body?["refresh_token"] as? String)
             let replica = try await f.test.replica()
             let replay = try await replica.json(.POST, "/oauth/token", ["grant_type": "refresh_token", "client_id": f.clientID, "resource": AppSettings().oauthResource, "refresh_token": tokens.refresh])
             await replica.shutdown()
