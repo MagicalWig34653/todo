@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>Todolino UX-Tafel</title>
+<style>
+body{margin:0;width:1600px;padding:28px 32px;background:#fff;color:#14161a;font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+h1{font-size:28px;margin:0 0 4px}p{margin:0 0 18px;color:#545b66}h2{font-size:19px;margin:0 0 8px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.shots{display:flex;gap:14px;align-items:flex-start}
+img{border:1px solid #c9ced6;border-radius:8px;display:block}
+.d{width:560px}.h{width:180px}
+table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #dfe2e7;padding:5px 10px;text-align:left}
+td:nth-child(n+2),th:nth-child(n+2){text-align:right;width:130px}b{color:#174ea8}
+.tables{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:22px}
+</style></head><body>
+<h1>Todolino: ein Ort je Frage</h1>
+<p>Vorher/Nachher der Startseite „Für dich“ (Demodaten). Rechts Wireframe, nichts davon ist gebaut.</p>
+<div class="pair">
+ <div><h2>Vorher</h2><div class="shots"><img class="d" src="../ist/fuer-dich-desktop-hell.jpg" alt="Heute, Desktop"><img class="h" src="../ist/fuer-dich-handy-hell.jpg" alt="Heute, Handy"></div></div>
+ <div><h2>Nachher</h2><div class="shots"><img class="d" src="png/fuer-dich-desktop-hell.png" alt="Konzept, Desktop"><img class="h" src="png/fuer-dich-handy-hell.png" alt="Konzept, Handy"></div></div>
+</div>
+<div class="tables">
+ <table><tr><th>Klicks (Desktop / Handy)</th><th>vorher</th><th>nachher</th></tr>
+ <tr><td>Karte anlegen (offenes Projekt)</td><td>3 / 3</td><td><b>2 / 2</b></td></tr>
+ <tr><td>Frage beantworten (sichtbar)</td><td>1 / 1</td><td>1 / 1</td></tr>
+ <tr><td>Review mit Bericht entscheiden</td><td>2 / 2</td><td>2 / 2</td></tr>
+ <tr><td>Projekt wechseln</td><td>1 / 2</td><td>1 / 2</td></tr>
+ <tr><td>Einstellung: Brain-Vollmacht öffnen</td><td>3 / 3</td><td><b>2 / 2</b></td></tr></table>
+ <table><tr><th>Orte und Bedienelemente</th><th>vorher</th><th>nachher</th></tr>
+ <tr><td>Menüziele der Seitenleiste</td><td>15</td><td><b>5</b></td></tr>
+ <tr><td>Einstellungs- und Hilfeseiten</td><td>33</td><td><b>10</b></td></tr>
+ <tr><td>Popover-Menüs / Dialoge</td><td>9 / 18</td><td><b>4 / 11</b></td></tr>
+ <tr><td>Detailfenster / Kartenreiter</td><td>2 / 6</td><td><b>1 / 3</b></td></tr>
+ <tr><td>Bedienelemente je Listenzeile</td><td>5</td><td><b>2</b></td></tr></table>
+</div>
+<p style="margin:14px 0 0">„Vorher“ am Code und lokal durchgeklickt, „nachher“ aus dem Konzept (nicht gemessen). Plus eigene Hauptansicht „Zeitleiste“.</p>
+</body></html>

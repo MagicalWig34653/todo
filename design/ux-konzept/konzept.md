@@ -1,7 +1,8 @@
 # UX-Konzept Todolino-PWA: weniger Orte, ein Kartenfenster, Zeitleiste
 
 Karte `607DB96E` (Zeitleiste: `8F6C48E2`). Reines Konzept auf Stand `d429788`, nichts umgebaut. Grundlage:
-[Ist-Aufnahme](ist-aufnahme.md). Bilder: [Übersichtstafel](tafel.png), [Wireframes](wireframes/index.html).
+[Ist-Aufnahme](ist-aufnahme.md). Bilder: [Übersichtstafel](tafel.png), [Wireframes](wireframes/index.html)
+(PNGs in `wireframes/png/`, neu rendern aus `web/`: `node ../design/ux-konzept/wireframes/render.mjs`).
 
 ## 0. Empfehlung
 
