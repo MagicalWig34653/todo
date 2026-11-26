@@ -8,6 +8,7 @@ import type { PipelineStepName, PlanDecisionInput, RetryInput, TaskPipeline } fr
 import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
 import type { ContinueInput, StartInput } from './pipelineExecution.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
+import { selectionBody, type ProjectGroup, type Selection, type SelectionChange, type SelectionDTO, type SelectionPreview } from './projectGroups.js';
 
 export interface Capabilities {
 	passkey: boolean;
@@ -547,6 +548,10 @@ export interface OAuthGrant {
 	name?: string;
 	/** Last MCP request, ISO date; null/absent when never used. */
 	last_used_at?: string | null;
+	/** ADR 0037: the rule (groups, "all except"); null/absent = only `explicit_project_ids`. `project_ids` is what the connection reaches now. */
+	selection?: SelectionDTO | null;
+	/** ADR 0037: the explicitly chosen projects (absent on older servers: then `project_ids`). */
+	explicit_project_ids?: string[];
 }
 /** A connection as a participant of a project (`GET /v1/projects/{id}/connections`); its role is the owner's role. */
 export interface ProjectConnection {
@@ -1432,12 +1437,31 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		revokeOAuthGrant: (id: string) => request<void>('DELETE', `/oauth/grants/${id}`),
 		/** Replaces the projects of an existing connection (authorise and deauthorise afterwards); effective immediately. */
 		setOAuthGrantProjects: (id: string, projectIDs: string[]) => request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: projectIDs }),
+		/** ADR 0037: explicit projects plus the rule; a plain list is sent without `selection` (replaces a rule). */
+		setOAuthGrantSelection: (id: string, sel: Selection) => {
+			const body = selectionBody(sel);
+			return request<OAuthGrant>('PUT', `/oauth/grants/${id}/projects`, { project_ids: body.projectIDs, ...(body.selection ? { selection: body.selection } : {}) });
+		},
+		// Project groups (ADR 0037, contracts/connections.yaml 1.7.0); person session only.
+		listProjectGroups: async () => (await request<{ groups: ProjectGroup[] }>('GET', '/project-groups')).groups,
+		createProjectGroup: (name: string, projectIDs: string[]) =>
+			request<{ group: ProjectGroup; changes: SelectionChange[] }>('POST', '/project-groups', { name, projectIDs }),
+		updateProjectGroup: (id: string, patch: { name?: string; projectIDs?: string[] }, dryRun = false) =>
+			request<{ group: ProjectGroup; changes: SelectionChange[] }>('PATCH', `/project-groups/${id}${dryRun ? '?dryRun=true' : ''}`, patch),
+		deleteProjectGroup: (id: string, dryRun = false) =>
+			request<{ changes: SelectionChange[] }>('DELETE', `/project-groups/${id}${dryRun ? '?dryRun=true' : ''}`),
+		groupsOfProject: async (projectID: string) => (await request<{ groupIDs: string[] }>('GET', `/projects/${projectID}/groups`)).groupIDs,
+		setGroupsOfProject: (projectID: string, groupIDs: string[], dryRun = false) =>
+			request<{ groupIDs: string[]; changes: SelectionChange[] }>('PUT', `/projects/${projectID}/groups${dryRun ? '?dryRun=true' : ''}`, { groupIDs }),
+		previewSelection: (sel: Selection) => request<SelectionPreview>('POST', '/project-selection/preview', selectionBody(sel)),
 
 		// Brain mandates (contracts/connections.yaml 1.2.0, ADR 0032 addendum): one per connection; person session only, OAuth tokens get 401.
 		/** One entry per connection that ever got a mandate, newest first. After a revocation the entry stays, with `active: false`. */
 		listBrainMandates: async () => (await request<{ mandates: BrainMandate[] }>('GET', '/settings/brain-mandate')).mandates,
 		/** Gives or overwrites the mandate of that connection only (400 invalid_projects, 404 unknown grant/project, 409 grant_revoked). */
 		putBrainMandate: (grantID: string, projectIDs: string[]) => request<BrainMandate>('PUT', '/settings/brain-mandate', { grantID, projectIDs }),
+		/** ADR 0037: mandate with a rule (groups, "all except"). */
+		putBrainMandateSelection: (grantID: string, sel: Selection) => request<BrainMandate>('PUT', '/settings/brain-mandate', { grantID, ...selectionBody(sel) }),
 		/** Revokes the mandate of one connection at once; the others stay. Idempotent. */
 		revokeBrainMandate: (grantID: string) => request<void>('DELETE', `/settings/brain-mandate/${encodeURIComponent(grantID)}`),
 		/** Decisions made under the mandate, newest first (at most 200). */

@@ -6,19 +6,16 @@
 	import {
 		MAX_PROJECTS,
 		auditCardParam,
+		isGroupChange,
 		auditKindKey,
 		diffMandate,
 		eligibleGrants,
-		filterProjects,
 		mandateErrorKey,
 		mandateFor,
 		mandateStatus,
 		prefillProjects,
 		projectLabels,
 		resolveScope,
-		saveKind,
-		selectionProblem,
-		toggleProject,
 		type BrainAuditItem,
 		type BrainMandate,
 		isTakeover,
@@ -29,10 +26,19 @@
 	import { connectionName } from '#lib/oauth.js';
 	import { formatWhen } from '#lib/planning.js';
 	import { createLatest } from '#lib/serial.js';
+	import {
+		describeRule,
+		emptySelection,
+		namesSomething,
+		pruneSelection,
+		sameSelection,
+		selectionFrom,
+		type ProjectGroup,
+		type Selection
+	} from '#lib/projectGroups.js';
+	import ProjectSelectionPicker from '../ProjectSelectionPicker.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 
 	/**
 	 * Settings page "Brain-Vollmacht" (ADR 0032 and addendum): every connection of the person can hold its own mandate with its own
@@ -52,8 +58,10 @@
 
 	// Form: nothing is preselected unless the chosen connection already holds an active mandate (then it is the starting point of the change).
 	let grantID = $state('');
-	let selected = $state<Set<string>>(new Set());
-	let query = $state('');
+	let selection = $state<Selection>(emptySelection());
+	/** What the chosen projects, groups and rules reach right now (computed by the server); null while unknown. */
+	let effective = $state<string[] | null>(null);
+	let groups = $state<ProjectGroup[]>([]);
 	let confirming = $state(false);
 	/** Connection whose revocation waits for confirmation. */
 	let revokeFor = $state<string | null>(null);
@@ -72,11 +80,20 @@
 	const eligible = $derived(eligibleGrants(grants));
 	const activeIDs = $derived(new Set(mandates.filter((m) => mandateStatus(m) === 'active').map((m) => m.grantID.toLowerCase())));
 	const chosenMandate = $derived(grantID ? mandateFor(mandates, grantID) : undefined);
-	const visibleProjects = $derived(filterProjects(projects, query));
-	const next = $derived({ grantID, projectIDs: [...selected] });
-	const problem = $derived(selectionProblem(grantID, selected));
-	const kind = $derived(problem ? null : saveKind(chosenMandate, next));
-	const diff = $derived(kind === 'replace' && chosenMandate ? diffMandate(chosenMandate, next, projects) : null);
+	/** The stored choice of a mandate as form state: explicitly named projects the person can still read, plus its rule. */
+	function storedSelection(m: BrainMandate): Selection {
+		return { ...selectionFrom([], m.selection), projectIDs: prefillProjects(m, projects) };
+	}
+	const next = $derived({ grantID, projectIDs: effective ?? [] });
+	const problem = $derived(
+		!grantID ? 'grant_required' : !namesSomething(selection) ? 'projects_required' : selection.projectIDs.length > MAX_PROJECTS ? 'too_many' : null
+	);
+	const active = $derived(chosenMandate && mandateStatus(chosenMandate) === 'active' ? chosenMandate : undefined);
+	// `first` saves at once; `replace` shows before and after (rights may be taken away or given).
+	const kind = $derived(
+		problem ? null : !active ? 'first' : sameSelection(storedSelection(active), selection) ? 'unchanged' : 'replace'
+	);
+	const diff = $derived(kind === 'replace' && active && effective ? diffMandate(active, next, projects) : null);
 	const chosenName = $derived(nameOfGrant(grantID));
 	const changing = $derived(!!chosenMandate && mandateStatus(chosenMandate) === 'active');
 	const shownAudit = $derived(showAllAudit ? audit : audit.slice(0, AUDIT_PREVIEW));
@@ -92,11 +109,12 @@
 	const listOf = (ids: string[]) => ids.map((id) => projectName(id)).join(', ');
 	const lastUsed = (g: OAuthGrant) => (g.last_used_at ? t('brainMandate.form.lastUsed', { when: formatWhen(g.last_used_at) }) : t('brainMandate.form.neverUsed'));
 
+	const groupName = (id: string) => groups.find((g) => g.id.toLowerCase() === id.toLowerCase())?.name ?? t('projectGroups.unknownGroup');
 	/** Chooses a connection for the form: its own active mandate (if any) is the starting point, otherwise nothing is selected. */
 	function pick(id: string) {
 		grantID = id;
-		selected = new Set(prefillProjects(mandateFor(mandates, id), projects));
-		query = '';
+		const m = mandateFor(mandates, id);
+		selection = m && mandateStatus(m) === 'active' ? storedSelection(m) : emptySelection();
 		confirming = false;
 	}
 	function resetForm() {
@@ -104,20 +122,20 @@
 	}
 	/** After a reload that changed lists (a connection or project vanished): keep the person's choices where they still exist. */
 	function sanitizeForm() {
-		const ids = new Set(projects.map((p) => p.id));
-		selected = new Set([...selected].filter((id) => ids.has(id)));
+		selection = pruneSelection(selection, projects.map((p) => p.id), groups.map((g) => g.id));
 		if (!eligible.some((g) => g.id === grantID)) grantID = '';
 		confirming = false;
 		if (revokeFor && !mandateFor(mandates, revokeFor)) revokeFor = null;
 	}
 	async function load(keepForm = false) {
 		const current = latest.begin();
-		const [m, g, p, a] = await Promise.all([api.listBrainMandates(), api.listOAuthGrants(), api.listProjects(), api.listBrainAudit()]);
+		const [m, g, p, a, pg] = await Promise.all([api.listBrainMandates(), api.listOAuthGrants(), api.listProjects(), api.listBrainAudit(), api.listProjectGroups()]);
 		if (!current()) return;
 		mandates = m;
 		grants = g;
 		projects = p;
 		audit = a;
+		groups = pg;
 		if (keepForm) sanitizeForm();
 		else resetForm();
 	}
@@ -149,9 +167,6 @@
 		if (e instanceof ApiError && (e.status === 404 || e.status === 409)) await load(true).catch(() => undefined);
 	}
 
-	function toggle(id: string) {
-		selected = toggleProject(selected, id);
-	}
 	/** "Projekte ändern" / "Erneut erteilen" on a list entry: that connection goes into the form. */
 	async function edit(id: string) {
 		message = '';
@@ -164,7 +179,7 @@
 	}
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
-		if (busy || !kind) return;
+		if (busy || !kind || effective === null) return;
 		message = '';
 		error = null;
 		if (kind === 'replace' && !confirming) {
@@ -188,7 +203,7 @@
 		error = null;
 		message = '';
 		try {
-			const saved = await api.putBrainMandate(grantID, [...selected]);
+			const saved = await api.putBrainMandateSelection(grantID, $state.snapshot(selection));
 			const name = nameOfGrant(saved.grantID, saved.grantName);
 			message = t(k === 'replace' ? 'brainMandate.form.savedChange' : 'brainMandate.form.saved', { name });
 			revokeFor = null;
@@ -291,6 +306,7 @@
 						{@const st = mandateStatus(m)}
 						{@const name = nameOfGrant(m.grantID, m.grantName)}
 						{@const scope = resolveScope(m.projectIDs, projects)}
+						{@const rule = describeRule(m.selection, groupName, projectName)}
 						<li class="flex flex-col gap-3 rounded-lg border p-3 sm:p-4" class:opacity-80={st !== 'active'} data-testid="bm-mandate" data-grant-id={m.grantID.toLowerCase()} data-status={st}>
 							<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 								<h4 class="min-w-0 text-sm font-semibold break-words" data-testid="bm-grant-name">{name}</h4>
@@ -311,7 +327,8 @@
 							<dl class="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[11rem_minmax(0,1fr)]">
 								<dt class="text-muted-foreground">{t('brainMandate.current.projects')}</dt>
 								<dd>
-									<ul class="flex flex-col gap-1" data-testid="bm-scope">
+									{#if rule}<p class="mb-1 font-medium break-words" data-testid="bm-rule">{t(rule.key, { groups: rule.groups, excluded: rule.excluded })}</p>{/if}
+									<ul class="flex max-h-48 flex-col gap-1 overflow-auto" data-testid="bm-scope">
 										{#each scope as p (p.id)}
 											<li class={p.accessible ? '' : 'text-muted-foreground italic'} data-accessible={p.accessible} data-testid="bm-scope-project">
 												{p.accessible ? p.label : t('brainMandate.project.inaccessible', { id: p.label })}
@@ -381,29 +398,11 @@
 					</div>
 				</fieldset>
 
-				<fieldset class="flex min-w-0 flex-col gap-2" disabled={busy || confirming}>
-					<legend class="text-sm font-medium">{t('brainMandate.form.projects')}</legend>
+				<div class="flex min-w-0 flex-col gap-2">
+					<p class="text-sm font-medium">{t('brainMandate.form.projects')}</p>
 					<p class="text-muted-foreground text-xs">{t('brainMandate.form.projectsHint')}</p>
-					<Input type="search" bind:value={query} placeholder={t('brainMandate.form.search')} aria-label={t('brainMandate.form.search')} data-testid="bm-project-search" />
-					<ul class="flex max-h-64 flex-col overflow-auto rounded-lg border p-1" data-testid="bm-project-list">
-						{#each visibleProjects as p (p.id)}
-							<li>
-								<label class="hover:bg-muted/50 flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md px-2 text-sm">
-									<Checkbox checked={selected.has(p.id)} disabled={!selected.has(p.id) && selected.size >= MAX_PROJECTS} onchange={() => toggle(p.id)} data-testid="bm-project" />
-									<span class="min-w-0 break-words">{labels.get(p.id.toLowerCase()) ?? p.name}</span>
-								</label>
-							</li>
-						{:else}
-							<li class="text-muted-foreground px-2 py-2 text-sm">{projects.length === 0 ? t('brainMandate.form.noProjects') : t('brainMandate.form.noMatch')}</li>
-						{/each}
-					</ul>
-					<div class="flex flex-wrap items-center justify-between gap-2">
-						<p class="text-muted-foreground text-xs" aria-live="polite" data-testid="bm-selected-count">{t('brainMandate.form.count', { count: selected.size, max: MAX_PROJECTS })}</p>
-						{#if selected.size > 0}
-							<Button size="xs" variant="ghost" type="button" onclick={() => (selected = new Set())} data-testid="bm-clear">{t('brainMandate.form.clear')}</Button>
-						{/if}
-					</div>
-				</fieldset>
+					<ProjectSelectionPicker bind:selection bind:effective {projects} {groups} testid="bm" max={MAX_PROJECTS} disabled={busy || confirming} />
+				</div>
 
 				{#if confirming && diff && chosenMandate}
 					<div class="border-warning/50 bg-warning-soft/60 flex flex-col gap-3 rounded-lg border p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50" role="alertdialog" aria-labelledby="bm-confirm-title" tabindex="-1" bind:this={confirmBox} onkeydown={(e) => onEscape(e, cancelConfirm)} data-testid="bm-confirm">
@@ -416,8 +415,8 @@
 							</div>
 							<div class="bg-card rounded-lg border p-3" data-testid="bm-diff-after">
 								<p class="text-muted-foreground text-xs font-semibold uppercase">{t('brainMandate.confirm.after')}</p>
-								<p class="font-medium break-words">{t(selected.size === 1 ? 'brainMandate.confirm.lineOne' : 'brainMandate.confirm.lineMany', { name: chosenName, count: selected.size })}</p>
-								<p class="text-muted-foreground mt-1 text-xs break-words">{listOf([...selected])}</p>
+								<p class="font-medium break-words">{t(next.projectIDs.length === 1 ? 'brainMandate.confirm.lineOne' : 'brainMandate.confirm.lineMany', { name: chosenName, count: next.projectIDs.length })}</p>
+								<p class="text-muted-foreground mt-1 text-xs break-words">{listOf(next.projectIDs)}</p>
 							</div>
 						</div>
 						<dl class="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[8rem_minmax(0,1fr)]">
@@ -447,11 +446,11 @@
 							<p class={muted} id="bm-hint" data-testid="bm-unchanged">{t('brainMandate.form.unchanged')}</p>
 						{:else}
 							<p class={muted} id="bm-hint" data-testid="bm-summary">
-								{t(selected.size === 1 ? 'brainMandate.form.summaryOne' : 'brainMandate.form.summaryMany', { name: chosenName, count: selected.size, projects: listOf([...selected]) })}
+								{t(next.projectIDs.length === 1 ? 'brainMandate.form.summaryOne' : 'brainMandate.form.summaryMany', { name: chosenName, count: next.projectIDs.length, projects: listOf(next.projectIDs) })}
 							</p>
 						{/if}
 						<div>
-							<Button type="submit" bind:ref={saveButton} disabled={busy || !!problem || kind === 'unchanged'} aria-describedby="bm-hint" data-testid="bm-save">
+							<Button type="submit" bind:ref={saveButton} disabled={busy || !!problem || kind === 'unchanged' || effective === null} aria-describedby="bm-hint" data-testid="bm-save">
 								{busy ? t('brainMandate.form.saving') : kind === 'replace' ? t('brainMandate.form.saveReview') : t('brainMandate.form.saveGrant')}
 							</Button>
 						</div>
@@ -478,8 +477,8 @@
 									<span class="text-muted-foreground text-xs">{formatWhen(a.createdAt)}</span>
 									<span class="text-muted-foreground text-xs" data-testid="bm-audit-via">{t('brainMandate.audit.via', { name: via })}</span>
 								</div>
-								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}{#if !a.taskID}{' · '}<span data-testid="bm-audit-target">{t(isTakeover(a.kind) ? 'brainMandate.audit.from' : 'brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
-								{#if isTakeover(a.kind)}
+								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}{#if !a.taskID && !isGroupChange(a.kind)}{' · '}<span data-testid="bm-audit-target">{t(isTakeover(a.kind) ? 'brainMandate.audit.from' : 'brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
+								{#if isTakeover(a.kind) || isGroupChange(a.kind)}
 									<p class="break-words">{a.quote}</p>
 								{:else}
 									<blockquote class="border-l-2 pl-2 break-words whitespace-pre-wrap" aria-label={t('brainMandate.audit.quote')}>{a.quote}</blockquote>

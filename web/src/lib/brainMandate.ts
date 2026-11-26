@@ -3,6 +3,7 @@
 import { ApiError, type OAuthGrant, type Project } from './api.js';
 import type { MessageKey } from './i18n/index.js';
 import { connectionName } from './oauth.js';
+import type { SelectionDTO } from './projectGroups.js';
 
 /** `BrainMandateDTO` (contracts/connections.yaml 1.1.0). `active` is false after a revocation and when the grant itself was revoked. */
 export interface BrainMandate {
@@ -18,6 +19,9 @@ export interface BrainMandate {
 	grantRevokedReason?: string | null;
 	/** ADR 0036: this connection took the mandate over from an earlier one after a new sign-in. */
 	takenOver?: { fromGrantID: string; fromName: string; at: string } | null;
+	/** ADR 0037: the rule (groups, "all except"); null/absent = only the explicit projects. `projectIDs` is what it covers now. */
+	selection?: SelectionDTO | null;
+	explicitProjectIDs?: string[];
 }
 
 /** One row of `GET /v1/settings/brain-mandate/audit`. */
@@ -54,6 +58,9 @@ export const listedMandates = (mandates: readonly BrainMandate[]) => mandates.fi
 
 /** Protocol entries of a takeover: their `quote` is a note of the server, `subjectID` the earlier connection. */
 export const isTakeover = (kind: string) => kind === 'mandate.taken_over' || kind === 'connection.taken_over';
+
+/** ADR 0037: a group change that moved the reach of a mandate; the `quote` is a note of the server. */
+export const isGroupChange = (kind: string) => kind === 'mandate.group_added' || kind === 'mandate.group_removed';
 
 const key = (id: string) => id.toLowerCase();
 const sameID = (a: string, b: string) => key(a) === key(b);
@@ -179,7 +186,8 @@ export function saveKind(current: BrainMandate | null | undefined, next: Mandate
  */
 export function prefillProjects(mandate: BrainMandate | null | undefined, projects: readonly Project[]): string[] {
 	if (!mandate || mandateStatus(mandate) !== 'active') return [];
-	const inMandate = new Set(mandate.projectIDs.map(key));
+	// ADR 0037: with a rule the form starts from the explicitly named projects, not from what the rule covers.
+	const inMandate = new Set((mandate.selection?.projectIDs ?? mandate.projectIDs).map(key));
 	return projects.filter((p) => inMandate.has(key(p.id))).map((p) => p.id);
 }
 
@@ -209,6 +217,10 @@ export function auditKindKey(kind: string): MessageKey {
 			return 'brainMandate.audit.kind.projectAdded';
 		case 'connection.project_removed':
 			return 'brainMandate.audit.kind.projectRemoved';
+		case 'mandate.group_added':
+			return 'brainMandate.audit.kind.groupAdded';
+		case 'mandate.group_removed':
+			return 'brainMandate.audit.kind.groupRemoved';
 		case 'mandate.taken_over':
 			return 'brainMandate.audit.kind.takenOver';
 		case 'connection.taken_over':
