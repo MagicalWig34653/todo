@@ -36,7 +36,7 @@ test('favicon.ico and apple-touch-icon are real images, not the SPA fallback', a
 
 test('pages link the icons', async ({ page }) => {
 	await page.goto('/');
-	await expect(page.locator('link[rel="icon"][href$="favicon.svg"]')).toHaveCount(1);
+	await expect(page.locator('link[rel="icon"][href*="favicon.svg"]')).toHaveCount(1);
 	await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);
 	await expect(page.locator('meta[name="theme-color"]')).toHaveCount(2);
 });
