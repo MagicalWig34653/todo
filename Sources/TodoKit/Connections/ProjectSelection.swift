@@ -45,7 +45,8 @@ struct SelectionDTO: Content {
 enum SelectionLimits {
     static let maxGroups = 50
     static let maxMembers = 200
-    static let maxExcluded = 500
+    /// A `var` only so tests can lower it (tests run serially); nothing else writes it.
+    nonisolated(unsafe) static var maxExcluded = 500
 }
 
 // MARK: Models
