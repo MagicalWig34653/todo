@@ -5,6 +5,11 @@
 - Stand: `t3/projektgruppen-vollmacht-verbindungen`; Nachweise und Merge-Hinweise in `docs/STATUS.md`.
 - Offen: Merge mit `main` (Konflikte, Versionsnummern, Übernahme-Logik), danach Prüfungen wiederholen; Linos Entscheidungen zu ADR 0037; Apple-Karte `80738AEA`.
 
+## Checkpoint 26.11.2026 (13:30): BEF08998 Teil 1 und 2 in `main`, Teil 3 in Arbeit
+
+- Stand: `dc842e3` und Security-Korrekturen `af0b174`, volle Prüfungen grün, Push (Belege: `docs/STATUS.md`).
+- Offen: CI; Teil 3 Projektgruppen (`t3/projektgruppen-vollmacht-verbindungen`, ADR 0037); Review an Lino; Apple-Karte `80738AEA`; danach UX-Konzept `607DB96E` samt Zeitleisten-Ansicht `8F6C48E2` (laut Brain ab 17:00).
+
 ## Checkpoint 26.11.2026 (08:30): Vollmacht übersteht Neuanmeldung (Karte `BEF08998`, Teil 1 und 2)
 
 - Entscheidung ADR 0036: 300 s Nachlauffenster beim Refresh; Übernahme von Projekten und Vollmacht nur per Zustimmung der Person.

@@ -62,6 +62,10 @@ export const isTakeover = (kind: string) => kind === 'mandate.taken_over' || kin
 /** ADR 0037: a group change that moved the reach of a mandate; the `quote` is a note of the server. */
 export const isGroupChange = (kind: string) => kind === 'mandate.group_added' || kind === 'mandate.group_removed';
 
+/** A takeover with no project in common and no mandate: the row names the earlier connection where a project would stand. */
+export const takeoverWithoutProject = (a: Pick<BrainAuditItem, 'kind' | 'projectID' | 'subjectID'>) =>
+	isTakeover(a.kind) && a.projectID.toLowerCase() === a.subjectID.toLowerCase();
+
 const key = (id: string) => id.toLowerCase();
 const sameID = (a: string, b: string) => key(a) === key(b);
 

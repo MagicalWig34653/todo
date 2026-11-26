@@ -469,7 +469,7 @@ export const de = {
 	'account.oauth.unknownProjects': '{count} nicht mehr sichtbar',
 	'account.oauth.revoked': 'Widerrufen',
 	'account.oauth.revoked.replay': 'Sicherheitsabmeldung',
-	'account.oauth.revoked.replay.text': 'Ein verbrauchtes Anmelde-Token wurde erneut vorgelegt, deshalb gilt keine Anmeldung dieser Verbindung mehr. Bei der nächsten Anmeldung desselben Programms kannst du Projekte und Vollmacht übernehmen.',
+	'account.oauth.revoked.replay.text': 'Ein verbrauchtes Anmelde-Token wurde erneut vorgelegt, deshalb gilt keine Anmeldung dieser Verbindung mehr. Meldest du dasselbe Programm innerhalb von 7 Tagen neu an, kannst du Projekte und Vollmacht übernehmen.',
 	'account.oauth.revoked.replay.end': 'Nicht übernehmen lassen',
 	'account.oauth.revoked.superseded': 'Durch Neuanmeldung ersetzt',
 	'account.oauth.revoke': 'Zugriff widerrufen',

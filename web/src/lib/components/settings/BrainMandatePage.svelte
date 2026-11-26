@@ -19,6 +19,7 @@
 		type BrainAuditItem,
 		type BrainMandate,
 		isTakeover,
+		takeoverWithoutProject,
 		listedMandates
 	} from '#lib/brainMandate.js';
 	import { describeError } from '#lib/errors.js';
@@ -480,7 +481,7 @@
 									<span class="text-muted-foreground text-xs">{formatWhen(a.createdAt)}</span>
 									<span class="text-muted-foreground text-xs" data-testid="bm-audit-via">{t('brainMandate.audit.via', { name: via })}</span>
 								</div>
-								<p class="text-muted-foreground text-xs break-words">{projectName(a.projectID)}{#if !a.taskID && !isGroupChange(a.kind)}{' · '}<span data-testid="bm-audit-target">{t(isTakeover(a.kind) ? 'brainMandate.audit.from' : 'brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
+								<p class="text-muted-foreground text-xs break-words">{#if !takeoverWithoutProject(a)}{projectName(a.projectID)}{#if !a.taskID && !isGroupChange(a.kind)}{' · '}{/if}{/if}{#if !a.taskID && !isGroupChange(a.kind)}<span data-testid="bm-audit-target">{t(isTakeover(a.kind) ? 'brainMandate.audit.from' : 'brainMandate.audit.target', { name: nameOfGrant(a.subjectID) })}</span>{/if}</p>
 								{#if isTakeover(a.kind) || isGroupChange(a.kind)}
 									<p class="break-words">{a.quote}</p>
 								{:else}

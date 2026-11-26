@@ -13,7 +13,8 @@ enum OAuthTakeover {
     struct Candidate {
         let grant: OAuthGrant
         let match: Match
-        /// Projects of the old connection the person can read now.
+        /// What the consent page preselects: the projects of the old connection plus the mandate projects missing from that
+        /// list (so nothing of the mandate is lost or moves along unseen), each readable by the person now.
         let projects: [Project]
         /// The mandate of the old connection that the person has not revoked, limited to projects readable now.
         let mandate: BrainMandate?
@@ -29,13 +30,20 @@ enum OAuthTakeover {
     /// What the consent page showed; kept server side with the consent token, so a click never hands over more than that.
     struct Offer: Codable { var grantID: UUID; var mandateProjects: [UUID]; var mandateRule: SelectionRule? = nil }
 
+    /// A connection signed out by replay detection stays on offer this long after the revocation (security review 26.11.2026).
+    static let offerPeriod: TimeInterval = 7 * 86_400
+
     /// Only connections that are alive or were ended by replay detection qualify. Revoked by the person, replaced, locked
     /// account or an unknown cause never do. Several matches mean: nothing.
-    static func find(user: User, client: OAuthClient, redirect: String, resource: String, on db: any Database) async throws -> Found {
+    static func find(user: User, client: OAuthClient, redirect: String, resource: String, now: Date = Date(), on db: any Database) async throws -> Found {
         guard !user.isLocked else { return .none }
         let userID = try user.requireID(), clientID = try client.requireID()
         let grants = try await OAuthGrant.query(on: db).filter(\.$userID == userID).filter(\.$resource == resource).all()
-            .filter { !$0.revoked || $0.revokedReason == OAuthRevocation.replay.rawValue }
+            .filter { g in
+                guard g.revoked else { return true }
+                guard g.revokedReason == OAuthRevocation.replay.rawValue, let at = g.revokedAt else { return false }
+                return now.timeIntervalSince(at) <= offerPeriod
+            }
         guard !grants.isEmpty else { return .none }
         let clients = Dictionary(uniqueKeysWithValues: try await OAuthClient.query(on: db).filter(\.$id ~~ Set(grants.map(\.clientID))).all()
             .compactMap { c in c.id.map { ($0, c) } })
@@ -51,10 +59,11 @@ enum OAuthTakeover {
         func candidate(_ grant: OAuthGrant, _ match: Match) -> Candidate? {
             guard let gid = grant.id else { return nil }
             grant.resolvedProjects = reach[gid] ?? []
-            let projects = grant.effectiveProjects.compactMap { readable[$0] }
             let mandate = mandates.first { $0.grantID == grant.id }
             // By name: the consent page lists these as text.
             let covered = (mandate?.id.flatMap { reach[$0] } ?? []).compactMap { readable[$0] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            let listed = Set(grant.effectiveProjects)
+            let projects = grant.effectiveProjects.compactMap { readable[$0] } + covered.filter { $0.id.map { !listed.contains($0) } ?? false }
             guard !projects.isEmpty || !covered.isEmpty else { return nil }
             return Candidate(grant: grant, match: match, projects: projects, mandate: covered.isEmpty ? nil : mandate,
                              mandateProjects: covered, name: ConnectionNames.display(grant, clientName: clients[grant.clientID]?.name),
@@ -62,8 +71,8 @@ enum OAuthTakeover {
         }
         var matches = grants.filter { $0.clientID == clientID }.compactMap { candidate($0, .client) }
         // By name: client names are free to choose in open registration, so only between loopback clients and only for a
-        // connection that is dead anyway (never replacing a working one).
-        if matches.isEmpty, isLoopback(redirect) {
+        // connection that is dead anyway (never replacing a working one). The name every unnamed client gets proves nothing.
+        if matches.isEmpty, isLoopback(redirect), isDistinctive(client.name) {
             matches = grants.filter { grant in
                 guard grant.revoked, let old = clients[grant.clientID], old.name == client.name else { return false }
                 return !old.redirects.isEmpty && old.redirects.allSatisfy(isLoopback)
@@ -71,6 +80,11 @@ enum OAuthTakeover {
         }
         guard let first = matches.first else { return .none }
         return matches.count == 1 ? .one(first) : .ambiguous
+    }
+
+    static func isDistinctive(_ clientName: String) -> Bool {
+        let name = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.caseInsensitiveCompare(OAuthClient.defaultName) != .orderedSame
     }
 
     static func isLoopback(_ redirect: String) -> Bool {
@@ -88,7 +102,9 @@ enum OAuthTakeover {
         let chosen = Set(try await new.resolveProjects(on: db, locking: true))
         // A project the person unchecked leaves the mandate as well.
         let unchecked = Set(old.effectiveProjects).subtracting(chosen)
-        let carried = Set(candidate.mandateProjects.compactMap(\.id)).intersection(offer.mandateProjects).subtracting(unchecked)
+        // Only what the person confirmed keeps the mandate (also mandate projects that were not in the old list: the page
+        // preselects them, unchecking them drops them).
+        let carried = Set(candidate.mandateProjects.compactMap(\.id)).intersection(offer.mandateProjects).intersection(chosen)
             .sorted { $0.uuidString < $1.uuidString }
         var mandateID: UUID?
         if !carried.isEmpty {
@@ -110,7 +126,9 @@ enum OAuthTakeover {
             if let rule { try await ProjectSelectionResolver(userID: userID, db: db, locking: true).store(rule, of: mandate.requireID()) }
         }
         let note = "Bei der Neuanmeldung auf der Zustimmungsseite bestätigt: Übernahme von „\(candidate.name)“."
-        let accessOnly = chosen.intersection(old.effectiveProjects).subtracting(carried).sorted { $0.uuidString < $1.uuidString }
+        var accessOnly = chosen.intersection(old.effectiveProjects).subtracting(carried).sorted { $0.uuidString < $1.uuidString }
+        // Nothing in common: still one row, naming the earlier connection where a project would stand.
+        if carried.isEmpty, accessOnly.isEmpty { accessOnly = [oldID] }
         for (kind, projects) in [("mandate.taken_over", carried), ("connection.taken_over", accessOnly)] {
             for projectID in projects {
                 let row = BrainConnectionAudit()

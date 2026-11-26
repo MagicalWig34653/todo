@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino MCP-Verbindungen im Teilen-Fenster
-  version: 1.7.0
+  version: 1.8.0
   description: 'ADR 0028. Eine MCP-Verbindung (OAuth-Grant) ist ein eigener Beteiligter eines Projekts neben Personen und Teams. Ihr Zugriff ist durch
     die Rechte der Person (wirksame Rolle) UND die Projektliste/Scopes des Grants begrenzt, nie größer als der Besitzer; es gibt keine eigene Rolle.
     Das Feld role der Antwort ist die aktuelle Rolle des Besitzers im Projekt. Name der Verbindung: Feld name von GET /oauth/grants
@@ -16,7 +16,8 @@ info:
     1.4.0 (Karte 74EC341D, additiv, contracts/pipeline.yaml): die Vollmacht gilt auch für decide_plan; das Protokoll kennt zusätzlich kind plan.approved|plan.changes_requested (subjectID ist der Plan).
     1.5.0 (Karte B926E7D8, Pipeline Stufe 2, additiv): das Protokoll GET /v1/settings/brain-mandate/audit kennt zusätzlich kind pipeline.settings (MCP update_pipeline_settings unter Vollmacht): taskID fehlt, projectID und subjectID sind das geänderte Projekt, grantID die handelnde Verbindung, quote das Zitat, note fehlt.
     1.6.0 (Karte BEF08998, ADR 0036, additiv): eine Neuanmeldung kann Projekte und Vollmacht übernehmen (contracts/oauth-mcp.yaml 1.11.0). BrainMandateDTO kennt grantRevokedReason und takenOver {fromGrantID, fromName, at}; das Protokoll kennt kind mandate.taken_over|connection.taken_over (taskID fehlt, grantID die neue, subjectID die frühere Verbindung, quote ist ein Servertext, keine Worte der Person).
-    1.7.0 (Karte BEF08998, ADR 0037, additiv, Handbuch 1.48.0): Projektgruppen (/v1/project-groups, /v1/projects/{id}/groups, /v1/project-selection/preview, nur Personen-Sitzung, kein MCP-Schreibweg) und optionales selection bei PUT /v1/settings/brain-mandate. BrainMandateDTO.projectIDs ist jetzt die wirksame Menge; neu explicitProjectIDs und selection. projectIDs darf leer sein, wenn selection eine Gruppe oder mode all_except nennt. PUT ohne selection ersetzt eine Regel durch die gesendete Liste. Protokoll: kind mandate.group_added|mandate.group_removed (quote ist ein Servertext). addProjectConnection und set_connection_projects heben einen Ausschluss genau dieses Projekts auf (409 excluded_by_group bei ausgeschlossener Gruppe); Entfernen schliesst ein Projekt aus, das eine Gruppe oder "alle" mitbringt.'
+    1.7.0 (Security-Review Karte BEF08998, ADR 0036): eine Übernahme ohne gemeinsames Projekt und ohne Vollmacht schreibt genau eine Zeile connection.taken_over, deren projectID gleich subjectID (die frühere Verbindung) ist.
+    1.8.0 (Karte BEF08998, ADR 0037, additiv, Handbuch 1.49.0): Projektgruppen (/v1/project-groups, /v1/projects/{id}/groups, /v1/project-selection/preview, nur Personen-Sitzung, kein MCP-Schreibweg) und optionales selection bei PUT /v1/settings/brain-mandate. BrainMandateDTO.projectIDs ist jetzt die wirksame Menge; neu explicitProjectIDs und selection. projectIDs darf leer sein, wenn selection eine Gruppe oder mode all_except nennt. PUT ohne selection ersetzt eine Regel durch die gesendete Liste. Protokoll: kind mandate.group_added|mandate.group_removed (quote ist ein Servertext). addProjectConnection und set_connection_projects heben einen Ausschluss genau dieses Projekts auf (409 excluded_by_group bei ausgeschlossener Gruppe); Entfernen schliesst ein Projekt aus, das eine Gruppe oder "alle" mitbringt.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -128,7 +129,7 @@ paths:
     get:
       operationId: listBrainDecisionAudit
       summary: Protokoll der Entscheidungen unter allen Vollmachten
-      description: 'Neueste zuerst, höchstens 200 (Entscheidungen und Verbindungsänderungen gemischt). Antwort {items: [{id, kind review.accepted|review.changes_requested|question.answered|plan.approved|plan.changes_requested|connection.project_added|connection.project_removed|connection.taken_over|mandate.taken_over, taskID (fehlt bei connection.* und mandate.taken_over), projectID, subjectID (Review/Frage/Plan, bei connection.* die geänderte Verbindung), grantID (die entscheidende bzw. handelnde Verbindung), quote, note, createdAt}]}. Das Protokoll hat keine Fremdschlüssel auf Karte oder Verbindung und überdauert deren Löschung.'
+      description: 'Neueste zuerst, höchstens 200 (Entscheidungen und Verbindungsänderungen gemischt). Antwort {items: [{id, kind review.accepted|review.changes_requested|question.answered|plan.approved|plan.changes_requested|connection.project_added|connection.project_removed|connection.taken_over|mandate.taken_over, taskID (fehlt bei connection.* und mandate.taken_over), projectID, subjectID (Review/Frage/Plan, bei connection.* die geänderte Verbindung; bei connection.taken_over ohne gemeinsames Projekt ist projectID gleich subjectID), grantID (die entscheidende bzw. handelnde Verbindung), quote, note, createdAt}]}. Das Protokoll hat keine Fremdschlüssel auf Karte oder Verbindung und überdauert deren Löschung.'
       responses:
         '200': {description: BrainAuditResponse}
         '401': {description: keine Personen-Sitzung}

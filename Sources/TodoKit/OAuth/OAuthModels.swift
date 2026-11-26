@@ -8,6 +8,8 @@ final class OAuthClient: Model, @unchecked Sendable {
     @Field(key: "redirects") var redirects: [String]
     /// Set on creation; rows from before the column existed are backfilled by the migration.
     @OptionalField(key: "created_at") var createdAt: Date?
+    /// Name of a client that registered without `client_name`; it identifies nothing (ADR 0036, no takeover by this name).
+    static let defaultName = "MCP Client"
     init() {}
     init(name: String, redirects: [String]) { self.name = name; self.redirects = redirects; createdAt = Date() }
 }
