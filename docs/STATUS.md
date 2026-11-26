@@ -1,5 +1,17 @@
 # Status
 
+## Nachtrag 26.11.2026 (08:30): Neuanmeldung ohne erneute Projektauswahl, Teil 1 und 2 (Karte BEF08998; kein Push, kein Deploy)
+
+- Branch `t3/oauth-replay-vollmacht-reauth`: Teil 1 `90f3d00` (rot), `a3e7941` (grün); Teil 2 `36482d7`, `1277d22` (rot), `6438a98` (grün), `be7f09d` (E2E und Bilder). Teil 3 (Projektgruppen) nicht begonnen.
+- Ursache (lokale MCP-Logs `todolino-brain`, 26.11. UTC): 06:44:13 `Token persist failed: storage write failed` nach erfolgreicher Rotation, 06:45:07 altes Refresh-Token erneut → `invalid_grant`; der Server widerrief die ganze Verbindung. Das Setzen der Vollmacht hat nichts ausgelöst. Offen: warum das Speichern scheiterte; Server-Logs nicht eingesehen.
+- Neu (ADR 0036): 300 s Nachlauffenster für das zuletzt rotierte Refresh-Token (nur solange kein Nachfolger benutzt wurde, sonst weiter Gesamtwiderruf); Widerrufsgrund `revoked_reason`; die Zustimmungsseite bietet Übernahme von Projekten und Vollmacht an (`takeover_grant_id`); PWA-Hinweise; eigene Anfragen der Vorgänger bleiben gesperrt. `oauth-mcp.yaml` 1.11.0, `connections.yaml` 1.6.0, Handbuch 1.47.0.
+- Migrationen `AddOAuthReuseAndRevocation`, `AddOAuthGrantLineage` (additiv; `App migrate --yes` vor `serve`). Altbestand: schon widerrufene Verbindungen (auch die Brain-Verbindung vom 26.11.) haben keine Ursache und werden nie angeboten; dort Vollmacht einmal neu erteilen.
+- Rot: `OAuthRefreshReuseTests` 9/9 mit Fehlern (Kern: 400 statt 200), MariaDB-Nebenläufigkeit 5 Fehler; `OAuthTakeoverTests` 16 Tests, 13 rot; vitest `mandateTakeover` 5 von 6 rot. Die E2E-Spec entstand nach der Umsetzung (kein Rotlauf).
+- Grün: volle `swift test` (SQLite) 1003 Tests, 23 übersprungen, 0 Fehler (danach nur Namenssortierung auf der Zustimmungsseite, gezielt 35 Tests, 1 übersprungen, 0 Fehler); MariaDB 12.3 (eigener Wegwerf-Container, beendet) `OAuth*|ConnectionTests|BrainMandate|ConnectionProjectsByMandate|PipelineTests` 123 Tests, 0 Fehler; `npm run check` 0/0, vitest 792/792, `npm run build` rc 0; Playwright gegen natives Backend mit frischer SQLite: `mandate-relogin` 7/7 in Chromium, Firefox, WebKit, Nachbarn `brain-mandate` 10/10, `oauth-consent` 8/8 (Chromium, WebKit), `connections` 5/5.
+- Bilder hell/dunkel Desktop/mobil: `docs/screenshots/vollmacht-neuanmeldung/` (Stichprobe angesehen).
+- Nicht geprüft: Docker-Image/Linux, volle MariaDB-Suite, echter Claude-Code-Client gegen den neuen Stand, Apple-App.
+- Nächster Schritt: Prüfung/Merge durch die Hauptsession (CI, E2E), Review stellt die Hauptsession; Deploy bei Lino; danach Teil 3 (Projektgruppen, Anknüpfpunkt `OAuthTakeover.find`/`handOver`).
+
 ## Nachtrag 26.11.2026: Vier neue App-Icon-Entwürfe liegen vor (Karte 75EAE344; Wahl offen, nichts eingebaut)
 
 - Branch `t3/app-icon-entwuerfe`, `18f7251` (Tests rot), `55f46b0` (Entwürfe, grün). Kein Push, kein Deploy; `design/icon/Todo.icon`, `web/static` und Apple-Repo unverändert.
