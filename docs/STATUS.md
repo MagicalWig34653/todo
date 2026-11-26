@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 26.11.2026 (13:30): BEF08998 Teil 1, 2 und Review-Korrekturen in `main`, Push; Teil 3 in Arbeit
+
+- Merges `dc842e3` (Teil 1+2) und `af0b174` (Security-Korrekturen). Auf `af0b174`: volle `swift test` (SQLite) 1011 Tests, 24 übersprungen, 0 Fehler; `npm run check` 0/0; vitest 799/799; `npm run build` rc 0.
+- Folgearbeit aus dem Review: `oauth.refresh_repeated`/`oauth.replay_revoked` stehen nur im Server-Log (nicht in der Audit-Tabelle); Audit-Zeile einer Übernahme ohne gemeinsames Projekt trägt die alte Verbindung als `projectID`; `isOwnRequest` kennt die Vorgängerkette nicht (restriktiv).
+- Deploy (Lino): `App migrate --yes` vor `serve`, alte und neue Instanz nicht gleichzeitig; die am 26.11. widerrufene Brain-Verbindung braucht die Vollmacht einmal neu.
+- Nächster Schritt: CI zum Push prüfen; Teil 3 (Projektgruppen) auf `t3/projektgruppen-vollmacht-verbindungen` fertigstellen, zusammenführen, Review an Lino.
+
 ## Nachtrag 26.11.2026 (13:15): Security-Review zu BEF08998 behoben (kein Push, kein Deploy)
 
 - Branch `t3/oauth-rotation-security-fixes` ab `dc842e3`: rot `70bf96f`, grün `2d3d895`, `0aab3cd`. Details: ADR 0036, Nachtrag.
