@@ -146,7 +146,7 @@ struct ActionRequestService: Sendable {
             // Serialises concurrent identical calls of one connection (same pattern as create_project).
             try await lockRow(table: OAuthGrant.schema, id: grantID, on: tx)
             let description = try await action.describe(args, user, tx)
-            guard description.projectIDs.isSubset(of: Set(grant.projects)) else { throw Abort(.notFound) }
+            guard description.projectIDs.isSubset(of: Set(grant.effectiveProjects)) else { throw Abort(.notFound) }
             let print = fingerprint(grantID: grantID, tool: tool, args: args)
             let now = Date()
             if let open = try await ActionRequest.query(on: tx).filter(\.$fingerprint == print).filter(\.$state == "pending")
@@ -215,11 +215,13 @@ struct ActionRequestService: Sendable {
                 guard let action = ConfirmableActions.all[r.tool] else { throw Failed(code: "unknown_action") }
                 // The connection's limits apply at execution time too.
                 guard let grantID = r.grantID, let grant = try await OAuthGrant.find(grantID, on: tx), !grant.revoked else { throw Failed(code: "connection_revoked") }
+                // ADR 0037: what the connection reaches now (rule and groups included), resolved under the sharing lock.
+                try await grant.resolveProjects(on: tx, locking: true)
                 if let scope = action.requiredScope, !grant.scopes.contains(scope) { throw Failed(code: "insufficient_scope") }
                 do {
                     // describe re-checks the account's current rights; execute is the REST code path.
                     let description = try await action.describe(r.args, user, tx)
-                    guard description.projectIDs.isSubset(of: Set(grant.projects)) else { throw Failed(code: "not_found") }
+                    guard description.projectIDs.isSubset(of: Set(grant.effectiveProjects)) else { throw Failed(code: "not_found") }
                     let code = try await action.execute(r.args, user, tx)
                     r.state = "executed"; r.result = ActionResult(ok: true, code: code)
                 } catch let e as Failed { throw e }

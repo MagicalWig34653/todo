@@ -19,7 +19,9 @@ final class OAuthGrant: Model, @unchecked Sendable {
     @Field(key: "client_id") var clientID: UUID
     @Field(key: "resource") var resource: String
     @Field(key: "scopes") var scopes: [String]
-    @Field(key: "projects") var projects: [UUID]
+    /// The explicitly chosen projects (ADR 0037). What the connection reaches is `effectiveProjects`: these plus the rule in
+    /// `project_selections` (groups, "all owned except"), cut with the person's read right.
+    @Field(key: "projects") var explicitProjects: [UUID]
     @Field(key: "revoked") var revoked: Bool
     /// Name of the connection chosen by the person (default: the client name). Rows from before the column are backfilled.
     @OptionalField(key: "name") var name: String?
@@ -34,7 +36,18 @@ final class OAuthGrant: Model, @unchecked Sendable {
     init() {}
     init(userID: UUID, clientID: UUID, resource: String, scopes: [String], projects: [UUID], name: String? = nil) {
         self.userID = userID; self.clientID = clientID; self.resource = resource
-        self.scopes = scopes; self.projects = projects; revoked = false; self.name = name
+        self.scopes = scopes; explicitProjects = projects; revoked = false; self.name = name
+    }
+    /// Set by `resolveProjects(on:)` (ADR 0037); never stored.
+    var resolvedProjects: [UUID]?
+    /// What this connection reaches now. Every check reads this; it must have been resolved for the current request or
+    /// transaction. An unresolved grant reaches nothing (fail closed), and debug builds stop right there.
+    var effectiveProjects: [UUID] {
+        guard let resolvedProjects else {
+            assertionFailure("OAuthGrant.effectiveProjects read before resolveProjects(on:)")
+            return []
+        }
+        return resolvedProjects
     }
     /// Every revocation names its cause (ADR 0036); the latest decision wins.
     func revoke(_ reason: OAuthRevocation, now: Date = Date()) {

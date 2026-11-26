@@ -31,6 +31,9 @@ struct MCPController: RouteCollection {
             return Response(status: .unauthorized, headers: ["WWW-Authenticate": "Bearer resource_metadata=\"\(req.application.settings.oauthIssuer)/.well-known/oauth-protected-resource/mcp\", scope=\"\(OAuthController.scopes.joined(separator: " "))\""])
         }
         await ConnectionService.touch(grant, db: req.db)
+        // ADR 0037: what this connection reaches is resolved once per request (explicit list, groups, "all except", the
+        // person's read right); every tool reads `effectiveProjects`.
+        try await grant.resolveProjects(on: req.db)
         if let version = req.headers.first(name: "MCP-Protocol-Version"), !Self.versions.contains(version) { throw Abort(.badRequest, reason: "unsupported_protocol_version") }
         let body: JSONValue
         do { body = try req.content.decode(JSONValue.self) }
@@ -120,7 +123,7 @@ struct MCPController: RouteCollection {
     }
     /// Effective rights = explicitly granted project IDs AND the user's current effective role (incl. teams).
     func project(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> Project {
-        guard grant.projects.contains(id) else { throw Abort(.notFound) }
+        guard grant.effectiveProjects.contains(id) else { throw Abort(.notFound) }
         return try await ProjectAccess(user: user, db: db).project(id, role: role)
     }
     func uuid(_ value: JSONValue) throws -> UUID {
@@ -170,13 +173,13 @@ struct MCPController: RouteCollection {
         switch name {
         case "list_projects":
             var result: [JSONValue] = []
-            for id in grant.projects {
+            for id in grant.effectiveProjects {
                 do {
                     let p = try await project(id, user: user, grant: grant, db: db)
                     result.append(.object(["id": .string(try p.requireID().uuidString), "name": .string(p.name),
                         "version": .number(Double(p.version)),
                         "description": p.details.map { .string($0) } ?? .null, "color": p.color.map { .string($0) } ?? .null,
-                        "parentID": p.parentID.flatMap { grant.projects.contains($0) ? .string($0.uuidString) : nil } ?? .null]))
+                        "parentID": p.parentID.flatMap { grant.effectiveProjects.contains($0) ? .string($0.uuidString) : nil } ?? .null]))
                 }
                 catch let e as any AbortError where e.status == .notFound { continue }
             }
@@ -225,7 +228,7 @@ struct MCPController: RouteCollection {
             guard let body = a["body"].string else { throw Abort(.badRequest, reason: "invalid_arguments") }
             let taskID = try uuid(a["taskID"])
             if !a["idempotencyKey"].isNull && a["idempotencyKey"].string == nil { throw Abort(.badRequest, reason: "invalid_idempotency_key") }
-            let projects = grant.projects, grantID = try grant.requireID()
+            let projects = grant.effectiveProjects, grantID = try grant.requireID()
             // Same service as REST; the grant's project list is checked again on the locked task.
             let target = CommentService.Target(questionID: try optionalUUID(a, "questionID"), reviewID: try optionalUUID(a, "reviewID"))
             let dto = try await CommentService.create(taskID: taskID, user: user, body: body, idempotencyKey: a["idempotencyKey"].string,

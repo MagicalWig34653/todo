@@ -41,7 +41,7 @@ final class BrainMandateMigrationTests: XCTestCase {
         XCTAssertEqual(kept.id, old.id)
         XCTAssertEqual(kept.userID, try user.requireID())
         XCTAssertEqual(kept.grantID, try a.requireID())
-        XCTAssertEqual(kept.projects, [project])
+        XCTAssertEqual(kept.explicitProjects, [project])
         XCTAssertNil(kept.revokedAt)
         XCTAssertEqual(kept.createdAt.timeIntervalSince1970, created.timeIntervalSince1970, accuracy: 1)
         try await BrainMandate(userID: try user.requireID(), grantID: try b.requireID(), projects: [project]).save(on: db)
@@ -69,6 +69,6 @@ final class BrainMandateMigrationTests: XCTestCase {
         let first = try await BrainMandate.query(on: db).first()
         let kept = try XCTUnwrap(first)
         XCTAssertNotNil(kept.revokedAt)
-        XCTAssertEqual(kept.projects, m.projects)
+        XCTAssertEqual(kept.explicitProjects, m.explicitProjects)
     }
 }

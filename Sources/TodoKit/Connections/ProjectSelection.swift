@@ -192,9 +192,10 @@ struct ProjectSelectionResolver {
         var candidates = Set(explicit)
         var excluded = Set<UUID>()
         if let rule {
+            // Locking reads (groups) before the first plain read (sharing graph): MariaDB snapshot isolation.
             candidates.formUnion(try await members(of: rule.groupIDs))
-            if rule.mode == SelectionRule.allExcept { candidates.formUnion(try await owned().auto) }
             excluded = Set(rule.excludedProjectIDs).union(try await members(of: rule.excludedGroupIDs))
+            if rule.mode == SelectionRule.allExcept { candidates.formUnion(try await owned().auto) }
         }
         candidates.subtract(excluded)
         var seen = Set<UUID>(), out: [UUID] = []
@@ -218,6 +219,20 @@ struct ProjectSelectionResolver {
 
     mutating func projects(of mandate: BrainMandate) async throws -> [UUID] {
         try await resolve(explicit: mandate.explicitProjects, rule: try await rule(of: mandate.requireID()))
+    }
+
+    /// Read-only description for MCP (`get_connection`): mode, chosen and excluded groups by name, excluded projects only as a
+    /// count (their ids could name projects outside the connection's reach).
+    func describe(_ rule: SelectionRule?) async throws -> [String: JSONValue] {
+        let rule = rule ?? SelectionRule()
+        let named = try await rows(ProjectGroup.self, column: "id", in: rule.groupIDs + rule.excludedGroupIDs, locking: false, on: db)
+            .filter { $0.userID == userID }
+        func groups(_ ids: [UUID]) -> JSONValue {
+            .array(named.filter { $0.id.map(ids.contains) ?? false }.sorted { $0.nameKey < $1.nameKey }
+                .map { .object(["id": .string($0.id?.uuidString ?? ""), "name": .string($0.name)]) })
+        }
+        return ["mode": .string(rule.mode), "groups": groups(rule.groupIDs), "excludedGroups": groups(rule.excludedGroupIDs),
+                "excludedProjectCount": .number(Double(rule.excludedProjectIDs.count))]
     }
 
     /// Checks a requested rule: known mode, bounded, and every group is the person's own (404 otherwise).

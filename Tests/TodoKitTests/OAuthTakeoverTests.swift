@@ -140,7 +140,7 @@ final class OAuthTakeoverTests: XCTestCase {
 
             let new = try await login(f, takeOver: true)
             let g = try await grant(f, new.grant)
-            XCTAssertEqual(Set(g.projects.map(\.uuidString)), [try pid(f.project), try pid(f.other)])
+            XCTAssertEqual(Set(g.explicitProjects.map(\.uuidString)), [try pid(f.project), try pid(f.other)])
             let previous = try await grant(f, old.grant)
             XCTAssertTrue(previous.revoked)
             let why = try await reason(f, old.grant)

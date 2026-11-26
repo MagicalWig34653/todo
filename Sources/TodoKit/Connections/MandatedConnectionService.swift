@@ -28,7 +28,7 @@ struct MandatedProjectChangeDTO: Content {
 }
 
 /// Card E71B0FF1, ADR 0032 addendum 24.11.2026: a connection with an active brain mandate reads and changes the project
-/// list (`OAuthGrant.projects`) of the person's OTHER connections, but only for projects named in its own mandate. The mandate
+/// list (`OAuthGrant.explicitProjects`, ADR 0037) of the person's OTHER connections, but only for projects named in its own mandate. The mandate
 /// itself is never touched here. Same rules as `ConnectionService.add/remove` for the person's access and `projects_required`.
 enum MandatedConnectionService {
     static let maxProjectsPerCall = 50
@@ -55,11 +55,14 @@ enum MandatedConnectionService {
     static func list(user: User, caller: OAuthGrant, db: any Database) async throws -> [MandatedConnectionDTO] {
         let userID = try user.requireID(), callerID = try caller.requireID()
         let mandate = try await activeMandate(userID: userID, grantID: callerID, on: db)
+        // ADR 0037: both sides resolved (explicit list, groups, "all except", read right).
+        var resolver = ProjectSelectionResolver(userID: userID, db: db)
+        let covered = Set(try await resolver.projects(of: mandate))
         let grants = try await OAuthGrant.query(on: db).filter(\.$userID == userID).filter(\.$revoked == false).all().filter { $0.id != callerID }
         let clients = try await ConnectionService.clientNames(grants, on: db)
         var out: [MandatedConnectionDTO] = []
         for g in grants {
-            let inside = g.projects.filter { mandate.projects.contains($0) }
+            let inside = try await resolver.projects(of: g).filter(covered.contains)
             out.append(MandatedConnectionDTO(grantID: try g.requireID(), name: ConnectionNames.display(g, clientName: clients[g.clientID]),
                 clientName: clients[g.clientID], scopes: g.scopes, lastUsedAt: g.lastUsedAt, projects: try await readable(inside, user: user, on: db)))
         }
@@ -86,16 +89,12 @@ enum MandatedConnectionService {
             guard let target = grants[targetID] else { throw Abort(.notFound) }
             let access = ProjectAccess(user: user, db: tx)
             for id in add { _ = try await access.project(id) }
-            var projects = target.projects
-            let newlyAdded = add.uniqued().filter { !projects.contains($0) }
-            let newlyRemoved = remove.uniqued().filter { projects.contains($0) }
-            projects.append(contentsOf: newlyAdded)
-            projects.removeAll { removes.contains($0) }
-            if !newlyRemoved.isEmpty, projects.isEmpty, !target.scopes.contains("projects:write") { throw Abort(.badRequest, reason: "projects_required") }
-            if !newlyAdded.isEmpty || !newlyRemoved.isEmpty {
-                target.projects = projects
-                try await target.save(on: tx)
-            }
+            // ADR 0037: single projects on top of the target's rule. Adding lifts an exclusion of that project (an excluded
+            // group refuses: the person's rule); removing a project a group or "all" brings in excludes it.
+            var newlyAdded: [UUID] = [], newlyRemoved: [UUID] = []
+            for id in add.uniqued() where try await target.include(id, on: tx) { newlyAdded.append(id) }
+            for id in remove.uniqued() where try await target.exclude(id, on: tx) { newlyRemoved.append(id) }
+            let projects = try await target.resolveProjects(on: tx, locking: true)
             if !adds.isEmpty {
                 try await ConnectionAccessRequest.query(on: tx).filter(\.$grantID == targetID).filter(\.$projectID ~~ adds).set(\.$state, to: "granted").update()
             }

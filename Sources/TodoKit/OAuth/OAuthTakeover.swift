@@ -19,12 +19,15 @@ enum OAuthTakeover {
         let mandate: BrainMandate?
         let mandateProjects: [Project]
         let name: String
+        /// ADR 0037: the rules of the old connection and of its mandate; they move along (limited, see `handOver`).
+        var grantRule: SelectionRule? = nil
+        var mandateRule: SelectionRule? = nil
     }
 
     enum Found { case none, ambiguous, one(Candidate) }
 
     /// What the consent page showed; kept server side with the consent token, so a click never hands over more than that.
-    struct Offer: Codable { var grantID: UUID; var mandateProjects: [UUID] }
+    struct Offer: Codable { var grantID: UUID; var mandateProjects: [UUID]; var mandateRule: SelectionRule? = nil }
 
     /// Only connections that are alive or were ended by replay detection qualify. Revoked by the person, replaced, locked
     /// account or an unknown cause never do. Several matches mean: nothing.
@@ -39,15 +42,23 @@ enum OAuthTakeover {
         let readable = Dictionary(uniqueKeysWithValues: try await ProjectAccess(user: user, db: db).visibleProjects()
             .compactMap { p in p.id.map { ($0, p) } })
         let mandates = try await BrainMandate.query(on: db).filter(\.$userID == userID).filter(\.$revokedAt == .null).all()
+        // ADR 0037: old connection and mandate resolved like every check (explicit list plus rule, read right).
+        var resolver = ProjectSelectionResolver(userID: userID, db: db)
+        var reach: [UUID: [UUID]] = [:], rules: [UUID: SelectionRule] = [:]
+        for g in grants { let id = try g.requireID(); reach[id] = try await resolver.projects(of: g); rules[id] = try await resolver.rule(of: id) }
+        for m in mandates { let id = try m.requireID(); reach[id] = try await resolver.projects(of: m); rules[id] = try await resolver.rule(of: id) }
 
         func candidate(_ grant: OAuthGrant, _ match: Match) -> Candidate? {
-            let projects = grant.projects.compactMap { readable[$0] }
+            guard let gid = grant.id else { return nil }
+            grant.resolvedProjects = reach[gid] ?? []
+            let projects = grant.effectiveProjects.compactMap { readable[$0] }
             let mandate = mandates.first { $0.grantID == grant.id }
             // By name: the consent page lists these as text.
-            let covered = (mandate?.projects ?? []).compactMap { readable[$0] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            let covered = (mandate?.id.flatMap { reach[$0] } ?? []).compactMap { readable[$0] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
             guard !projects.isEmpty || !covered.isEmpty else { return nil }
             return Candidate(grant: grant, match: match, projects: projects, mandate: covered.isEmpty ? nil : mandate,
-                             mandateProjects: covered, name: ConnectionNames.display(grant, clientName: clients[grant.clientID]?.name))
+                             mandateProjects: covered, name: ConnectionNames.display(grant, clientName: clients[grant.clientID]?.name),
+                             grantRule: rules[gid], mandateRule: covered.isEmpty ? nil : mandate?.id.flatMap { rules[$0] })
         }
         var matches = grants.filter { $0.clientID == clientID }.compactMap { candidate($0, .client) }
         // By name: client names are free to choose in open registration, so only between loopback clients and only for a
@@ -74,19 +85,32 @@ enum OAuthTakeover {
         let now = Date()
         old.revoke(.superseded, now: now); try await old.save(on: db)
 
-        let chosen = Set(new.projects)
+        let chosen = Set(try await new.resolveProjects(on: db, locking: true))
         // A project the person unchecked leaves the mandate as well.
-        let unchecked = Set(old.projects).subtracting(chosen)
+        let unchecked = Set(old.effectiveProjects).subtracting(chosen)
         let carried = Set(candidate.mandateProjects.compactMap(\.id)).intersection(offer.mandateProjects).subtracting(unchecked)
             .sorted { $0.uuidString < $1.uuidString }
         var mandateID: UUID?
         if !carried.isEmpty {
-            let mandate = BrainMandate(userID: userID, grantID: newID, projects: carried, now: now)
+            // ADR 0037: a mandate rule moves along as shown on the page. Only the explicitly named projects stay explicit
+            // (group members must still follow their group); what the person did not get to see or unchecked now is excluded,
+            // so the new mandate never starts wider than the click.
+            var rule = offer.mandateRule
+            var explicit = carried
+            if rule != nil {
+                let named = Set(candidate.mandate?.explicitProjects ?? [])
+                let unseen = named.union(candidate.mandateProjects.compactMap(\.id)).subtracting(offer.mandateProjects)
+                let excluded = Set(rule!.excludedProjectIDs).union(unseen).union(unchecked)
+                rule!.excludedProjectIDs = excluded.sorted { $0.uuidString < $1.uuidString }
+                explicit = carried.filter { named.contains($0) }
+            }
+            let mandate = BrainMandate(userID: userID, grantID: newID, projects: explicit, now: now)
             try await mandate.save(on: db)
             mandateID = try mandate.requireID()
+            if let rule { try await ProjectSelectionResolver(userID: userID, db: db, locking: true).store(rule, of: mandate.requireID()) }
         }
         let note = "Bei der Neuanmeldung auf der Zustimmungsseite bestätigt: Übernahme von „\(candidate.name)“."
-        let accessOnly = chosen.intersection(old.projects).subtracting(carried).sorted { $0.uuidString < $1.uuidString }
+        let accessOnly = chosen.intersection(old.effectiveProjects).subtracting(carried).sorted { $0.uuidString < $1.uuidString }
         for (kind, projects) in [("mandate.taken_over", carried), ("connection.taken_over", accessOnly)] {
             for projectID in projects {
                 let row = BrainConnectionAudit()

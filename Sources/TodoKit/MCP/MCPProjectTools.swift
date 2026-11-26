@@ -47,7 +47,7 @@ extension MCPController {
         let due = try optionalString(a, "dueDate").map(Self.parseDueDate)
         let priority = try intArgument(a["priority"], reason: "invalid_priority")
         if let priority, !(0...3).contains(priority) { throw Abort(.badRequest, reason: "invalid_priority") }
-        guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
+        guard grant.effectiveProjects.contains(projectID) else { throw Abort(.notFound) }
         let body = CreateTaskRequest(projectID: projectID, title: title, description: description, columnID: columnID)
         let dto = try await db.transaction { tx -> TaskDTO in
             try await lockSharingGraph(on: tx)
@@ -88,8 +88,8 @@ extension MCPController {
             let projectID = try uuid(a["projectID"])
             guard let version = try intArgument(a["version"], reason: "invalid_version") else { throw Abort(.badRequest, reason: "invalid_version") }
             let parent = try optionalUUID(a, "parentID")
-            guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
-            if let parent, !grant.projects.contains(parent) { throw Abort(.notFound) }
+            guard grant.effectiveProjects.contains(projectID) else { throw Abort(.notFound) }
+            if let parent, !grant.effectiveProjects.contains(parent) { throw Abort(.notFound) }
             let body = UpdateProjectRequest(version: version, name: nil, parentID: nil, moveToRoot: parent == nil ? true : nil)
             let request = parent == nil ? body : UpdateProjectRequest(version: version, name: nil, parentID: .some(parent), moveToRoot: nil)
             let dto = try await db.transaction { tx in
@@ -97,12 +97,12 @@ extension MCPController {
                 return try await PlanningOperations.updateProject(user: user, db: tx, id: projectID, body: request)
             }
             return .object(["id": .string(dto.id.uuidString), "name": .string(dto.name), "version": .number(Double(dto.version)),
-                "parentID": dto.parentID.flatMap { grant.projects.contains($0) ? .string($0.uuidString) : nil } ?? .null])
+                "parentID": dto.parentID.flatMap { grant.effectiveProjects.contains($0) ? .string($0.uuidString) : nil } ?? .null])
         case "set_project_position":
             let projectID = try uuid(a["projectID"])
             let after = try optionalUUID(a, "afterProjectID")
-            guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
-            if let after, !grant.projects.contains(after) { throw Abort(.notFound) }
+            guard grant.effectiveProjects.contains(projectID) else { throw Abort(.notFound) }
+            if let after, !grant.effectiveProjects.contains(after) { throw Abort(.notFound) }
             let dto = try await db.transaction { tx -> ProjectDTO in
                 try await lockSharingGraph(on: tx)
                 _ = try await ProjectAccess(user: user, db: tx).project(projectID)
@@ -132,7 +132,7 @@ extension MCPController {
             let value = try WorkflowService.text(raw, max: 2000, reason: "invalid_text")
             let grantID = try grant.requireID()
             let label = try await OAuthClient.find(grant.clientID, on: db)?.name
-            let service = WorkflowService(user: user, db: db, allowedProjects: Set(grant.projects))
+            let service = WorkflowService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
             let actor = WorkflowActor.integration(grantID: grantID, label: label)
             return try .encoded(try await service.mutate(existing.taskID, role: .edit) { _, tx in
                 guard let c = try await AcceptanceCriterion.find(id, on: tx) else { throw Abort(.notFound) }

@@ -49,7 +49,7 @@ extension MCPController {
     ]
 
     func callRunTools(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) async throws -> JSONValue {
-        let allowed = Set(grant.projects)
+        let allowed = Set(grant.effectiveProjects)
         switch name {
         case "list_reviews":
             let status = try optionalString(a, "status") ?? "all"

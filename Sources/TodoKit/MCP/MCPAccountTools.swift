@@ -78,7 +78,7 @@ extension MCPController {
         case "get_connection":
             let client = try await OAuthClient.find(grant.clientID, on: db)?.name
             var projects: [JSONValue] = []
-            for id in grant.projects {
+            for id in grant.effectiveProjects {
                 if let p = try? await project(id, user: user, grant: grant, db: db) {
                     projects.append(.object(["id": .string(id.uuidString), "name": .string(p.name)]))
                 }
@@ -88,9 +88,16 @@ extension MCPController {
             // Read-only (ADR 0032): whether this very connection holds the person's brain mandate.
             let mandate = try await BrainMandate.query(on: db).filter(\.$userID == userID).filter(\.$grantID == grant.requireID())
                 .filter(\.$revokedAt == .null).first()
-            let brainMandate: JSONValue = .object(["active": .bool(mandate != nil), "projectIDs": .strings((mandate?.projects ?? []).map(\.uuidString))])
+            // ADR 0037: resolved like every check; mode and groups by name, excluded projects only as a count.
+            var resolver = ProjectSelectionResolver(userID: userID, db: db)
+            var brainMandate: [String: JSONValue] = ["active": .bool(mandate != nil), "projectIDs": .strings([])]
+            if let mandate {
+                brainMandate["projectIDs"] = .strings(try await resolver.projects(of: mandate).map(\.uuidString))
+                for (key, value) in try await resolver.describe(try await resolver.rule(of: mandate.requireID())) { brainMandate[key] = value }
+            }
             return .object(["client": client.map { .string($0) } ?? .null, "name": .string(ConnectionNames.display(grant, clientName: client)), "scopes": .strings(grant.scopes), "projects": .array(projects),
-                            "brainMandate": brainMandate,
+                            "selection": .object(try await resolver.describe(try await resolver.rule(of: grant.requireID()))),
+                            "brainMandate": .object(brainMandate),
                             "refreshExpiresAt": refresh.map { .string(ISO8601DateFormatter().string(from: $0.expiresAt)) } ?? .null])
         case "list_users":
             try requireAdmin()

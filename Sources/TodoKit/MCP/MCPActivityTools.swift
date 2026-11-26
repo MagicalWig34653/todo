@@ -106,7 +106,7 @@ extension MCPController {
             if let v = try version(required: false) { values["version"] = String(v) }
             return values
         }
-        let projects = grant.projects
+        let projects = grant.effectiveProjects
         let taskScope: @Sendable (TodoTask) throws -> Void = { t in guard projects.contains(t.projectID) else { throw Abort(.notFound) } }
 
         switch name {

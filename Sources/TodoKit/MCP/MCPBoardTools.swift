@@ -92,7 +92,7 @@ extension MCPController {
             guard let source = a["source"].string else { throw Abort(.badRequest, reason: "invalid_source") }
             if source != "status" && source != "agent_workflow" {
                 guard let sourceID = UUID(uuidString: source) else { throw Abort(.badRequest, reason: "invalid_source") }
-                guard grant.projects.contains(sourceID) else { throw Abort(.notFound) }
+                guard grant.effectiveProjects.contains(sourceID) else { throw Abort(.notFound) }
             }
             return try await db.transaction { tx in
                 try await lockSharingGraph(on: tx)
@@ -122,7 +122,7 @@ extension MCPController {
             guard case .bool(let favorite) = a["favorite"] else { throw Abort(.badRequest, reason: "invalid_favorite") }
             let index = try intArgument(a["index"], reason: "invalid_index")
             if let index, index < 0 || !favorite { throw Abort(.badRequest, reason: "invalid_index") }
-            guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
+            guard grant.effectiveProjects.contains(projectID) else { throw Abort(.notFound) }
             let items = try await db.transaction { tx -> [FavoriteDTO] in
                 let service = ProjectStateService(user: user, db: tx)
                 if favorite { return try await service.setFavorite(projectID, index: index) }
@@ -136,7 +136,7 @@ extension MCPController {
             return try .encoded(try await ProjectStateService(user: user, db: db).prefs(projectID))
         case "update_project_prefs":
             let projectID = try uuid(a["projectID"])
-            guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
+            guard grant.effectiveProjects.contains(projectID) else { throw Abort(.notFound) }
             // Same strict decoder as PATCH /v1/me/project-prefs/{id} (exact keys, enum values, revision).
             guard case .object(var fields) = a else { throw Abort(.badRequest, reason: "invalid_arguments") }
             fields["projectID"] = nil
@@ -150,7 +150,7 @@ extension MCPController {
     }
 
     private func favoritesJSON(_ items: [FavoriteDTO], grant: OAuthGrant) throws -> JSONValue {
-        let allowed = Set(grant.projects)
+        let allowed = Set(grant.effectiveProjects)
         return try .encoded(items.filter { allowed.contains($0.projectID) })
     }
 }

@@ -26,7 +26,7 @@ final class OAuthTakeoverMigrationTests: XCTestCase {
             XCTAssertNil(try row.decode(column: "predecessors", as: String?.self))
             XCTAssertNil(try row.decode(column: "taken_over_at", as: Date?.self))
             let after = try await OAuthGrant.find(grant.id, on: db)
-            XCTAssertEqual(after?.projects, grant.projects)
+            XCTAssertEqual(after?.explicitProjects, grant.explicitProjects)
             let list = try await f.test.json(.GET, "/v1/settings/brain-mandate", token: f.session)
             let mandate = try XCTUnwrap((list.body?["mandates"] as? [[String: Any]])?.first)
             XCTAssertEqual(mandate["active"] as? Bool, true)

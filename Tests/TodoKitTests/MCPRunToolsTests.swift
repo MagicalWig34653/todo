@@ -45,7 +45,7 @@ final class MCPRunToolsTests: XCTestCase {
     }
     private func extend(_ f: OAuthFixture, _ projects: [Project]) async throws {
         let g = try await XCTUnwrapAsync(try await OAuthGrant.query(on: f.test.app.db).first())
-        g.projects.append(contentsOf: try projects.map { try $0.requireID() })
+        g.explicitProjects.append(contentsOf: try projects.map { try $0.requireID() })
         try await g.save(on: f.test.app.db)
     }
     private func foreign(_ f: OAuthFixture, grant: Bool = true) async throws -> (User, Project) {

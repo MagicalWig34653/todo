@@ -89,7 +89,7 @@ extension MCPController {
     ]
 
     func syncService(user: User, grant: OAuthGrant, db: any Database) -> ProjectSyncService {
-        ProjectSyncService(user: user, db: db, allowedProjects: Set(grant.projects))
+        ProjectSyncService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
     }
 
     /// Dispatch for the tools of `syncTools`.
@@ -111,10 +111,15 @@ extension MCPController {
                 try await lockRow(table: OAuthGrant.schema, id: grantID, on: tx)
                 // Re-read under the lock: a concurrent create_project must not lose its entry.
                 guard let current = try await OAuthGrant.find(grantID, on: tx), !current.revoked else { throw Abort(.unauthorized) }
-                if let parent = body.parentID, !current.projects.contains(parent) { throw Abort(.notFound) }
+                try await current.resolveProjects(on: tx, locking: true)
+                if let parent = body.parentID, !current.effectiveProjects.contains(parent) { throw Abort(.notFound) }
                 let project = try await PlanningOperations.createProject(user: user, db: tx, body: body)
-                current.projects.append(try project.requireID())
+                let projectID = try project.requireID()
+                // ADR 0037: only the creating connection gets it explicitly. Marked as agent-created, so "all owned except"
+                // of other connections and of mandates does not pick it up until the person chooses it.
+                current.explicitProjects.append(projectID)
                 try await current.save(on: tx)
+                try await AgentCreatedProject(projectID: projectID, grantID: grantID).save(on: tx)
                 let binding = try await repository.asyncMap { try await ProjectSyncService.bindNew(project, repository: $0, staleAfterDays: days, on: tx) }
                 return (project, binding)
             }
@@ -125,7 +130,7 @@ extension MCPController {
         case "update_project":
             let projectID = try uuid(a["projectID"])
             guard let version = try intArgument(a["version"], reason: "invalid_version") else { throw Abort(.badRequest, reason: "invalid_version") }
-            guard grant.projects.contains(projectID) else { throw Abort(.notFound) }
+            guard grant.effectiveProjects.contains(projectID) else { throw Abort(.notFound) }
             // An explicit null clears the description; an absent key leaves it unchanged.
             var description = try optionalString(a, "description")
             if case .object(let fields) = a, let value = fields["description"], value.isNull { description = "" }
@@ -137,7 +142,7 @@ extension MCPController {
             }
             return .object(["id": .string(dto.id.uuidString), "name": .string(dto.name), "version": .number(Double(dto.version)),
                 "description": dto.description.map { .string($0) } ?? .null, "color": dto.color.map { .string($0) } ?? .null,
-                "parentID": dto.parentID.flatMap { grant.projects.contains($0) ? .string($0.uuidString) : nil } ?? .null])
+                "parentID": dto.parentID.flatMap { grant.effectiveProjects.contains($0) ? .string($0.uuidString) : nil } ?? .null])
         case "bind_repository":
             return try .encoded(try await sync.bind(uuid(a["projectID"]), repository: optionalString(a, "repository"),
                 staleAfterDays: intArgument(a["staleAfterDays"], reason: "invalid_stale_after_days")))

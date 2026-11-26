@@ -14,10 +14,10 @@ final class ProjectGroupTests: XCTestCase {
         let p1: UUID, p2: UUID
     }
 
-    private typealias Reply = (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?)
+    typealias Reply = (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?)
     static let scopes = CommandCenterTests.scopes + " projects:write"
 
-    private func env() async throws -> Env {
+    fileprivate func env() async throws -> Env {
         let f = try await OAuthFixture.make()
         let a = try await f.tokens(scope: Self.scopes)
         let firstGrant = try await OAuthGrant.query(on: f.test.app.db).first()?.id
@@ -29,7 +29,7 @@ final class ProjectGroupTests: XCTestCase {
                    p1: try f.project.requireID(), p2: try f.other.requireID())
     }
 
-    private func run(_ body: (Env) async throws -> Void) async throws {
+    fileprivate func run(_ body: (Env) async throws -> Void) async throws {
         let e = try await env()
         do { try await body(e) } catch { await e.f.test.shutdown(); throw error }
         await e.f.test.shutdown()
@@ -37,39 +37,39 @@ final class ProjectGroupTests: XCTestCase {
 
     // MARK: Helpers
 
-    private func rest(_ e: Env, _ method: HTTPMethod, _ path: String, _ body: [String: Any]? = nil, token: String? = nil) async throws -> Reply {
+    fileprivate func rest(_ e: Env, _ method: HTTPMethod, _ path: String, _ body: [String: Any]? = nil, token: String? = nil) async throws -> Reply {
         try await e.f.test.json(method, path, body, token: token ?? e.f.session)
     }
 
-    private func call(_ e: Env, _ token: String, _ name: String, _ args: [String: Any] = [:]) async throws -> (isError: Bool, text: String, json: Any?) {
+    fileprivate func call(_ e: Env, _ token: String, _ name: String, _ args: [String: Any] = [:]) async throws -> (isError: Bool, text: String, json: Any?) {
         let r = try await e.f.rpc("tools/call", ["name": name, "arguments": args], access: token)
         let result = try XCTUnwrap(r.body?["result"] as? [String: Any], "no result for \(name): \(r.body ?? [:])")
         let text = try XCTUnwrap((result["content"] as? [[String: Any]])?.first?["text"] as? String)
         return (result["isError"] as? Bool ?? false, text, try? JSONSerialization.jsonObject(with: Data(text.utf8)))
     }
 
-    private func ids(_ value: Any?) -> Set<UUID> { Set((value as? [String] ?? []).compactMap(UUID.init(uuidString:))) }
-    private func strings(_ ids: [UUID]) -> [String] { ids.map(\.uuidString) }
+    fileprivate func ids(_ value: Any?) -> Set<UUID> { Set((value as? [String] ?? []).compactMap(UUID.init(uuidString:))) }
+    fileprivate func strings(_ ids: [UUID]) -> [String] { ids.map(\.uuidString) }
 
-    private func group(_ e: Env, _ name: String, _ projects: [UUID]) async throws -> UUID {
+    fileprivate func group(_ e: Env, _ name: String, _ projects: [UUID]) async throws -> UUID {
         let r = try await rest(e, .POST, "/v1/project-groups", ["name": name, "projectIDs": strings(projects)])
         XCTAssertEqual(r.status, .ok, "\(r.body ?? [:])")
         return try XCTUnwrap(((r.body?["group"] as? [String: Any])?["id"] as? String).flatMap(UUID.init(uuidString:)))
     }
 
     @discardableResult
-    private func setMembers(_ e: Env, _ group: UUID, _ projects: [UUID], dryRun: Bool = false) async throws -> [[String: Any]] {
+    fileprivate func setMembers(_ e: Env, _ group: UUID, _ projects: [UUID], dryRun: Bool = false) async throws -> [[String: Any]] {
         let r = try await rest(e, .PATCH, "/v1/project-groups/\(group)\(dryRun ? "?dryRun=true" : "")", ["projectIDs": strings(projects)])
         XCTAssertEqual(r.status, .ok, "\(r.body ?? [:])")
         return r.body?["changes"] as? [[String: Any]] ?? []
     }
 
-    private func selection(mode: String = "selected", groups: [UUID] = [], excluded: [UUID] = [], excludedGroups: [UUID] = []) -> [String: Any] {
+    fileprivate func selection(mode: String = "selected", groups: [UUID] = [], excluded: [UUID] = [], excludedGroups: [UUID] = []) -> [String: Any] {
         ["mode": mode, "groupIDs": strings(groups), "excludedProjectIDs": strings(excluded), "excludedGroupIDs": strings(excludedGroups)]
     }
 
     @discardableResult
-    private func mandate(_ e: Env, grant: UUID? = nil, projects: [UUID] = [], _ rule: [String: Any]? = nil, expect: HTTPStatus = .ok) async throws -> Reply {
+    fileprivate func mandate(_ e: Env, grant: UUID? = nil, projects: [UUID] = [], _ rule: [String: Any]? = nil, expect: HTTPStatus = .ok) async throws -> Reply {
         var body: [String: Any] = ["grantID": (grant ?? e.brainGrant).uuidString, "projectIDs": strings(projects)]
         if let rule { body["selection"] = rule }
         let r = try await rest(e, .PUT, "/v1/settings/brain-mandate", body)
@@ -78,7 +78,7 @@ final class ProjectGroupTests: XCTestCase {
     }
 
     @discardableResult
-    private func access(_ e: Env, _ grant: UUID, projects: [UUID] = [], _ rule: [String: Any]? = nil, expect: HTTPStatus = .ok) async throws -> Reply {
+    fileprivate func access(_ e: Env, _ grant: UUID, projects: [UUID] = [], _ rule: [String: Any]? = nil, expect: HTTPStatus = .ok) async throws -> Reply {
         var body: [String: Any] = ["project_ids": strings(projects)]
         if let rule { body["selection"] = rule }
         let r = try await rest(e, .PUT, "/oauth/grants/\(grant)/projects", body)
@@ -87,7 +87,7 @@ final class ProjectGroupTests: XCTestCase {
     }
 
     /// The projects `get_connection` reports: what the connection reaches.
-    private func reach(_ e: Env, _ token: String) async throws -> Set<UUID> {
+    fileprivate func reach(_ e: Env, _ token: String) async throws -> Set<UUID> {
         let r = try await call(e, token, "get_connection")
         let rows = (r.json as? [String: Any])?["projects"] as? [[String: Any]] ?? []
         return Set(rows.compactMap { ($0["id"] as? String).flatMap(UUID.init(uuidString:)) })
@@ -115,7 +115,7 @@ final class ProjectGroupTests: XCTestCase {
     }
 
     /// A review requested by the agent connection in `project` (which is added to the agent's list first); returns the review id.
-    private func review(_ e: Env, _ project: UUID) async throws -> String {
+    fileprivate func review(_ e: Env, _ project: UUID) async throws -> String {
         let task = TodoTask(ownerID: try e.f.user.requireID(), projectID: project, title: "T")
         try await task.save(on: e.f.test.app.db)
         try await access(e, e.agentGrant, projects: [e.p1, project])
@@ -124,8 +124,10 @@ final class ProjectGroupTests: XCTestCase {
         return try XCTUnwrap((r.json as? [String: Any])?["id"] as? String)
     }
 
-    private func decide(_ e: Env, _ review: String) async throws -> (isError: Bool, text: String) {
-        let r = try await call(e, e.brain, "decide_review", ["reviewID": review, "decision": "accept", "quote": "Lino: ok"])
+    fileprivate func decide(_ e: Env, _ review: String) async throws -> (isError: Bool, text: String) {
+        let row = try await TaskReview.find(UUID(uuidString: review), on: e.f.test.app.db)
+        let taskID = try XCTUnwrap(row).taskID
+        let r = try await call(e, e.brain, "decide_review", ["taskID": taskID.uuidString, "decision": "accept", "quote": "Lino: ok"])
         return (r.isError, r.text)
     }
 
@@ -432,6 +434,133 @@ final class ProjectGroupTests: XCTestCase {
             try await assertEqual(try await recommended(), true)
             try await setMembers(e, g, [])
             try await assertEqual(try await recommended(), false)
+        }
+    }
+}
+
+/// Takeover after a new sign-in (ADR 0036) with rules, and concurrency of group changes against decisions (ADR 0037).
+extension ProjectGroupTests {
+    private func signIn(_ e: Env, takeover: String? = nil, rule: [String: Any]? = nil, projects: [UUID],
+                        between: (() async throws -> Void)? = nil) async throws -> (offer: [String: Any]?, status: HTTPStatus, grant: UUID?) {
+        let auth = try await e.f.authorization(scope: Self.scopes)
+        let offer = auth.body?["takeover"] as? [String: Any]
+        let before = Set(try await OAuthGrant.query(on: e.f.test.app.db).all().compactMap(\.id))
+        try await between?()
+        var body: [String: Any] = ["consent_token": try XCTUnwrap(auth.body?["consent_token"]), "approve": true, "project_ids": strings(projects)]
+        if let rule { body["selection"] = rule }
+        if takeover != nil { body["takeover_grant_id"] = try XCTUnwrap(offer?["grant_id"] as? String) }
+        let r = try await rest(e, .POST, "/oauth/consent", body)
+        let new = try await OAuthGrant.query(on: e.f.test.app.db).all().compactMap(\.id).filter { !before.contains($0) }.first
+        return (offer, r.status, new)
+    }
+
+    private func explicitMandate(_ e: Env, _ grant: UUID) async throws -> (covered: Set<UUID>, explicit: Set<UUID>, rule: [String: Any]?) {
+        let r = try await rest(e, .GET, "/v1/settings/brain-mandate")
+        let row = try XCTUnwrap((r.body?["mandates"] as? [[String: Any]])?.first { ($0["grantID"] as? String)?.uppercased() == grant.uuidString })
+        return (ids(row["projectIDs"]), ids(row["explicitProjectIDs"]), row["selection"] as? [String: Any])
+    }
+
+    /// Only one earlier connection may match, so the fixture's two are cut to the brain's.
+    private func onlyBrain(_ e: Env) async throws {
+        let r = try await rest(e, .DELETE, "/oauth/grants/\(e.agentGrant)")
+        XCTAssertEqual(r.status, .noContent)
+    }
+
+    func testTakeoverKeepsTheRuleAndGroupRemovalStillWithdraws() async throws {
+        try await run { e in
+            try await onlyBrain(e)
+            let g = try await group(e, "G", [e.p2])
+            try await access(e, e.brainGrant, projects: [e.p1], selection(groups: [g]))
+            try await mandate(e, selection(groups: [g]))
+            let r = try await signIn(e, takeover: "yes", rule: selection(groups: [g]), projects: [e.p1])
+            XCTAssertEqual(r.status, .ok)
+            XCTAssertEqual(ids((r.offer?["selection"] as? [String: Any])?["groupIDs"]), [g])
+            let mandateOffer = try XCTUnwrap(r.offer?["mandate"] as? [String: Any])
+            XCTAssertEqual(ids(mandateOffer["project_ids"]), [e.p2])
+            XCTAssertEqual(ids((mandateOffer["selection"] as? [String: Any])?["groupIDs"]), [g])
+            let new = try XCTUnwrap(r.grant)
+            let m = try await explicitMandate(e, new)
+            XCTAssertEqual(m.covered, [e.p2])
+            // Group members must not become explicit: leaving the group has to withdraw.
+            XCTAssertEqual(m.explicit, [])
+            try await setMembers(e, g, [])
+            let after = try await explicitMandate(e, new)
+            XCTAssertEqual(after.covered, [])
+            let list = try await rest(e, .GET, "/oauth/grants")
+            let row = try XCTUnwrap(list.list?.first { ($0["id"] as? String)?.uppercased() == new.uuidString })
+            XCTAssertEqual(ids(row["project_ids"]), [e.p1])
+        }
+    }
+
+    func testTakeoverNeverStartsWiderThanThePageShowed() async throws {
+        try await run { e in
+            try await onlyBrain(e)
+            let g = try await group(e, "G", [e.p1])
+            try await mandate(e, selection(groups: [g]))
+            // The group grows between the page and the click.
+            let r = try await signIn(e, takeover: "yes", projects: [e.p1, e.p2], between: { try await self.setMembers(e, g, [e.p1, e.p2]) })
+            XCTAssertEqual(r.status, .ok)
+            let m = try await explicitMandate(e, try XCTUnwrap(r.grant))
+            XCTAssertEqual(m.covered, [e.p1])
+        }
+    }
+
+    func testTakeoverRefusesAChangedMandateRuleAndDropsUncheckedProjects() async throws {
+        try await run { e in
+            try await onlyBrain(e)
+            try await access(e, e.brainGrant, projects: [e.p1, e.p2])
+            try await mandate(e, selection(mode: "all_except"))
+            let changed = try await signIn(e, takeover: "yes", projects: [e.p1, e.p2], between: { try await self.mandate(e, projects: [e.p1]) })
+            XCTAssertEqual(changed.status, .conflict)
+            try await mandate(e, selection(mode: "all_except"))
+            let r = try await signIn(e, takeover: "yes", projects: [e.p1])
+            XCTAssertEqual(r.status, .ok)
+            let m = try await explicitMandate(e, try XCTUnwrap(r.grant))
+            XCTAssertEqual(m.covered, [e.p1])
+            XCTAssertEqual(ids(m.rule?["excludedProjectIDs"]), [e.p2])
+        }
+    }
+
+    /// Group changes lock mandates before grants like decisions do; on MariaDB a wrong order shows up as a deadlock error.
+    func testGroupChangesDecisionsAndAccessChangesAtOnce() async throws {
+        guard TestApp.useMariaDB else { throw XCTSkip("row locks required (MariaDB)") }
+        try await run { e in
+            let g = try await group(e, "G", [e.p2])
+            try await access(e, e.brainGrant, selection(groups: [g]))
+            try await mandate(e, selection(groups: [g]))
+            let f = e.f, brain = e.brain
+            let p2 = e.p2.uuidString, p1 = e.p1.uuidString, gid = g.uuidString, brainGrant = e.brainGrant.uuidString, agentGrant = e.agentGrant.uuidString
+            for round in 0..<8 {
+                let r = try await review(e, e.p2)
+                let row = try await TaskReview.find(UUID(uuidString: r), on: f.test.app.db)
+                let task = try XCTUnwrap(row).taskID.uuidString
+                let members = round % 2 == 0 ? [String]() : [p2]
+                let results = try await withThrowingTaskGroup(of: String.self) { tasks in
+                    tasks.addTask {
+                        let d = try await f.rpc("tools/call", ["name": "decide_review", "arguments": ["taskID": task, "decision": "accept", "quote": "ok"]], access: brain)
+                        let text = ((d.body?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String ?? "no result"
+                        let fine = text.contains("outside_brain_mandate") || text.contains("not_found") || (d.body?["result"] as? [String: Any])?["isError"] as? Bool != true
+                        return fine ? "ok" : text
+                    }
+                    tasks.addTask {
+                        let c = try await f.test.json(.PATCH, "/v1/project-groups/\(gid)", ["projectIDs": members], token: f.session)
+                        return c.status == .ok ? "ok" : "group \(c.body ?? [:])"
+                    }
+                    tasks.addTask {
+                        let a = try await f.test.json(.PUT, "/oauth/grants/\(agentGrant)/projects", ["project_ids": [p1], "selection": ["groupIDs": [gid]]], token: f.session)
+                        return a.status == .ok ? "ok" : "access \(a.body ?? [:])"
+                    }
+                    tasks.addTask {
+                        let m = try await f.test.json(.PUT, "/v1/settings/brain-mandate", ["grantID": brainGrant, "projectIDs": [String](), "selection": ["groupIDs": [gid]]], token: f.session)
+                        return m.status == .ok ? "ok" : "mandate \(m.body ?? [:])"
+                    }
+                    var out: [String] = []
+                    for try await t in tasks { out.append(t) }
+                    return out
+                }
+                XCTAssertEqual(results, ["ok", "ok", "ok", "ok"], "round \(round)")
+                try await setMembers(e, g, [e.p2])
+            }
         }
     }
 }

@@ -48,6 +48,7 @@ extension MCPController {
             if changed, let since, let after = LiveToken.maxEventID(of: since) {
                 // Re-read the grant: projects may have been withdrawn, or the grant revoked, while waiting.
                 guard let current = try await OAuthGrant.find(grantID, on: db), !current.revoked else { throw Abort(.unauthorized) }
+                try await current.resolveProjects(on: db)
                 hints = try await visibleHints(after: after, user: user, grant: current, db: db)
                 hints += try await decidedRequestHints(after: after, grant: current, db: db)
             }
@@ -90,7 +91,7 @@ extension MCPController {
 
     /// Hints on projects the grant lists AND the account can currently read; everything else is dropped.
     private func visibleHints(after: Int, user: User, grant: OAuthGrant, db: any Database) async throws -> [EventHint] {
-        let allowed = Set(grant.projects)
+        let allowed = Set(grant.effectiveProjects)
         var projectOfTask: [UUID: UUID?] = [:]
         var readable: [UUID: Bool] = [:]
         var result: [EventHint] = []

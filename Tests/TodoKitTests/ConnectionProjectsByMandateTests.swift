@@ -63,7 +63,7 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
     }
 
     private func projects(_ e: Env, _ grant: UUID) async throws -> Set<UUID> {
-        Set(try unwrap(try await OAuthGrant.find(grant, on: e.f.test.app.db)).projects)
+        Set(try unwrap(try await OAuthGrant.find(grant, on: e.f.test.app.db)).explicitProjects)
     }
 
     private func audit(_ e: Env) async throws -> [[String: Any]] {
@@ -86,7 +86,7 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
         try await run { e in
             try await mandate(e, projects: [e.p1, e.p2])
             let w = try unwrap(try await OAuthGrant.find(e.watcherGrant, on: e.f.test.app.db))
-            w.projects = [e.p1, e.p3]; try await w.save(on: e.f.test.app.db)
+            w.explicitProjects = [e.p1, e.p3]; try await w.save(on: e.f.test.app.db)
             let r = try await call(e, e.brain, "list_connections", [:])
             XCTAssertFalse(r.isError, r.text)
             let rows = try XCTUnwrap(r.json as? [[String: Any]])
@@ -179,7 +179,7 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
         try await run { e in
             try await mandate(e, projects: [e.p1, e.p2])
             let w = try unwrap(try await OAuthGrant.find(e.watcherGrant, on: e.f.test.app.db))
-            w.projects = [e.p1, e.p3]; try await w.save(on: e.f.test.app.db)
+            w.explicitProjects = [e.p1, e.p3]; try await w.save(on: e.f.test.app.db)
             let r = try await set(e, add: [e.p2], remove: [e.p1])
             XCTAssertFalse(r.isError, r.text)
             try await assertEqual(try await projects(e, e.watcherGrant), [e.p2, e.p3])
@@ -192,7 +192,7 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
             try await mandate(e)
             let w = try unwrap(try await OAuthGrant.find(e.watcherGrant, on: e.f.test.app.db))
             // Without projects:write the connection must keep at least one project (same rule as ConnectionService.remove).
-            w.scopes = ["projects:read", "tasks:read"]; w.projects = [e.p1]; try await w.save(on: e.f.test.app.db)
+            w.scopes = ["projects:read", "tasks:read"]; w.explicitProjects = [e.p1]; try await w.save(on: e.f.test.app.db)
             let refused = try await set(e, remove: [e.p1])
             XCTAssertEqual(refused.text, "projects_required")
             try await assertEqual(try await projects(e, e.watcherGrant), [e.p1])
@@ -454,11 +454,11 @@ final class ConnectionProjectsByMandateTests: XCTestCase {
                 let r = try await e.f.rpc("tools/call", ["name": name, "arguments": [:]], access: e.brain)
                 XCTAssertNotNil(r.body?["error"], "\(name) must not exist")
             }
-            let before = try await BrainMandate.query(on: e.f.test.app.db).all().map { "\($0.grantID) \($0.projects.map(\.uuidString).sorted()) \($0.revokedAt == nil) \($0.updatedAt)" }.sorted()
+            let before = try await BrainMandate.query(on: e.f.test.app.db).all().map { "\($0.grantID) \($0.explicitProjects.map(\.uuidString).sorted()) \($0.revokedAt == nil) \($0.updatedAt)" }.sorted()
             // The target holds a mandate itself; changing its projects does not touch it.
             let r = try await set(e, add: [e.p2])
             XCTAssertFalse(r.isError, r.text)
-            let after = try await BrainMandate.query(on: e.f.test.app.db).all().map { "\($0.grantID) \($0.projects.map(\.uuidString).sorted()) \($0.revokedAt == nil) \($0.updatedAt)" }.sorted()
+            let after = try await BrainMandate.query(on: e.f.test.app.db).all().map { "\($0.grantID) \($0.explicitProjects.map(\.uuidString).sorted()) \($0.revokedAt == nil) \($0.updatedAt)" }.sorted()
             XCTAssertEqual(before, after)
             // And the mandate endpoint still refuses OAuth tokens.
             let put = try await e.f.test.json(.PUT, "/v1/settings/brain-mandate", ["grantID": e.watcherGrant.uuidString, "projectIDs": [e.p2.uuidString]], token: e.brain)
