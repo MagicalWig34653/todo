@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Todolino Wireframes</title>
+<style>
+:root{--bg:#fff;--side:#f6f7f9;--card:#fff;--ink:#14161a;--mut:#545b66;--line:#dfe2e7;--soft:#eef1f5;--acc:#1d5fd1;--acc-ink:#174ea8;--acc-soft:#e5eefd;--on-acc:#fff;--bad:#b3261e;--bad-soft:#fdeceb;--ok:#1b6b3a;--warn:#855200;--bar:#bcd2f7;--bar-fill:#1d5fd1}
+:root[data-theme=dunkel]{--bg:#0e1013;--side:#15181d;--card:#171a20;--ink:#eceef2;--mut:#a7aeb9;--line:#2b3038;--soft:#222731;--acc:#7aa7f7;--acc-ink:#9dbefa;--acc-soft:#1b2a47;--on-acc:#0b1424;--bad:#ff9a90;--bad-soft:#3a1c1a;--ok:#7fd39d;--warn:#f0b65a;--bar:#2c4372;--bar-fill:#7aa7f7}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;height:100vh;overflow:hidden}
+a{color:inherit;text-decoration:none}
+#app{display:flex;height:100vh}
+.side{width:224px;flex:none;background:var(--side);border-right:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+.brand{font-weight:700;padding:0 10px 10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-weight:600;font-size:13px;white-space:nowrap}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
+.side .btn{margin-bottom:10px}
+.nav{display:flex;align-items:center;gap:10px;min-height:34px;padding:0 10px;border-radius:8px;font-weight:500}
+.nav.on{background:var(--acc-soft);color:var(--acc-ink);font-weight:700}
+.nav i{width:18px;text-align:center;font-style:normal}
+.nav .n{margin-left:auto;font-size:12px;color:var(--mut)}
+.nav.on .n{color:var(--acc-ink)}
+.head{color:var(--mut);font-size:12px;font-weight:700;padding:14px 10px 4px}
+.sub{padding-left:28px}
+.dot{width:9px;height:9px;border-radius:3px;flex:none}
+.me{margin-top:auto;border-top:1px solid var(--line);padding-top:8px}
+.av{width:26px;height:26px;border-radius:50%;background:var(--acc);color:var(--on-acc);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top h1{font-size:20px;margin-right:4px}
+.top .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+.seg{display:inline-flex;background:var(--soft);border-radius:9px;padding:3px;gap:2px}
+.seg span{padding:4px 11px;border-radius:7px;font-size:13px;font-weight:600;color:var(--mut);white-space:nowrap}
+.seg span.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px #0003}
+.body{flex:1;min-height:0;display:flex}
+.col{flex:1;min-width:0;padding:16px 20px;overflow:hidden;display:flex;flex-direction:column;gap:10px}
+.col>*{flex:none}
+.panel{width:340px;flex:none;border-left:1px solid var(--line);padding:16px 18px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.card.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.kind{font-size:12px;font-weight:700;color:var(--acc-ink)}
+.kind.bad,.bad{color:var(--bad)}
+.t{font-weight:600}
+.m{color:var(--mut);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.item{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--line)}
+.box{width:18px;height:18px;border:2px solid var(--mut);border-radius:50%;flex:none;margin-top:1px}
+.item .grow{flex:1;min-width:0}
+.chip{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:1px 8px;font-size:12px;color:var(--mut);white-space:nowrap}
+.chip.acc{border-color:transparent;background:var(--acc-soft);color:var(--acc-ink);font-weight:700}
+.chip.bad{border-color:transparent;background:var(--bad-soft);color:var(--bad);font-weight:700}
+.sec{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;padding-top:4px}
+.progress{height:6px;border-radius:9px;background:var(--soft)}
+.progress b{display:block;height:100%;border-radius:9px;background:var(--acc)}
+.field{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding-bottom:9px}
+.step{display:inline-flex;align-items:center;gap:6px}
+.step .btn{min-width:32px;padding:0 6px}
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.lane{background:var(--side);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:8px}
+/* timeline */
+.gantt{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.gr{display:grid;grid-template-columns:240px 1fr;border-bottom:1px solid var(--line);min-height:38px}
+.gr>div:first-child{border-right:1px solid var(--line);padding:0 12px;display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gr.group{background:var(--side);font-weight:700}
+.gr.sel{background:var(--acc-soft)}
+.lanebar{position:relative}
+.bar{position:absolute;top:9px;height:20px;border-radius:6px;background:var(--bar);overflow:hidden}
+.bar b{display:block;height:100%;background:var(--bar-fill)}
+.bar.late{background:var(--bad-soft);border:2px dashed var(--bad)}
+.after{position:absolute;top:10px;font-size:12px;white-space:nowrap;color:var(--mut)}
+.after.bad{font-weight:700;color:var(--bad)}
+.diamond{position:absolute;top:12px;width:13px;height:13px;background:var(--ink);transform:translateX(-50%) rotate(45deg)}
+.today{position:absolute;top:0;bottom:0;width:2px;background:var(--bad)}
+.weeks{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;font-size:12px;color:var(--mut)}
+.weeks span{padding:9px 4px;border-left:1px solid var(--line);white-space:nowrap}
+svg.links{position:absolute;pointer-events:none;overflow:visible}
+.tabs,.mtop,.only-phone{display:none}
+.mini{position:relative;height:12px;background:var(--soft);border-radius:4px;margin-top:6px}
+.mini b{position:absolute;top:0;bottom:0;border-radius:4px;background:var(--bar-fill)}
+.mini b.late{background:var(--bad)}
+.mini u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.axis{display:grid;grid-template-columns:repeat(4,1fr);font-size:12px;color:var(--mut);border-bottom:1px solid var(--line);padding-bottom:4px}
+.sheet{display:none}
+@media (max-width:700px){
+ .side,.panel,.only-desk{display:none!important}
+ .top.only-desk{display:none!important}
+ .only-phone{display:block}
+ .mtop{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line)}
+ .mtop h1{font-size:19px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .mtop .btn{min-width:44px;min-height:40px}
+ .mtop .av{width:34px;height:34px}
+ .top{padding:10px 16px;gap:8px}
+ .top h1,.top .r{display:none}
+ .col{padding:12px 16px}
+ .btn{min-height:40px}
+ .tabs{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--side);flex:none}
+ .tabs span{display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 0 10px;font-size:11px;font-weight:600;color:var(--mut);white-space:nowrap}
+ .tabs span i{font-style:normal;font-size:17px}
+ .tabs span.on{color:var(--acc-ink)}
+ .board{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:82%;overflow:hidden}
+ .sheet{display:flex;flex-direction:column;gap:12px;position:absolute;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding:14px 16px 18px;box-shadow:0 -8px 30px #0006}
+ .dim{opacity:.4}
+ .main{position:relative}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const view = q.get('view') || 'fuer-dich';
+document.documentElement.dataset.theme = q.get('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dunkel' : 'hell');
+const phone = matchMedia('(max-width:700px)').matches;
+const NAV = [['fuer-dich','✦','Für dich','5'],['aufgaben','☑','Aufgaben',''],['projekte','▤','Projekte',''],['zeitleiste','▬','Zeitleiste',''],['suche','⌕','Suche','']];
+const area = {'projekt':'projekte','karte':'fuer-dich','zeitleiste-detail':'zeitleiste','einstellungen':''}[view] ?? view;
+const seg = (items, on = 0) => `<div class="seg">${items.map((s, i) => `<span class="${i === on ? 'on' : ''}">${s}</span>`).join('')}</div>`;
+const btn = (t, c = '') => `<span class="btn ${c}">${t}</span>`;
+const proj = [['#2470e0','Todolino',1],['#7a63d9','Apple-App',2],['#3e9a4e','Formular-Backend'],['#c77400','Orchestrator'],['#1f9393','Thermoctl'],['#c9457c','Kundenportal'],['#9d47ad','Rezeptbuch']];
+const dot = (c) => `<span class="dot" style="background:${c}"></span>`;
+const side = `<aside class="side"><div class="brand">Todolino</div>${btn('+ Aufgabe · Q','pri')}
+${NAV.map(([id,ic,l,n]) => `<a class="nav ${id===area?'on':''}" href="?view=${id==='suche'?view:id}"><i>${ic}</i>${l}<span class="n">${id==='suche'?'⌘K':n}</span></a>`).join('')}
+<div class="head">Favoriten</div><div class="nav">${dot('#2470e0')}Todolino</div>
+<div class="head">Meine Projekte  +</div>${proj.map(([c,n,l]) => `<div class="nav ${l===2?'sub':''} ${view==='projekt'&&n==='Todolino'?'on':''}">${dot(c)}${n}</div>`).join('')}
+<a class="nav me ${view==='einstellungen'?'on':''}" href="?view=einstellungen"><span class="av">DP</span>Demo Person<span class="n">⚙</span></a></aside>`;
+const tabs = `<nav class="tabs">${NAV.map(([id,ic,l]) => `<span class="${id===area?'on':''}"><i>${ic}</i>${l}</span>`).join('')}</nav>`;
+const mtop = (title, back) => `<header class="mtop">${back?btn('‹'):''}<h1>${title}</h1>${btn('+','pri')}<span class="av">DP</span></header>`;
+const topbar = (title, mid, right = '') => `<div class="top ${mid?'':'only-desk'}"><h1>${title}</h1>${mid}<div class="r">${right}</div></div>`;
+const card = (kind, title, meta, actions, cls = '', bad) => `<div class="card ${cls}"><div class="kind ${bad?'bad':''}">${kind}</div><div class="t">${title}</div><div class="m">${meta}</div>${actions?`<div class="row">${actions}</div>`:''}</div>`;
+const item = (title, meta, chip = '') => `<div class="item"><span class="box"></span><div class="grow"><div class="t">${title}</div><div class="m">${meta}</div></div>${chip}</div>`;
+const field = (l, v) => `<div class="field"><span class="m">${l}</span><span class="t">${v}</span></div>`;
+const stepper = (l, v) => `<div class="field"><span class="m">${l}</span><span class="step">${btn('−')}<span class="t">${v}</span>${btn('+')}</span></div>`;
+
+// ---- timeline data: [title, start day, length, percent, late text, selected]
+const G = [['Version 2.0 · 11.12.', 18, [['Konzept Zeitleiste',1,7,80],['Datenmodell: Beginn',6,6,35,'2 Tage zu spät',1],['Zeitleiste lesen',12,6,0]]],
+ ['Version 2.1 · 18.12.', 25, [['Balken ziehen',19,4,0],['Handy-Ansicht',22,5,0]]],
+ ['Ohne Meilenstein', null, [['Passkey absichern',4,5,60]]]];
+const pct = (d) => (d / 28 * 100) + '%';
+function gantt(selected) {
+ let y = 0; const pos = [];
+ const rows = G.map(([g, ms, ts]) => { y += 38; return `<div class="gr group"><div>▾ ${g}</div><div class="lanebar">${ms?`<span class="diamond" style="left:${pct(ms)}"></span>`:''}</div></div>` + ts.map(([t,s,len,p,late,sel]) => { pos.push([s,len,y+19]); y += 38; return `<div class="gr ${selected&&sel?'sel':''}"><div>${t}</div><div class="lanebar"><span class="bar ${late?'late':''}" style="left:${pct(s)};width:${pct(len)}"><b style="width:${p}%"></b></span><span class="after ${late?'bad':''}" style="left:calc(${pct(s+len)} + 8px)">${late?'⚠ '+late:p?p+' %':''}</span></div></div>`; }).join(''); }).join('');
+ return `<div class="gantt"><div class="gr"><div class="m">Karte</div><div class="weeks"><span>23. Nov.</span><span>30. Nov.</span><span>7. Dez.</span><span>14. Dez.</span></div></div>
+ <div id="rows" style="position:relative">${rows}<div style="position:absolute;left:240px;right:0;top:0;bottom:0;pointer-events:none"><span class="today" style="left:${pct(3.5)}"></span></div><svg class="links" id="links" style="left:240px;top:0"></svg></div>
+ <div class="gr"><div class="m">▸ Ohne Termin (4)</div><div></div></div><div class="m" style="padding:10px 12px">Rote Linie = heute · ◆ Meilenstein · Pfeil = hängt ab von · gestrichelt = Konflikt</div></div>`;
+}
+function drawLinks() {
+ const svg = document.getElementById('links'); if (!svg) return;
+ const w = document.getElementById('rows').clientWidth - 240; svg.setAttribute('width', w); svg.setAttribute('height', 300);
+ const ys = [...document.querySelectorAll('#rows .gr:not(.group)')].map(r => r.offsetTop + r.offsetHeight / 2);
+ const flat = G.flatMap(g => g[2]);
+ svg.innerHTML = [[0,1],[1,2],[2,3]].map(([a,b]) => { const x1=(flat[a][1]+flat[a][2])/28*w, x2=flat[b][1]/28*w, bad=flat[a][1]+flat[a][2]>flat[b][1], c=bad?'var(--bad)':'var(--mut)', mid=ys[a]+19;
+  return `<path d="M${x1} ${ys[a]+10} V${mid} H${x2-9} V${ys[b]} H${x2-2}" fill="none" stroke="${c}" stroke-width="1.5"/><path d="M${x2} ${ys[b]} l-6 -4 v8z" fill="${c}"/>`; }).join('');
+}
+const mini = (s,len,late) => `<div class="mini"><b class="${late?'late':''}" style="left:${pct(s)};width:${pct(len)}"></b><u style="left:${pct(3.5)}"></u></div>`;
+const phoneList = () => `<div class="axis"><span>23.11.</span><span>30.11.</span><span>7.12.</span><span>14.12.</span></div>` + G.slice(0,2).map(([g,ms,ts]) => `<div class="sec">◆ ${g}</div>` + ts.map(([t,s,len,p,late]) => `<div><div class="row" style="justify-content:space-between"><span class="t">${t}</span><span class="m">${p?p+' %':''}</span></div>${late?`<div class="bad m" style="color:var(--bad);font-weight:700">⚠ ${late}: Vorgänger offen</div>`:''}${mini(s,len,late)}</div>`).join('')).join('') + `<div class="sec">Ohne Termin (4) ▸</div>`;
+const detail = () => `<div class="row" style="justify-content:space-between"><span class="chip">Todolino</span><span class="m">✕</span></div><div class="t" style="font-size:17px">Datenmodell: Beginn</div>
+<div class="chip bad" style="align-self:flex-start">⚠ 2 Tage zu spät</div>
+${stepper('Beginn','29.11.')}${stepper('Fällig','5.12.')}${field('Dauer','6 Tage')}
+<div><div class="row" style="justify-content:space-between"><span class="m">Fortschritt</span><span class="t">35 %</span></div><div class="progress"><b style="width:35%"></b></div></div>
+${field('Hängt ab von','Konzept Zeitleiste')}${field('Blockiert','Zeitleiste lesen')}
+<div class="m">Letzte Aktivität: „Migration geschrieben“, vor 12 Min.</div><div class="row">${btn('Karte öffnen','pri')}${btn('Nachfolger mitschieben')}</div>`;
+
+const review = (cls) => card('Review · mit 3 Bildern','Wochenansicht auf dem iPad ist fertig','Apple-App · vor 12 Min.',btn('Annehmen','pri')+btn('Änderung wünschen'),cls);
+const V = {
+ 'fuer-dich': () => ({title:'Für dich', body: topbar('Für dich', seg(['Braucht dich 5','Läuft 7','Verlauf','Brain']), '') + `<div class="body"><div class="col">${seg(['Alle','Fragen 2','Reviews 2','Fällig 1'])}
+ ${card('Rückfrage','Wie soll die Anmeldung weiterlaufen?','Todolino · vor 4 Min.',btn('Passkey zuerst')+btn('Beide gleich')+btn('Eigene Antwort …'))}
+ ${review(phone?'':'sel')}
+ ${phone?'':card('Rückfrage','Soll der Runner bei vollem Kontingent pausieren?','Orchestrator · vor 20 Min.',btn('Ja')+btn('Nein'))}
+ ${card('Überfällig','Konflikte in der Wochenansicht anzeigen','Apple-App · seit 2 Tagen',btn('Erledigt')+btn('Verschieben'),'',1)}</div>
+ <aside class="panel"><div class="kind">Review</div><div class="t" style="font-size:17px">Kalender Wochenansicht</div><div class="m">Apple-App › Karte öffnen</div>
+ <div><b>Neu</b><br>Wochenansicht mit Ziehen und Konflikthinweis</div><div><b>Geprüft</b><br>214 Tests grün, hell und dunkel</div>
+ <div class="row">${[1,2,3].map(i=>`<div style="width:92px;height:120px;background:var(--soft);border-radius:8px;display:flex;align-items:center;justify-content:center" class="m">Bild ${i}</div>`).join('')}</div>
+ <div class="card"><span class="m">Anmerkung (nötig bei Änderungswunsch)</span></div><div class="row">${btn('Annehmen','pri')}${btn('Änderung wünschen')}</div></aside></div>`}),
+ 'aufgaben': () => ({title:'Aufgaben', body: topbar('Aufgaben', seg(['Heute 3','Anstehend','Als Nächstes','Eingang 15']), seg(['Liste','Kalender'])) + `<div class="body"><div class="col">
+ <div class="only-phone">${seg(['Liste','Kalender'])}</div>
+ <div class="sec bad">Überfällig</div>${item('Konflikte in der Wochenansicht anzeigen','Apple-App','<span class="chip bad">24.11.</span>')}
+ <div class="sec">Heute, Do. 26. November</div>${item('Passkey-Anmeldung absichern','Todolino · 60 %','<span class="chip acc">14:00</span>')}${item('Rate-Limit je Mandant prüfen','Formular-Backend','<span class="chip">Review</span>')}${item('Zahnarzt anrufen','Eingang','<span class="chip">16:30</span>')}
+ <div class="sec">Morgen</div>${item('Konzept Zeitleiste','Todolino · Version 2.0')}${item('Einkaufsliste teilen','Rezeptbuch')}</div></div>`}),
+ 'projekte': () => ({title:'Projekte', body: phone ? `<div class="col">${seg(['Alle','Geteilt','Teams'])}<div class="sec">Zuletzt</div>${[proj[0],proj[3]].map(([c,n])=>`<div class="item">${dot(c)}<div class="grow t">${n}</div><span class="m">›</span></div>`).join('')}<div class="sec">Meine Projekte</div>${proj.map(([c,n,l])=>`<div class="item" style="${l===2?'padding-left:24px':''}">${dot(c)}<div class="grow t">${n}</div><span class="m">›</span></div>`).join('')}</div>`
+ : topbar('Todolino', seg(['Liste','Board','Zeitleiste','Abhängigkeiten'],0), btn('Filtern')+btn('Chat')+btn('Teilen')+btn('Projekt','pri')) + `<div class="body"><div class="col">${item('Konzept Zeitleiste','Version 2.0 · Fällig 30.11.','<span class="chip acc">In Arbeit</span>')}${item('Datenmodell: Beginn','Version 2.0 · Fällig 5.12.')}${item('Zeitleiste lesen','Version 2.0')}${item('Passkey-Anmeldung absichern','Fällig heute · 60 %')}</div>
+ <aside class="panel"><div class="row" style="justify-content:space-between"><span class="t" style="font-size:17px">Projekt</span><span class="m">✕</span></div>${seg(['Allgemein','Teilen','Chat'],0)}
+ ${field('Name','Todolino')}${field('Farbe',dot('#2470e0')+' Blau')}${field('Favorit','An')}<div class="sec">Meilensteine</div>${field('Version 2.0','11.12. ›')}${field('Version 2.1','18.12. ›')}<div class="sec">Gruppen</div><div class="row"><span class="chip acc">✓ Eigene Produkte</span><span class="chip">+ Gruppe</span></div><div class="sec">Agenten</div>${field('Auftrag für Agenten','Bearbeiten ›')}${field('Pipeline','Standard ›')}</aside></div>`}),
+ 'projekt': () => ({title:'Todolino', back:1, body: topbar('Todolino', seg(phone?['Liste','Board','Zeit','Abhäng.']:['Liste','Board','Zeitleiste','Abhängigkeiten'],1) + '<span class="chip acc">2 brauchen dich ›</span>', btn('Filtern')+btn('Chat')+btn('Teilen')+btn('Projekt')) + `<div class="body"><div class="col"><div class="board">${[['Offen',['Zeitleiste lesen','Balken ziehen','Handy-Ansicht']],['In Arbeit',['Konzept Zeitleiste','Passkey-Anmeldung absichern']],['Review',['Datenmodell: Beginn']],['Erledigt',['Wiederholungsregeln','Kurz-IDs anzeigen']]].map(([l,ts])=>`<div class="lane"><div class="row" style="justify-content:space-between"><b>${l} <span class="m">${ts.length}</span></b><span class="m">⋯</span></div>${ts.map((t,i)=>`<div class="card"><div class="t">${t}</div><div class="m">${l==='In Arbeit'?'Claude · vor 3 Min.':'Version 2.0'}</div>${l==='In Arbeit'?`<div class="progress"><b style="width:${60-i*25}%"></b></div>`:''}</div>`).join('')}<span class="m">+ Karte</span></div>`).join('')}</div></div></div>`}),
+ 'karte': () => ({title:'Karte', back:1, body: topbar('Anmeldung und Rückfall festlegen', '<span class="chip">Todolino</span>', btn('⋯')+btn('✕')) + `<div class="body"><div class="col"><div class="only-phone t" style="font-size:18px">Anmeldung und Rückfall festlegen</div>${seg(['Übersicht','Verlauf','Technik'])}
+ <div class="card sel"><div class="kind">Rückfrage · vor 4 Min.</div><div class="t">Wie soll die Anmeldung weiterlaufen?</div><div>• A: Passkey zuerst, E-Mail als Rückfall<br>• B: beide gleichberechtigt<br>• C: nur Passkey mit Codes</div><div class="row">${btn('A','pri')}${btn('B')}${btn('C')}${btn('Eigene Antwort …')}</div></div>
+ <div class="sec">Beschreibung</div><div>Klären, welcher Weg bleibt, wenn der Passkey fehlt.</div>
+ <div class="only-phone">${field('Beginn · Fällig','27.11. – 30.11. ›')}<div style="height:9px"></div>${field('Priorität, Labels, Anhänge','3 weitere ›')}</div>
+ <div class="sec">Unteraufgaben 1/2</div>${item('Varianten beschreiben','erledigt')}${item('Rückfall testen','offen')}<div class="card"><span class="m">Nachricht schreiben …</span></div></div>
+ <aside class="panel">${field('Projekt','Todolino')}${stepper('Beginn','27.11.')}${stepper('Fällig','30.11.')}${field('Priorität','Keine')}${field('Meilenstein','Version 2.0')}${field('Hängt ab von','+')}${field('Labels','+')}${field('Erinnerung · Wiederholung','+')}${field('Anhänge','+ Datei')}<div class="m">Änderungen werden sofort gespeichert.</div></aside></div>`}),
+ 'zeitleiste': () => ({title:'Zeitleiste', body: topbar('Zeitleiste', seg(['Tag','Woche','Monat'],1)+btn('Heute'), btn('Alle Projekte ▾')) + (phone ? `<div class="row" style="padding:10px 16px 0">${btn('Todolino ▾')}<span class="m">wischen: ± 1 Woche</span></div><div class="col">${phoneList()}</div>`
+ : `<div class="body">${gantt(false)}<aside class="panel" style="width:232px"><div class="sec">Meilensteine</div>${field('Version 2.0','11.12.')}${field('Version 2.1','18.12.')}<div class="sec">Ansichten</div><div class="nav on">Mein Fahrplan</div><div class="nav">Nur Konflikte (1)</div><div class="nav">Eigene Produkte</div><span class="m">+ Ansicht speichern</span><div class="sec">Gruppieren</div>${seg(['Meilenstein','Projekt'])}</aside></div>`)}),
+ 'zeitleiste-detail': () => ({title:'Zeitleiste', body: topbar('Zeitleiste', seg(['Tag','Woche','Monat'],1)+btn('Heute'), btn('Alle Projekte ▾')) + (phone ? `<div class="col dim">${phoneList()}</div><div class="sheet"><div class="t" style="font-size:17px">Datenmodell: Beginn</div><div class="chip bad" style="align-self:flex-start">⚠ 2 Tage zu spät</div>${stepper('Beginn','29.11.')}${stepper('Fällig','5.12.')}<div class="row">${btn('Beides +1 Tag')}${btn('Beides +1 Woche')}</div>${field('Hängt ab von','Konzept Zeitleiste')}${field('Fortschritt','35 %')}<div class="row">${btn('Karte öffnen','pri')}${btn('Schließen')}</div></div>`
+ : `<div class="body">${gantt(true)}<aside class="panel">${detail()}</aside></div>`)}),
+ 'einstellungen': () => ({title:'Agenten-Zugriff', back:1, body: topbar('Einstellungen', '', btn('Suchen')) + `<div class="body"><aside class="panel" style="width:230px;border-left:0;border-right:1px solid var(--line)">${['Konto','Anmeldung','Darstellung & Mitteilungen','Teams & Freigaben','Agenten-Zugriff','Hilfe'].map(n=>`<div class="nav ${n==='Agenten-Zugriff'?'on':''}">${n}</div>`).join('')}<div class="head">Verwaltung</div>${['Konten','Server','Zustellung','Regeln'].map(n=>`<div class="nav">${n}</div>`).join('')}</aside>
+ <div class="col" style="max-width:820px"><div class="only-desk t" style="font-size:17px">Agenten-Zugriff</div><div class="m">Wer darf was in deinen Projekten? <u>Mehr erfahren</u></div>${seg(['Verbindungen',phone?'Gruppen':'Projektgruppen','Runner','Webhook'])}
+ <div class="card"><div class="row" style="justify-content:space-between"><span class="t">Brain</span><span class="chip acc">Vollmacht an</span></div><div class="m">Darf Fragen, Reviews und Pläne für dich entscheiden</div>${field('Projekte','Eigene Produkte (2) ›')}<div class="row">${btn('Vollmacht ändern')}${btn('Widerrufen')}</div></div>
+ <div class="card"><div class="row" style="justify-content:space-between"><span class="t">Claude Code</span><span class="chip">Vollmacht aus</span></div><div class="m">Zuletzt aktiv vor 3 Min.</div>${field('Projekte','Alle außer 1 ›')}<div class="row">${btn('Vollmacht erteilen')}${btn('Widerrufen')}</div></div>
+ <div class="row">${btn('+ App oder Agent verbinden','pri')}</div></div></div>`}),
+};
+const v = (V[view] || V['fuer-dich'])();
+document.getElementById('app').innerHTML = side + `<main class="main">${mtop(v.title, v.back)}${v.body}${tabs}</main>`;
+drawLinks();
+</script>
+</body>
+</html>

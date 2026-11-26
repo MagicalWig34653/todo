@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 26.11.2026 (20:30): UX-Konzept PWA mit Zeitleiste liegt vor (Karte `607DB96E`; nur Konzept, kein Umbau, kein Push)
+
+- Branch `t3/ux-konzept-pwa-zeitleiste` ab `d429788`, alles unter `design/ux-konzept/`: `ist-aufnahme.md` (+ `ist/`), `konzept.md`, `wireframes/` (32 PNGs), `tafel.png`. Nichts unter `Sources/` oder `web/src` geändert.
+- Empfehlung: 5 Bereiche, ein Kartenfenster, Seiten zusammenlegen, Zeitleiste mit neuem Feld „Beginn“ (`start_on`) und Lese-Endpunkt; 9 Schritte, geschätzt 25–32 Agententage.
+- Prüfung: `node --test design/ux-konzept/check.test.mjs` rot (4 von 5 rot) vor den Wireframes, danach 5/5; `wireframes/render.mjs` (aus `web/`) meldet 0 Überlauf-/Kontrastbefunde. Ist-Aufnahme lokal gegen natives Backend (Binary des Hauptrepos vom 26.11. 18:47), frische SQLite, Chromium.
+- Offen: 3 Entscheidungen für Lino (`konzept.md` §8); „nachher“-Klickzahlen nicht gemessen; kein echtes Gerät.
+- Nächster Schritt: Review durch Lino (stellt die Hauptsession), dann Schritt 1.
+
 ## Nachtrag 26.11.2026 (19:35): Security-Review Projektgruppen abgeschlossen (Karte `0E5CCA05`; kein Deploy)
 
 - Gegenlesen durch frische Instanz (`4a3f2ec`): kein Blocker. Befunde 1–3 behoben (rot `0381873`, grün `2728179`, Merge `da95daf`), 4/5 und Restrisiken in ADR 0037 (Nachtrag). Wichtigster: fremd übertragene Projekte fallen nicht mehr unter „alle außer“/Vollmacht. `connections.yaml` 1.9.0, keine neue Migration.
