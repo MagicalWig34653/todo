@@ -1,11 +1,13 @@
 # Status
 
-## Nachtrag 26.11.2026 (12:25): Projektgruppen, Teil 3 unfertig (Karte BEF08998; kein Push, kein Deploy)
+## Nachtrag 26.11.2026 (13:00): Projektgruppen, Teil 3 weitgehend umgesetzt (Karte BEF08998; kein Push, kein Deploy)
 
-- Branch `t3/projektgruppen-vollmacht-verbindungen` (von `dc842e3`): nur Tests und Entwurf, Frist 12:15 verpasst (Agentensitzung ab ca. 08:41 unterbrochen).
-- Neu: `Tests/TodoKitTests/ProjectGroupTests.swift` (13 Tests, Rotlauf nicht belegt); Entwurf, Lesestellen-Liste und offene Punkte: `docs/entwurf-projektgruppen/README.md` (Produktcode als `.swift.txt`, nicht kompiliert).
-- Nicht mergen: bis zur Umsetzung ist `swift test` hier rot. Apple-Karte `80738AEA` angelegt.
-- Nächster Schritt: Rotlauf belegen, Entwurf übernehmen, alle gelisteten Lesestellen umstellen, dann PWA, E2E, ADR 0037, Verträge.
+- Branch `t3/projektgruppen-vollmacht-verbindungen` (von `dc842e3`): `28a89b1` (Tests rot), `9f97449` (Server), `30dacf7` (ADR 0037, Verträge, Handbuch 1.48.0), `063cf0d`, `5742ed3` (PWA). Der Entwurfsordner ist entfernt.
+- Neu: Projektgruppen mit Auswahlregel „gewählt“ oder „alle meine außer“ für Brain-Vollmacht und Verbindungen; eine Auflösung (`ProjectSelectionResolver`); REST `/v1/project-groups`; MCP nur lesend (`list_project_groups`, `get_connection`); PWA-Seite „Projektgruppen“, Auswahl in Vollmacht und Verbindungen, Gruppenwahl beim Anlegen und in den Projekteinstellungen. `connections.yaml` 1.7.0, `oauth-mcp.yaml` 1.12.0. Migration `CreateProjectGroups` (additiv; `App migrate --yes` vor `serve`; Rückfall siehe ADR 0037).
+- Vorläufig, Lino entscheidet im Review (ADR 0037): von Agenten angelegte Projekte fallen nicht automatisch unter „alle außer“; Teamprojekte zählen nicht als eigene.
+- Rot: swift 13 Tests/26 Fehler rc 1, vitest rc 1. Grün: gezielte `swift test` (SQLite) 230 Tests, 6 übersprungen, 0 Fehler; `npm run check` 0/0; vitest 811/811.
+- Offen: Gruppenwahl auf der Zustimmungsseite (in Arbeit), voller `swift test`, E2E-Spec mit Bildern, MariaDB gezielt, `npm run build`, Handbuch-/Paritätsdoku. Apple-Karte `80738AEA`.
+- Nächster Schritt: `ConsentPage.swift` prüfen und committen, dann `web/e2e/project-groups.spec.ts` in `scripts/e2e-ci.sh`.
 
 ## Nachtrag 26.11.2026 (08:30): Neuanmeldung ohne erneute Projektauswahl, Teil 1 und 2 (Karte BEF08998; kein Push, kein Deploy)
 

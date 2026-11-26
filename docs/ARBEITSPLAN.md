@@ -1,9 +1,10 @@
 # Arbeitsplan
 
-## Checkpoint 26.11.2026 (12:25): Projektgruppen (Karte `BEF08998`, Teil 3) – unfertig
+## Checkpoint 26.11.2026 (13:00): Projektgruppen (Karte `BEF08998`, Teil 3)
 
-- Stand: `t3/projektgruppen-vollmacht-verbindungen`, Tests plus nicht kompilierter Entwurf; nicht mergen. Details: `docs/entwurf-projektgruppen/README.md`.
-- Nächster Schritt: neue Umsetzungssitzung nach dieser README (Rot belegen, Server, alle Lesestellen, PWA, E2E, ADR 0037).
+- Stand: `t3/projektgruppen-vollmacht-verbindungen`, Server, Verträge, ADR 0037 und PWA committet; Nachweise in `docs/STATUS.md`.
+- Offen: Zustimmungsseite, voller `swift test`, E2E und Bilder, MariaDB gezielt, `npm run build`, Handbuch-/Paritätsdoku; Apple-Karte `80738AEA`.
+- Nächster Schritt: Zustimmungsseite committen, dann E2E-Spec.
 
 ## Checkpoint 26.11.2026 (08:30): Vollmacht übersteht Neuanmeldung (Karte `BEF08998`, Teil 1 und 2)
 
