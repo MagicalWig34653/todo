@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { createApi, type FetchLike } from '../src/lib/api';
+import { createApi, type FetchLike, type Project } from '../src/lib/api';
+import { auditKindKey, isGroupChange, prefillProjects } from '../src/lib/brainMandate';
 import { de } from '../src/lib/i18n/de';
 import {
+	describeRule,
 	diffIDs,
 	emptySelection,
 	groupNameProblem,
 	namesSomething,
+	pruneSelection,
+	sameSelection,
 	selectionBody,
 	selectionFrom,
 	selectionSummaryKey,
@@ -97,5 +101,37 @@ describe('project group api', () => {
 			`PUT /v1/projects/${A}/groups {"groupIDs":["${G}"]}`,
 			'POST /v1/project-selection/preview {"projectIDs":[],"selection":{"mode":"all_except","groupIDs":[],"excludedProjectIDs":[],"excludedGroupIDs":[]}}'
 		]);
+	});
+});
+
+describe('rules in the settings pages', () => {
+	it('compares choices regardless of order and case', () => {
+		const one = { ...emptySelection(), projectIDs: [A, B] };
+		expect(sameSelection(one, { ...emptySelection(), projectIDs: [B.toLowerCase(), A] })).toBe(true);
+		expect(sameSelection(one, { ...one, mode: 'all_except' })).toBe(false);
+		expect(sameSelection(one, { ...one, groupIDs: [G] })).toBe(false);
+	});
+
+	it('drops ids that vanished while the form was open', () => {
+		const sel = { ...emptySelection(), projectIDs: [A, B], groupIDs: [G], excludedProjectIDs: [B] };
+		expect(pruneSelection(sel, [A], [])).toEqual({ ...emptySelection(), projectIDs: [A] });
+	});
+
+	it('describes a rule in words', () => {
+		const dto = { mode: 'all_except', projectIDs: [], groupIDs: [], excludedProjectIDs: [B], excludedGroupIDs: [G] };
+		expect(describeRule(dto, () => 'Privat', () => 'Geheim')).toEqual({ key: 'projectGroups.rule.allExcept', groups: '', excluded: 'Privat, Geheim' });
+		expect(describeRule({ ...dto, mode: 'selected', groupIDs: [G], excludedProjectIDs: [], excludedGroupIDs: [] }, () => 'Arbeit', () => '')?.key).toBe('projectGroups.rule.groups');
+		expect(describeRule(null, () => '', () => '')).toBeNull();
+	});
+
+	it('starts a mandate form from the named projects and knows group changes in the protocol', () => {
+		const mandate = {
+			grantID: G, grantName: 'Brain', projectIDs: [A, B], active: true, createdAt: '', updatedAt: '', revokedAt: null, lastUsedAt: null,
+			selection: { mode: 'selected', projectIDs: [A], groupIDs: [G], excludedProjectIDs: [], excludedGroupIDs: [] }
+		};
+		const projects = [A, B].map((id) => ({ id, name: id }) as Project);
+		expect(prefillProjects(mandate, projects)).toEqual([A]);
+		expect(auditKindKey('mandate.group_added')).toBe('brainMandate.audit.kind.groupAdded');
+		expect(isGroupChange('mandate.group_removed')).toBe(true);
 	});
 });
