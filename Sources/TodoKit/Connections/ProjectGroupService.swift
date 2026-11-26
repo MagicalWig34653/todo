@@ -51,7 +51,10 @@ enum ProjectGroupService {
         guard let sql = db as? any SQLDatabase else { throw Abort(.internalServerError) }
         guard sql.dialect.name != "sqlite" else { return }
         for table in [BrainMandate.schema, OAuthGrant.schema] {
-            _ = try await sql.raw("SELECT id FROM \(ident: table) WHERE user_id = \(bind: userID) ORDER BY id FOR UPDATE").all()
+            // No ORDER BY id: MariaDB would then walk the whole primary key when the person owns most rows and lock other
+            // people's rows (proven by testGroupChangeLocksOnlyThePersonsRows). The index starting with user_id keeps a
+            // stable order; two group changes are serialised by the sharing lock anyway.
+            _ = try await sql.raw("SELECT id FROM \(ident: table) WHERE user_id = \(bind: userID) FOR UPDATE").all()
         }
     }
 
