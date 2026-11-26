@@ -255,7 +255,7 @@ enum ProjectGroupService {
 
     static func preview(_ input: SelectionPreviewInput, user: User, db: any Database) async throws -> SelectionPreviewResponse {
         var resolver = ProjectSelectionResolver(userID: try user.requireID(), db: db)
-        let rule = try await resolver.validate(input.selection)
+        let rule = try await resolver.validate(input.selection, excludedLimit: .max)
         guard input.projectIDs.count <= BrainMandateLimits.maxProjects else { throw Abort(.badRequest, reason: "invalid_projects") }
         let ids = try await resolver.resolve(explicit: input.projectIDs, rule: rule)
         return SelectionPreviewResponse(projectIDs: ids, agentCreatedProjectIDs: try await resolver.leftOutByAll(explicit: input.projectIDs, rule: rule))

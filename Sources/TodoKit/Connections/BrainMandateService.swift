@@ -120,7 +120,7 @@ enum BrainMandateService {
             for id in projects { _ = try await access.project(id) }
             // ADR 0037: an optional rule (own groups only); a mandate must name something (projects, a group or "all").
             let resolver = ProjectSelectionResolver(userID: userID, db: tx, locking: true)
-            let rule = try await resolver.validate(request.selection)
+            let rule = try await resolver.validate(request.selection, previous: try await existing?.id.asyncFlatMap { try await resolver.rule(of: $0) })
             guard SelectionRule.namesSomething(projects, rule) else { throw Abort(.badRequest, reason: "invalid_projects") }
             let now = Date()
             let sorted = projects.sorted { $0.uuidString < $1.uuidString }

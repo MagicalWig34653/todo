@@ -177,14 +177,18 @@ struct ProjectSelectionResolver {
         return Set(try await rows(ProjectGroupMember.self, column: "group_id", in: own.compactMap(\.id), locking: locking, on: db).map(\.projectID))
     }
 
-    /// Projects the person owns, split into those "all" includes and those a connection created. Team-owned ones are not "own".
-    private mutating func owned() async throws -> (auto: Set<UUID>, agentCreated: Set<UUID>) {
+    /// Projects the person owns, split into those "all" includes and those it leaves out: created by a connection, or created
+    /// by someone else and handed over (`projects.owner_id` is the creator and never follows a transfer). Without consent
+    /// another person must not widen the person's "all except" grants and mandate. Team-owned ones are not "own".
+    private mutating func owned() async throws -> (auto: Set<UUID>, leftOut: Set<UUID>) {
         let (snapshot, created) = try await loadGraph()
-        let mine = Set(snapshot.projects.compactMap { id, project -> UUID? in
+        var mine = Set<UUID>(), handedOver = Set<UUID>()
+        for (id, project) in snapshot.projects {
             let row = snapshot.sharing[id]
-            return (row?.ownerType ?? "person") == "person" && (row?.ownerID ?? project.ownerID) == userID ? id : nil
-        })
-        return (mine.subtracting(created), mine.intersection(created))
+            guard (row?.ownerType ?? "person") == "person", (row?.ownerID ?? project.ownerID) == userID else { continue }
+            if project.ownerID == userID { mine.insert(id) } else { handedOver.insert(id) }
+        }
+        return (mine.subtracting(created), mine.intersection(created).union(handedOver))
     }
 
     /// The resolution: (explicit + groups + "all owned") minus excluded projects and groups, cut with what the person can
@@ -206,12 +210,12 @@ struct ProjectSelectionResolver {
         return out
     }
 
-    /// Agent-created projects of the person that an "all" selection leaves out (for the preview).
+    /// Own projects an "all" selection leaves out (agent-created or handed over by someone else; for the preview).
     mutating func leftOutByAll(explicit: [UUID], rule: SelectionRule?) async throws -> [UUID] {
         guard let rule, rule.mode == SelectionRule.allExcept else { return [] }
         let included = Set(try await resolve(explicit: explicit, rule: rule))
         let excluded = Set(rule.excludedProjectIDs).union(try await members(of: rule.excludedGroupIDs))
-        return try await owned().agentCreated.subtracting(included).subtracting(excluded).sorted { $0.uuidString < $1.uuidString }
+        return try await owned().leftOut.subtracting(included).subtracting(excluded).sorted { $0.uuidString < $1.uuidString }
     }
 
     mutating func projects(of grant: OAuthGrant) async throws -> [UUID] {
@@ -237,12 +241,16 @@ struct ProjectSelectionResolver {
     }
 
     /// Checks a requested rule: known mode, bounded, and every group is the person's own (404 otherwise).
-    func validate(_ input: SelectionInput?) async throws -> SelectionRule? {
+    /// Single-project removals (`OAuthGrant.exclude`) may push the exclusions past `maxExcluded`; narrowing must
+    /// never fail, so a rule may keep as many exclusions as the stored one (`previous`) has, it just may not grow past both.
+    /// The preview passes `.max`: it stores nothing and can never widen a selection.
+    func validate(_ input: SelectionInput?, previous: SelectionRule? = nil, excludedLimit: Int? = nil) async throws -> SelectionRule? {
         guard let input else { return nil }
         let mode = input.mode ?? SelectionRule.selected
         let groups = Set(input.groupIDs ?? []), excluded = Set(input.excludedProjectIDs ?? []), excludedGroups = Set(input.excludedGroupIDs ?? [])
+        let maxExcluded = excludedLimit ?? max(SelectionLimits.maxExcluded, previous?.excludedProjectIDs.count ?? 0)
         guard [SelectionRule.selected, SelectionRule.allExcept].contains(mode), groups.count <= SelectionLimits.maxGroups,
-              excludedGroups.count <= SelectionLimits.maxGroups, excluded.count <= SelectionLimits.maxExcluded else {
+              excludedGroups.count <= SelectionLimits.maxGroups, excluded.count <= maxExcluded else {
             throw Abort(.badRequest, reason: "invalid_selection")
         }
         let named = Array(groups.union(excludedGroups))
@@ -308,7 +316,11 @@ extension OAuthGrant {
         guard reached || explicitProjects.contains(projectID) else { return false }
         explicitProjects.removeAll { $0 == projectID }
         if rule != nil, try await resolver.resolve(explicit: explicitProjects, rule: rule).contains(projectID) {
-            rule?.excludedProjectIDs.append(projectID)
+            // Deleted projects never come back (ids are not reused): drop them so the list stays bounded by real projects.
+            // Unreadable ones stay excluded, a later share must not bring them back.
+            let listed = rule?.excludedProjectIDs ?? []
+            let existing = listed.isEmpty ? Set<UUID>() : Set(try await Project.query(on: db).filter(\.$id ~~ listed).all(\.$id))
+            rule?.excludedProjectIDs = listed.filter(existing.contains) + [projectID]
             try await resolver.store(rule, of: id)
         }
         guard SelectionRule.namesSomething(explicitProjects, rule) || scopes.contains("projects:write") else {

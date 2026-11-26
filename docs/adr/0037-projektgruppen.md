@@ -30,7 +30,7 @@ Gruppenänderungen sperren die Zeilen der Person ohne `ORDER BY id`, sonst läuf
 
 - Kein MCP-Schreibweg für Gruppen, Mitgliedschaften, Regeln oder Vollmachten. `create_project`: siehe 4. `move_project` und Unterprojekte: keine Vererbung, daher keine Wirkung (Test). `set_connection_projects` bleibt auf die wirksame Menge der eigenen Vollmacht begrenzt.
 - Ein `OAuthGrant` ohne Auflösung erreicht nichts (`effectiveProjects` ist dann leer, Debug-Builds brechen ab): eine vergessene Auflösung fällt geschlossen aus.
-- Bewusst offen: Wer einer Person ein Projekt **überträgt** (Besitzerwechsel durch die abgebende Person oder die Verwaltung), erweitert deren „alle außer“. Das ist dann ihr Projekt; Gruppen sind davon nicht betroffen.
+- ~~Bewusst offen: Wer einer Person ein Projekt überträgt, erweitert deren „alle außer“.~~ Behoben 26.11.2026, siehe Nachtrag.
 - Bewusst offen: Wer eine Gruppe wählt, vertraut auf künftige Mitgliedschaften; die PWA sagt das beim Wählen.
 
 ## Daten und Betrieb
@@ -45,3 +45,13 @@ Tags an Projekten (zweite Vokabelwelt neben Labels, kein Mehrwert gegenüber Gru
 
 - Apple-App (Karte `80738AEA`).
 - Passkey-Step-up beim Erteilen (offen seit ADR 0032).
+
+## Nachtrag 26.11.2026 – Security-Review (Karte `0E5CCA05`)
+
+1. **Übertragene Projekte (Befund 1).** Ein Projekt, das eine **andere** Person angelegt und der Person übertragen hat (`PUT /v1/projects/{id}/owner`, MCP-Aktion `transfer_project_owner`, Verwaltung „Projekte übertragen“, Team→Person), fällt nicht mehr automatisch unter „alle außer“ – weder bei Verbindungen noch bei der Brain-Vollmacht. Es wird wie ein von Agenten angelegtes behandelt: Aufnahme nur per Gruppe oder ausdrücklicher Wahl; die Vorschau nennt es (`agentCreatedProjectIDs`, Name aus Verträglichkeit behalten; PWA und Zustimmungsseite: „von einem Agenten angelegt oder dir übertragen“). Erkennung ohne neue Spalte: `projects.owner_id` ist die anlegende Person und folgt keinem Besitzerwechsel; „eigen“ für „alle außer“ heißt jetzt Besitz als Person **und** selbst angelegt. Damit sind alle Übertragungswege abgedeckt, auch künftige. Eigene Projekte, die an sich selbst oder über ein Team zurück übertragen werden, bleiben drin. Folge für Bestand: vor dem Fix übertragene Projekte fallen aus „alle außer“ heraus (enger, nie breiter).
+2. **Ausschlussliste (Befund 2).** Einzelentfernen (`OAuthGrant.exclude`: Teilen-Fenster, Zugriffshinweis, `set_connection_projects`) darf über 500 Ausschlüsse kommen: Engerwerden darf nie scheitern. Beim Ausschließen werden Ausschlüsse **gelöschter** Projekte entfernt (Ids werden nicht wiederverwendet, Löschen ist endgültig); nur gerade unlesbare bleiben stehen, sonst würde ein späteres erneutes Teilen still verbreitern. Speichern (`PUT /oauth/grants/{id}/projects`, Vollmacht) prüft gegen `max(500, bisherige Anzahl)`: zurückspeichern geht immer, Wachstum darüber nicht. Die Vorschau rechnet nur und prüft keine Grenze. Die Liste ist damit durch die vorhandenen Projekte begrenzt. Verworfen: Grenze ganz streichen (Speichern könnte dann beliebig wachsen); beim Überlauf ablehnen (Engerwerden schlüge fehl).
+3. **Teilen-Fenster (Befund 3, Leistung).** `ConnectionService.candidateGrants` lädt Verbindungen und Regelzeilen nur noch von Personen, die das Projekt lesen können (`SyncRecorder.readers`, nur Vererbungskette und Freigaben); vorher alle Regeln aller Personen und je Person der ganze Freigabegraph. Verhalten unverändert, weil die Auflösung ohnehin mit den Leserechten schneidet.
+4. **Altbestand.** Vor der Migration `CreateProjectGroups` per MCP `create_project` angelegte Projekte sind nicht in `agent_created_projects` und gelten als eigene; nachtragen lässt sich das nicht (die Herkunft ist nicht gespeichert). Wer das nicht will, schließt sie aus oder wählt „ausgewählte“.
+5. **Restrisiken.** (a) Wird das Konto der anlegenden Person gelöscht, setzt die Kontolöschung `projects.owner_id` auf die Nachfolge; ein früher übertragenes Projekt zählt dann als eigenes (selten, durch Kontolöschung der anderen Person ausgelöst). (b) Gleichzeitiges Löschen eines Projekts während einer Gruppen- oder Regeländerung kann unter MariaDB als Fremdschlüssel-/Sperrfehler (1020, Datensatz geändert) abbrechen; die Änderung schlägt dann geschlossen fehl (nichts geschrieben), ein erneuter Versuch hilft.
+6. **Verträge.** `connections.yaml` 1.9.0 (Auflösung, Vorschau, Grenze). Agenten-Handbuch unverändert: MCP-Werkzeuge verhalten sich gleich, nur die aufgelöste Menge kann enger sein.
+

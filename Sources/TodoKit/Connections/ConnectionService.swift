@@ -88,10 +88,14 @@ enum ConnectionService {
     }
 
     /// Live connections that may reach the project (ADR 0037: through the explicit list or a rule), still to be resolved.
+    /// Only connections of people who can read the project now count: resolution cuts with read access anyway, so rules and
+    /// sharing graphs of everyone else are neither loaded nor resolved.
     static func candidateGrants(for project: Project, db: any Database) async throws -> [OAuthGrant] {
         let pid = try project.requireID()
-        let live = try await OAuthGrant.query(on: db).filter(\.$revoked == false).all()
-        let ruled = Set(try await ProjectSelectionRow.query(on: db).all().compactMap(\.id))
+        let readers = try await SyncRecorder.readers(of: project, on: db)
+        guard !readers.isEmpty else { return [] }
+        let live = try await OAuthGrant.query(on: db).filter(\.$revoked == false).filter(\.$userID ~~ readers).all()
+        let ruled = Set(try await ProjectSelectionRow.query(on: db).filter(\.$userID ~~ readers).all().compactMap(\.id))
         return live.filter { g in g.explicitProjects.contains(pid) || g.id.map(ruled.contains) == true }
     }
 
