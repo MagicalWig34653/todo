@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (19:35): Projektgruppen sicherheitsgeprüft, Deploy `sha-da95daf` bei Lino
+
+- Belege: `docs/STATUS.md` (oberster Nachtrag), Karte `0E5CCA05`.
+- Offen: Deploy (Lino), unsteter MariaDB-Test (eigene Karte), Apple `80738AEA`.
+- Nächster Schritt: UX-Konzept `607DB96E` (f-f7d094a6) samt Zeitleisten-Ansicht `8F6C48E2`; nur Konzept, kein Umbau.
+
 ## Checkpoint 26.11.2026 (14:35): BEF08998 fertig bis auf Abnahme und Deploy
 
 - `4a3f2ec` auf `main`, CI/E2E grün, Review `F402CFD8` offen. Belege: `docs/STATUS.md` (oberster Nachtrag).

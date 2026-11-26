@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 26.11.2026 (19:35): Security-Review Projektgruppen abgeschlossen (Karte `0E5CCA05`; kein Deploy)
+
+- Gegenlesen durch frische Instanz (`4a3f2ec`): kein Blocker. Befunde 1–3 behoben (rot `0381873`, grün `2728179`, Merge `da95daf`), 4/5 und Restrisiken in ADR 0037 (Nachtrag). Wichtigster: fremd übertragene Projekte fallen nicht mehr unter „alle außer“/Vollmacht. `connections.yaml` 1.9.0, keine neue Migration.
+- GitHub `da95daf` grün: CI 45864380701, E2E 45866091058, Docker publish 45864380657, Pages 45864380580.
+- Brain-Validierung `da95daf` (voller MariaDB-Lauf): erster Lauf rot (1 von 1039, `ColumnTests.testConcurrentMovesAndColumnCreationAcrossReplicas`), zweiter Lauf grün (1039, 9 übersprungen, 0 Fehler). Nicht nachgestellt (50 Einzelläufe plus vorlaufende Klassen grün), getesteter Code seit `cf4237e` unverändert, Ursache nicht belegt → Folgekarte.
+- Deploy-Stand jetzt `sha-da95daf` statt `sha-4a3f2ec` (Lino).
+
 ## Nachtrag 26.11.2026 (18:10): Security-Befunde Projektgruppen behoben (Karte 0E5CCA05; kein Push, kein Deploy)
 
 - Branch `t3/projektgruppen-security-fixes` ab `main` `1d95172`: Review-Tests `c5a56a4` (Cherry-Pick von `5f7df48`), rot `0381873`, grün `2728179`, Bilder/Checkpoint danach. Details und Begründung: ADR 0037 „Nachtrag 26.11.2026“.
