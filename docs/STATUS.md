@@ -1,5 +1,11 @@
 # Status
 
+## Nachtrag 26.11.2026 (23:10): Icon D im Apple-Repo eingebaut, TestFlight 0.1.1 (25) wartet auf das Upload-Tor (Karte `950D1506`)
+
+- Apple-Repo `origin/main` `7ec1154`: `App/Icon/AppIcon.icon` = unveränderte Kopie von `design/icon/Todo.icon`; iOS, macOS und watchOS binden es ein, alte Petrol-Quellen gelöscht. Prüfung `scripts/check-icon.py` (rot `ec48a48`, grün `9985be3`), `actool` ohne Icon-Warnung, Ersatzbilder für Systeme vor 26 erzeugt.
+- Archive 0.1.1 (25) für iOS und macOS liegen mit Nachweis im Orchestrator; Upload erst nach Freigabe durch das Brain. Enthält auch B6D004D4.
+- Nicht geprüft: Icon-Composer-Oberfläche (Übergabe Punkt 2), echte Geräte; die Watch-App wird mit dem iOS-Build nicht ausgeliefert. Einzelheiten: Apple `docs/STATUS.md`.
+
 ## Nachtrag 26.11.2026 (20:30): UX-Konzept PWA mit Zeitleiste liegt vor (Karte `607DB96E`; nur Konzept, kein Umbau, kein Push)
 
 - Branch `t3/ux-konzept-pwa-zeitleiste` ab `d429788`, alles unter `design/ux-konzept/`: `ist-aufnahme.md` (+ `ist/`), `konzept.md`, `wireframes/` (32 PNGs), `tafel.png`. Nichts unter `Sources/` oder `web/src` geändert.
