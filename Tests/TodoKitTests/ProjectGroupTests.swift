@@ -20,9 +20,11 @@ final class ProjectGroupTests: XCTestCase {
     private func env() async throws -> Env {
         let f = try await OAuthFixture.make()
         let a = try await f.tokens(scope: Self.scopes)
-        let gA = try XCTUnwrap(try await OAuthGrant.query(on: f.test.app.db).first()?.id)
+        let firstGrant = try await OAuthGrant.query(on: f.test.app.db).first()?.id
+        let gA = try XCTUnwrap(firstGrant)
         let b = try await f.tokens(scope: Self.scopes)
-        let gB = try XCTUnwrap(try await OAuthGrant.query(on: f.test.app.db).filter(\.$id != gA).first()?.id)
+        let secondGrant = try await OAuthGrant.query(on: f.test.app.db).filter(\.$id != gA).first()?.id
+        let gB = try XCTUnwrap(secondGrant)
         return Env(f: f, agent: a.access, brain: b.access, agentGrant: gA, brainGrant: gB,
                    p1: try f.project.requireID(), p2: try f.other.requireID())
     }
@@ -263,7 +265,7 @@ final class ProjectGroupTests: XCTestCase {
             try await access(e, e.agentGrant, selection(mode: "all_except"))
             try await assertEqual(try await reach(e, e.agent), [e.p1, e.p2])
             let heir = User(displayName: "Heir", isAdmin: false); try await heir.save(on: e.f.test.app.db)
-            let policy = ProjectSharing(project: e.f.other)
+            let policy = try ProjectSharing(project: e.f.other)
             policy.ownerType = "person"; policy.ownerID = try heir.requireID(); try await policy.save(on: e.f.test.app.db)
             try await assertEqual(try await reach(e, e.agent), [e.p1])
         }
@@ -303,7 +305,8 @@ final class ProjectGroupTests: XCTestCase {
             try await mandate(e, selection(groups: [g]))
             try await access(e, e.agentGrant, projects: [e.p1, e.p2])
             // Moving a project below a group member inherits nothing.
-            let version = try XCTUnwrap(try await Project.find(e.p2, on: e.f.test.app.db)).version
+            let found = try await Project.find(e.p2, on: e.f.test.app.db)
+            let version = try XCTUnwrap(found).version
             let moved = try await call(e, e.agent, "move_project", ["projectID": e.p2.uuidString, "version": version, "parentID": e.p1.uuidString])
             XCTAssertFalse(moved.isError, moved.text)
             try await assertEqual(try await mandated(e), [e.p1])
@@ -418,7 +421,8 @@ final class ProjectGroupTests: XCTestCase {
             try await mandate(e, selection(groups: [g]))
             try await access(e, e.brainGrant, projects: [e.p2])
             let r = try await review(e, e.p2)
-            let taskID = try XCTUnwrap(try await TaskReview.find(UUID(uuidString: r), on: e.f.test.app.db)).taskID
+            let row = try await TaskReview.find(UUID(uuidString: r), on: e.f.test.app.db)
+            let taskID = try XCTUnwrap(row).taskID
             let c = try await call(e, e.brain, "add_comment", ["taskID": taskID.uuidString, "reviewID": r, "body": "Empfehlung: annehmen"])
             XCTAssertFalse(c.isError, c.text)
             func recommended() async throws -> Bool? {
