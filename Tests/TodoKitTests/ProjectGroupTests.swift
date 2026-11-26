@@ -521,6 +521,104 @@ extension ProjectGroupTests {
         }
     }
 
+    /// The taken over mandate stays within what the person confirmed: every mandate project that was not chosen is
+    /// excluded in the new rule, so no later group membership and no "all except" brings it back.
+    func testTakeoverExcludesEveryUnconfirmedMandateProject() async throws {
+        for variant in ["all_except", "left-and-back", "group"] {
+            try await run { e in
+                try await onlyBrain(e)
+                let g = try await group(e, "G", [e.p1, e.p2])
+                try await access(e, e.brainGrant, projects: [e.p1])
+                try await mandate(e, variant == "all_except" ? selection(mode: "all_except") : selection(groups: [g]))
+                // "left-and-back": shown on the page, gone from the group at the click, added again afterwards.
+                let r = try await signIn(e, takeover: "yes", projects: [e.p1], between: variant == "left-and-back" ? { _ = try await self.setMembers(e, g, [e.p1]) } : nil)
+                XCTAssertEqual(r.status, .ok, variant)
+                let new = try XCTUnwrap(r.grant)
+                let first = try await explicitMandate(e, new)
+                XCTAssertEqual(first.covered, [e.p1], variant)
+                XCTAssertEqual(ids(first.rule?["excludedProjectIDs"]), [e.p2], variant)
+                // Even with access to it again, the mandate does not return to the project.
+                try await access(e, new, projects: [e.p1, e.p2])
+                _ = try await setMembers(e, g, [e.p1])
+                _ = try await setMembers(e, g, [e.p1, e.p2])
+                let later = try await explicitMandate(e, new)
+                XCTAssertEqual(later.covered, [e.p1], variant)
+            }
+        }
+    }
+
+    /// The page needs to know what the person had named: with a rule only those are ticked.
+    func testTakeoverOfferNamesTheExplicitProjectsApartFromGroupMembers() async throws {
+        try await run { e in
+            try await onlyBrain(e)
+            let g = try await group(e, "G", [e.p2])
+            try await access(e, e.brainGrant, projects: [e.p1])
+            try await mandate(e, selection(groups: [g]))
+            let r = try await signIn(e, takeover: "yes", projects: [e.p1])
+            let offer = try XCTUnwrap(r.offer)
+            XCTAssertEqual(ids(offer["explicit_project_ids"]), [e.p1])
+            XCTAssertEqual(ids(offer["project_ids"]), [e.p1, e.p2])
+        }
+    }
+
+    /// The limits of the security review (ADR 0036) hold for connections with rules too.
+    func testTakeoverLimitsHoldWithRules() async throws {
+        try await run { e in
+            try await onlyBrain(e)
+            let g = try await group(e, "G", [e.p1])
+            try await access(e, e.brainGrant, selection(groups: [g]))
+            try await mandate(e, selection(mode: "all_except"))
+            let db = e.f.test.app.db
+            let found = try await OAuthGrant.find(e.brainGrant, on: db)
+            let old = try XCTUnwrap(found)
+            let now = Date()
+            old.revoke(.replay, now: now); try await old.save(on: db)
+            let clientRow = try await OAuthClient.find(old.clientID, on: db)
+            let client = try XCTUnwrap(clientRow)
+            func offered(_ c: OAuthClient, days: Double) async throws -> Bool {
+                if case .one = try await OAuthTakeover.find(user: e.f.user, client: c, redirect: e.f.redirect,
+                    resource: e.f.test.settings.oauthResource, now: now.addingTimeInterval(days * 86_400), on: db) { return true }
+                return false
+            }
+            // Seven days, rule or not.
+            let inside = try await offered(client, days: 6.9)
+            let outside = try await offered(client, days: 7.1)
+            XCTAssertTrue(inside); XCTAssertFalse(outside)
+            // By name only with a distinctive name.
+            func second(_ name: String) async throws -> OAuthClient {
+                let r = try await e.f.test.json(.POST, "/oauth/register", ["client_name": name, "redirect_uris": [e.f.redirect]])
+                let id = try XCTUnwrap(r.body?["client_id"] as? String)
+                let row = try await OAuthClient.query(on: db).all().first { "\($0.id!)".uppercased() == id.uppercased() }
+                return try XCTUnwrap(row)
+            }
+            let sameName = try await second(client.name)
+            let byName = try await offered(sameName, days: 1)
+            XCTAssertTrue(byName)
+            client.name = OAuthClient.defaultName; try await client.save(on: db)
+            let unnamed = try await second(OAuthClient.defaultName)
+            let byDefaultName = try await offered(unnamed, days: 1)
+            XCTAssertFalse(byDefaultName)
+        }
+    }
+
+    func testTakeoverWithoutCommonProjectLeavesOneProtocolRowWithRules() async throws {
+        try await run { e in
+            try await onlyBrain(e)
+            let g = try await group(e, "G", [e.p1])
+            try await access(e, e.brainGrant, selection(groups: [g]))
+            try await mandate(e, selection(groups: [g]))
+            let r = try await signIn(e, takeover: "yes", projects: [e.p2])
+            XCTAssertEqual(r.status, .ok)
+            let new = try XCTUnwrap(r.grant)
+            let rows = try await BrainConnectionAudit.query(on: e.f.test.app.db).filter(\.$grantID == new).all()
+            XCTAssertEqual(rows.map(\.kind), ["connection.taken_over"])
+            XCTAssertEqual(rows.map(\.projectID), [e.brainGrant])
+            let list = try await rest(e, .GET, "/v1/settings/brain-mandate")
+            let mandates = list.body?["mandates"] as? [[String: Any]] ?? []
+            XCTAssertFalse(mandates.contains { ($0["grantID"] as? String)?.uppercased() == new.uuidString })
+        }
+    }
+
     /// Group changes lock mandates before grants like decisions do; on MariaDB a wrong order shows up as a deadlock error.
     func testGroupChangesDecisionsAndAccessChangesAtOnce() async throws {
         guard TestApp.useMariaDB else { throw XCTSkip("row locks required (MariaDB)") }
