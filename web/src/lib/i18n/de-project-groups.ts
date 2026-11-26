@@ -58,7 +58,7 @@ export const deProjectGroups = {
 	'projectGroups.selection.search': 'Projekte suchen',
 	'projectGroups.selection.excludedSearch': 'Ausgeschlossene Projekte suchen',
 	'projectGroups.selection.noMatch': 'Kein Projekt gefunden.',
-	'projectGroups.selection.picked': '{count} einzeln gewählt',
+	'projectGroups.selection.picked': '{count} von {max} einzeln gewählt',
 	'projectGroups.selection.clear': 'Auswahl leeren',
 	'projectGroups.selection.checking': 'Wirksame Projekte werden berechnet …',
 	'projectGroups.selection.failed': 'Die wirksamen Projekte konnten nicht berechnet werden.',

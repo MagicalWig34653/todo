@@ -401,7 +401,10 @@
 				<div class="flex min-w-0 flex-col gap-2">
 					<p class="text-sm font-medium">{t('brainMandate.form.projects')}</p>
 					<p class="text-muted-foreground text-xs">{t('brainMandate.form.projectsHint')}</p>
-					<ProjectSelectionPicker bind:selection bind:effective {projects} {groups} testid="bm" max={MAX_PROJECTS} disabled={busy || confirming} />
+					<!-- A new connection starts with empty search fields. -->
+					{#key grantID}
+						<ProjectSelectionPicker bind:selection bind:effective {projects} {groups} testid="bm" max={MAX_PROJECTS} disabled={busy || confirming} />
+					{/key}
 				</div>
 
 				{#if confirming && diff && chosenMandate}

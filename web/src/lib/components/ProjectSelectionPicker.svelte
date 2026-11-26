@@ -177,7 +177,7 @@
 		{/each}
 	</ul>
 	<div class="flex flex-wrap items-center justify-between gap-2">
-		<p class="text-muted-foreground text-xs" aria-live="polite" data-testid="{testid}-selected-count">{t('projectGroups.selection.picked', { count: selection.projectIDs.length })}</p>
+		<p class="text-muted-foreground text-xs" aria-live="polite" data-testid="{testid}-selected-count">{t('projectGroups.selection.picked', { count: selection.projectIDs.length, max })}</p>
 		{#if selection.projectIDs.length > 0 || selection.groupIDs.length > 0}
 			<Button size="xs" variant="ghost" type="button" onclick={() => (selection = { ...emptySelection(), mode: selection.mode })} data-testid="{testid}-clear">{t('projectGroups.selection.clear')}</Button>
 		{/if}

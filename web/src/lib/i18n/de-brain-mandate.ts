@@ -56,7 +56,7 @@ export const deBrainMandate = {
 	'brainMandate.form.lastUsed': 'zuletzt benutzt {when}',
 	'brainMandate.form.neverUsed': 'noch nie benutzt',
 	'brainMandate.form.projects': 'Projekte',
-	'brainMandate.form.projectsHint': 'Wähle ausdrücklich, wo entschieden werden darf (1 bis 200 Projekte). Unterprojekte erben nicht, sie müssen einzeln gewählt werden.',
+	'brainMandate.form.projectsHint': 'Wähle, wo entschieden werden darf: einzelne Projekte, Projektgruppen oder „alle meine außer“. Unterprojekte gehören nicht automatisch dazu.',
 	'brainMandate.form.search': 'Projekte suchen',
 	'brainMandate.form.noMatch': 'Kein Projekt gefunden.',
 	'brainMandate.form.noProjects': 'Du hast noch keine Projekte.',

@@ -134,7 +134,7 @@ enum ConsentPage {
 
       const pc = el('fieldset', '', root, 'card');
       el('legend', 'Projekte freigeben', pc);
-      el('p', 'Nur ausdrücklich gewählte Projekte (samt ihren Unterprojekten in der Liste) werden freigegeben.', pc, 'muted');
+      el('p', 'Freigegeben wird nur, was du hier wählst: einzelne Projekte, deine Projektgruppen oder alle deine Projekte mit Ausnahmen. Unterprojekte gehören nicht automatisch dazu.', pc, 'muted');
       if (d.scopes.includes('projects:write')) el('p', 'Projekte, die über diese Verbindung neu angelegt werden, sind automatisch freigegeben.', pc, 'muted');
       // ADR 0037: the choice is explicit projects and groups, or all own projects except some. The server computes what it reaches.
       const groups = d.groups || [];

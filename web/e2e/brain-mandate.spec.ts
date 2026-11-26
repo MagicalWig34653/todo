@@ -193,11 +193,11 @@ test('(a) empty state: no connection and no mandate, then the connections show u
 	await expect(page.getByTestId('bm-empty')).toBeVisible();
 	await expect(page.getByTestId('bm-grant-option')).toHaveCount(2);
 	// Nothing is preselected: no connection, no project.
-	await expect(page.getByRole('radio', { checked: true })).toHaveCount(0);
+	await expect(page.getByTestId('bm-grants').getByRole('radio', { checked: true })).toHaveCount(0);
 	await expect(page.getByTestId('bm-project-list').getByRole('checkbox', { checked: true })).toHaveCount(0);
 	await expect(page.getByTestId('bm-problem')).toHaveText('Wähle eine Verbindung.');
 	await expect(save()).toBeDisabled();
-	await expect(page.getByTestId('bm-selected-count')).toHaveText('0 von 200 Projekten gewählt');
+	await expect(page.getByTestId('bm-selected-count')).toHaveText('0 von 200 einzeln gewählt');
 	await lookMatrix('leerzustand');
 });
 
@@ -211,7 +211,7 @@ test('(b) grant the first connection: pick one of two connections and two of thr
 	await expect(page.getByTestId('bm-project-list').getByRole('checkbox')).toHaveCount(1);
 	await page.getByTestId('bm-project-search').fill('');
 	await pickProjects(alpha.name, beta.name);
-	await expect(page.getByTestId('bm-selected-count')).toHaveText('2 von 200 Projekten gewählt');
+	await expect(page.getByTestId('bm-selected-count')).toHaveText('2 von 200 einzeln gewählt');
 	await expect(page.getByTestId('bm-summary')).toContainText('„Codex-Verbindung“ darf in 2 Projekten');
 	await expect(save()).toHaveText('Vollmacht erteilen');
 	const choose = async () => {
@@ -446,7 +446,7 @@ test('(f) error: a connection revoked meanwhile gives a clear message, the list 
 	await expect(error).toHaveText('Diese Verbindung wurde zwischenzeitlich widerrufen. Wähle eine andere aktive Verbindung.');
 	await expect(error).toHaveAttribute('role', 'alert');
 	await expect(page.getByTestId('bm-grant-option')).toHaveCount(2);
-	await expect(page.getByRole('radio', { checked: true })).toHaveCount(0);
+	await expect(page.getByTestId('bm-grants').getByRole('radio', { checked: true })).toHaveCount(0);
 	await expect(projectBox(alpha.name)).toBeChecked();
 	await expect(save()).toBeDisabled();
 	// Nothing was granted: still exactly the two earlier mandates.
@@ -487,6 +487,8 @@ test('(g) keyboard: connection and projects by Space, grant by Enter; "Projekte 
 	await tabTo(projectBox(beta.name));
 	await page.keyboard.press('Space');
 	await expect(projectBox(beta.name)).toBeChecked();
+	// The button waits for the server's answer on what the choice reaches (ADR 0037).
+	await expect(save()).toBeEnabled();
 	await save().focus();
 	await page.keyboard.press('Enter');
 	await expect(message()).toContainText('Vollmacht erteilt');
@@ -507,6 +509,8 @@ test('(g) keyboard: connection and projects by Space, grant by Enter; "Projekte 
 	await expect(page.getByTestId('bm-project-list').getByRole('checkbox')).toHaveCount(1);
 	await tabTo(projectBox(gamma.name));
 	await page.keyboard.press('Space');
+	// The button waits for the server's answer on what the choice reaches (ADR 0037).
+	await expect(save()).toBeEnabled();
 	await save().focus();
 	await page.keyboard.press('Enter');
 	await expect(page.getByTestId('bm-confirm')).toBeFocused();
