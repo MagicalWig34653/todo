@@ -18,11 +18,13 @@ Lino 26.11.: „Aber immer wieder alle Projekte auszuwählen nervt. Vielleicht k
 6. **Einzelprojekte bleiben verträglich** (Teilen-Fenster, Zugriffshinweis, `set_connection_projects`): Hinzufügen hebt einen Ausschluss genau dieses Projekts auf; eine ausgeschlossene Gruppe lehnt ab (`409 excluded_by_group`, nichts wird angewendet). Entfernen eines Projekts, das eine Gruppe oder „alle“ mitbringt, schließt es aus. Ausgeschlossene Projekte erzeugen keine Zugriffshinweise.
 7. **Wirkung sofort.** Entfernen aus einer Gruppe oder Löschen wirkt beim nächsten Aufruf. Wird eine **ausgeschlossene** Gruppe gelöscht, bleiben ihre aktuellen Projekte einzeln ausgeschlossen: Löschen erweitert nie.
 8. **Vorher/Nachher und Protokoll.** Jede Gruppenänderung berechnet je aktiver Vollmacht und Verbindung die Differenz (`changes[]`, `?dryRun=true` rechnet nur und verwirft). Änderungen an einer aktiven Vollmacht schreiben je Projekt `mandate.group_added` / `mandate.group_removed` in `brain_connection_audits`.
-9. **Übernahme (ADR 0036):** Die Regel des Mandats wandert mit, ausdrückliche Projekte bleiben ausdrücklich (Gruppenmitglieder werden nicht festgeschrieben). Was die Zustimmungsseite nicht gezeigt hat oder abgewählt wurde, wird in der neuen Regel ausgeschlossen. Hat sich die Mandatsregel seit dem Anzeigen geändert: `409 takeover_changed`. Die Regel der Verbindung wählt die Person im Formular (vorbelegt mit der alten).
+9. **Übernahme (ADR 0036):** Die Regel des Mandats wandert mit, ausdrückliche Projekte bleiben ausdrücklich (Gruppenmitglieder werden nicht festgeschrieben). Jedes Projekt der alten Vollmacht, das die Seite nicht gezeigt hat oder das die neue Auswahl der Verbindung nicht enthält, und jedes abgewählte alte Projekt wird in der neuen Regel ausgeschlossen (auch spätere Gruppenmitgliedschaft oder „alle außer“ bringt es nicht zurück). Vorausgewählt sind nur ausdrücklich genannte Projekte; Gruppen einer Mandatsregel werden nicht in die Verbindung übernommen (vorläufig, die Verbindung wird nie von selbst breiter). Hat sich die Mandatsregel seit dem Anzeigen geändert: `409 takeover_changed`. Die Regel der Verbindung wählt die Person im Formular (vorbelegt mit der alten).
 
 ## Sperren (MariaDB)
 
 Reihenfolge überall: Freigabegraph (`sharing_lock`) → Person → Mandat → Grant → Gruppen/Regelzeilen. Gruppenänderungen sperren zusätzlich alle Mandate, dann alle Grants der Person (je nach Id), bevor sie schreiben; Entscheidungen sperren Mandat, dann Grant und lesen dann Regel, Gruppen und Mitglieder mit `FOR UPDATE` (sperrende Lesezugriffe vor dem ersten einfachen Lesen, wegen `innodb_snapshot_isolation`). Alle Wege, die eine Regelzeile anlegen können, halten den Freigabegraph; Widerruf der Vollmacht jetzt ebenfalls.
+
+Gruppenänderungen sperren die Zeilen der Person ohne `ORDER BY id`, sonst läuft MariaDB den ganzen Primärschlüssel ab und sperrt fremde Zeilen.
 
 ## Angriffsfläche
 
