@@ -42,7 +42,9 @@ enum OAuthRotation {
         let ownID = try secret.requireID()
         let siblings = try await OAuthSecret.query(on: db).filter(\.$rotatedFrom == parent).all()
             .filter { !$0.consumed }.compactMap(\.id).filter { $0 != ownID }
-        guard !siblings.isEmpty else { return }
-        try await OAuthSecret.query(on: db).filter(\.$id ~~ siblings).set(\.$consumed, to: true).update()
+        // One row per statement: for `id IN (…)` a small table may still be scanned, equality on the primary key never is.
+        for id in siblings.sorted(by: { $0.uuidString < $1.uuidString }) {
+            try await OAuthSecret.query(on: db).filter(\.$id == id).set(\.$consumed, to: true).update()
+        }
     }
 }
