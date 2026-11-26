@@ -13,6 +13,8 @@
 - Apple-Repo `origin/main` `7ec1154`: `App/Icon/AppIcon.icon` = unveränderte Kopie von `design/icon/Todo.icon`; iOS, macOS und watchOS binden es ein, alte Petrol-Quellen gelöscht. Prüfung `scripts/check-icon.py` (rot `ec48a48`, grün `9985be3`), `actool` ohne Icon-Warnung, Ersatzbilder für Systeme vor 26 erzeugt.
 - Archive 0.1.1 (25) für iOS und macOS liegen mit Nachweis im Orchestrator; Upload erst nach Freigabe durch das Brain. Enthält auch B6D004D4.
 - Nicht geprüft: Icon-Composer-Oberfläche (Übergabe Punkt 2), echte Geräte; die Watch-App wird mit dem iOS-Build nicht ausgeliefert. Einzelheiten: Apple `docs/STATUS.md`.
+- Nachtrag 23:20: Nach Freigabe durch das Brain hochgeladen; 0.1.1 (25) iOS und macOS `VALID`, interne Gruppe „ich“, „Was testen“ gesetzt (Apple `f95fcbc`, `docs/TESTFLIGHT.md`). Offen: Gerätetest (Lino).
+- Hinweis zum Push 23:01: Mit dem Doku-Commit `0d2bb78` ging versehentlich der damals nur lokale Commit `7141539` (rote Tests, Karte `8B820AA8`) mit auf `origin/main`; deshalb CI/E2E auf `0d2bb78` nicht grün, ab `381784c` wieder grün. Kein Force-Push, kein Revert. Vor Pushes aus dem geteilten Checkout `git log origin/main..HEAD` prüfen.
 
 ## Nachtrag 26.11.2026 (20:30): UX-Konzept PWA mit Zeitleiste liegt vor (Karte `607DB96E`; nur Konzept, kein Umbau, kein Push)
 

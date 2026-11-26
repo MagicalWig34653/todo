@@ -52,7 +52,7 @@
 
 - Lino wählte D (Kommentar 26.11. 07:46). `t3/icon-entwurf-d-bausteine`: `945e26a` rot, `cedf26a` grün; vitest 792/792, check 0, E2E `app-icons` 3 Browser grün. Nicht gepusht. Details: `docs/STATUS.md` (oberster Nachtrag).
 - Offen: Prüfung und Merge durch die Hauptsession; Apple-Einbau nach `design/icon/UEBERGABE-APPLE.md` (inkl. Watch-Icon, `actool`, Geräte; schließt Bug `950D1506`); Deploy durch Lino, danach installierte PWA neu hinzufügen.
-- 26.11. 23:10: Apple-Einbau erledigt (Apple `7ec1154`, `actool` ohne Icon-Warnung); TestFlight 0.1.1 (25) iOS und macOS wartet auf die Freigabe des Brains. Offen bleiben Icon-Composer-Oberfläche und Geräte (Lino).
+- 26.11. 23:10: Apple-Einbau erledigt (Apple `7ec1154`, `actool` ohne Icon-Warnung); TestFlight 0.1.1 (25) iOS und macOS seit 23:20 `VALID` (Freigabe durch das Brain). Offen bleiben Icon-Composer-Oberfläche und Geräte (Lino).
 
 ## Checkpoint 26.11.2026: App-Icon-Entwürfe, Wahl offen (Karte `75EAE344`)
 
