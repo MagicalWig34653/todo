@@ -1,0 +1,49 @@
+{
+  "appleRenderer": "Icon Composer ictool 27.2",
+  "appleRenditions": [
+    {
+      "file": "ios-default",
+      "platform": "iOS",
+      "rendition": "Default"
+    },
+    {
+      "file": "ios-dark",
+      "platform": "iOS",
+      "rendition": "Dark"
+    },
+    {
+      "file": "ios-tinted-gray",
+      "platform": "iOS",
+      "rendition": "ClearDark"
+    },
+    {
+      "file": "ios-tinted-color",
+      "platform": "iOS",
+      "rendition": "TintedDark",
+      "tintColor": "0.12",
+      "tintStrength": "1"
+    },
+    {
+      "file": "macos-default",
+      "platform": "macOS",
+      "rendition": "Default"
+    },
+    {
+      "file": "watchos-default",
+      "platform": "watchOS",
+      "rendition": "Default"
+    }
+  ],
+  "pwaAndBoards": {
+    "node": "26.12.1",
+    "sharp": "0.35.3",
+    "vips": "8.18.3",
+    "rsvg": "2.62.90"
+  },
+  "notVerified": [
+    "Xcode import and actool build",
+    "real devices",
+    "browser rendering of favicon.svg in dark mode",
+    "clear (glass) renditions"
+  ]
+}
