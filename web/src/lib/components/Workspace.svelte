@@ -283,7 +283,7 @@
 	<!-- While the mobile drawer is open everything behind it is inert (not focusable, hidden from assistive technology). -->
 	<div inert={drawerOpen}>
 	<div class={['flex min-h-dvh min-w-0 flex-col', !ui.sidebarCollapsed && 'menu:pl-72']}>
-		<header class="bg-background/85 sticky top-0 z-20 flex h-12 items-center gap-1 border-b px-3 backdrop-blur menu:px-5">
+		<header class="bg-background/85 sticky top-0 z-20 flex h-12 items-center gap-1 border-b px-3 backdrop-blur menu:px-5" data-testid="app-header">
 			<Button
 				variant="ghost"
 				size="icon-sm"
@@ -306,7 +306,18 @@
 				<span class="flex-1"></span>
 			{/if}
 			<div class="ml-auto flex shrink-0 items-center gap-1">
-				<HelpMenu onpage={openHelp} onall={() => openHelp()} />
+				<!-- Phone: "+" lives in the header (UX step 1), a floating button would cover cards, buttons and text. -->
+				<button
+					type="button"
+					class="bg-ui-accent text-ui-accent-foreground focus-visible:ring-ring/60 inline-flex size-10 items-center justify-center rounded-full outline-none focus-visible:ring-2 menu:hidden"
+					aria-label={t('quickAdd.open')}
+					data-testid="fab"
+					onclick={() => (ui.quickAdd = true)}
+				>
+					<Plus class="size-5" aria-hidden="true" />
+				</button>
+				<!-- Phone: help stays in the account menu, the header keeps "+" and the avatar (UX concept §3). -->
+				<div class="hidden menu:contents"><HelpMenu onpage={openHelp} onall={() => openHelp()} /></div>
 				<UserMenu onsettings={openAccountArea} onhelp={() => openHelp()} />
 			</div>
 		</header>
@@ -325,7 +336,7 @@
 			</div>
 		{/if}
 
-		<main class="w-full min-w-0 flex-1 px-4 pt-6 pb-36 menu:px-8 menu:pt-8 menu:pb-12">
+		<main class="w-full min-w-0 flex-1 px-4 pt-6 pb-24 menu:px-8 menu:pt-8 menu:pb-12">
 			{#if view === 'project'}
 				{#if selected}
 					{#key selected.id}
@@ -395,16 +406,6 @@
 			{/if}
 		</main>
 	</div>
-
-	<button
-		type="button"
-		class="glow-accent bg-ui-accent text-ui-accent-foreground fixed right-4 bottom-[4.75rem] z-30 inline-flex size-14 items-center justify-center rounded-full shadow-pop menu:hidden"
-		aria-label={t('quickAdd.open')}
-		data-testid="fab"
-		onclick={() => (ui.quickAdd = true)}
-	>
-		<Plus class="size-6" aria-hidden="true" />
-	</button>
 
 	<nav
 		class="bg-background/95 fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur menu:hidden"

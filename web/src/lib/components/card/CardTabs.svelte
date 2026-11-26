@@ -9,17 +9,19 @@
 	 */
 	interface Props {
 		value: CardTab;
+		/** The tabs to show, in order (default all). */
+		tabs?: readonly CardTab[];
 		onchange: (tab: CardTab) => void;
 		/** A tab that waits for the person: shows a marker and appends the text to the tab's spoken name. */
 		hints?: Partial<Record<CardTab, string>>;
 	}
-	let { value, onchange, hints = {} }: Props = $props();
+	let { value, tabs = CARD_TABS, onchange, hints = {} }: Props = $props();
 
 	let list = $state<HTMLDivElement | null>(null);
 
 	function onkeydown(e: KeyboardEvent) {
 		if (e.altKey || e.ctrlKey || e.metaKey) return;
-		const next = tabAfterKey(value, e.key);
+		const next = tabAfterKey(value, e.key, tabs);
 		if (!next) return;
 		e.preventDefault();
 		onchange(next);
@@ -50,7 +52,7 @@
 		class="-mx-1 flex overflow-x-auto overscroll-x-contain px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 		{onkeydown}
 	>
-		{#each CARD_TABS as tab (tab)}
+		{#each tabs as tab (tab)}
 			{@const selected = tab === value}
 			<button
 				type="button"

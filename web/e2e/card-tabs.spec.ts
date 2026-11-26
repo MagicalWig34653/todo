@@ -17,6 +17,8 @@ const DESC_END = 'ENDE-DER-BESCHREIBUNG';
 const LONG_DESC = `${'Ausführliche Beschreibung der Aufgabe mit viel Text, damit die Übersicht länger als das Fenster wird. '.repeat(30)}${DESC_END}`;
 const TABS = ['Übersicht', 'Aktivität', 'Bericht', 'Pipeline', 'Änderungen', 'Tests'];
 const SLUGS = ['overview', 'activity', 'report', 'pipeline', 'changes', 'tests'];
+// UX step 1 (card 8B820AA8): tabs without data are hidden. The full card has a report but no pipeline, changes or tests.
+const VISIBLE = TABS.slice(0, 3);
 
 let ids = { full: '', empty: '', questionID: '' };
 
@@ -65,7 +67,7 @@ test('tabs are visible, follow the ARIA tabs pattern and the overview keeps the 
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await open(ids.full);
 	await expect(tablist()).toHaveAttribute('aria-orientation', 'horizontal');
-	await expect(dialog().getByRole('tab')).toHaveText(TABS);
+	await expect(dialog().getByRole('tab')).toHaveText(VISIBLE);
 	await expect(tab('Übersicht')).toHaveAttribute('aria-selected', 'true');
 	await expect(tab('Aktivität')).toHaveAttribute('aria-selected', 'false');
 	// Roving tabindex: only the selected tab is in the Tab order.
@@ -82,7 +84,7 @@ test('tabs are visible, follow the ARIA tabs pattern and the overview keeps the 
 	await expect(panel().getByTestId('card-attachments')).toBeVisible();
 	await expect(panel().getByTestId('detail-notes')).toContainText('Zweiter Schritt läuft');
 	// The sidebar stays in every tab.
-	await tab('Tests').click();
+	await tab('Bericht').click();
 	await expect(dialog().getByTestId('card-side')).toBeVisible();
 });
 
@@ -96,13 +98,13 @@ test('keyboard: arrows, Home and End move and activate tabs; focus stays on the 
 	await expect(tab('Übersicht')).toHaveAttribute('tabindex', '-1');
 	await expect(page).toHaveURL(new RegExp(`card=task:${ids.full}&tab=activity$`));
 	await page.keyboard.press('End');
-	await expect(tab('Tests')).toBeFocused();
-	await expect(panel()).toHaveAccessibleName('Tests');
+	await expect(tab('Bericht')).toBeFocused();
+	await expect(panel()).toHaveAccessibleName('Bericht');
 	await page.keyboard.press('ArrowRight');
 	await expect(tab('Übersicht')).toBeFocused();
 	await expect(page).toHaveURL(new RegExp(`card=task:${ids.full}$`));
 	await page.keyboard.press('ArrowLeft');
-	await expect(tab('Tests')).toBeFocused();
+	await expect(tab('Bericht')).toBeFocused();
 	await page.keyboard.press('Home');
 	await expect(tab('Übersicht')).toBeFocused();
 	await expect(tab('Übersicht')).toHaveAttribute('aria-selected', 'true');
@@ -129,8 +131,8 @@ test('deep link: ?tab= opens the right tab, reload keeps it, tab changes do not 
 	await expect(tab('Bericht')).toHaveAttribute('aria-selected', 'true');
 	await tab('Aktivität').click();
 	await expect(page).toHaveURL(/tab=activity$/);
-	await tab('Pipeline').click();
-	await expect(page).toHaveURL(/tab=pipeline$/);
+	await tab('Übersicht').click();
+	await expect(page).toHaveURL(/card=task:[A-Za-z0-9-]+$/);
 	await open(ids.full, 'nonsense');
 	await expect(tab('Übersicht')).toHaveAttribute('aria-selected', 'true');
 	// Opening a card from a list starts on the overview even after a tab was used before.
@@ -140,14 +142,14 @@ test('deep link: ?tab= opens the right tab, reload keeps it, tab changes do not 
 	await expect(tab('Übersicht')).toHaveAttribute('aria-selected', 'true');
 	await tab('Bericht').click();
 	await expect(page).toHaveURL(/card=task:[A-Za-z0-9-]+&tab=report$/);
-	await tab('Tests').click();
+	await tab('Aktivität').click();
 	// One history entry for the whole card: Back (here: the close button) returns to the list, not to the previous tab.
 	await dialog().getByRole('button', { name: 'Schließen' }).click();
 	await expect(dialog()).toHaveCount(0);
 	await expect(page).toHaveURL(/\/activity$/);
 	await page.goForward();
 	await expect(dialog()).toBeVisible();
-	await expect(tab('Tests')).toHaveAttribute('aria-selected', 'true');
+	await expect(tab('Aktivität')).toHaveAttribute('aria-selected', 'true');
 	await page.goBack();
 	await expect(dialog()).toHaveCount(0);
 });
@@ -231,7 +233,7 @@ for (const [label, size] of [['desktop', { width: 1280, height: 800 }], ['mobile
 			expect(panel0.y).toBeGreaterThanOrEqual(list0.y + list0.height - 1);
 			await page.waitForTimeout(300);
 			await page.screenshot({ path: `${SHOTS}/${label}-${scheme}-overview.png` });
-			for (const [i, name] of TABS.entries()) {
+			for (const [i, name] of VISIBLE.entries()) {
 				await tab(name).click();
 				await expect(tab(name)).toHaveAttribute('aria-selected', 'true');
 				await expect(page).toHaveURL(i === 0 ? /card=task:[A-Za-z0-9-]+$/ : new RegExp(`tab=${SLUGS[i]}$`));
@@ -250,17 +252,18 @@ for (const [label, size] of [['desktop', { width: 1280, height: 800 }], ['mobile
 				expect(tb.x).toBeGreaterThanOrEqual(list.x - 1);
 				expect(tb.x + tb.width).toBeLessThanOrEqual(list.x + list.width + 1);
 				if (name === 'Aktivität') await expect(panel().getByTestId('activity').first()).toBeVisible();
-				if (['Aktivität', 'Bericht', 'Tests'].includes(name)) await page.waitForTimeout(300); // colour transition of the tab
-				if (['Aktivität', 'Bericht', 'Tests'].includes(name)) await page.screenshot({ path: `${SHOTS}/${label}-${scheme}-${SLUGS[i]}.png` });
+				if (['Aktivität', 'Bericht'].includes(name)) await page.waitForTimeout(300); // colour transition of the tab
+				if (['Aktivität', 'Bericht'].includes(name)) await page.screenshot({ path: `${SHOTS}/${label}-${scheme}-${SLUGS[i]}.png` });
 			}
 		}
 		await page.emulateMedia({ colorScheme: 'light' });
 		if (label === 'mobile') {
-			// 390 px: six tabs do not fit, the bar scrolls sideways inside itself; the page does not.
+			// 390 px: a deep-linked tab at the far end is shown and fully visible; the bar scrolls inside itself if it must, the page does not.
 			await open(ids.full, 'tests');
-			const scroll = await tablist().evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, left: el.scrollLeft }));
-			expect(scroll.sw).toBeGreaterThan(scroll.cw);
-			expect(scroll.left).toBeGreaterThan(0); // the deep-linked tab was scrolled into view
+			await expect(dialog().getByRole('tab')).toHaveText([...VISIBLE, 'Tests']);
+			const list = (await tablist().boundingBox())!;
+			const tb = (await tab('Tests').boundingBox())!;
+			expect(tb.x + tb.width).toBeLessThanOrEqual(list.x + list.width + 1);
 			await noOverflow('mobile tests deep link');
 		}
 	});
@@ -272,8 +275,8 @@ test('switching tabs while scrolled down brings the tab bar back to the top of t
 	const scroller = dialog().getByTestId('card-main');
 	await scroller.evaluate((el) => { el.scrollTop = el.scrollHeight; });
 	expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(100);
-	await tab('Tests').click();
-	await expect(panel().getByTestId('tab-empty')).toBeInViewport();
+	await tab('Bericht').click();
+	await expect(panel().getByTestId('report-notes')).toBeInViewport();
 	await expect(tablist()).toBeInViewport();
 	// And back: the overview starts at its own top, not in the middle of the description.
 	await tab('Übersicht').click();
@@ -287,7 +290,7 @@ test('overview behaviour is unchanged: inline title edit saves, tab state surviv
 	const title = dialog().getByTestId('card-title');
 	await title.fill('Leere Aufgabe umbenannt');
 	await title.press('Enter');
-	await tab('Bericht').click();
+	await tab('Aktivität').click();
 	await tab('Übersicht').click();
 	await expect(dialog().getByTestId('card-title')).toHaveValue('Leere Aufgabe umbenannt');
 	const saved = (await (await page.request.get(`/v1/tasks/${ids.empty}/context`)).json()) as { task: { title: string } };

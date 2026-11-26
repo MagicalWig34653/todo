@@ -331,8 +331,12 @@ for (const width of [320, 375]) {
 		expect(small).toEqual([]);
 		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
 		const last = await boxOf(page.getByTestId('now-project').last());
+		// The last block ends above the bottom tab bar; the plus button sits in the header and covers nothing (UX step 1).
+		const bar = await boxOf(page.getByRole('navigation', { name: 'Hauptnavigation' }));
+		expect(last.y + last.height).toBeLessThanOrEqual(bar.y);
 		const fab = await boxOf(page.getByTestId('fab'));
-		expect(last.y + last.height).toBeLessThanOrEqual(fab.y);
+		const header = await boxOf(page.getByTestId('app-header'));
+		expect(fab.y + fab.height).toBeLessThanOrEqual(header.y + header.height + 1);
 		await page.setViewportSize(DESKTOP);
 	});
 }

@@ -1,0 +1,277 @@
+[
+ {
+  "device": "desktop",
+  "task": "1 Karte anlegen (im offenen Projekt)",
+  "clicks": 3,
+  "steps": [
+   "„Aufgabe hinzufügen“",
+   "Titel tippen, „Aufgabe hinzufügen“",
+   "„Fertig“ (Dialog bleibt sonst offen)"
+  ]
+ },
+ {
+  "device": "desktop",
+  "task": "2 Frage beantworten (Start, Option)",
+  "clicks": 1,
+  "steps": [
+   "Option „Ja“ auf „Für dich“"
+  ]
+ },
+ {
+  "device": "desktop",
+  "task": "2b Frage beantworten (über Überblick)",
+  "failedAfter": [
+   "Seitenleiste „Überblick“",
+   "Reiter „Offene Fragen“"
+  ],
+  "error": "TimeoutError: locator.waitFor: Timeout 6000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('tabpanel').getByRole('button', { name: 'Ja', exact: true }).first() to be visible\u001b[22m\n"
+ },
+ {
+  "device": "desktop",
+  "task": "3 Review entscheiden (über Überblick)",
+  "failedAfter": [
+   "Seitenleiste „Überblick“",
+   "Reiter „Reviews“"
+  ],
+  "error": "TimeoutError: locator.waitFor: Timeout 6000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('review-accept').first() to be visible\u001b[22m\n"
+ },
+ {
+  "device": "desktop",
+  "task": "4 Projekt wechseln",
+  "clicks": 1,
+  "steps": [
+   "Projekt „Wetterstation“ bzw. „Rezeptbuch“"
+  ]
+ },
+ {
+  "device": "desktop",
+  "task": "5 Einstellung: Brain-Vollmacht",
+  "clicks": 3,
+  "steps": [
+   "Konto-Menü",
+   "„Einstellungen“",
+   "Eintrag „Brain-Vollmacht“ (nach 1 Bildschirm(en) Scrollen)"
+  ]
+ },
+ {
+  "device": "desktop",
+  "task": "5b Einstellung: Projektgruppen eines Projekts",
+  "clicks": 2,
+  "steps": [
+   "Projektmenü „…“",
+   "„Projektgruppen“"
+  ]
+ },
+ {
+  "device": "desktop",
+  "task": "Für dich: Karten",
+  "cards": [
+   {
+    "kind": "question",
+    "y": 259,
+    "buttons": [
+     "Ja",
+     "Nein"
+    ]
+   },
+   {
+    "kind": "question",
+    "y": 461,
+    "buttons": [
+     "Ja",
+     "Nein"
+    ]
+   },
+   {
+    "kind": "question",
+    "y": 685,
+    "buttons": [
+     "Ja",
+     "Nein"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 887,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1081,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1255,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1407,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1581,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "overdue",
+    "y": 1733,
+    "buttons": [
+     "Erledigt"
+    ]
+   }
+  ]
+ },
+ {
+  "device": "handy",
+  "task": "1 Karte anlegen (im offenen Projekt)",
+  "clicks": 3,
+  "steps": [
+   "Plus-Knopf",
+   "Titel tippen, „Aufgabe hinzufügen“",
+   "„Fertig“ (Dialog bleibt sonst offen)"
+  ]
+ },
+ {
+  "device": "handy",
+  "task": "2 Frage beantworten (Start, Option)",
+  "clicks": 1,
+  "steps": [
+   "Option „Ja“ auf „Für dich“"
+  ]
+ },
+ {
+  "device": "handy",
+  "task": "2b Frage beantworten (über Überblick)",
+  "failedAfter": [
+   "Tableiste „Menü“",
+   "Seitenleiste „Überblick“",
+   "Reiter „Offene Fragen“"
+  ],
+  "error": "TimeoutError: locator.waitFor: Timeout 6000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('tabpanel').getByRole('button', { name: 'Ja', exact: true }).first() to be visible\u001b[22m\n"
+ },
+ {
+  "device": "handy",
+  "task": "3 Review entscheiden (über Überblick)",
+  "failedAfter": [
+   "Tableiste „Menü“",
+   "Seitenleiste „Überblick“",
+   "Reiter „Reviews“"
+  ],
+  "error": "TimeoutError: locator.waitFor: Timeout 6000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('review-accept').first() to be visible\u001b[22m\n"
+ },
+ {
+  "device": "handy",
+  "task": "4 Projekt wechseln",
+  "clicks": 2,
+  "steps": [
+   "Tableiste „Menü“",
+   "Projekt „Wetterstation“ bzw. „Rezeptbuch“"
+  ]
+ },
+ {
+  "device": "handy",
+  "task": "5 Einstellung: Brain-Vollmacht",
+  "clicks": 3,
+  "steps": [
+   "Konto-Menü",
+   "„Einstellungen“",
+   "Eintrag „Brain-Vollmacht“ (nach 1 Bildschirm(en) Scrollen)"
+  ]
+ },
+ {
+  "device": "handy",
+  "task": "5b Einstellung: Projektgruppen eines Projekts",
+  "clicks": 2,
+  "steps": [
+   "Projektmenü „…“",
+   "„Projektgruppen“"
+  ]
+ },
+ {
+  "device": "handy",
+  "task": "Für dich: Karten",
+  "cards": [
+   {
+    "kind": "question",
+    "y": 266,
+    "buttons": [
+     "Ja",
+     "Nein"
+    ]
+   },
+   {
+    "kind": "question",
+    "y": 490,
+    "buttons": [
+     "Ja",
+     "Nein"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 692,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 938,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1132,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1284,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "review",
+    "y": 1458,
+    "buttons": [
+     "Annehmen",
+     "Änderungen anfordern"
+    ]
+   },
+   {
+    "kind": "overdue",
+    "y": 1630,
+    "buttons": [
+     "Erledigt"
+    ]
+   }
+  ]
+ }
+]

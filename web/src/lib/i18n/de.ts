@@ -976,6 +976,8 @@ export const de = {
 	'cc.columns.own': 'Dieses Projekt hat eigene Spalten. Die Vorlage kann nur in ein Projekt ohne Spalten angelegt werden; benenne vorhandene Spalten wie oben, damit Karten mitwandern.',
 	'error.columns_exist': 'Das Projekt hat bereits Spalten.',
 	'common.more': 'Mehr laden',
+	'explainer.more': 'Mehr erfahren',
+	'explainer.less': 'Weniger',
 	'sync.fresh': 'Abgleich aktuell',
 	'sync.stale': 'Abgleich veraltet ({days} Tage)',
 	'sync.stale.one': 'Abgleich veraltet (1 Tag)',

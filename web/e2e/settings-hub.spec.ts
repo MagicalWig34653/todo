@@ -268,10 +268,11 @@ test('mobile 390px: list then detail, menus inside the viewport, no horizontal s
 	await member.getByTestId('account-menu').click();
 	await panelInViewport(member, 'Kontomenü');
 	await member.keyboard.press('Escape');
-	await member.getByTestId('help-menu').click();
-	await panelInViewport(member, 'Hilfemenü');
-	await shot(member, 'hilfemenue-mobil');
-	await member.keyboard.press('Escape');
+	// Phone: the header keeps "+" and the avatar (UX step 1); help is in the account menu.
+	await expect(member.getByTestId('help-menu')).toBeHidden();
+	await member.getByTestId('account-menu').click();
+	await member.getByTestId('menu-help').click();
+	await expect(member).toHaveURL(/\/help$/);
 	await member.goto('/help');
 	await expect(member.getByTestId('help-nav')).toBeVisible();
 	await expect(member.getByTestId('help-content')).toBeHidden();

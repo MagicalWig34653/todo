@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 26.11.2026 (23:25): UX-Umbau Schritt 1 „Lesbarkeit“ in der PWA (Karte `8B820AA8`; kein Deploy)
+
+- Umgesetzt (nur `web/`): „Für dich“ zeigt Fragen/Reviews/Neuigkeiten als kurze Vorschau ohne Markdown-Zeichen (`previewParts`, Überschrift max. 2 Zeilen, Rest max. 3); Frage im Kartenfenster/Überblick über die sichere Markdown-Teilmenge; Erklärtexte einen Satz, Rest hinter „Mehr erfahren“ (`Explainer.svelte`, alle `PageHeader`-Beschreibungen, Graph, Brain-Vollmacht mit neuem Kurzsatz); Kartenfenster zeigt nur Reiter mit Daten (`visibleTabs`, Deep-Link-Reiter bleibt); Plus-Knopf auf dem Handy in der Kopfzeile, Hilfe dort nur im Kontomenü. Details, Bilder, Klickwege: `design/ux-konzept/schritt-1/README.md`.
+- Tests: rot `7141539` (Vitest: Modul fehlte; Playwright `readability.spec.ts`: `need-title` fehlte; Zusatztest Kartenfenster-Markdown vor dem Fix rot). Grün: vitest 823/823, `npm run check` 0 Fehler, build ok; Playwright Chromium alle 59 Specs je mit frischer SQLite gegen natives Backend (ohne mail, server-settings, review-variants-demo wie CI) grün, nach Anpassung von card-tabs, plan-approval, now-redesign, brain-mandate, settings-hub, menus-and-modes an das neue Verhalten.
+- Bilder vorher/nachher (hell/dunkel, 1280 × 800 / 390 × 844) unter `design/ux-konzept/schritt-1/`, angesehen. Klickwege neu gemessen: Klickzahlen unverändert, Handy-Karten kürzer.
+- Todolino-MCP in dieser Sitzung nicht angemeldet: kein `post_progress`/`record_sync` möglich, Fortschritt nur hier.
+- Nächster Schritt: Schritt 2 „Ein Kartenfenster“ erst nach Auftrag.
+
 ## Nachtrag 26.11.2026 (23:10): Icon D im Apple-Repo eingebaut, TestFlight 0.1.1 (25) wartet auf das Upload-Tor (Karte `950D1506`)
 
 - Apple-Repo `origin/main` `7ec1154`: `App/Icon/AppIcon.icon` = unveränderte Kopie von `design/icon/Todo.icon`; iOS, macOS und watchOS binden es ein, alte Petrol-Quellen gelöscht. Prüfung `scripts/check-icon.py` (rot `ec48a48`, grün `9985be3`), `actool` ohne Icon-Warnung, Ersatzbilder für Systeme vor 26 erzeugt.

@@ -40,6 +40,7 @@
 	import ProjectSelectionPicker from '../ProjectSelectionPicker.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import Explainer from '../app/Explainer.svelte';
 
 	/**
 	 * Settings page "Brain-Vollmacht" (ADR 0032 and addendum): every connection of the person can hold its own mandate with its own
@@ -277,8 +278,7 @@
 
 <div class="flex max-w-3xl flex-col gap-4" data-testid="brain-mandate">
 	<section class={card} data-testid="bm-intro">
-		<p class="text-sm">{t('brainMandate.intro.allows', { name: auth.user?.displayName ?? '…' })}</p>
-		<p class="text-sm">{t('brainMandate.intro.limits')}</p>
+		<Explainer class="text-foreground" text="{t('brainMandate.intro.lead')} {t('brainMandate.intro.allows', { name: auth.user?.displayName ?? '…' })} {t('brainMandate.intro.limits')}" />
 	</section>
 
 	<div role="status" aria-live="polite" class={message ? 'bg-success-soft text-success rounded-lg px-3 py-2 text-sm' : 'sr-only'} data-testid="bm-message">{message}</div>

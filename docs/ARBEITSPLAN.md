@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (23:25): UX-Umbau Schritt 1 „Lesbarkeit“ umgesetzt (Karte `8B820AA8`)
+
+- Stand und Belege: `docs/STATUS.md` (oberster Nachtrag), `design/ux-konzept/schritt-1/README.md`.
+- Offen: Board-Einträge nachtragen, sobald Todolino-MCP angemeldet ist; Deploy bei Lino (Review `74A1862B`).
+- Nächster Schritt: Schritt 2 „Ein Kartenfenster“ nur auf Auftrag.
+
 ## Checkpoint 26.11.2026 (20:55): UX-Konzept angenommen, Umbau wartet auf Auftrag (Karte `607DB96E`)
 
 - Lino hat Review `94EDB61F` am 26.11. 20:30 angenommen, ohne Notiz; Karte auf „done“.

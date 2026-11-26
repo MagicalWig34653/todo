@@ -125,10 +125,13 @@ test('a server without the endpoint (404) shows the empty state without an error
 });
 
 test('a written plan appears live, the tab announces the waiting approval and the Markdown stays text', async () => {
-	await open(ids.main, null);
-	await expect(tab()).toHaveAccessibleName('Pipeline');
+	await page.goto(`/for-you?card=task:${ids.main}`);
+	await expect(dialog()).toBeVisible();
+	// UX step 1 (card 8B820AA8): without a plan the Pipeline tab is hidden; it appears live with the plan.
+	await expect(dialog().getByRole('tab', { name: 'Übersicht' })).toBeVisible();
+	await expect(tab()).toHaveCount(0);
 	await writePlan(ids.main, PLAN_1);
-	// Without a reload: the hint reaches the open card while another tab is selected.
+	// Without a reload: the tab and its hint reach the open card while another tab is selected.
 	await expect(tab()).toHaveAccessibleName('Pipeline, Freigabe wartet', LIVE);
 	await expect(dialog().getByTestId('card-tab-hint-pipeline')).toBeVisible();
 	await tab().click();

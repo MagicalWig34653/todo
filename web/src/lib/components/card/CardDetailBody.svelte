@@ -4,13 +4,14 @@
 	import { api, ApiError, type Attachment, type Question, type TaskContext } from '#lib/api.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { galleryOf, projectChain, type CardRef } from '#lib/cardRef.js';
-	import { buildReport, type CardTab } from '#lib/cardTabs.js';
+	import { buildReport, visibleTabs, type CardTab } from '#lib/cardTabs.js';
 	import { percentOf } from '#lib/commandCenter.js';
 	import { describeError } from '#lib/errors.js';
 	import type { ActionRequest, ForYouConfirmation } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
-	import { awaitingApproval, createPipelineController, emptyPipelineView } from '#lib/pipeline.js';
+	import { awaitingApproval, createPipelineController, emptyPipelineView, isEmptyPipeline } from '#lib/pipeline.js';
+	import { executionSection } from '#lib/pipelineExecution.js';
 	import { attempt, notice } from '#lib/notice.svelte.js';
 	import Timestamp from '../Timestamp.svelte';
 	import IdChip from '../IdChip.svelte';
@@ -239,6 +240,11 @@
 	// allowInDialog and no editing guard: an agent's changes appear inside the open window while a comment is being typed.
 	onMount(() => startLiveRefresh(() => pipelineControl.refresh(), { allowInDialog: true }));
 	const tabHints = $derived(awaitingApproval(pipeline.data) ? { pipeline: t('pipeline.tab.waiting') } : {});
+	/** Only tabs with something to show (UX step 1); the pipeline counts once it has steps, a plan, an execution or a start. */
+	const hasPipeline = $derived(
+		pipeline.status === 'ready' && (!isEmptyPipeline(pipeline.data) || awaitingApproval(pipeline.data) || executionSection(pipeline.data, pipeline.bindings, mayStart).show)
+	);
+	const tabs = $derived(visibleTabs({ report: !!report && !report.isEmpty, pipeline: hasPipeline }, tab));
 
 	let statusBusy = $state(false);
 	async function toggleDone() {
@@ -377,7 +383,7 @@
 
 				{#if ctx && task}
 					<div class="flex flex-col gap-5" bind:this={tabArea} data-testid="card-tabarea">
-					<CardTabs value={tab} onchange={selectTab} hints={tabHints} />
+					<CardTabs value={tab} {tabs} onchange={selectTab} hints={tabHints} />
 					<div
 						role="tabpanel"
 						id="card-tabpanel"
@@ -390,7 +396,7 @@
 					{#if card.type === 'question' && data.question && data.question.state !== 'open'}
 						<section class="bg-muted/40 flex flex-col gap-2 rounded-xl border p-3" data-testid="card-answer">
 							<p class="text-muted-foreground text-xs"><Timestamp value={data.question.createdAt} label="time.asked" /></p>
-							<p class="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="question-prompt">{data.question.prompt}</p>
+							<div class="min-w-0" data-testid="question-prompt"><Markdown text={data.question.prompt} ordered /></div>
 							{#if data.question.state === 'answered'}
 								<p class="text-muted-foreground text-xs"><Timestamp value={data.question.answeredAt} label="time.answered" /></p>
 								<p class="[overflow-wrap:anywhere] whitespace-pre-wrap" data-testid="question-answered">{data.question.answer}</p>

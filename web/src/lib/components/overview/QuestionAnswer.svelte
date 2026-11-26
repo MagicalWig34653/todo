@@ -5,6 +5,7 @@
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import ChatField from '../card/ChatField.svelte';
+	import Markdown from '../card/Markdown.svelte';
 	import OptionButtons from './OptionButtons.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -56,7 +57,7 @@
 			{#if context}<p class="text-muted-foreground mb-0.5 text-xs">{context}</p>{/if}
 			{#if askedBy}<p class="text-muted-foreground text-xs">{t('cc.question.title', { who: askedBy })}{blocking ? ` · ${t('cc.question.blocking')}` : ''}</p>{/if}
 			<p class="text-muted-foreground text-xs"><Timestamp value={createdAt} label="time.asked" />{#if answeredAt} · <Timestamp value={answeredAt} label="time.answered" />{/if}</p>
-			<p class="font-medium break-words whitespace-pre-wrap" data-testid="question-prompt">{prompt}</p>
+			<div class="min-w-0" data-testid="question-prompt"><Markdown text={prompt} ordered /></div>
 		</div>
 	</div>
 	{/if}

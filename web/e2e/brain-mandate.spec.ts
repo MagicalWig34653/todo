@@ -176,6 +176,7 @@ test('(a) empty state: no connection and no mandate, then the connections show u
 	await page.getByTestId('settings-link-brain-vollmacht').click();
 	await expect(page).toHaveURL(/\/settings\/brain-mandate$/);
 	await expect(page.getByTestId('view-heading')).toHaveText('Brain-Vollmacht');
+	await page.getByTestId('bm-intro').getByRole('button', { name: 'Mehr erfahren' }).click();
 	await expect(page.getByTestId('bm-intro')).toContainText('Pflichtzitat');
 	await expect(page.getByTestId('bm-intro')).toContainText('Brain im Auftrag von Vollmacht Tester');
 	await expect(page.getByTestId('bm-intro')).toContainText('Jede Verbindung bekommt ihre eigene Vollmacht');

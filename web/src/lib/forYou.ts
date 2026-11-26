@@ -1,4 +1,6 @@
 import type { MessageKey } from './i18n/index.js';
+import { splitLead } from './explainer.js';
+import { previewText } from './previewText.js';
 
 /** "Für dich" feed (backend ADR 0023, contracts/feed.yaml): types and pure helpers. */
 export interface ForYouActor {
@@ -156,6 +158,28 @@ export function needInputKind(action: Pick<ForYouAction, 'requiresInput' | 'inpu
 }
 
 /** The detail line of an entry as plain text: the first line of a plan is often a Markdown heading, shown without its `#` marks. */
+const LEAD_MAX = 140;
+
+/**
+ * Short preview of an agent text on "Für dich" (UX step 1): plain text without Markdown marks, split into a headline (a
+ * leading heading, the first sentence or the text before the first list item, at most 140 characters) and the rest. The
+ * card window renders the original.
+ */
+export function previewParts(source: string): { lead: string; rest: string } {
+	const text = previewText(source);
+	const sentence = splitLead(text);
+	const bullet = text.indexOf(' · ');
+	let { lead, rest } = bullet > 0 && bullet < sentence.lead.length ? { lead: text.slice(0, bullet), rest: text.slice(bullet + 3) } : sentence;
+	rest = rest.replace(/^·\s*/, '');
+	if (lead.length > LEAD_MAX) {
+		const space = lead.lastIndexOf(' ', LEAD_MAX - 1);
+		const at = space > LEAD_MAX / 2 ? space : LEAD_MAX - 1;
+		rest = `${lead.slice(at).trim()} ${rest}`.trim();
+		lead = `${lead.slice(0, at).trimEnd()}…`;
+	}
+	return { lead, rest };
+}
+
 export function needDetailText(n: Pick<ForYouNeed, 'kind' | 'detail'>): string {
 	const detail = n.detail ?? '';
 	return n.kind === 'plan' ? detail.replace(/^\s{0,3}#{1,6}\s+/, '') : detail;

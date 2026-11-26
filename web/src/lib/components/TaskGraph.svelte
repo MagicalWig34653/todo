@@ -34,6 +34,7 @@
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
+	import Explainer from './app/Explainer.svelte';
 
 	let { project }: { project: Project } = $props();
 
@@ -192,7 +193,7 @@
 </script>
 
 <section class="flex min-w-0 flex-col gap-3" data-testid="task-graph" aria-label={t('graph.title')}>
-	<p class="text-muted-foreground max-w-prose text-sm">{t('graph.hint')}</p>
+	<Explainer class="max-w-prose" text={t('graph.hint')} />
 	<div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm" role="group" aria-label={t('graph.filters')}>
 		<label class="flex min-h-9 items-center gap-2">
 			<Checkbox checked={includeSub} onchange={(e) => (includeSub = e.currentTarget.checked)} data-testid="graph-sub" />{t('graph.sub')}

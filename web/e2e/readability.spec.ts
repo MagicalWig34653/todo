@@ -87,7 +87,8 @@ test('explanations: one sentence, the rest behind "Mehr erfahren" (Brain-Vollmac
 	await page.goto('/settings/brain-mandate');
 	const intro = page.getByTestId('bm-intro');
 	await expect(intro).toBeVisible();
-	await expect(intro).toContainText('Mit einer Vollmacht darf eine deiner Verbindungen');
+	await expect(intro).toContainText('Eine Vollmacht lässt eine deiner Verbindungen, etwa das Brain, in deinem Auftrag entscheiden');
+	await expect(intro).not.toContainText('Mit einer Vollmacht darf');
 	await expect(intro).not.toContainText('Nicht erlaubt');
 	expect((await intro.boundingBox())!.height, 'intro is short on the phone').toBeLessThanOrEqual(220);
 	await intro.getByRole('button', { name: 'Mehr erfahren' }).click();
@@ -140,3 +141,13 @@ async function fabOpensQuickAdd() {
 	await page.keyboard.press('Escape');
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 }
+
+test('the card window renders the question as Markdown (bold headline, real list), not as raw text', async () => {
+	await page.setViewportSize(DESKTOP);
+	await page.goto(`/for-you?card=task:${ids.full}`);
+	const prompt = page.getByTestId('card-dialog').getByTestId('question-prompt');
+	await expect(prompt).toBeVisible();
+	await expect(prompt.locator('strong')).toHaveText('Wie soll die Anmeldung weiterlaufen?');
+	await expect(prompt).not.toContainText('**');
+	await expect(prompt).toContainText('E-Mail');
+});

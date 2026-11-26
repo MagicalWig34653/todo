@@ -12,19 +12,28 @@ export function parseCardTab(raw: string | null | undefined): CardTab | null {
 	return raw && (CARD_TABS as readonly string[]).includes(raw) ? (raw as CardTab) : null;
 }
 
-/** The tab a key press moves to (arrows wrap around, Home/End jump); null for every other key. */
-export function tabAfterKey(current: CardTab, key: string): CardTab | null {
-	const i = CARD_TABS.indexOf(current);
-	const last = CARD_TABS.length - 1;
+/**
+ * Tabs the card window shows (UX step 1: a tab appears only when it has something to show). Übersicht and Aktivität always;
+ * Bericht and Pipeline with data; Änderungen and Tests have no source yet. The current tab always stays, so an old link
+ * with `&tab=` still opens it (with its honest empty state).
+ */
+export function visibleTabs(has: { report: boolean; pipeline: boolean }, current: CardTab): CardTab[] {
+	return CARD_TABS.filter((tab) => tab === 'overview' || tab === 'activity' || tab === current || (tab === 'report' && has.report) || (tab === 'pipeline' && has.pipeline));
+}
+
+/** The tab a key press moves to among `tabs` (arrows wrap around, Home/End jump); null for every other key. */
+export function tabAfterKey(current: CardTab, key: string, tabs: readonly CardTab[] = CARD_TABS): CardTab | null {
+	const i = Math.max(0, tabs.indexOf(current));
+	const last = tabs.length - 1;
 	switch (key) {
 		case 'ArrowRight':
-			return CARD_TABS[i === last ? 0 : i + 1]!;
+			return tabs[i === last ? 0 : i + 1]!;
 		case 'ArrowLeft':
-			return CARD_TABS[i === 0 ? last : i - 1]!;
+			return tabs[i === 0 ? last : i - 1]!;
 		case 'Home':
-			return CARD_TABS[0];
+			return tabs[0]!;
 		case 'End':
-			return CARD_TABS[last]!;
+			return tabs[last]!;
 		default:
 			return null;
 	}

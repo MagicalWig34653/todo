@@ -76,8 +76,9 @@ for (const vp of viewports) {
 			await expect(page.locator('div[role="dialog"]:not([aria-modal])')).toHaveCount(0);
 		}
 
-		// Header (top right): user menu and help menu.
+		// Header (top right): user menu and help menu (help only on wide screens; on phones it is in the account menu).
 		for (const id of ['account-menu', 'help-menu']) {
+			if (!(await page.getByTestId(id).isVisible())) continue;
 			await page.getByTestId(id).click();
 			await expectInViewport(popover(), `${id} @${vp.name}`);
 			await page.keyboard.press('Escape');

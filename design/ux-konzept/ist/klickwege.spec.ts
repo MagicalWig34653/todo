@@ -5,6 +5,9 @@ import { writeFileSync } from 'node:fs';
 import { signedInPage } from './support/session';
 import { seedNow } from './support/nowSeed';
 
+// Output folder (from web/): default ../design/ux-konzept/ist; a later measurement sets UX_OUT, e.g. ../design/ux-konzept/schritt-1.
+const OUT = process.env.UX_OUT ?? '../design/ux-konzept/ist';
+
 test('Klickwege', async ({ browser, playwright }) => {
 	test.setTimeout(300_000);
 	const page = await signedInPage(browser, 'Demo Person');
@@ -52,8 +55,8 @@ test('Klickwege', async ({ browser, playwright }) => {
 		await page.waitForTimeout(2000);
 		const cards = await page.locator('[data-testid=needs-card]').evaluateAll((els) => els.map((e) => ({ kind: e.getAttribute('data-kind'), y: Math.round(e.getBoundingClientRect().y), buttons: [...e.querySelectorAll('button')].slice(1).map((b) => b.textContent?.trim()).filter(Boolean) })));
 		out.push({ device, task: 'Für dich: Karten', cards });
-		await page.screenshot({ path: `../design/ux-konzept/ist/fuer-dich-ganz-${device}-hell.jpg`, type: 'jpeg', quality: 60, fullPage: true });
+		await page.screenshot({ path: `${OUT}/fuer-dich-ganz-${device}-hell.jpg`, type: 'jpeg', quality: 60, fullPage: true });
 	}
-	writeFileSync('../design/ux-konzept/ist/klickwege.json', JSON.stringify(out, null, 1));
+	writeFileSync(`${OUT}/klickwege.json`, JSON.stringify(out, null, 1));
 	expect(out.length).toBeGreaterThan(10);
 });

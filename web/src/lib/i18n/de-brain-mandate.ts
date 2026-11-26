@@ -7,6 +7,7 @@ export const deBrainMandate = {
 	'brainMandate.audit.kind.groupRemoved': 'Projekt durch Gruppe weggefallen',
 
 	'brainMandate.page': 'Brain-Vollmacht verwalten',
+	'brainMandate.intro.lead': 'Eine Vollmacht lässt eine deiner Verbindungen, etwa das Brain, in deinem Auftrag entscheiden, nur in den Projekten, die du wählst.',
 	'brainMandate.intro.allows': 'Mit einer Vollmacht darf eine deiner Verbindungen, zum Beispiel das Brain oder Codex, in deinem Auftrag Reviews entscheiden, Fragen beantworten, Pläne freigeben oder Änderungen daran verlangen, die Pipeline-Einstellungen ändern und die Projekte der Vollmacht für deine anderen Verbindungen freigeben oder entziehen. Jede Verbindung bekommt ihre eigene Vollmacht mit eigener Projektliste und lässt sich einzeln widerrufen. Entschieden wird nur mit einem Pflichtzitat deiner eigenen Worte; im Verlauf steht jede Entscheidung als „Brain im Auftrag von {name}“.',
 	'brainMandate.intro.limits': 'Nicht erlaubt: Die Vollmacht gilt nur für die Projekte, die du ausdrücklich wählst, nicht für deren Unterprojekte, und nie für Reviews oder Fragen, die die Verbindung selbst gestellt hat, und nie für Pläne, die sie selbst geschrieben hat. Eine Verbindung ohne eigene Vollmacht kann keine fremden Reviews, Fragen oder Pläne entscheiden.',
 	'brainMandate.loadFailed': 'Die Vollmacht konnte nicht geladen werden.',
