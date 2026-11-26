@@ -287,7 +287,7 @@ final class MCPActivityToolsTests: XCTestCase {
             let viewer = User(displayName: "Viewer", isAdmin: false); try await viewer.save(on: f.test.app.db)
             let own = Project(ownerID: try viewer.requireID(), parentID: nil, name: "Theirs"); try await own.save(on: f.test.app.db)
             let g = try await XCTUnwrapAsync(try await OAuthGrant.query(on: f.test.app.db).first())
-            g.projects.append(try own.requireID()); try await g.save(on: f.test.app.db)
+            g.explicitProjects.append(try own.requireID()); try await g.save(on: f.test.app.db)
             let theirs = try await makeTask(f, project: own)
             let r = try await call(f, "add_project_comment", ["projectID": try own.requireID().uuidString, "body": "x"], access); XCTAssertEqual(r.text, "not_found")
             let u = try await call(f, "begin_task_upload", ["taskID": try theirs.requireID().uuidString, "filename": "a.png", "role": "result", "mediaType": "image/png", "size": 4, "checksum": sha], access)

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.12.0
+  version: 1.13.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -38,6 +38,12 @@ info:
     Nachlauffenster, die sechste widerruft wie ein Replay; eine durch Replay beendete Verbindung wird nur 7 Tage ab revoked_at angeboten und
     angenommen (sonst 409 takeover_changed); kein match=name für den Standardnamen MCP Client oder leere Namen; takeover.project_ids enthält
     auch Vollmacht-Projekte, die nicht in der alten Liste standen; die Vollmacht wandert nur für Projekte, die in project_ids bestätigt sind.
+    1.13.0 (Karte BEF08998, ADR 0037, additiv, Handbuch 1.49.0): Projektgruppen. GET /oauth/authorize liefert groups[] und im takeover (auch
+    in mandate) selection; POST /oauth/consent und PUT /oauth/grants/{id}/projects nehmen optional selection (ohne selection ersetzt die Liste
+    eine Regel). Grants (GET /oauth/grants) liefern project_ids als wirksame Menge, dazu explicit_project_ids und selection. MCP loest die
+    Auswahl je Aufruf auf; neues lesendes Werkzeug list_project_groups. Bedeutung und Felder: contracts/connections.yaml x-project-selection.
+    takeover.explicit_project_ids nennt die ausdruecklich gewaehlten Projekte der alten Verbindung; nur diese und die ausdruecklich
+    genannten Vollmacht-Projekte sind vorausgewaehlt. Mit Mandatsregel wird jedes nicht bestaetigte Vollmacht-Projekt ausgeschlossen.
 servers:
   - url: http://localhost:28080
 paths:
@@ -125,6 +131,7 @@ paths:
                 approve: {type: boolean}
                 connection_name: {type: string, maxLength: 80, description: 'Name der Verbindung; leer = Clientname; ungültig = 400 invalid_name.'}
                 takeover_grant_id: {type: string, format: uuid, description: 'Seit 1.11.0: die angebotene Verbindung (takeover.grant_id), deren Projekte und Vollmacht übernommen werden; ohne das Feld wird nichts übernommen. Die alte Verbindung wird beendet (revoked_reason superseded). project_ids bleibt die verbindliche Projektliste; die Vollmacht wandert nur für Projekte, die auch in project_ids stehen (seit 1.12.0 auch für Vollmacht-Projekte außerhalb der alten Liste).'}
+                selection: {type: object, description: 'Seit 1.13.0, optional: Regel der neuen Verbindung (connections.yaml x-project-selection); nur eigene Gruppen (sonst 404).'}
                 project_ids:
                   type: array
                   items: {type: string, format: uuid}
@@ -195,7 +202,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {type: object, required: [project_ids], properties: {project_ids: {type: array, items: {type: string, format: uuid}}}}
+            schema: {type: object, required: [project_ids], properties: {project_ids: {type: array, items: {type: string, format: uuid}}, selection: {type: object, description: 'Seit 1.13.0, optional: connections.yaml x-project-selection. Leere project_ids sind mit Gruppe oder mode all_except erlaubt.'}}}
       responses:
         '200': {description: Der Grant im Format von GET /oauth/grants.}
         '400': {description: projects_required}

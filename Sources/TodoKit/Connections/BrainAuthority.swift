@@ -52,11 +52,20 @@ func lockedBrainAuthority(userID: UUID, grantID: UUID, projectIDs: [UUID], quote
           let own = locked[grantID], !own.revoked, own.userID == userID else {
         throw Abort(.forbidden, reason: "brain_mandate_required")
     }
-    guard projectIDs.allSatisfy({ mandate.projects.contains($0) }) else { throw Abort(.forbidden, reason: "outside_brain_mandate") }
+    // ADR 0037: what the mandate covers is resolved here, under the locks above; the rule, its groups and their members are
+    // read with FOR UPDATE, so removing a project from a group or deleting the group wins against a running decision.
+    var resolver = ProjectSelectionResolver(userID: userID, db: tx, locking: true)
+    let rule = try await resolver.rule(of: mandateID)
+    // A project the person named explicitly (and did not exclude) but cannot read any more stays `not_found`, as before.
+    var named = Set(mandate.explicitProjects)
+    if let rule { named.subtract(Set(rule.excludedProjectIDs).union(try await resolver.members(of: rule.excludedGroupIDs))) }
+    let covered = try await resolver.resolve(explicit: mandate.explicitProjects, rule: rule)
+    guard projectIDs.allSatisfy({ covered.contains($0) || named.contains($0) }) else { throw Abort(.forbidden, reason: "outside_brain_mandate") }
     let quote = (rawQuote ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     guard !quote.isEmpty else { throw Abort(.badRequest, reason: "quote_required") }
     guard quote.count <= BrainMandateLimits.maxQuote else { throw Abort(.badRequest, reason: "invalid_quote") }
-    return (BrainAuthority(mandateID: mandateID, grantID: grantID, quote: quote, mandateProjects: mandate.projects), locked)
+    guard projectIDs.allSatisfy({ covered.contains($0) }) else { throw Abort(.notFound) }
+    return (BrainAuthority(mandateID: mandateID, grantID: grantID, quote: quote, mandateProjects: covered), locked)
 }
 
 extension WorkflowService {

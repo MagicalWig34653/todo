@@ -272,7 +272,7 @@ final class MCPPlanningToolsTests: XCTestCase {
             let rid = try XCTUnwrap((deletion.2 as? [String: Any])?["actionRequestID"] as? String)
             let request = try await ActionRequest.find(UUID(uuidString: rid)!, on: db)
             let grant = try await OAuthGrant.find(XCTUnwrap(request?.grantID), on: db)
-            grant?.projects = []; try await grant?.save(on: db)
+            grant?.explicitProjects = []; try await grant?.save(on: db)
             let result = try await ActionRequestService(user: f.user, db: db).confirm(UUID(uuidString: rid)!)
             XCTAssertEqual(result.state, "failed"); XCTAssertEqual(result.result?.code, "not_found")
             let stillPresent = try await PlanningMilestone.find(m.requireID(), on: db)

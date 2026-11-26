@@ -33,9 +33,12 @@ enum ReviewBrain {
         guard !mandates.isEmpty else { return [] }
         let tasks = try await TodoTask.query(on: db).filter(\.$id ~~ taskIDs).all()
         var result = Set<UUID>()
+        var resolver = ProjectSelectionResolver(userID: userID, db: db)
         for mandate in mandates {
             guard let grant = try await OAuthGrant.find(mandate.grantID, on: db), !grant.revoked, grant.userID == userID else { continue }
-            let covered = Set(tasks.filter { mandate.projects.contains($0.projectID) }.compactMap(\.id))
+            // ADR 0037: the resolved mandate (groups, "all except"), like the decision check.
+            let projects = Set(try await resolver.projects(of: mandate))
+            let covered = Set(tasks.filter { projects.contains($0.projectID) }.compactMap(\.id))
             guard !covered.isEmpty else { continue }
             let comments = try await TaskComment.query(on: db).filter(\.$taskID ~~ Array(covered)).filter(\.$reviewID != .null)
                 .filter(\.$authorKind == "agent").all()

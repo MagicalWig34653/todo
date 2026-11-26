@@ -54,7 +54,7 @@ final class MCPCompactTests: XCTestCase {
             let other = Project(ownerID: try f.user.requireID(), parentID: nil, name: "Other")
             try await other.save(on: f.test.app.db)
             let g = try await XCTUnwrapAsync(try await OAuthGrant.query(on: f.test.app.db).first())
-            g.projects.append(try other.requireID()); try await g.save(on: f.test.app.db)
+            g.explicitProjects.append(try other.requireID()); try await g.save(on: f.test.app.db)
             try await populate(f, project: other)
 
             let def = try await call(f, "list_open_questions", [:], access)

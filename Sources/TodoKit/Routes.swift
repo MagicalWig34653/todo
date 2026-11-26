@@ -49,6 +49,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: FeedController())
     try app.register(collection: ActionRequestController())
     try app.register(collection: ConnectionController())
+    try app.register(collection: ProjectGroupController())
     try app.register(collection: SystemStatusController())
     try app.register(collection: ChannelController())
     try app.register(collection: LiveSessionController())

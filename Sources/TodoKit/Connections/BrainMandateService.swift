@@ -4,7 +4,12 @@ import Vapor
 struct BrainMandateDTO: Content {
     let grantID: UUID
     let grantName: String?
+    /// What the mandate covers now (ADR 0037: explicit projects plus the rule, cut with the read right).
     let projectIDs: [UUID]
+    /// The explicitly chosen projects.
+    let explicitProjectIDs: [UUID]
+    /// The rule (groups, "all owned except"); absent = only the explicit projects.
+    let selection: SelectionDTO?
     /// False when revoked or when the connection's grant itself was revoked (the mandate is then void).
     let active: Bool
     let createdAt: Date
@@ -31,6 +36,8 @@ struct BrainMandateResponse: Content {
 struct BrainMandateRequest: Content {
     let grantID: UUID
     let projectIDs: [UUID]
+    /// ADR 0037: optional rule; absent replaces an existing rule by the plain list (older clients).
+    var selection: SelectionInput?
 }
 
 struct BrainAuditDTO: Content {
@@ -69,7 +76,7 @@ enum BrainMandateLimits {
 /// ADR 0032 and addendum 23.11.2026: one mandate per connection (grant). The mandate is managed by the person only (REST with a
 /// session); agents may only read it.
 enum BrainMandateService {
-    private static func dto(_ m: BrainMandate, db: any Database) async throws -> BrainMandateDTO {
+    private static func dto(_ m: BrainMandate, resolver: inout ProjectSelectionResolver, db: any Database) async throws -> BrainMandateDTO {
         let grant = try await OAuthGrant.find(m.grantID, on: db)
         var client: String?
         if let grant { client = try await OAuthClient.find(grant.clientID, on: db)?.name }
@@ -78,8 +85,10 @@ enum BrainMandateService {
             let oldClient = try await OAuthClient.find(old.clientID, on: db)?.name
             takenOver = BrainTakeoverDTO(fromGrantID: from, fromName: ConnectionNames.display(old, clientName: oldClient), at: at)
         }
+        let rule = try await resolver.rule(of: m.requireID())
         return BrainMandateDTO(grantID: m.grantID, grantName: grant.map { ConnectionNames.display($0, clientName: client) },
-            projectIDs: m.projects, active: m.revokedAt == nil && grant?.revoked == false,
+            projectIDs: try await resolver.resolve(explicit: m.explicitProjects, rule: rule), explicitProjectIDs: m.explicitProjects,
+            selection: SelectionDTO(explicit: m.explicitProjects, rule: rule), active: m.revokedAt == nil && grant?.revoked == false,
             createdAt: m.createdAt, updatedAt: m.updatedAt, revokedAt: m.revokedAt, lastUsedAt: grant?.lastUsedAt,
             grantRevokedReason: grant?.revoked == true ? grant?.revokedReason : nil, takenOver: takenOver)
     }
@@ -87,7 +96,8 @@ enum BrainMandateService {
     static func list(userID: UUID, db: any Database) async throws -> [BrainMandateDTO] {
         let rows = try await BrainMandate.query(on: db).filter(\.$userID == userID).sort(\.$updatedAt, .descending).sort(\.$id, .descending).all()
         var out: [BrainMandateDTO] = []
-        for m in rows { out.append(try await dto(m, db: db)) }
+        var resolver = ProjectSelectionResolver(userID: userID, db: db)
+        for m in rows { out.append(try await dto(m, resolver: &resolver, db: db)) }
         return out
     }
 
@@ -96,7 +106,7 @@ enum BrainMandateService {
     static func grant(_ request: BrainMandateRequest, user: User, db: any Database) async throws -> BrainMandateDTO {
         let userID = try user.requireID()
         let projects = Array(Set(request.projectIDs))
-        guard !projects.isEmpty, projects.count <= BrainMandateLimits.maxProjects else { throw Abort(.badRequest, reason: "invalid_projects") }
+        guard projects.count <= BrainMandateLimits.maxProjects else { throw Abort(.badRequest, reason: "invalid_projects") }
         let saved: BrainMandate = try await db.transaction { tx in
             try await lockSharingGraph(on: tx)
             try await lockRow(table: User.schema, id: userID, on: tx)
@@ -108,18 +118,20 @@ enum BrainMandateService {
             guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }
             let access = ProjectAccess(user: user, db: tx)
             for id in projects { _ = try await access.project(id) }
+            // ADR 0037: an optional rule (own groups only); a mandate must name something (projects, a group or "all").
+            let resolver = ProjectSelectionResolver(userID: userID, db: tx, locking: true)
+            let rule = try await resolver.validate(request.selection)
+            guard SelectionRule.namesSomething(projects, rule) else { throw Abort(.badRequest, reason: "invalid_projects") }
             let now = Date()
             let sorted = projects.sorted { $0.uuidString < $1.uuidString }
-            if let m = existing {
-                m.projects = sorted; m.revokedAt = nil; m.updatedAt = now
-                try await m.save(on: tx)
-                return m
-            }
-            let m = BrainMandate(userID: userID, grantID: request.grantID, projects: sorted, now: now)
+            let m = existing ?? BrainMandate(userID: userID, grantID: request.grantID, projects: sorted, now: now)
+            m.explicitProjects = sorted; m.revokedAt = nil; m.updatedAt = now
             try await m.save(on: tx)
+            try await resolver.store(rule, of: m.requireID())
             return m
         }
-        return try await dto(saved, db: db)
+        var resolver = ProjectSelectionResolver(userID: userID, db: db)
+        return try await dto(saved, resolver: &resolver, db: db)
     }
 
     /// Revokes the mandate of one connection; idempotent, nothing leaks about foreign or unknown grants. Takes effect for the
@@ -127,6 +139,8 @@ enum BrainMandateService {
     static func revoke(grantID: UUID, user: User, db: any Database) async throws {
         let userID = try user.requireID()
         try await db.transaction { tx in
+            // Same order as group changes (ADR 0037), so the two cannot deadlock.
+            try await lockSharingGraph(on: tx)
             try await lockRow(table: User.schema, id: userID, on: tx)
             guard let m = try await BrainMandate.query(on: tx).filter(\.$userID == userID).filter(\.$grantID == grantID).first(), m.revokedAt == nil else { return }
             m.revokedAt = Date(); m.updatedAt = m.revokedAt!
@@ -138,6 +152,7 @@ enum BrainMandateService {
     static func revokeAll(user: User, db: any Database) async throws {
         let userID = try user.requireID()
         try await db.transaction { tx in
+            try await lockSharingGraph(on: tx)
             try await lockRow(table: User.schema, id: userID, on: tx)
             let now = Date()
             for m in try await BrainMandate.query(on: tx).filter(\.$userID == userID).filter(\.$revokedAt == .null).all() {

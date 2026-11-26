@@ -3,6 +3,9 @@
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
 	import { connectionName, mayBeEmpty, nextGrantProjects, resolveGrantProjects, revocationKey, scopeLabel, sortGrants } from '#lib/oauth.js';
+	import { projectLabels } from '#lib/brainMandate.js';
+	import { describeRule, emptySelection, namesSomething, selectionFrom, type ProjectGroup, type Selection } from '#lib/projectGroups.js';
+	import ProjectSelectionPicker from './ProjectSelectionPicker.svelte';
 	import { createKeyedGate, createLatest } from '#lib/serial.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -15,7 +18,12 @@
 	let editID = $state<string | null>(null);
 	let renameID = $state<string | null>(null);
 	let nameDraft = $state('');
-	let selected = $state<Set<string>>(new Set());
+	let selection = $state<Selection>(emptySelection());
+	let effective = $state<string[] | null>(null);
+	let groups = $state<ProjectGroup[]>([]);
+	const labels = $derived(projectLabels(projects));
+	const groupName = (id: string) => groups.find((g) => g.id.toLowerCase() === id.toLowerCase())?.name ?? t('projectGroups.unknownGroup');
+	const projectName = (id: string) => labels.get(id.toLowerCase()) ?? id.slice(0, 8).toLowerCase();
 	// One write per grant at a time: a second PUT could overtake the first and bring back a withdrawn project.
 	let busyIDs = $state<string[]>([]);
 	const gate = createKeyedGate((b) => (busyIDs = b));
@@ -23,19 +31,16 @@
 
 	function edit(g: OAuthGrant) {
 		editID = g.id;
-		selected = new Set(g.project_ids);
+		// Ids the person cannot see any more are dropped on save (least privilege).
+		const stored = selectionFrom(g.selection?.projectIDs ?? g.project_ids, g.selection);
+		selection = { ...stored, projectIDs: nextGrantProjects(new Set(stored.projectIDs), projects) };
+		effective = null;
 		confirmID = null;
-	}
-	function toggle(id: string) {
-		const next = new Set(selected);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selected = next;
 	}
 	async function save(g: OAuthGrant) {
 		info = null;
-		const ids = nextGrantProjects(selected, projects);
-		const done = await gate.run(g.id, () => attempt(async () => { await api.setOAuthGrantProjects(g.id, ids); await load(); }, load));
+		const next = $state.snapshot(selection);
+		const done = await gate.run(g.id, () => attempt(async () => { await api.setOAuthGrantSelection(g.id, next); await load(); }, load));
 		if (done?.value) {
 			editID = null;
 			info = t('account.oauth.editProjects.done');
@@ -62,10 +67,11 @@
 
 	async function load() {
 		const current = latest.begin();
-		const [g, p] = await Promise.all([api.listOAuthGrants(), api.listProjects()]);
+		const [g, p, pg] = await Promise.all([api.listOAuthGrants(), api.listProjects(), api.listProjectGroups()]);
 		if (!current()) return;
 		grants = sortGrants(g);
 		projects = p;
+		groups = pg;
 	}
 	$effect(() => {
 		attempt(load);
@@ -91,6 +97,7 @@
 	<ul class="flex flex-col gap-1">
 		{#each grants as g (g.id)}
 			{@const resolved = resolveGrantProjects(g, projects)}
+			{@const rule = describeRule(g.selection, groupName, projectName)}
 			<li class="rounded-lg border p-2.5 text-sm" data-testid="oauth-grant">
 				<div class="flex flex-wrap items-center gap-2">
 					<span class={['flex-1 break-all', g.revoked && 'text-muted-foreground line-through']} data-testid="oauth-name"><strong>{connectionName(g)}</strong>{#if g.client_name && g.client_name !== connectionName(g)} <span class="text-muted-foreground text-xs">({g.client_name})</span>{/if}</span>
@@ -118,21 +125,18 @@
 				{/if}
 				<p class="text-muted-foreground text-xs" data-testid="oauth-last-used">{g.last_used_at ? t('account.oauth.lastUsed', { when: formatWhen(g.last_used_at) }) : t('account.oauth.neverUsed')}</p>
 				<p class="text-muted-foreground text-xs">{t('account.oauth.scopes', { scopes: g.scopes.map(scopeLabel).join(', ') })}</p>
-				<p class="text-muted-foreground text-xs">
+				{#if rule}<p class="text-xs font-medium break-words" data-testid="oauth-rule">{t(rule.key, { groups: rule.groups, excluded: rule.excluded })}</p>{/if}
+				<p class="text-muted-foreground text-xs break-words">
 					{t('account.oauth.projects', { names: resolved.names.join(', ') || '–' })}{#if resolved.unknown > 0} ({t('account.oauth.unknownProjects', { count: resolved.unknown })}){/if}
 				</p>
 				{#if editID === g.id}
-					{@const empty = nextGrantProjects(selected, projects).length === 0}
+					{@const empty = !namesSomething(selection)}
 					<div class="mt-2 flex flex-col gap-2" data-testid="oauth-edit-panel">
 						<p class="text-muted-foreground text-xs">{t('account.oauth.editProjects.hint')}</p>
-						<ul class="flex max-h-60 flex-col gap-1 overflow-auto">
-							{#each projects as p (p.id)}
-								<li><label class="flex items-center gap-2"><input type="checkbox" class="size-[18px]" checked={selected.has(p.id)} disabled={busyIDs.includes(g.id)} onchange={() => toggle(p.id)} data-testid="oauth-edit-project-{p.id}" /> <span>{p.name}</span></label></li>
-							{/each}
-						</ul>
+						<ProjectSelectionPicker bind:selection bind:effective {projects} {groups} testid="oauth-edit" perID before={g.project_ids} disabled={busyIDs.includes(g.id)} />
 						{#if empty && !mayBeEmpty(g)}<p class="text-xs" role="status">{t('account.oauth.editProjects.needOne')}</p>{/if}
 						<div class="flex gap-2">
-							<Button size="sm" disabled={(empty && !mayBeEmpty(g)) || busyIDs.includes(g.id)} onclick={() => save(g)} data-testid="oauth-edit-save">{t('account.oauth.editProjects.save')}</Button>
+							<Button size="sm" disabled={(empty && !mayBeEmpty(g)) || effective === null || busyIDs.includes(g.id)} onclick={() => save(g)} data-testid="oauth-edit-save">{t('account.oauth.editProjects.save')}</Button>
 							<Button size="sm" variant="ghost" disabled={busyIDs.includes(g.id)} onclick={() => (editID = null)}>{t('common.cancel')}</Button>
 						</div>
 					</div>

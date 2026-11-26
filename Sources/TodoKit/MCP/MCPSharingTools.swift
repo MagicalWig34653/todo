@@ -268,9 +268,9 @@ extension MCPController {
             let access = SharingAccess(user: user, db: db)
             try await access.validatePrincipal(type: type, id: principalID)
             let needsConfirmation = try await SharingOperations.grantNeedsConfirmation(access, project: p, principalType: type,
-                principalID: principalID, role: r, grantedProjects: Set(grant.projects))
+                principalID: principalID, role: r, grantedProjects: Set(grant.effectiveProjects))
             if needsConfirmation { return try await confirm(name, args) }
-            let granted = Set(grant.projects)
+            let granted = Set(grant.effectiveProjects)
             let dto = try await SharingOperations.write(user: user, db: db) { access in
                 guard granted.contains(pid) else { throw Abort(.notFound) }
                 return try await SharingOperations.putGrant(access, projectID: pid, principalType: type, principalID: principalID, role: r)

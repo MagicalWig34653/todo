@@ -59,7 +59,7 @@ extension MCPController {
     ]
 
     func callPipeline(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
-        let service = WorkflowService(user: user, db: db, allowedProjects: Set(grant.projects))
+        let service = WorkflowService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
         let actor = try await self.actor(grant: grant, db: db)
         switch name {
         case "get_pipeline_settings":

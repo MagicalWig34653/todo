@@ -16,6 +16,7 @@
 	import RecoveryPage from './settings/RecoveryPage.svelte';
 	import ConnectionsPage from './settings/ConnectionsPage.svelte';
 	import BrainMandatePage from './settings/BrainMandatePage.svelte';
+	import ProjectGroupsPage from './settings/ProjectGroupsPage.svelte';
 	import WebhookPage from './settings/WebhookPage.svelte';
 	import RunnerPage from './settings/RunnerPage.svelte';
 	import DataPage from './settings/DataPage.svelte';
@@ -137,6 +138,8 @@
 				<AccessOverview {onnav} />
 			{:else if id === 'verbindungen'}
 				<ConnectionsPage onopen={onarea} />
+			{:else if id === 'projektgruppen'}
+				<ProjectGroupsPage />
 			{:else if id === 'brain-vollmacht'}
 				<BrainMandatePage onopen={onarea} />
 			{:else if id === 'webhook'}

@@ -163,7 +163,7 @@ final class BrainMandateTests: XCTestCase {
         try await run { e in
             for g in [e.agentGrant, e.brainGrant] {
                 let grant = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
-                grant.projects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
+                grant.explicitProjects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
             }
             try await mandate(e)
             let task = try await review(e, project: e.f.other)
@@ -218,7 +218,7 @@ final class BrainMandateTests: XCTestCase {
         try await run { e in
             for g in [e.agentGrant, e.brainGrant] {
                 let grant = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
-                grant.projects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
+                grant.explicitProjects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
             }
             try await mandate(e)
             let task = try await newTask(e, project: e.f.other)
@@ -414,7 +414,7 @@ final class BrainMandateTests: XCTestCase {
         try await run { e in
             for g in [e.agentGrant, e.brainGrant] {
                 let grant = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
-                grant.projects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
+                grant.explicitProjects.append(try e.f.other.requireID()); try await grant.save(on: e.f.test.app.db)
             }
             let task = try await review(e)
             let t = try unwrap(try await TodoTask.find(UUID(uuidString: task), on: e.f.test.app.db))
@@ -492,9 +492,9 @@ final class BrainMandateTests: XCTestCase {
         let grant = try unwrap(try await OAuthGrant.query(on: e.f.test.app.db).filter(\.$id != e.agentGrant).filter(\.$id != e.brainGrant).first())
         for g in [e.agentGrant, e.brainGrant] {
             let row = try unwrap(try await OAuthGrant.find(g, on: e.f.test.app.db))
-            if !row.projects.contains(try e.f.other.requireID()) { row.projects.append(try e.f.other.requireID()); try await row.save(on: e.f.test.app.db) }
+            if !row.explicitProjects.contains(try e.f.other.requireID()) { row.explicitProjects.append(try e.f.other.requireID()); try await row.save(on: e.f.test.app.db) }
         }
-        grant.projects = [try e.f.project.requireID(), try e.f.other.requireID()]; try await grant.save(on: e.f.test.app.db)
+        grant.explicitProjects = [try e.f.project.requireID(), try e.f.other.requireID()]; try await grant.save(on: e.f.test.app.db)
         return (c.access, try grant.requireID())
     }
 

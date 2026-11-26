@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (13:55): Projektgruppen (Karte `BEF08998`, Teil 3) mit `main` zusammengeführt
+
+- Stand: `t3/projektgruppen-vollmacht-verbindungen` enthält `main` 31835d1; Nachweise in `docs/STATUS.md`.
+- Offen: Prüfung/Merge durch die Hauptsession; Linos Entscheidungen (ADR 0037, Vorauswahl von Mandatsgruppen bei Übernahme); Apple-Karte `80738AEA`.
+
 ## Checkpoint 26.11.2026 (13:30): BEF08998 Teil 1 und 2 in `main`, Teil 3 in Arbeit
 
 - Stand: `dc842e3` und Security-Korrekturen `af0b174`, volle Prüfungen grün, Push (Belege: `docs/STATUS.md`).

@@ -44,15 +44,15 @@ extension MCPController {
 
     func callLiveSession(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
         if name == "report_session_status" {
-            let service = SessionStatusService(user: user, db: db, allowedProjects: Set(grant.projects))
+            let service = SessionStatusService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
             return try .encoded(try await service.report(projectID: uuid(a["projectID"]), sessionName: requiredString(a, "sessionName"), activity: optionalString(a, "activity"), ended: optionalBool(a, "ended") ?? false))
         }
         if name == "get_overview_now" {
-            return try .encoded(try await OverviewNowService(user: user, db: db, allowedProjects: Set(grant.projects))
+            return try .encoded(try await OverviewNowService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
                 .now(compact: optionalBool(a, "compact") ?? false, limit: intArgument(a["limit"], reason: "invalid_limit")))
         }
         let taskID = try uuid(a["taskID"])
-        var service = LiveSessionService(user: user, db: db, allowedProjects: Set(grant.projects))
+        var service = LiveSessionService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
         switch name {
         case "report_session_step":
             service.actor = try await actor(grant: grant, db: db)

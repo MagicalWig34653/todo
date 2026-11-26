@@ -225,7 +225,7 @@ extension MCPController {
     }
 
     func workflowService(user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) -> WorkflowService {
-        WorkflowService(user: user, db: db, allowedProjects: Set(grant.projects), attachments: { CommandCenterAttachments.service(settings: settings) })
+        WorkflowService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects), attachments: { CommandCenterAttachments.service(settings: settings) })
     }
 
     func actor(grant: OAuthGrant, db: any Database) async throws -> WorkflowActor {
@@ -262,14 +262,14 @@ extension MCPController {
                 if raw["limit"] == nil { raw["limit"] = String(MCPCompact.compactListLimit) }
             }
             let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
-                user: user, db: db, allowed: Set(grant.projects))
+                user: user, db: db, allowed: Set(grant.effectiveProjects))
             let filter = context.filterProjectID
             let query = try CommandCenterQuery(scope: filter == nil ? "account" : "project", projectID: filter?.uuidString, raw: raw)
-            let response = try await CommandCenterService(user: user, db: db, allowedProjects: Set(grant.projects)).build(query)
+            let response = try await CommandCenterService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects)).build(query)
             let marked = context.markCards(try .encoded(response))
             return context.decorate(MCPCompact.commandCenter(marked, compact: compact, fields: fields))
         case "get_daily_brief":
-            let brief = DailyBriefService(user: user, db: db, allowedProjects: Set(grant.projects))
+            let brief = DailyBriefService(user: user, db: db, allowedProjects: Set(grant.effectiveProjects))
             return try .encoded(try await brief.build(projectID: optionalUUID(a, "projectID"),
                 since: DailyBriefService.parseSince(optionalString(a, "since")), format: DailyBriefService.parseFormat(optionalString(a, "format"))))
         case "get_task_context":
@@ -324,7 +324,7 @@ extension MCPController {
             let state = try optionalString(a, "status") ?? (all ? "all" : "open")
             guard ["open", "answered", "all"].contains(state) else { throw Abort(.badRequest, reason: "invalid_status") }
             let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
-                user: user, db: db, allowed: Set(grant.projects))
+                user: user, db: db, allowed: Set(grant.effectiveProjects))
             let rows = try await service.questions(projectID: context.filterProjectID, taskID: optionalUUID(a, "taskID"),
                 state: state, limit: intArgument(a["limit"], reason: "invalid_limit") ?? (compact ? 50 : 100))
             return context.wrap(items: MCPCompact.questions(context.markRows(try .encoded(rows)), compact: compact, fields: fields))
@@ -339,7 +339,7 @@ extension MCPController {
             return try .encoded(try await service.requestReview(uuid(a["taskID"]), body, actor: actor))
         case "list_pending_reviews":
             let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),
-                user: user, db: db, allowed: Set(grant.projects))
+                user: user, db: db, allowed: Set(grant.effectiveProjects))
             return context.wrap(items: context.markRows(try .encoded(try await service.reviews(projectID: context.filterProjectID, state: "pending"))))
         case "decide_review":
             return try .encoded(try await service.decideReview(uuid(a["taskID"]), decision: requiredString(a, "decision"),

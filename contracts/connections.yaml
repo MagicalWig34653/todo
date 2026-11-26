@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino MCP-Verbindungen im Teilen-Fenster
-  version: 1.7.0
+  version: 1.8.0
   description: 'ADR 0028. Eine MCP-Verbindung (OAuth-Grant) ist ein eigener Beteiligter eines Projekts neben Personen und Teams. Ihr Zugriff ist durch
     die Rechte der Person (wirksame Rolle) UND die Projektliste/Scopes des Grants begrenzt, nie größer als der Besitzer; es gibt keine eigene Rolle.
     Das Feld role der Antwort ist die aktuelle Rolle des Besitzers im Projekt. Name der Verbindung: Feld name von GET /oauth/grants
@@ -10,13 +10,14 @@ info:
     Zeitpunkt, höchstens ein Zähler-Schritt je Minute); er erscheint in GET /v1/feed als accessRequests[] und in
     GET /v1/command-center summary.pendingAccessRequests. Erlauben fügt das Projekt dem Grant hinzu (Klick des Kontoinhabers ist die Bestätigung),
     Ignorieren schaltet den Hinweis still. Entschiedene Hinweise räumt cleanup-expired nach 7 Tagen auf, offene nach 30 Tagen ohne Wiederholung.
-    1.1.0 (Brain-Vollmacht, ADR 0032): /v1/settings/brain-mandate. Die Person gibt höchstens einer ihrer Verbindungen eine Vollmacht für genau die genannten Projekte (keine Vererbung auf Unterprojekte); nur diese Verbindung darf mit decide_review/answer_question als Agent entscheiden. Verwaltung ausschließlich mit Personen-Sitzung, OAuth-Tokens erhalten 401; es gibt keinen MCP-Schreibweg.'
+    1.1.0 (Brain-Vollmacht, ADR 0032): /v1/settings/brain-mandate. Die Person gibt höchstens einer ihrer Verbindungen eine Vollmacht für genau die genannten Projekte (keine Vererbung auf Unterprojekte); nur diese Verbindung darf mit decide_review/answer_question als Agent entscheiden. Verwaltung ausschließlich mit Personen-Sitzung, OAuth-Tokens erhalten 401; es gibt keinen MCP-Schreibweg.
     1.2.0 (ADR 0032 Nachtrag 23.11.2026, Karte 2280A2F1): eine Vollmacht je Verbindung statt einer je Person. GET liefert {mandates: [...]} (Liste, zuletzt geändert zuerst; das bisherige Feld mandate entfällt), PUT erteilt/überschreibt die Vollmacht genau der genannten Verbindung und lässt die übrigen unberührt, DELETE /v1/settings/brain-mandate/{grantID} widerruft nur diese Verbindung, DELETE ohne ID widerruft alle. Sicherheitsregeln unverändert (kein MCP-Schreibweg, eigene Reviews/Fragen gesperrt, Widerruf sofort, Zitat-Pflicht, Audit).
     1.3.0 (ADR 0032 Nachtrag 24.11.2026, Karte E71B0FF1): eine Verbindung mit aktiver Vollmacht liest und ändert per MCP die Projektliste (OAuthGrant.projects) der anderen Verbindungen derselben Person, nur für Projekte ihrer eigenen Vollmacht (Abschnitt x-mcp-tools: list_connections, set_connection_projects). Das Protokoll GET /v1/settings/brain-mandate/audit zeigt zusätzlich die Änderungen (kind connection.project_added|connection.project_removed); taskID ist dort nicht gesetzt, subjectID ist die geänderte Verbindung. Es gibt weiterhin keinen MCP-Schreibweg für Vollmachten.
     1.4.0 (Karte 74EC341D, additiv, contracts/pipeline.yaml): die Vollmacht gilt auch für decide_plan; das Protokoll kennt zusätzlich kind plan.approved|plan.changes_requested (subjectID ist der Plan).
     1.5.0 (Karte B926E7D8, Pipeline Stufe 2, additiv): das Protokoll GET /v1/settings/brain-mandate/audit kennt zusätzlich kind pipeline.settings (MCP update_pipeline_settings unter Vollmacht): taskID fehlt, projectID und subjectID sind das geänderte Projekt, grantID die handelnde Verbindung, quote das Zitat, note fehlt.
     1.6.0 (Karte BEF08998, ADR 0036, additiv): eine Neuanmeldung kann Projekte und Vollmacht übernehmen (contracts/oauth-mcp.yaml 1.11.0). BrainMandateDTO kennt grantRevokedReason und takenOver {fromGrantID, fromName, at}; das Protokoll kennt kind mandate.taken_over|connection.taken_over (taskID fehlt, grantID die neue, subjectID die frühere Verbindung, quote ist ein Servertext, keine Worte der Person).
     1.7.0 (Security-Review Karte BEF08998, ADR 0036): eine Übernahme ohne gemeinsames Projekt und ohne Vollmacht schreibt genau eine Zeile connection.taken_over, deren projectID gleich subjectID (die frühere Verbindung) ist.
+    1.8.0 (Karte BEF08998, ADR 0037, additiv, Handbuch 1.49.0): Projektgruppen (/v1/project-groups, /v1/projects/{id}/groups, /v1/project-selection/preview, nur Personen-Sitzung, kein MCP-Schreibweg) und optionales selection bei PUT /v1/settings/brain-mandate. BrainMandateDTO.projectIDs ist jetzt die wirksame Menge; neu explicitProjectIDs und selection. projectIDs darf leer sein, wenn selection eine Gruppe oder mode all_except nennt. PUT ohne selection ersetzt eine Regel durch die gesendete Liste. Protokoll: kind mandate.group_added|mandate.group_removed (quote ist ein Servertext). addProjectConnection und set_connection_projects heben einen Ausschluss genau dieses Projekts auf (409 excluded_by_group bei ausgeschlossener Gruppe); Entfernen schliesst ein Projekt aus, das eine Gruppe oder "alle" mitbringt.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -132,6 +133,74 @@ paths:
       responses:
         '200': {description: BrainAuditResponse}
         '401': {description: keine Personen-Sitzung}
+  /v1/project-groups:
+    get:
+      operationId: listProjectGroups
+      summary: Eigene Projektgruppen
+      description: 'Antwort {groups: [{id, name, projectIDs[]}]}; projectIDs nur die jetzt lesbaren Mitglieder, Gruppen nach Name.'
+      responses:
+        '200': {description: ProjectGroupListResponse}
+        '401': {description: keine Personen-Sitzung (auch OAuth-Tokens)}
+    post:
+      operationId: createProjectGroup
+      summary: Projektgruppe anlegen
+      description: 'Body {name, projectIDs?}. Name 1-80 Zeichen, je Person ohne Gross/Klein eindeutig; Mitglieder muss die Person lesen koennen (sonst 404); höchstens 50 Gruppen mit je 200 Projekten. Antwort {group, changes[]}. Keine Vererbung auf Unterprojekte.'
+      responses:
+        '200': {description: ProjectGroupChangeResponse}
+        '400': {description: 'invalid_name, invalid_projects, too_many_groups'}
+        '401': {description: keine Personen-Sitzung}
+        '404': {description: Projekt nicht zugaenglich}
+        '409': {description: name_taken}
+  /v1/project-groups/{id}:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: dryRun, in: query, required: false, schema: {type: boolean}, description: 'true = nichts speichern, nur changes[] (Vorher/Nachher je Vollmacht und Verbindung) berechnen'}
+    patch:
+      operationId: updateProjectGroup
+      summary: Name oder Mitglieder ändern (wirkt sofort)
+      description: 'Body {name?, projectIDs?} (projectIDs ersetzt die Mitglieder). Antwort {group, changes: [{kind mandate|connection, grantID, name, added[], removed[]}]}. Wirkung auf eine aktive Vollmacht wird protokolliert.'
+      responses:
+        '200': {description: ProjectGroupChangeResponse}
+        '401': {description: keine Personen-Sitzung}
+        '404': {description: fremde oder unbekannte Gruppe, Projekt nicht zugaenglich}
+        '409': {description: name_taken}
+    delete:
+      operationId: deleteProjectGroup
+      summary: Gruppe löschen (wirkt sofort)
+      description: 'Entzieht ihre Projekte allen Auswahlen, die sie einschliessen. War sie ausgeschlossen, bleiben ihre aktuellen Projekte einzeln ausgeschlossen (Loeschen erweitert nie). Antwort {changes[]}.'
+      responses:
+        '200': {description: ProjectGroupChangeResponse ohne group}
+        '404': {description: fremde oder unbekannte Gruppe}
+  /v1/projects/{id}/groups:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getProjectGroupsOfProject
+      summary: Eigene Gruppen eines Projekts
+      responses:
+        '200': {description: '{groupIDs[], changes: []}'}
+        '404': {description: Projekt nicht zugaenglich}
+    put:
+      operationId: setProjectGroupsOfProject
+      summary: Eigene Gruppen eines Projekts setzen
+      description: 'Body {groupIDs[]}; ?dryRun=true wie bei der Gruppe. Antwort {groupIDs[], changes[]}.'
+      responses:
+        '200': {description: ProjectGroupsOfProject}
+        '404': {description: Projekt nicht zugaenglich oder fremde Gruppe}
+  /v1/project-selection/preview:
+    post:
+      operationId: previewProjectSelection
+      summary: Wirksame Projekte einer Auswahl, ohne zu speichern
+      description: 'Body {projectIDs[], selection?}. Antwort {projectIDs[] (wirksam), agentCreatedProjectIDs[] (eigene Projekte, die all_except auslaesst, weil eine Verbindung sie angelegt hat)}.'
+      responses:
+        '200': {description: SelectionPreviewResponse}
+        '400': {description: invalid_selection}
+        '404': {description: fremde Gruppe}
+x-project-selection:
+  fields: {mode: 'selected (Standard) | all_except', groupIDs: 'UUID[] bis 50', excludedProjectIDs: 'UUID[] bis 500', excludedGroupIDs: 'UUID[] bis 50'}
+  resolution: '(ausdrueckliche Projekte + Gruppen + bei all_except alle eigenen Projekte) minus ausgeschlossene Projekte und Gruppen, geschnitten mit den aktuellen Leserechten der Person. Ausschluss gewinnt. Eigen = Besitz als Person (Teamprojekte nicht), ohne per MCP create_project angelegte Projekte (vorlaeufig, ADR 0037).'
+  response: 'selection {mode, projectIDs (ausdruecklich), groupIDs, excludedProjectIDs, excludedGroupIDs} oder null/fehlend'
 x-mcp-tools:
+  list_project_groups: {scope: 'projects:read', arguments: {}, result: '[{id, name, projects:[{id, name}]}], nur Gruppen mit von dieser Verbindung erreichbaren Projekten und nur diese; nur lesend'}
   list_connections: {scope: 'projects:read', arguments: {}, result: '[{grantID, name, clientName, scopes[], lastUsedAt, projects:[{id, name}]}] (die übrigen nicht widerrufenen Verbindungen derselben Person; projects nur aus der eigenen Vollmacht)', errors: 'brain_mandate_required (403)'}
   set_connection_projects: {scope: 'projects:write', required: [grantID], arguments: {grantID: UUID, addProjectIDs: 'UUID[] bis 50', removeProjectIDs: 'UUID[] bis 50, kein Überschnitt, zusammen mindestens eines', quote: 'string 1-2000, Pflicht (Linos Zitat)'}, result: '{grantID, name, projects:[{id, name}] (nur Vollmachtsprojekte, nach der Änderung), added[], removed[]}', errors: 'invalid_projects|invalid_id|invalid_arguments (400), cannot_change_own_connection (403), not_found (404: fremde oder unbekannte Verbindung, Projekt nicht lesbar), grant_revoked (409), brain_mandate_required (403), outside_brain_mandate (403, nichts wird angewendet), quote_required|invalid_quote (400), projects_required (400)', notes: 'Prüfreihenfolge in dieser Reihenfolge; idempotent; Hinzufügen verlangt aktuelle Leserechte der Person und markiert Zugriffshinweise als granted; Audit je tatsächlicher Änderung in derselben Transaktion; Vollmachten selbst bleiben unverändert.'}

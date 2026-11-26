@@ -30,11 +30,11 @@ extension MCPController {
         let service = PlanningService(user: user, db: db)
         @Sendable func grantedTask(_ id: UUID, on db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
             // Grant first: a forbidden role must never disclose an out-of-grant object.
-            guard let t = try await TodoTask.find(id, on: db), grant.projects.contains(t.projectID) else { throw Abort(.notFound) }
+            guard let t = try await TodoTask.find(id, on: db), grant.effectiveProjects.contains(t.projectID) else { throw Abort(.notFound) }
             return try await PlanningService(user: user, db: db).task(id, role: role)
         }
         @Sendable func grantedMilestone(_ id: UUID, on db: any Database, role: ProjectRole = .read) async throws -> PlanningMilestone {
-            guard let m = try await PlanningMilestone.find(id, on: db), grant.projects.contains(m.projectID) else { throw Abort(.notFound) }
+            guard let m = try await PlanningMilestone.find(id, on: db), grant.effectiveProjects.contains(m.projectID) else { throw Abort(.notFound) }
             return try await PlanningService(user: user, db: db).milestone(id, role: role)
         }
         func limit() throws -> Int {
@@ -63,14 +63,14 @@ extension MCPController {
             let pid = a["projectID"].isNull ? nil : try uuid(a["projectID"])
             if let pid { _ = try await project(pid, user: user, grant: grant, db: db) }
             let count = try intArgument(a["limit"], reason: "invalid_limit")
-            return try .encoded(await service.scheduleWindow(from: from, to: to, projectID: pid, limit: count, allowedProjects: Set(grant.projects)))
+            return try .encoded(await service.scheduleWindow(from: from, to: to, projectID: pid, limit: count, allowedProjects: Set(grant.effectiveProjects)))
         case "list_planned_tasks":
             let view = try requiredString(a, "view"), count = try limit()
             guard ["today", "upcoming", "up_next"].contains(view) else { throw Abort(.badRequest, reason: "invalid_view") }
             let pid = a["projectID"].isNull ? nil : try uuid(a["projectID"])
             if let pid { _ = try await project(pid, user: user, grant: grant, db: db) }
             let tasks = try await service.plannedTasks(mode: view == "up_next" ? "up-next" : view)
-            return try .encoded(Array(tasks.filter { grant.projects.contains($0.task.projectID) && (pid == nil || $0.task.projectID == pid) }.prefix(count)))
+            return try .encoded(Array(tasks.filter { grant.effectiveProjects.contains($0.task.projectID) && (pid == nil || $0.task.projectID == pid) }.prefix(count)))
         case "set_dependencies", "remove_dependency":
             let id = try uuid(a["taskID"])
             let ids: [UUID]
@@ -97,7 +97,7 @@ extension MCPController {
             let id = try uuid(a["taskID"]), count = try limit()
             _ = try await grantedTask(id, on: db)
             var result: [TaskDTO] = []
-            for t in try await service.dependencies(id) where grant.projects.contains(t.projectID) {
+            for t in try await service.dependencies(id) where grant.effectiveProjects.contains(t.projectID) {
                 if result.count < count { result.append(try TaskDTO(t)) }
             }
             return try .encoded(result)
@@ -111,7 +111,7 @@ extension MCPController {
         case "list_milestones":
             let pid = try uuid(a["projectID"]), count = try limit()
             _ = try await project(pid, user: user, grant: grant, db: db)
-            return try .encoded(await service.milestones(pid, allowedProjects: Set(grant.projects), limit: count))
+            return try .encoded(await service.milestones(pid, allowedProjects: Set(grant.effectiveProjects), limit: count))
         case "assign_milestone", "unassign_milestone":
             let id = try uuid(a["taskID"]), mid = try uuid(a["milestoneID"])
             try await db.transaction { tx in

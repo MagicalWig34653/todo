@@ -87,12 +87,12 @@ final class ConnectionTests: XCTestCase {
                 let added = try await f.test.json(.PUT, "/v1/projects/\(otherPID)/connections", ["grantID": gid.uuidString], token: f.session)
                 XCTAssertEqual(added.status, .ok); XCTAssertEqual(added.list?.count, 1)
             }
-            let tmp3 = Set(try await OAuthGrant.find(gid, on: f.test.app.db)?.projects ?? [])
+            let tmp3 = Set(try await OAuthGrant.find(gid, on: f.test.app.db)?.explicitProjects ?? [])
             XCTAssertEqual(tmp3, [pid, otherPID])
             // Remove access again.
             let gone = try await f.test.json(.DELETE, "/v1/projects/\(otherPID)/connections/\(gid)", token: f.session)
             XCTAssertEqual(gone.status, .noContent)
-            let tmp4 = try await OAuthGrant.find(gid, on: f.test.app.db)?.projects
+            let tmp4 = try await OAuthGrant.find(gid, on: f.test.app.db)?.explicitProjects
             XCTAssertEqual(tmp4, [pid])
             // The last project of a connection without projects:write cannot be removed here.
             let last = try await f.test.json(.DELETE, "/v1/projects/\(pid)/connections/\(gid)", token: f.session)
@@ -111,7 +111,7 @@ final class ConnectionTests: XCTestCase {
             let pid = try project.requireID()
             try await ProjectGrant(projectID: pid, principalType: "person", principalID: f.user.requireID(), role: .read).save(on: db)
             try await ProjectGrant(projectID: pid, principalType: "person", principalID: mgr.requireID(), role: .manage).save(on: db)
-            let g0 = try await OAuthGrant.find(gid, on: db); let g = try XCTUnwrap(g0); g.projects.append(pid); try await g.save(on: db)
+            let g0 = try await OAuthGrant.find(gid, on: db); let g = try XCTUnwrap(g0); g.explicitProjects.append(pid); try await g.save(on: db)
             let mgrToken = AuthSupport.randomToken()
             try await UserSession(userID: mgr.requireID(), tokenHash: AuthSupport.hash(mgrToken), expiresAt: Date().addingTimeInterval(3600)).save(on: db)
             // The owner only reads: no manage, so no list for them.
@@ -126,7 +126,7 @@ final class ConnectionTests: XCTestCase {
             XCTAssertEqual(tmp6, .noContent)
             // If the owner loses access, the connection disappears from the list.
             try await ProjectGrant.query(on: db).filter(\.$principalID == f.user.requireID()).delete()
-            let g20 = try await OAuthGrant.find(gid, on: db); let g2 = try XCTUnwrap(g20); g2.projects.append(pid); try await g2.save(on: db)
+            let g20 = try await OAuthGrant.find(gid, on: db); let g2 = try XCTUnwrap(g20); g2.explicitProjects.append(pid); try await g2.save(on: db)
             let tmp7 = try await f.test.json(.GET, "/v1/projects/\(pid)/connections", token: mgrToken).list?.count
             XCTAssertEqual(tmp7, 0)
         }
@@ -192,7 +192,7 @@ final class ConnectionTests: XCTestCase {
             let tmp11 = try await f.test.json(.POST, "/v1/connection-access-requests/\(id)/allow", token: f.session).status
             XCTAssertEqual(tmp11, .noContent)
             let g12 = try await OAuthGrant.find(gid, on: db)
-            let tmp12 = try XCTUnwrap(g12).projects.contains(otherPID)
+            let tmp12 = try XCTUnwrap(g12).explicitProjects.contains(otherPID)
             XCTAssertTrue(tmp12)
             let tmp13 = try await self.requests(f).first?.state
             XCTAssertEqual(tmp13, "granted")

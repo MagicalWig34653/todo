@@ -44,7 +44,7 @@ final class MCPCurrentProjectTests: XCTestCase {
             let sub = Project(ownerID: try f.user.requireID(), parentID: try f.project.requireID(), name: "Sub")
             try await sub.save(on: db)
             let g = try await XCTUnwrapAsync(try await OAuthGrant.query(on: db).first())
-            g.projects.append(contentsOf: [try other.requireID(), try sub.requireID()]); try await g.save(on: db)
+            g.explicitProjects.append(contentsOf: [try other.requireID(), try sub.requireID()]); try await g.save(on: db)
             try await seed(f, project: f.project, title: "Mine")
             try await seed(f, project: sub, title: "Mine sub")
             try await seed(f, project: other, title: "Foreign")

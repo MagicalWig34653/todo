@@ -1,5 +1,19 @@
 # Status
 
+## Nachtrag 26.11.2026 (13:55): Projektgruppen, Teil 3 mit `main` (31835d1) zusammengeführt (Karte BEF08998; kein Push, kein Deploy)
+
+- Branch `t3/projektgruppen-vollmacht-verbindungen`: Umsetzung `28a89b1` bis `78aaa26`; Merge `4b03e8c`; Übernahme mit Regeln `b039742` (rot), `3068b9a` (grün); MariaDB-Sperren (rot, dann `56dd0f0` grün); Bilder `c8c6d26`. Versionen: `connections.yaml` 1.8.0, `oauth-mcp.yaml` 1.13.0, Handbuch 1.49.0.
+- Neu: Projektgruppen mit Auswahl „gewählt“ oder „alle meine außer“ für Brain-Vollmacht, Verbindungen und Zustimmungsseite (ADR 0037; Migration `CreateProjectGroups`, additiv, `App migrate --yes` vor `serve`; Rückfall-Vorbehalt in der ADR).
+- Übernahme mit Regel: Mit Mandatsregel wird jedes Projekt der alten Vollmacht, das nicht bestätigt wurde, in der neuen Regel ausgeschlossen. Angehakt sind nur ausdrücklich genannte Projekte (`takeover.explicit_project_ids`); wird ein übernommenes Projekt abgehakt, das die Regel auch bringt, wird es ausgeschlossen. Die Seite nennt vor dem Klick, was aus der Vollmacht fällt. 7-Tage-Frist, Standardnamen-Regel und die Protokollzeile ohne gemeinsames Projekt gelten auch mit Regeln (Tests).
+- Folge: Gruppen einer Mandatsregel werden nicht in die neue Verbindung vorausgewählt (die Verbindung wird nie von selbst breiter). Wählt die Person sie nicht, fallen deren Projekte aus der Vollmacht. Offen für Lino: stattdessen vorauswählen?
+- MariaDB: Die Token-Transaktion wurde durch Teil 3 nicht geändert und löst keine Gruppen auf. Sperrende Abfragen per EXPLAIN und Gegenprobe geprüft: Beim Gruppenändern lief die Vollmacht-Sperre bei ungleicher Verteilung über den ganzen Primärschlüssel (fremde Zeilen gesperrt), behoben. Rest: Die Bereichssperre auf Gruppenmitglieder (Index auf `group_id`) kann wie jede InnoDB-Bereichssperre benachbarte Einfügungen kurz aufhalten; ein Deadlock zwischen Konten ist theoretisch möglich, nicht beobachtet.
+- Vorläufig, Lino entscheidet im Review (ADR 0037): von Agenten angelegte Projekte fallen nicht automatisch unter „alle außer“; Teamprojekte zählen nicht als eigene.
+- Grün nach dem Merge: `npm run check` 0/0, vitest 812/812, `npm run build` rc 0; Playwright gegen natives Backend mit frischer SQLite: `project-groups` 9/9 und `mandate-relogin` 7/7 in Chromium, Firefox, WebKit.
+- Swift auf dem Endstand: volle Suite (SQLite) 1034 Tests, 26 übersprungen, 0 Fehler, rc 0; MariaDB 12.3 (Wegwerf-Container, samt Daten entfernt) `ProjectGroup*|OAuth*|ConnectionTests|BrainMandate*|ConnectionProjectsByMandate|ActionRequest*|Pipeline*|MCPSync*` 214 Tests, 0 Fehler, rc 0.
+- Rot belegt: Übernahme mit Regeln 2 Tests/4 Fehler; Browser: `project-groups` gegen die zusammengeführte alte Seite rc 1 (Gruppenmitglied angehakt); MariaDB-Sperrtest rc 1 (Lock wait timeout).
+- Nicht geprüft: Docker-Image/Linux, CI, volle MariaDB-Suite, übrige E2E-Specs nach dem Merge, echter MCP-Client, Apple-App (Karte `80738AEA`).
+- Nächster Schritt: Prüfung und Merge nach `main` durch die Hauptsession, Review stellt die Hauptsession; Deploy bei Lino.
+
 ## Nachtrag 26.11.2026 (13:30): BEF08998 Teil 1, 2 und Review-Korrekturen in `main`, Push; Teil 3 in Arbeit
 
 - Merges `dc842e3` (Teil 1+2) und `af0b174` (Security-Korrekturen). Auf `af0b174`: volle `swift test` (SQLite) 1011 Tests, 24 übersprungen, 0 Fehler; `npm run check` 0/0; vitest 799/799; `npm run build` rc 0.

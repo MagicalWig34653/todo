@@ -6,6 +6,8 @@ import Vapor
 /// `MandatedConnectionService`; there is deliberately no tool that changes a mandate.
 extension MCPController {
     static let connectionTools: [Tool] = [
+        Tool(name: "list_project_groups", scope: "projects:read",
+             description: "List the person's project groups as far as this connection can see them: [{id, name, projects:[{id,name}]}]. Only groups with at least one project this connection reaches, and only those projects. Read-only: groups, memberships and selections are managed by the person in the app (settings, Projektgruppen); there is no tool to change them."),
         Tool(name: "list_connections", scope: "projects:read",
              description: "List the person's other (not revoked) MCP connections: [{grantID, name, clientName, scopes, lastUsedAt, projects:[{id,name}]}]. projects shows only the projects that are part of THIS connection's brain mandate; everything else a connection may see stays invisible. Needs the person's brain mandate for this connection (brain_mandate_required). Use it to find the grantID for set_connection_projects."),
         Tool(name: "set_connection_projects", scope: "projects:write",
@@ -19,6 +21,17 @@ extension MCPController {
 
     func callConnection(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database) async throws -> JSONValue {
         switch name {
+        case "list_project_groups":
+            let reach = Set(grant.effectiveProjects)
+            var out: [JSONValue] = []
+            for g in try await ProjectGroup.query(on: db).filter(\.$userID == user.requireID()).sort(\.$nameKey).all() {
+                let members = try await ProjectGroupMember.query(on: db).filter(\.$groupID == g.requireID()).all().map(\.projectID).filter(reach.contains)
+                guard !members.isEmpty else { continue }
+                let projects = try await Project.query(on: db).filter(\.$id ~~ members).sort(\.$name).all()
+                out.append(.object(["id": .string(try g.requireID().uuidString), "name": .string(g.name),
+                    "projects": .array(try projects.map { .object(["id": .string(try $0.requireID().uuidString), "name": .string($0.name)]) })]))
+            }
+            return .array(out)
         case "list_connections":
             return try .encoded(try await MandatedConnectionService.list(user: user, caller: grant, db: db))
         case "set_connection_projects":

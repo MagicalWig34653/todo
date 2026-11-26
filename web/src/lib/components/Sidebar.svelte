@@ -1,4 +1,6 @@
 <script lang="ts" module>
+	import ProjectGroupChecks from './ProjectGroupChecks.svelte';
+	import type { ProjectGroup } from '#lib/projectGroups.js';
 export type View =
 	| 'project'
 	| 'forYou'
@@ -88,6 +90,9 @@ export type View =
 	let addOpen = $state(false);
 	let addName = $state('');
 	let addParent = $state('');
+	// ADR 0037: the person's groups for the new project (loaded when the dialog opens; without them the dialog works as before).
+	let addGroups = $state<ProjectGroup[]>([]);
+	let addGroupIDs = $state<string[]>([]);
 	let bellOpen = $state(false);
 
 	// "Mehr" opens when the user navigates to one of its pages; afterwards the explicit toggle state is respected.
@@ -111,6 +116,11 @@ export type View =
 		addName = '';
 		addParent = parentID;
 		addOpen = true;
+		addGroupIDs = [];
+		api.listProjectGroups().then(
+			(g) => (addGroups = g),
+			() => (addGroups = [])
+		);
 	}
 	async function createProject(e: Event) {
 		e.preventDefault();
@@ -121,8 +131,10 @@ export type View =
 			const project = await api.createProject(name, addParent || null);
 			created = project;
 			workspace.projects = [...workspace.projects, project];
+			if (addGroupIDs.length) await api.setGroupsOfProject(project.id, $state.snapshot(addGroupIDs));
 		});
-		if (ok) {
+		// The project exists even when assigning its groups failed (the error is shown); never create it twice.
+		if (ok || created) {
 			addOpen = false;
 			if (created) onproject((created as Project).id);
 		}
@@ -347,6 +359,7 @@ export type View =
 				{#each parents as p (p.project.id)}<option value={p.project.id}>{'  '.repeat(p.depth)}{p.project.name}</option>{/each}
 			</Select>
 		</label>
+		{#if addGroups.length}<ProjectGroupChecks groups={addGroups} bind:selected={addGroupIDs} testid="add-project-groups" />{/if}
 		<div class="flex justify-end gap-2">
 			<Button type="button" variant="ghost" onclick={() => (addOpen = false)}>{t('common.cancel')}</Button>
 			<Button type="submit" disabled={!addName.trim()}>{t('projects.add')}</Button>

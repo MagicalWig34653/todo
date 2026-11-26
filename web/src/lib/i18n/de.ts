@@ -5,6 +5,7 @@ import { deAdminSettings } from './de-admin-settings.js';
 import { deAutoStart } from './de-autostart.js';
 import { deNow } from './de-now.js';
 import { deBrainMandate } from './de-brain-mandate.js';
+import { deProjectGroups } from './de-project-groups.js';
 import { deWebhook } from './de-webhook.js';
 import { deVoicePrivacy } from './de-voice-privacy.js';
 import { dePipeline } from './de-pipeline.js';
@@ -17,6 +18,7 @@ export const de = {
 	...deAutoStart,
 	...deNow,
 	...deBrainMandate,
+	...deProjectGroups,
 	...deWebhook,
 	...dePipeline,
 	'app.name': 'Todolino',

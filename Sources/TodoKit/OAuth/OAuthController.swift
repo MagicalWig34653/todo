@@ -124,7 +124,7 @@ struct OAuthController: RouteCollection {
         let found = try await OAuthTakeover.find(user: user, client: c, redirect: b.redirect_uri, resource: req.application.settings.oauthResource, on: req.db)
         var offer: OAuthTakeover.Offer?
         if case .one(let candidate) = found {
-            offer = .init(grantID: try candidate.grant.requireID(), mandateProjects: candidate.mandateProjects.compactMap(\.id))
+            offer = .init(grantID: try candidate.grant.requireID(), mandateProjects: candidate.mandateProjects.compactMap(\.id), mandateRule: candidate.mandateRule)
         }
         let raw = AuthSupport.randomToken()
         try await OAuthSecret(raw: raw, kind: "consent", payload: Self.pack(Pending(userID: try user.requireID(), request: b, takeover: offer)), lifetime: 300).save(on: req.db)
@@ -141,15 +141,26 @@ struct OAuthController: RouteCollection {
             body["takeover"] = .object(["grant_id": .string(try candidate.grant.requireID().uuidString), "name": .string(candidate.name),
                 "match": .string(candidate.match.rawValue), "reason": .string(candidate.grant.revoked ? "replay" : "active"),
                 "project_ids": .strings(try candidate.projects.map { try $0.requireID().uuidString }),
+                // ADR 0037: what the old connection names itself, apart from group members and mandate additions.
+                "explicit_project_ids": .strings(candidate.projects.compactMap(\.id).filter(Set(candidate.grant.explicitProjects).contains).map(\.uuidString)),
+                "selection": try SelectionDTO(explicit: candidate.grant.explicitProjects, rule: candidate.grantRule).map { try .encoded($0) } ?? .null,
                 "mandate": candidate.mandate == nil ? .null : .object([
                     "project_ids": .strings(try candidate.mandateProjects.map { try $0.requireID().uuidString }),
-                    "project_names": .strings(candidate.mandateProjects.map(\.name))])])
+                    "project_names": .strings(candidate.mandateProjects.map(\.name)),
+                    "selection": try SelectionDTO(explicit: candidate.mandate?.explicitProjects ?? [], rule: candidate.mandateRule).map { try .encoded($0) } ?? .null])])
         }
         body["projects"] = try .encoded(projects.map(ProjectDTO.init))
+        // ADR 0037: the person's groups (members as far as readable now) for the choice on the consent page.
+        var groups: [JSONValue] = []
+        for g in try await ProjectGroupService.list(user: user, db: req.db) {
+            groups.append(.object(["id": .string(g.id.uuidString), "name": .string(g.name), "project_ids": .strings(g.projectIDs.map(\.uuidString))]))
+        }
+        body["groups"] = .array(groups)
         return .object(body)
     }
     /// `takeover_grant_id` (ADR 0036): the offered connection the person decided to take over; absent means none.
-    struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool; var connection_name: String?; var takeover_grant_id: UUID? }
+    /// `selection` (ADR 0037): optional rule of the new connection (own groups, "all owned except").
+    struct Consent: Content { var consent_token: String; var project_ids: [UUID]; var approve: Bool; var connection_name: String?; var takeover_grant_id: UUID?; var selection: SelectionInput? }
     @Sendable func consent(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
         let b = try req.content.decode(Consent.self)
@@ -166,9 +177,9 @@ struct OAuthController: RouteCollection {
         return try await req.db.transaction { db in
             try await lockRow(table: OAuthSecret.schema, id: found.requireID(), on: db)
             // All locks before the first plain read (MariaDB snapshot), in the order of the mandate service:
-            // sharing graph, person, mandate, connection.
+            // sharing graph (also serialises writes of selection rules, ADR 0037), person, mandate, connection.
+            if b.approve { try await lockSharingGraph(on: db) }
             if b.approve, let old = b.takeover_grant_id {
-                try await lockSharingGraph(on: db)
                 try await lockRow(table: User.schema, id: userID, on: db)
                 _ = try await lockedMandate(userID: userID, grantID: old, on: db)
                 try await lockRow(table: OAuthGrant.schema, id: old, on: db)
@@ -184,7 +195,9 @@ struct OAuthController: RouteCollection {
             if b.approve {
                 // A grant that may create projects (projects:write) can start without existing projects: create_project extends it.
                 let mayCreateProjects = (a.scope ?? "").split(separator: " ").contains("projects:write")
-                guard !b.project_ids.isEmpty || mayCreateProjects else { throw Abort(.badRequest, reason: "projects_required") }
+                let selector = ProjectSelectionResolver(userID: userID, db: db, locking: true)
+                let rule = try await selector.validate(b.selection)
+                guard SelectionRule.namesSomething(b.project_ids, rule) || mayCreateProjects else { throw Abort(.badRequest, reason: "projects_required") }
                 for id in b.project_ids { _ = try await ProjectAccess(user: user, db: db).project(id) }
                 guard let client = try await OAuthClient.find(a.client_id, on: db) else { throw Abort(.badRequest) }
                 var takeover: (OAuthTakeover.Candidate, OAuthTakeover.Offer)?
@@ -195,7 +208,9 @@ struct OAuthController: RouteCollection {
                           let person = try await User.find(userID, on: db),
                           case .one(let candidate) = try await OAuthTakeover.find(user: person, client: client, redirect: a.redirect_uri,
                                                                                     resource: req.application.settings.oauthResource, on: db),
-                          candidate.grant.id == old else { throw Abort(.conflict, reason: "takeover_changed") }
+                          candidate.grant.id == old,
+                          // ADR 0037: a mandate rule that changed since the page was shown is not what the person saw.
+                          candidate.mandateRule == offer.mandateRule else { throw Abort(.conflict, reason: "takeover_changed") }
                     takeover = (candidate, offer)
                 }
                 let g = OAuthGrant(userID: userID, clientID: a.client_id, resource: req.application.settings.oauthResource,
@@ -206,6 +221,7 @@ struct OAuthController: RouteCollection {
                     g.takenOverAt = Date()
                 }
                 try await g.save(on: db)
+                try await selector.store(rule, of: g.requireID())
                 if let (candidate, offer) = takeover { try await OAuthTakeover.handOver(candidate, to: g, offer: offer, user: user, on: db) }
                 let code = AuthSupport.randomToken()
                 try await OAuthSecret(raw: code, kind: "code", grantID: g.requireID(), payload: Self.pack(a), lifetime: 120).save(on: db)
@@ -292,9 +308,18 @@ struct OAuthController: RouteCollection {
         let r = try await JSONValue.object(["error": .string("invalid_grant")]).encodeResponse(status: .badRequest, for: req)
         r.headers.replaceOrAdd(name: .cacheControl, value: "no-store"); return r
     }
-    private static func grantJSON(_ g: OAuthGrant, clientName: String? = nil) throws -> JSONValue {
-        .object(["id": .string(try g.requireID().uuidString), "client_id": .string(g.clientID.uuidString), "client_name": .string(clientName ?? ""),
-                 "scopes": .strings(g.scopes), "project_ids": .strings(g.projects.map(\.uuidString)), "revoked": .bool(g.revoked),
+    /// ADR 0037: `project_ids` is what the connection reaches now; `explicit_project_ids` and `selection` are the choice.
+    private static func grantJSON(_ g: OAuthGrant, clientName: String? = nil, on db: any Database) async throws -> JSONValue {
+        var resolver = ProjectSelectionResolver(userID: g.userID, db: db)
+        return try await grantJSON(g, clientName: clientName, resolver: &resolver)
+    }
+    private static func grantJSON(_ g: OAuthGrant, clientName: String?, resolver: inout ProjectSelectionResolver) async throws -> JSONValue {
+        let rule = try await resolver.rule(of: g.requireID())
+        let reach = try await resolver.resolve(explicit: g.explicitProjects, rule: rule)
+        return .object(["id": .string(try g.requireID().uuidString), "client_id": .string(g.clientID.uuidString), "client_name": .string(clientName ?? ""),
+                 "scopes": .strings(g.scopes), "project_ids": .strings(reach.map(\.uuidString)), "revoked": .bool(g.revoked),
+                 "explicit_project_ids": .strings(g.explicitProjects.map(\.uuidString)),
+                 "selection": try SelectionDTO(explicit: g.explicitProjects, rule: rule).map { try .encoded($0) } ?? .null,
                  "revoked_reason": g.revokedReason.map { .string($0) } ?? .null,
                  "name": .string(ConnectionNames.display(g, clientName: clientName)),
                  "last_used_at": g.lastUsedAt.map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null])
@@ -304,15 +329,19 @@ struct OAuthController: RouteCollection {
         let user = try await req.requireUser()
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.notFound) }
         let g = try await ConnectionService.rename(grantID: id, name: try req.content.decode(GrantName.self).name, user: user, db: req.db)
-        return try Self.grantJSON(g, clientName: try await OAuthClient.find(g.clientID, on: req.db)?.name)
+        return try await Self.grantJSON(g, clientName: try await OAuthClient.find(g.clientID, on: req.db)?.name, on: req.db)
     }
     @Sendable func grants(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
         let grants = try await OAuthGrant.query(on: req.db).filter(\.$userID == user.requireID()).all()
         let names = Dictionary(uniqueKeysWithValues: try await OAuthClient.query(on: req.db).filter(\.$id ~~ Set(grants.map(\.clientID))).all().compactMap { c in c.id.map { ($0, c.name) } })
-        return .array(try grants.map { try Self.grantJSON($0, clientName: names[$0.clientID]) })
+        var resolver = ProjectSelectionResolver(userID: try user.requireID(), db: req.db)
+        var out: [JSONValue] = []
+        for g in grants { out.append(try await Self.grantJSON(g, clientName: names[g.clientID], resolver: &resolver)) }
+        return .array(out)
     }
-    struct GrantProjects: Content { var project_ids: [UUID] }
+    /// ADR 0037: `selection` is optional; without it the list replaces an existing rule (older clients send the list they show).
+    struct GrantProjects: Content { var project_ids: [UUID]; var selection: SelectionInput? }
     /// Replaces the projects an existing connection may reach. MCP requests read the grant on every call, so the change is immediate.
     @Sendable func setGrantProjects(_ req: Request) async throws -> JSONValue {
         let user = try await req.requireUser()
@@ -320,14 +349,19 @@ struct OAuthController: RouteCollection {
         let b = try req.content.decode(GrantProjects.self)
         let ids = Array(Set(b.project_ids))
         return try await req.db.transaction { db in
+            // Same order as group changes (ADR 0037): sharing graph, then the connection.
+            try await lockSharingGraph(on: db)
             try await lockRow(table: OAuthGrant.schema, id: id, on: db)
             guard let g = try await OAuthGrant.find(id, on: db), g.userID == user.id else { throw Abort(.notFound) }
             guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }
-            guard !ids.isEmpty || g.scopes.contains("projects:write") else { throw Abort(.badRequest, reason: "projects_required") }
+            let resolver = ProjectSelectionResolver(userID: g.userID, db: db, locking: true)
+            let rule = try await resolver.validate(b.selection)
+            guard SelectionRule.namesSomething(ids, rule) || g.scopes.contains("projects:write") else { throw Abort(.badRequest, reason: "projects_required") }
             // Only projects added now need the user's current access; removing one the user lost access to must stay possible.
-            for pid in ids where !g.projects.contains(pid) { _ = try await ProjectAccess(user: user, db: db).project(pid) }
-            g.projects = ids; try await g.save(on: db)
-            return try Self.grantJSON(g, clientName: try await OAuthClient.find(g.clientID, on: db)?.name)
+            for pid in ids where !g.explicitProjects.contains(pid) { _ = try await ProjectAccess(user: user, db: db).project(pid) }
+            g.explicitProjects = ids; try await g.save(on: db)
+            try await resolver.store(rule, of: g.requireID())
+            return try await Self.grantJSON(g, clientName: try await OAuthClient.find(g.clientID, on: db)?.name, on: db)
         }
     }
     @Sendable func revoke(_ req: Request) async throws -> HTTPStatus {

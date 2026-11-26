@@ -23,6 +23,7 @@
 	import MilestonesPanel from './MilestonesPanel.svelte';
 	import ProjectComments from './ProjectComments.svelte';
 	import ProjectPipelineSettings from './ProjectPipelineSettings.svelte';
+	import ProjectGroupsDialog from './ProjectGroupsDialog.svelte';
 	import ProjectBoard from './ProjectBoard.svelte';
 	import TaskGraph from './TaskGraph.svelte';
 	import Workflow from '@lucide/svelte/icons/workflow';
@@ -197,6 +198,7 @@
 	/** Pipeline settings of the project (card B926E7D8); route `/project/<id>/pipeline`. */
 	let pipelineOpen = $state(false);
 	let colorOpen = $state(false);
+	let groupsOpen = $state(false);
 	let detail = $state<Task | null>(null);
 	let detailOpen = $state(false);
 	$effect(() => {
@@ -336,6 +338,7 @@
 				{#if management}
 					<MenuItem testid="milestones-open" onclick={() => { close(); milestonesOpen = true; }}>{t('view.milestones')}</MenuItem>
 				{/if}
+				<MenuItem testid="project-groups-open" onclick={() => { close(); groupsOpen = true; }}>{t('projectGroups.ofProject')}</MenuItem>
 				<MenuItem testid="pipeline-settings-open" onclick={() => { close(); pipelineOpen = true; }}>{t('pipeline.settings.title')}</MenuItem>
 			{/snippet}
 		</Popover>
@@ -430,6 +433,9 @@
 </Dialog>
 <Dialog bind:open={pipelineOpen} title={t('pipeline.settings.title')} class="max-w-2xl" testid="pipeline-settings-dialog">
 	<ProjectPipelineSettings {project} />
+</Dialog>
+<Dialog bind:open={groupsOpen} title={t('projectGroups.ofProject')} testid="project-groups-dialog">
+	{#if groupsOpen}<ProjectGroupsDialog projectID={project.id} onclose={() => (groupsOpen = false)} />{/if}
 </Dialog>
 <Dialog bind:open={colorOpen} title={t('project.colorTitle')} testid="project-color-dialog">
 	<div class="flex flex-wrap gap-2" role="group" aria-label={t('project.colorTitle')}>

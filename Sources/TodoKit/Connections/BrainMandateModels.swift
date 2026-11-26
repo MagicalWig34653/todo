@@ -10,14 +10,15 @@ final class BrainMandate: Model, @unchecked Sendable {
     @ID(key: .id) var id: UUID?
     @Field(key: "user_id") var userID: UUID
     @Field(key: "grant_id") var grantID: UUID
-    /// Exactly these projects; no inheritance to subprojects.
-    @Field(key: "projects") var projects: [UUID]
+    /// The explicitly chosen projects; no inheritance to subprojects. What the mandate covers is resolved with its rule
+    /// (`ProjectSelectionResolver.projects(of:)`, ADR 0037).
+    @Field(key: "projects") var explicitProjects: [UUID]
     @Field(key: "created_at") var createdAt: Date
     @Field(key: "updated_at") var updatedAt: Date
     @OptionalField(key: "revoked_at") var revokedAt: Date?
     init() {}
     init(userID: UUID, grantID: UUID, projects: [UUID], now: Date = Date()) {
-        self.userID = userID; self.grantID = grantID; self.projects = projects; createdAt = now; updatedAt = now
+        self.userID = userID; self.grantID = grantID; explicitProjects = projects; createdAt = now; updatedAt = now
     }
 }
 

@@ -48,7 +48,7 @@ extension MCPController {
             guard grant.scopes.contains("tasks:read") else { throw Abort(.forbidden, reason: "insufficient_scope") }
             let limit = try intArgument(a["limit"], reason: "invalid_limit") ?? 50
             guard (1...100).contains(limit) else { throw Abort(.badRequest, reason: "invalid_limit") }
-            return try .encoded(await service.search(c, page: DiscoveryPagination(limit: limit), projectIDs: Set(grant.projects), tasksOnly: true))
+            return try .encoded(await service.search(c, page: DiscoveryPagination(limit: limit), projectIDs: Set(grant.effectiveProjects), tasksOnly: true))
         }
         switch name {
         case "search_tasks":
@@ -62,7 +62,7 @@ extension MCPController {
             let id = try uuid(a["taskID"])
             guard case .array(let ids) = a["labelIDs"], ids.count <= 100 else { throw Abort(.badRequest, reason: "invalid_labelIDs") }
             let labelIDs = try ids.map { try uuid($0) }
-            try await service.setLabels(taskID: id, labelIDs: labelIDs, projectIDs: Set(grant.projects))
+            try await service.setLabels(taskID: id, labelIDs: labelIDs, projectIDs: Set(grant.effectiveProjects))
             return .object(["ok": .bool(true)])
         case "list_filters":
             return try .encoded(await DiscoverySavedFilter.query(on: db).filter(\.$ownerID == user.requireID()).sort(\.$id).limit(100).all().map(DiscoveryFilterDTO.init))

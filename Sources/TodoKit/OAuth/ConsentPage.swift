@@ -76,7 +76,8 @@ enum ConsentPage {
 
       // ADR 0036: what this sign-in would take over has to be readable before the click.
       const old = d.takeover;
-      let take = null;
+      let take = null, lostLine = null;
+      const has = (ids, value) => ids.some(id => id.toUpperCase() === value.toUpperCase());
       if (old) {
         const tc = card(); tc.id = 'takeover';
         const what = old.mandate ? 'Projekte und Brain-Vollmacht' : 'Projekte';
@@ -85,12 +86,17 @@ enum ConsentPage {
         take = el('input', '', row); take.type = 'checkbox'; take.id = 'takebox'; take.checked = true;
         el('span', what + ' von „' + old.name + '“ übernehmen', row, 'pname');
         const n = old.project_ids.length;
-        el('p', (n === 1 ? '1 Projekt ist' : n + ' Projekte sind') + ' unten vorausgewählt. Die bisherige Verbindung „' + old.name + '“ wird dabei beendet.' + (old.reason === 'replay' ? ' Sie wurde zuvor aus Sicherheitsgründen abgemeldet.' : ''), tc, 'muted');
+        const chosen = old.selection || (old.mandate && old.mandate.selection)
+          ? 'Die bisherige Auswahl ist unten voreingestellt: Angehakt sind nur ausdrücklich genannte Projekte, Gruppen und Ausnahmen gelten als Regel.'
+          : (n === 1 ? '1 Projekt ist' : n + ' Projekte sind') + ' unten vorausgewählt.';
+        el('p', chosen + ' Die bisherige Verbindung „' + old.name + '“ wird dabei beendet.' + (old.reason === 'replay' ? ' Sie wurde zuvor aus Sicherheitsgründen abgemeldet.' : ''), tc, 'muted');
         if (old.mandate) {
           const m = old.mandate.project_names;
           el('p', 'Brain-Vollmacht in ' + (m.length === 1 ? 'diesem Projekt' : 'diesen ' + m.length + ' Projekten') + ': ' + m.join(', ') + '.', tc, 'mandate');
           el('p', 'Die neue Verbindung darf dort in deinem Auftrag Reviews entscheiden, Fragen beantworten, Pläne freigeben oder Änderungen verlangen, die Pipeline-Einstellungen ändern und diese Projekte für deine anderen Verbindungen freigeben oder entziehen.', tc, 'mandate');
-          el('p', 'Alle Vollmacht-Projekte sind unten vorausgewählt, auch solche, die bisher nicht freigegeben waren. Was du unten abwählst, fällt auch aus der Vollmacht.', tc, 'muted');
+          if (old.mandate.selection) el('p', 'Die Vollmacht folgt einer Regel (Projektgruppen oder „alle außer“): Neue Projekte, die darunter fallen, kommen automatisch dazu. Vollmacht-Projekte, die unten weder angehakt noch über die Regel der neuen Verbindung dabei sind, fallen dauerhaft aus der Vollmacht.', tc, 'mandate');
+          else el('p', 'Alle Vollmacht-Projekte sind unten vorausgewählt, auch solche, die bisher nicht freigegeben waren. Was du unten abwählst, fällt auch aus der Vollmacht.', tc, 'muted');
+          lostLine = el('p', '', tc, 'warning'); lostLine.id = 'lost'; lostLine.hidden = true; lostLine.setAttribute('aria-live', 'polite');
         }
         if (old.match === 'name') el('p', 'Achtung: Nur am gleichen Namen erkannt. Dieses Programm hat sich neu angemeldet, und Namen kann jedes Programm frei wählen. Übernimm nur, wenn du diese Anmeldung gerade selbst auf deinem Gerät gestartet hast.', tc, 'warning');
       } else if (d.takeover_ambiguous) {
@@ -134,8 +140,41 @@ enum ConsentPage {
 
       const pc = el('fieldset', '', root, 'card');
       el('legend', 'Projekte freigeben', pc);
-      el('p', 'Nur ausdrücklich gewählte Projekte (samt ihren Unterprojekten in der Liste) werden freigegeben.', pc, 'muted');
+      el('p', 'Freigegeben wird nur, was du hier wählst: einzelne Projekte, deine Projektgruppen oder alle deine Projekte mit Ausnahmen. Unterprojekte gehören nicht automatisch dazu.', pc, 'muted');
       if (d.scopes.includes('projects:write')) el('p', 'Projekte, die über diese Verbindung neu angelegt werden, sind automatisch freigegeben.', pc, 'muted');
+      // ADR 0037: the choice is explicit projects and groups, or all own projects except some. The server computes what it reaches.
+      const groups = d.groups || [];
+      const modes = el('div', '', pc, 'modes'); modes.setAttribute('role', 'radiogroup'); modes.setAttribute('aria-label', 'Umfang');
+      const radio = (value, text) => {
+        const row = el('label', '', modes, 'prow');
+        const r = el('input', '', row); r.type = 'radio'; r.name = 'selmode'; r.value = value; r.id = 'mode-' + value;
+        el('span', text, row, 'pname');
+        // Exclusions of the other mode would act invisibly, so a switch starts without them.
+        r.addEventListener('change', () => { exGroups.boxes.concat(exProjects.boxes).forEach(b => { b.checked = false; }); update(); });
+        return r;
+      };
+      const modeSelected = radio('selected', 'Gewählte Projekte und Gruppen');
+      const modeAll = radio('all_except', 'Alle meine Projekte außer …');
+      modeSelected.checked = true;
+      const hint = el('p', '', pc, 'warning'); hint.id = 'selhint'; hint.hidden = true;
+      const checkList = (title, cls, items, parent) => {
+        const wrap = el('div', '', parent, cls);
+        el('h3', title, wrap);
+        const list = el('div', '', wrap, 'plist');
+        const out = items.map(item => {
+          const row = el('label', '', list, 'prow');
+          const cb = el('input', '', row); cb.type = 'checkbox'; cb.value = item.id;
+          el('span', item.name, row, 'pname');
+          cb.addEventListener('change', () => update());
+          return cb;
+        });
+        return { wrap: wrap, boxes: out };
+      };
+      const sorted = d.projects.slice().sort((a, b) => a.name.localeCompare(b.name, 'de'));
+      const inGroups = groups.length ? checkList('Gruppen freigeben', 'grouplist', groups, pc) : { wrap: null, boxes: [] };
+      const exGroups = groups.length ? checkList('Gruppen ausschließen', 'exgrouplist', groups, pc) : { wrap: null, boxes: [] };
+      const exProjects = checkList('Projekte ausschließen', 'exprojectlist', sorted, pc);
+      const extra = el('h3', '', pc); extra.id = 'projectheading';
       const boxes = [];
       const count = el('p', '', pc, 'count'); count.setAttribute('aria-live', 'polite');
       const msg = el('p', '', root, 'msg'); msg.setAttribute('role', 'alert');
@@ -159,7 +198,7 @@ enum ConsentPage {
           const cb = el('input', '', row); cb.type = 'checkbox'; cb.value = p.id;
           el('span', p.name, row, 'pname');
           row.dataset.name = p.name.toLowerCase();
-          cb.addEventListener('change', update);
+          cb.addEventListener('change', () => { exclusionFollows(cb); update(); });
           boxes.push(cb);
           walk(p.id, depth + 1);
         });
@@ -175,11 +214,81 @@ enum ConsentPage {
         all.onclick = () => setVisible(true);
         none.onclick = () => setVisible(false);
       }
-      function update() { count.textContent = boxes.filter(b => b.checked).length + ' von ' + boxes.length + ' Projekten ausgewählt'; }
+      const effective = el('p', '', pc, 'effective'); effective.id = 'effective'; effective.setAttribute('aria-live', 'polite');
+      const checked = (list) => list.filter(b => b.checked).map(b => b.value);
+      function rule() {
+        const all = modeAll.checked;
+        const r = { mode: all ? 'all_except' : 'selected', groupIDs: all ? [] : checked(inGroups.boxes),
+          excludedProjectIDs: checked(exProjects.boxes), excludedGroupIDs: checked(exGroups.boxes) };
+        return all || r.groupIDs.length || r.excludedProjectIDs.length || r.excludedGroupIDs.length ? r : undefined;
+      }
+      // A taken-over project the person unticks must leave even if a group or "all except" still brings it.
+      function exclusionFollows(cb) {
+        if (!cb.dataset.taken) return;
+        const ex = exProjects.boxes.find(b => b.value === cb.value);
+        if (!ex) return;
+        const brought = modeAll.checked || groups.some(g => checked(inGroups.boxes).includes(g.id) && has(g.project_ids, cb.value));
+        ex.checked = !cb.checked && brought;
+      }
+      // ADR 0036/0037: what the mandate loses with this choice is said before the click.
+      function showLost(ids) {
+        if (!lostLine) return;
+        const lost = take.checked && ids ? old.mandate.project_names.filter((name, i) => !has(ids, old.mandate.project_ids[i])) : [];
+        lostLine.hidden = !lost.length;
+        lostLine.textContent = lost.length ? 'Fällt mit dieser Auswahl aus der Vollmacht: ' + lost.join(', ') + '.' : '';
+      }
+      let asked = 0;
+      async function preview() {
+        const mine = ++asked, r = rule();
+        if (!r) { effective.textContent = ''; showLost(checked(boxes)); return; }
+        showLost(null);
+        effective.textContent = 'Wirksame Projekte werden berechnet …';
+        const res = await fetch('/v1/project-selection/preview', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectIDs: checked(boxes), selection: r }) });
+        if (mine !== asked) return;
+        if (!res.ok) { effective.textContent = 'Die wirksamen Projekte konnten nicht berechnet werden.'; return; }
+        const out = await res.json();
+        if (mine !== asked) return;
+        const names = {}; d.projects.forEach(p => { names[p.id.toUpperCase()] = p.name; });
+        const label = (id) => names[id.toUpperCase()] || id.slice(0, 8);
+        const list = out.projectIDs.map(label).sort((a, b) => a.localeCompare(b, 'de'));
+        let text = list.length ? 'Wirksam jetzt: ' + (list.length === 1 ? '1 Projekt' : list.length + ' Projekte') + ': ' + list.join(', ') + '.' : 'Wirksam jetzt: kein Projekt.';
+        if (out.agentCreatedProjectIDs.length) text += ' Nicht enthalten, weil von einem Agenten angelegt: ' + out.agentCreatedProjectIDs.map(label).join(', ') + '.';
+        effective.textContent = text;
+        showLost(out.projectIDs);
+      }
+      function update() {
+        const all = modeAll.checked;
+        // A taken-over choice may carry exclusions in mode "selected" too; then they are shown.
+        const excluding = all || checked(inGroups.boxes).length > 0 || checked(exProjects.boxes).length > 0 || checked(exGroups.boxes).length > 0;
+        if (inGroups.wrap) { inGroups.wrap.hidden = all; exGroups.wrap.hidden = !excluding; }
+        exProjects.wrap.hidden = !excluding;
+        extra.textContent = all ? 'Zusätzlich (zum Beispiel geteilte Projekte)' : 'Einzelne Projekte';
+        const grouped = !all && checked(inGroups.boxes).length > 0;
+        hint.hidden = !all && !grouped;
+        hint.textContent = all ? 'Gilt für alle Projekte, die dir gehören, auch für neue, die du später anlegst. Ausschlüsse gewinnen immer.' : 'Neue Projekte dieser Gruppen kommen automatisch dazu.';
+        count.textContent = boxes.filter(b => b.checked).length + ' von ' + boxes.length + ' Projekten ausgewählt';
+        preview().catch(() => { effective.textContent = 'Die wirksamen Projekte konnten nicht berechnet werden.'; });
+      }
       if (take) {
         const fresh = nameInput.value;
+        // Only what was named is ticked, in the connection and in the mandate; groups and exclusions move as a rule,
+        // their members are not frozen into the list.
+        const old_rule = old.selection, m = old.mandate;
+        const named = old.explicit_project_ids.concat(m ? (m.selection ? m.selection.projectIDs : m.project_ids) : []);
         const apply = () => {
-          boxes.forEach(b => { if (old.project_ids.includes(b.value)) b.checked = take.checked; });
+          boxes.forEach(b => {
+            if (!has(old.project_ids, b.value) && !has(named, b.value)) return;
+            b.checked = take.checked && has(named, b.value);
+            b.dataset.taken = b.checked ? '1' : '';
+          });
+          if (old_rule) {
+            const on = take.checked;
+            (on && old_rule.mode === 'all_except' ? modeAll : modeSelected).checked = true;
+            inGroups.boxes.forEach(b => { b.checked = on && has(old_rule.groupIDs, b.value); });
+            exGroups.boxes.forEach(b => { b.checked = on && has(old_rule.excludedGroupIDs, b.value); });
+            exProjects.boxes.forEach(b => { b.checked = on && has(old_rule.excludedProjectIDs, b.value); });
+          }
           nameInput.value = take.checked ? String(old.name).slice(0, 80) : fresh;
           update();
         };
@@ -193,12 +302,13 @@ enum ConsentPage {
       const ok = el('button', 'Erlauben', bar, 'btn primary'); ok.type = 'button';
       async function send(approve) {
         const ids = boxes.filter(b => b.checked).map(b => b.value);
-        if (approve && ids.length === 0 && !d.scopes.includes('projects:write')) { msg.textContent = 'Bitte mindestens ein Projekt wählen.'; return; }
+        const selection = rule();
+        if (approve && ids.length === 0 && !selection && !d.scopes.includes('projects:write')) { msg.textContent = 'Bitte mindestens ein Projekt oder eine Gruppe wählen.'; return; }
         msg.textContent = ''; ok.disabled = true; no.disabled = true;
         const res = await fetch('/oauth/consent', { method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ consent_token: d.consent_token, approve: approve, project_ids: approve ? ids : [], connection_name: approve ? nameInput.value : undefined,
-            takeover_grant_id: approve && take && take.checked ? old.grant_id : undefined }) });
+            takeover_grant_id: approve && take && take.checked ? old.grant_id : undefined, selection: approve ? selection : undefined }) });
         if (!res.ok) {
           msg.textContent = res.status === 409 ? 'Die bisherige Verbindung hat sich inzwischen geändert. Lade die Seite neu und prüfe die Übernahme.' : 'Fehlgeschlagen (' + res.status + ').';
           ok.disabled = false; no.disabled = false; return;
@@ -247,6 +357,10 @@ enum ConsentPage {
     .badge.crit{background:var(--warn);color:var(--card);border-color:transparent}
     .notice{margin-top:1rem;padding:.75rem;border-radius:var(--radius);background:var(--accent-soft);color:var(--accent-ink);font-size:.95rem}
     .tools{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0 .5rem}
+    .modes{margin-top:.5rem}
+    [hidden]{display:none!important}
+    .effective{margin-top:.5rem;font-size:.95rem;overflow-wrap:anywhere}
+    .effective:empty{display:none}
     .search{flex:1 1 10rem;min-width:0;min-height:2.75rem;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--input);border-radius:var(--radius);padding:.25rem .75rem}
     .fieldlabel{display:block;font-weight:600;margin-bottom:.5rem}
     .namefield{width:100%}

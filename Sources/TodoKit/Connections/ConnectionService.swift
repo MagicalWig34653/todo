@@ -68,7 +68,16 @@ enum ConnectionService {
     /// Connections whose grant lists the project and whose owner can still read it.
     static func list(project: Project, actor: User, db: any Database) async throws -> [ConnectionDTO] {
         let pid = try project.requireID()
-        let grants = try await OAuthGrant.query(on: db).filter(\.$revoked == false).all().filter { $0.projects.contains(pid) }
+        // ADR 0037: a connection reaches a project through its explicit list or its rule; resolved per connection.
+        let live = try await OAuthGrant.query(on: db).filter(\.$revoked == false).all()
+        let ruled = Set(try await ProjectSelectionRow.query(on: db).all().compactMap(\.id))
+        var resolvers: [UUID: ProjectSelectionResolver] = [:]
+        var grants: [OAuthGrant] = []
+        for g in live where g.explicitProjects.contains(pid) || g.id.map(ruled.contains) == true {
+            var resolver = resolvers[g.userID] ?? ProjectSelectionResolver(userID: g.userID, db: db)
+            if try await resolver.projects(of: g).contains(pid) { grants.append(g) }
+            resolvers[g.userID] = resolver
+        }
         let clients = try await clientNames(grants, on: db)
         let ownerIDs = Array(Set(grants.map(\.userID)))
         let owners: [UUID: User] = ownerIDs.isEmpty ? [:] : Dictionary(uniqueKeysWithValues: try await User.query(on: db).filter(\.$id ~~ ownerIDs).all().compactMap { u in u.id.map { ($0, u) } })
@@ -89,7 +98,7 @@ enum ConnectionService {
             guard let g = try await OAuthGrant.find(grantID, on: tx), g.userID == user.id else { throw Abort(.notFound) }
             guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }
             _ = try await ProjectAccess(user: user, db: tx).project(projectID)
-            if !g.projects.contains(projectID) { g.projects.append(projectID); try await g.save(on: tx) }
+            try await g.include(projectID, on: tx)
             try await ConnectionAccessRequest.query(on: tx).filter(\.$grantID == grantID).filter(\.$projectID == projectID).set(\.$state, to: "granted").update()
             return g
         }
@@ -99,11 +108,11 @@ enum ConnectionService {
     static func remove(project projectID: UUID, grantID: UUID, actor: User, db: any Database) async throws {
         try await db.transaction { tx in
             try await lockRow(table: OAuthGrant.schema, id: grantID, on: tx)
-            guard let g = try await OAuthGrant.find(grantID, on: tx), g.projects.contains(projectID) else { throw Abort(.notFound) }
+            guard let g = try await OAuthGrant.find(grantID, on: tx),
+                  try await g.resolveProjects(on: tx, locking: true).contains(projectID) || g.explicitProjects.contains(projectID) else { throw Abort(.notFound) }
             if g.userID != actor.id { _ = try await ProjectAccess(user: actor, db: tx).project(projectID, role: .manage) }
-            guard g.projects.count > 1 || g.scopes.contains("projects:write") else { throw Abort(.badRequest, reason: "projects_required") }
-            g.projects.removeAll { $0 == projectID }
-            try await g.save(on: tx)
+            // ADR 0037: a project that a group or "all" brings in stays out as an exclusion of this connection.
+            try await g.exclude(projectID, on: tx)
         }
     }
 
@@ -129,7 +138,11 @@ enum ConnectionService {
             for key in ["taskID", "id"] {
                 if let s = a[key].string, let id = UUID(uuidString: s), let task = try await TodoTask.find(id, on: db) { candidates.insert(task.projectID) }
             }
-            for pid in candidates where !grant.projects.contains(pid) { try await record(projectID: pid, grant: grant, user: user, db: db, now: now) }
+            // Projects the person's rule excludes on purpose raise no notice.
+            for pid in candidates where !grant.effectiveProjects.contains(pid) {
+                if try await grant.excludes(pid, on: db) { continue }
+                try await record(projectID: pid, grant: grant, user: user, db: db, now: now)
+            }
         } catch {}
     }
 
@@ -142,7 +155,8 @@ enum ConnectionService {
            now.timeIntervalSince(row.lastAt) < requestInterval { return }
         try await db.transaction { tx in
             try await lockRow(table: OAuthGrant.schema, id: grantID, on: tx)
-            guard let live = try await OAuthGrant.find(grantID, on: tx), !live.revoked, !live.projects.contains(projectID) else { return }
+            guard let live = try await OAuthGrant.find(grantID, on: tx), !live.revoked,
+                  !(try await live.resolveProjects(on: tx, locking: true)).contains(projectID) else { return }
             if let row = try await ConnectionAccessRequest.query(on: tx).filter(\.$grantID == grantID).filter(\.$projectID == projectID).first() {
                 guard now.timeIntervalSince(row.lastAt) >= requestInterval else { return }
                 if row.state == "granted" { row.state = "open"; row.count = 1; row.firstAt = now } else { row.count += 1 }
@@ -159,11 +173,12 @@ enum ConnectionService {
             .sort(\.$lastAt, .descending).limit(100).all()
         guard !rows.isEmpty else { return [] }
         let grants = Dictionary(uniqueKeysWithValues: try await OAuthGrant.query(on: db).filter(\.$id ~~ Array(Set(rows.map(\.grantID)))).all().compactMap { g in g.id.map { ($0, g) } })
+        for g in grants.values { try await g.resolveProjects(on: db) }
         let clients = try await clientNames(Array(grants.values), on: db)
         let access = SharingAccess(user: user, db: db)
         var out: [FeedAccessRequestDTO] = []
         for r in rows {
-            guard let g = grants[r.grantID], !g.revoked, !g.projects.contains(r.projectID), let project = scopeProjects[r.projectID],
+            guard let g = grants[r.grantID], !g.revoked, !g.effectiveProjects.contains(r.projectID), let project = scopeProjects[r.projectID],
                   let role = try await access.visibility(project).role, let id = r.id else { continue }
             out.append(FeedAccessRequestDTO(id: id, grantID: r.grantID, connectionName: ConnectionNames.display(g, clientName: clients[g.clientID]),
                 projectID: r.projectID, projectName: project.name, role: role, count: r.count, firstAt: r.firstAt, lastAt: r.lastAt,
