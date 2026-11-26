@@ -41,6 +41,12 @@ struct AddOAuthGrantLineage: AsyncMigration {
     }
 }
 
+/// Placeholder for the red step of the security review (26.11.2026); does nothing yet.
+struct AddOAuthRotatedFromIndex: AsyncMigration {
+    func prepare(on db: any Database) async throws {}
+    func revert(on db: any Database) async throws {}
+}
+
 struct CreateOAuthSchema: AsyncMigration {
     func prepare(on db: any Database) async throws {
         try await db.schema("oauth_clients").id().field("name", .string, .required)
