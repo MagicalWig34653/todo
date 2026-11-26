@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 26.11.2026 (08:05): Icon D fertig, PWA eingebaut (Karte `75EAE344`)
+
+- Lino wählte D (Kommentar 26.11. 07:46). `t3/icon-entwurf-d-bausteine`: `945e26a` rot, `cedf26a` grün; vitest 792/792, check 0, E2E `app-icons` 3 Browser grün. Nicht gepusht. Details: `docs/STATUS.md` (oberster Nachtrag).
+- Offen: Prüfung und Merge durch die Hauptsession; Apple-Einbau nach `design/icon/UEBERGABE-APPLE.md` (inkl. Watch-Icon, `actool`, Geräte; schließt Bug `950D1506`); Deploy durch Lino, danach installierte PWA neu hinzufügen.
+
 ## Checkpoint 26.11.2026: App-Icon-Entwürfe, Wahl offen (Karte `75EAE344`)
 
 - Stand: vier Entwürfe in `design/icon/entwuerfe-2026-11/` auf `t3/app-icon-entwuerfe` (`18f7251` rot, `55f46b0` grün, `node --test …/check.test.mjs` 25/25); nichts eingebaut, nicht gepusht.

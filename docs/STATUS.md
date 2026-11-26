@@ -1,5 +1,17 @@
 # Status
 
+## Nachtrag 26.11.2026 (08:05): Icon D „Bausteine“ fertig und in der PWA eingebaut (Karte 75EAE344; Apple-Einbau und Deploy offen)
+
+- Lino hat D per Kommentar am 26.11. 07:46 gewählt („Wenn keine neuen Ideen dazu kommen dann D“). Branch `t3/icon-entwurf-d-bausteine`: `945e26a` (Prüfungen, rot), `cedf26a` (grün). Kein Push, kein Deploy, Apple-Repo unverändert.
+- Blöcke 200 statt 180 px, `maskable` mit Motivradius 38 %, eigenes 16er-Pixel-Favicon (4-px-Blöcke, 1-px-Lücken). Quelle: `design/icon/` samt `Todo.icon`; alte Petrol-Dateien entfernt. Tafel: `design/icon/tafel-d-final.png`.
+- PWA: `web/static` neu aus `web/scripts/build-icons.mjs`; Icon-URLs mit `?v=2`; Favicon-SVG nicht mehr im Manifest; Svelte-Logo (`web/src/lib/assets/favicon.svg`, im Layout verlinkt) entfernt.
+- Rot: `npx vitest run tests/icons.test.ts` rc 1 (7 von 10 rot); `scripts/e2e-ci.sh <Image mit altem Web-Build> app-icons:chromium,firefox,webkit` rc 1 (je 5/5 rot).
+- Grün: `npm run check` 0 Fehler/0 Warnungen; `npx vitest run` 792/792; `npm run build` rc 0; `e2e-ci.sh … app-icons:chromium,firefox,webkit icons:chromium` rc 0 (15/15 und 3/3); Archivtest `node --test design/icon/entwuerfe-2026-11/check.test.mjs` 25/25.
+- E2E-Image lokal: Backend `sha-9f0ca19` (Backend-Quellen hier unverändert) mit diesem Web-Build. Nach dem roten Lauf wurde nur die Dunkel-Prüfung umgestellt (sichtbares `<img>` statt losgelöstes `Image()`, das in Firefox/WebKit das Schema nicht kennt).
+- Apple-Ansichten mit `ictool` 27.2 aus `Todo.icon` (Default, Dark, ClearDark, ClearLight, TintedDark, TintedLight, macOS, watchOS) in `design/icon/png/`: Quelle zum Bug `950D1506` damit behoben, im Apple-Repo erst nach Einbau (`design/icon/UEBERGABE-APPLE.md`; `Todo-watchOS` hat noch gar kein Icon).
+- Nicht geprüft: `actool`-Build, Icon-Composer-Oberfläche, echte Geräte, Symbolwechsel an installierter PWA, echte Browser-Tabs, MariaDB (keine Backendänderung).
+- Außerdem: Review `DD3CC99D` zu `B0CF5F73` wurde am 25.11. angenommen.
+
 ## Nachtrag 26.11.2026: Vier neue App-Icon-Entwürfe liegen vor (Karte 75EAE344; Wahl offen, nichts eingebaut)
 
 - Branch `t3/app-icon-entwuerfe`, `18f7251` (Tests rot), `55f46b0` (Entwürfe, grün). Kein Push, kein Deploy; `design/icon/Todo.icon`, `web/static` und Apple-Repo unverändert.
