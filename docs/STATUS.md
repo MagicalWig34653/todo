@@ -1,5 +1,17 @@
 # Status
 
+## Nachtrag 26.11.2026 (18:10): Security-Befunde Projektgruppen behoben (Karte 0E5CCA05; kein Push, kein Deploy)
+
+- Branch `t3/projektgruppen-security-fixes` ab `main` `1d95172`: Review-Tests `c5a56a4` (Cherry-Pick von `5f7df48`), rot `0381873`, grün `2728179`, Bilder/Checkpoint danach. Details und Begründung: ADR 0037 „Nachtrag 26.11.2026“.
+- Befund 1: Von einer anderen Person angelegte und übertragene Projekte fallen nicht mehr automatisch unter „alle außer“ (Verbindung und Brain-Vollmacht); Erkennung über `projects.owner_id` (Anlegende), deckt alle Übertragungswege ab. Vorschau und Hinweistexte (PWA, Zustimmungsseite) nennen sie. Bestand: früher übertragene Projekte fallen heraus (enger).
+- Befund 2: Einzelentfernen scheitert nie an der Grenze 500 und räumt gelöschte Projekte aus der Ausschlussliste; Speichern prüft gegen `max(500, bisherige Anzahl)`, Vorschau ohne Grenze. Grenze für Tests senkbar (Test 100 s → 0,3 s).
+- Befund 3: Teilen-Fenster lädt Verbindungen und Regeln nur von Personen mit Leserecht (`ConnectionService.candidateGrants`).
+- Verträge: `connections.yaml` 1.9.0; Agenten-Handbuch unverändert (MCP-Verhalten gleich, Menge höchstens enger).
+- Rot: Review-Tests rc 1 (2 Fehler, 101,9 s); mit neuen Tests rc 1 (5 Tests, 8 Fehler). Grün: Filter 5/5; volle `swift test` (SQLite) 1039 Tests, 26 übersprungen, 0 Fehler, rc 0; MariaDB 12.3 (Wegwerf-Container, samt Volume entfernt) `ProjectGroup|Connection|BrainMandate|OAuth|Sharing` 177 Tests, 2 übersprungen, 0 Fehler, rc 0; web: check 0 Fehler, vitest 812/812, build rc 0; Playwright `project-groups` 9/9 in Chromium, Firefox, WebKit (natives Backend, frische SQLite, Produktions-Build); Bilder `vollmacht-alle-ausser` hell/dunkel angesehen.
+- Restrisiken (ADR): Kontolöschung der anlegenden Person macht ein übertragenes Projekt zum eigenen; MariaDB 1020 bei gleichzeitigem Löschen schlägt geschlossen fehl.
+- Nicht geprüft: CI, Docker/Linux, volle MariaDB-Suite, übrige E2E-Specs, Apple-App.
+- Nächster Schritt: Prüfung und Merge durch die Hauptsession; Review/Deploy bei Lino.
+
 ## Nachtrag 26.11.2026 (14:35): BEF08998 komplett in `main`, CI grün, Review offen (kein Deploy)
 
 - Projektgruppen (Teil 3) gemergt und gepusht: `4a3f2ec` (Dateistand identisch mit geprüftem Branchstand `d803ff4`: swift 1034 Tests, 26 übersprungen, 0 Fehler; MariaDB gezielt 214/0; vitest 812/812; check/build ok; E2E `project-groups` je 9/9 und `mandate-relogin` je 7/7 in Chromium, Firefox, WebKit).

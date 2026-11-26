@@ -355,7 +355,7 @@ struct OAuthController: RouteCollection {
             guard let g = try await OAuthGrant.find(id, on: db), g.userID == user.id else { throw Abort(.notFound) }
             guard !g.revoked else { throw Abort(.conflict, reason: "grant_revoked") }
             let resolver = ProjectSelectionResolver(userID: g.userID, db: db, locking: true)
-            let rule = try await resolver.validate(b.selection)
+            let rule = try await resolver.validate(b.selection, previous: try await resolver.rule(of: id))
             guard SelectionRule.namesSomething(ids, rule) || g.scopes.contains("projects:write") else { throw Abort(.badRequest, reason: "projects_required") }
             // Only projects added now need the user's current access; removing one the user lost access to must stay possible.
             for pid in ids where !g.explicitProjects.contains(pid) { _ = try await ProjectAccess(user: user, db: db).project(pid) }

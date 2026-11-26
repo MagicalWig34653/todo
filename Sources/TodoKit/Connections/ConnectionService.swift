@@ -68,12 +68,9 @@ enum ConnectionService {
     /// Connections whose grant lists the project and whose owner can still read it.
     static func list(project: Project, actor: User, db: any Database) async throws -> [ConnectionDTO] {
         let pid = try project.requireID()
-        // ADR 0037: a connection reaches a project through its explicit list or its rule; resolved per connection.
-        let live = try await OAuthGrant.query(on: db).filter(\.$revoked == false).all()
-        let ruled = Set(try await ProjectSelectionRow.query(on: db).all().compactMap(\.id))
         var resolvers: [UUID: ProjectSelectionResolver] = [:]
         var grants: [OAuthGrant] = []
-        for g in live where g.explicitProjects.contains(pid) || g.id.map(ruled.contains) == true {
+        for g in try await candidateGrants(for: project, db: db) {
             var resolver = resolvers[g.userID] ?? ProjectSelectionResolver(userID: g.userID, db: db)
             if try await resolver.projects(of: g).contains(pid) { grants.append(g) }
             resolvers[g.userID] = resolver
@@ -88,6 +85,18 @@ enum ConnectionService {
                 ownerID: g.userID, ownerName: owner.displayName, isOwn: g.userID == actor.id, role: role, scopes: g.scopes, lastUsedAt: g.lastUsedAt))
         }
         return result.sorted { ($0.name.lowercased(), $0.grantID.uuidString) < ($1.name.lowercased(), $1.grantID.uuidString) }
+    }
+
+    /// Live connections that may reach the project (ADR 0037: through the explicit list or a rule), still to be resolved.
+    /// Only connections of people who can read the project now count: resolution cuts with read access anyway, so rules and
+    /// sharing graphs of everyone else are neither loaded nor resolved.
+    static func candidateGrants(for project: Project, db: any Database) async throws -> [OAuthGrant] {
+        let pid = try project.requireID()
+        let readers = try await SyncRecorder.readers(of: project, on: db)
+        guard !readers.isEmpty else { return [] }
+        let live = try await OAuthGrant.query(on: db).filter(\.$revoked == false).filter(\.$userID ~~ readers).all()
+        let ruled = Set(try await ProjectSelectionRow.query(on: db).filter(\.$userID ~~ readers).all().compactMap(\.id))
+        return live.filter { g in g.explicitProjects.contains(pid) || g.id.map(ruled.contains) == true }
     }
 
     /// Adds a project to the caller's own connection (same rules as `PUT /oauth/grants/{id}/projects`: the person needs access now).

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino MCP-Verbindungen im Teilen-Fenster
-  version: 1.8.0
+  version: 1.9.0
   description: 'ADR 0028. Eine MCP-Verbindung (OAuth-Grant) ist ein eigener Beteiligter eines Projekts neben Personen und Teams. Ihr Zugriff ist durch
     die Rechte der Person (wirksame Rolle) UND die Projektliste/Scopes des Grants begrenzt, nie größer als der Besitzer; es gibt keine eigene Rolle.
     Das Feld role der Antwort ist die aktuelle Rolle des Besitzers im Projekt. Name der Verbindung: Feld name von GET /oauth/grants
@@ -191,14 +191,14 @@ paths:
     post:
       operationId: previewProjectSelection
       summary: Wirksame Projekte einer Auswahl, ohne zu speichern
-      description: 'Body {projectIDs[], selection?}. Antwort {projectIDs[] (wirksam), agentCreatedProjectIDs[] (eigene Projekte, die all_except auslaesst, weil eine Verbindung sie angelegt hat)}.'
+      description: 'Body {projectIDs[], selection?}. Antwort {projectIDs[] (wirksam), agentCreatedProjectIDs[] (eigene Projekte, die all_except auslaesst, weil eine Verbindung sie angelegt oder eine andere Person sie uebertragen hat; Name bleibt aus Vertraeglichkeit)}. Ausschlussgrenze gilt hier nicht (rechnet nur).'
       responses:
         '200': {description: SelectionPreviewResponse}
         '400': {description: invalid_selection}
         '404': {description: fremde Gruppe}
 x-project-selection:
-  fields: {mode: 'selected (Standard) | all_except', groupIDs: 'UUID[] bis 50', excludedProjectIDs: 'UUID[] bis 500', excludedGroupIDs: 'UUID[] bis 50'}
-  resolution: '(ausdrueckliche Projekte + Gruppen + bei all_except alle eigenen Projekte) minus ausgeschlossene Projekte und Gruppen, geschnitten mit den aktuellen Leserechten der Person. Ausschluss gewinnt. Eigen = Besitz als Person (Teamprojekte nicht), ohne per MCP create_project angelegte Projekte (vorlaeufig, ADR 0037).'
+  fields: {mode: 'selected (Standard) | all_except', groupIDs: 'UUID[] bis 50', excludedProjectIDs: 'UUID[] bis 500, beim Speichern hoechstens max(500, bisherige Anzahl); Einzelentfernen (Teilen-Fenster, set_connection_projects) scheitert nie an der Grenze und raeumt geloeschte Projekte aus der Liste (seit 1.9.0)', excludedGroupIDs: 'UUID[] bis 50'}
+  resolution: '(ausdrueckliche Projekte + Gruppen + bei all_except alle eigenen Projekte) minus ausgeschlossene Projekte und Gruppen, geschnitten mit den aktuellen Leserechten der Person. Ausschluss gewinnt. Eigen = Besitz als Person (Teamprojekte nicht), ohne per MCP create_project angelegte Projekte (vorlaeufig, ADR 0037) und ohne Projekte, die eine andere Person angelegt und ihr uebertragen hat (seit 1.9.0, Karte 0E5CCA05).'
   response: 'selection {mode, projectIDs (ausdruecklich), groupIDs, excludedProjectIDs, excludedGroupIDs} oder null/fehlend'
 x-mcp-tools:
   list_project_groups: {scope: 'projects:read', arguments: {}, result: '[{id, name, projects:[{id, name}]}], nur Gruppen mit von dieser Verbindung erreichbaren Projekten und nur diese; nur lesend'}

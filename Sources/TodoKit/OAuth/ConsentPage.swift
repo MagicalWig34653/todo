@@ -253,7 +253,7 @@ enum ConsentPage {
         const label = (id) => names[id.toUpperCase()] || id.slice(0, 8);
         const list = out.projectIDs.map(label).sort((a, b) => a.localeCompare(b, 'de'));
         let text = list.length ? 'Wirksam jetzt: ' + (list.length === 1 ? '1 Projekt' : list.length + ' Projekte') + ': ' + list.join(', ') + '.' : 'Wirksam jetzt: kein Projekt.';
-        if (out.agentCreatedProjectIDs.length) text += ' Nicht enthalten, weil von einem Agenten angelegt: ' + out.agentCreatedProjectIDs.map(label).join(', ') + '.';
+        if (out.agentCreatedProjectIDs.length) text += ' Nicht enthalten, weil von einem Agenten angelegt oder dir übertragen: ' + out.agentCreatedProjectIDs.map(label).join(', ') + '.';
         effective.textContent = text;
         showLost(out.projectIDs);
       }
