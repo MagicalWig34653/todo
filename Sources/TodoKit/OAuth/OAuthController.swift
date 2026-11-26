@@ -48,7 +48,7 @@ struct OAuthController: RouteCollection {
               b.token_endpoint_auth_method == nil || b.token_endpoint_auth_method == "none",
               Set(b.grant_types ?? ["authorization_code", "refresh_token"]).isSubset(of: ["authorization_code", "refresh_token"]),
               b.response_types == nil || b.response_types == ["code"] else { throw Abort(.badRequest, reason: "invalid_client_metadata") }
-        let c = OAuthClient(name: b.client_name ?? "MCP Client", redirects: b.redirect_uris)
+        let c = OAuthClient(name: b.client_name ?? OAuthClient.defaultName, redirects: b.redirect_uris)
         try await c.save(on: req.db)
         return try await JSONValue.object(["client_id": .string(try c.requireID().uuidString),
             "client_name": .string(c.name), "redirect_uris": .strings(c.redirects), "token_endpoint_auth_method": .string("none"),
@@ -230,40 +230,57 @@ struct OAuthController: RouteCollection {
         // Plain lookup first, then lock before the transaction's first read (see consent()).
         guard let found = try await OAuthSecret.query(on: req.db).filter(\.$hash == AuthSupport.hash(raw)).first(),
               let gid = found.grantID else { return try await tokenError(req) }
-        let result: JSONValue? = try await req.db.transaction { db in
-            try await lockRow(table: OAuthGrant.schema, id: gid, on: db)
-            guard let s = try await OAuthSecret.find(found.id, on: db),
-                  let g = try await OAuthGrant.find(gid, on: db), !g.revoked,
-                  g.clientID == b.client_id, g.resource == b.resource,
-                  s.kind == (b.grant_type == "authorization_code" ? "code" : "refresh") else { return nil }
-            // ADR 0036: a used secret revokes the connection unless it is the just rotated refresh token coming again.
-            let now = Date(), repeated = s.consumed
-            if repeated {
-                guard try await OAuthRotation.mayRepeat(s, now: now, on: db) else {
-                    g.revoke(.replay, now: now); try await g.save(on: db); return nil
+        // Protocol after the transaction, without any token value (ADR 0036, security review 26.11.2026).
+        let logger = req.application.logger
+        let outcome: (json: JSONValue?, repeated: Int?, replay: String?) = try await req.db.transaction { db in
+            var event: (repeated: Int?, replay: String?) = (nil, nil)
+            let json: JSONValue? = try await { () async throws -> JSONValue? in
+                try await lockRow(table: OAuthGrant.schema, id: gid, on: db)
+                guard let s = try await OAuthSecret.find(found.id, on: db),
+                      let g = try await OAuthGrant.find(gid, on: db), !g.revoked,
+                      g.clientID == b.client_id, g.resource == b.resource,
+                      s.kind == (b.grant_type == "authorization_code" ? "code" : "refresh") else { return nil }
+                // ADR 0036: a used secret revokes the connection unless it is the just rotated refresh token coming again.
+                let now = Date(), repeated = s.consumed
+                if repeated {
+                    switch try await OAuthRotation.judgeRepeat(s, now: now, on: db) {
+                    case .allowed(let n): event.repeated = n
+                    case .replay(let why):
+                        g.revoke(.replay, now: now); try await g.save(on: db)
+                        event.replay = why
+                        return nil
+                    }
                 }
-            }
-            guard s.expiresAt > now else { return nil }
-            if s.kind == "code" {
-                let a = try JSONDecoder().decode(Authorization.self, from: Data(s.payload.utf8))
-                guard let v = b.code_verifier, (43...128).contains(v.count),
-                      v.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-._~".contains($0)) }),
-                      b.redirect_uri == a.redirect_uri,
-                      AuthSupport.constantTimeEquals(Data(SHA256.hash(data: Data(v.utf8))).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: ""), a.code_challenge)
-                else { return nil }
-            }
-            if let scope = b.scope, Set(scope.split(separator: " ").map(String.init)) != Set(g.scopes) { return nil }
-            if !repeated {
-                s.consumed = true; s.consumedAt = now; try await s.save(on: db)
-                try await OAuthRotation.retireSiblings(of: s, on: db)
-            }
-            let access = AuthSupport.randomToken(), refresh = AuthSupport.randomToken()
-            try await OAuthSecret(raw: access, kind: "access", grantID: gid, lifetime: 900).save(on: db)
-            let next = OAuthSecret(raw: refresh, kind: "refresh", grantID: gid, lifetime: 30 * 86400)
-            if s.kind == "refresh" { next.rotatedFrom = try s.requireID() }
-            try await next.save(on: db)
-            return .object(["access_token": .string(access), "refresh_token": .string(refresh), "token_type": .string("Bearer"),
-                            "expires_in": .number(900), "scope": .string(g.scopes.joined(separator: " "))])
+                guard s.expiresAt > now else { return nil }
+                if s.kind == "code" {
+                    let a = try JSONDecoder().decode(Authorization.self, from: Data(s.payload.utf8))
+                    guard let v = b.code_verifier, (43...128).contains(v.count),
+                          v.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-._~".contains($0)) }),
+                          b.redirect_uri == a.redirect_uri,
+                          AuthSupport.constantTimeEquals(Data(SHA256.hash(data: Data(v.utf8))).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: ""), a.code_challenge)
+                    else { return nil }
+                }
+                if let scope = b.scope, Set(scope.split(separator: " ").map(String.init)) != Set(g.scopes) { return nil }
+                if !repeated {
+                    s.consumed = true; s.consumedAt = now; try await s.save(on: db)
+                    try await OAuthRotation.retireSiblings(of: s, on: db)
+                }
+                let access = AuthSupport.randomToken(), refresh = AuthSupport.randomToken()
+                try await OAuthSecret(raw: access, kind: "access", grantID: gid, lifetime: 900).save(on: db)
+                let next = OAuthSecret(raw: refresh, kind: "refresh", grantID: gid, lifetime: 30 * 86400)
+                if s.kind == "refresh" { next.rotatedFrom = try s.requireID() }
+                try await next.save(on: db)
+                return .object(["access_token": .string(access), "refresh_token": .string(refresh), "token_type": .string("Bearer"),
+                                "expires_in": .number(900), "scope": .string(g.scopes.joined(separator: " "))])
+            }()
+            return (json, event.repeated, event.replay)
+        }
+        let result = outcome.json, event = (repeated: outcome.repeated, replay: outcome.replay)
+        let meta: Logger.Metadata = ["grant": .string(gid.uuidString), "client": .string(b.client_id.uuidString), "secret": .string(found.id?.uuidString ?? "")]
+        if let why = event.replay {
+            logger.warning("oauth.replay_revoked", metadata: meta.merging(["reason": .string(why)]) { $1 })
+        } else if let n = event.repeated, result != nil {
+            logger.notice("oauth.refresh_repeated", metadata: meta.merging(["repeat": .stringConvertible(n), "max": .stringConvertible(OAuthRotation.maxRepeats)]) { $1 })
         }
         guard let result else { return try await tokenError(req) }
         let response = try await result.encodeResponse(for: req)

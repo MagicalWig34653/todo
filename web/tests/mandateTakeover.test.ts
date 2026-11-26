@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { OAuthGrant } from '../src/lib/api';
 import { de } from '../src/lib/i18n/de';
-import { auditKindKey, isTakeover, listedMandates, mandateStatus, type BrainMandate } from '../src/lib/brainMandate';
+import { auditKindKey, isTakeover, listedMandates, mandateStatus, takeoverWithoutProject, type BrainMandate } from '../src/lib/brainMandate';
 import { revocationKey } from '../src/lib/oauth';
 
 /** Card BEF08998 (ADR 0036): takeover after a new sign-in, as the settings pages show it. */
@@ -51,5 +51,13 @@ describe('why a connection is revoked', () => {
 		expect(de['brainMandate.current.takenOver']).toContain('{name}');
 		expect(de['brainMandate.status.recoverable.text']).toContain('{name}');
 		expect(de['account.oauth.revoked.replay.text']).toBeTruthy();
+	});
+});
+
+describe('takeover without a project in common', () => {
+	it('is recognised by the row naming the earlier connection instead of a project', () => {
+		expect(takeoverWithoutProject({ kind: 'connection.taken_over', projectID: 'AB12', subjectID: 'ab12' })).toBe(true);
+		expect(takeoverWithoutProject({ kind: 'connection.taken_over', projectID: 'P1', subjectID: 'G1' })).toBe(false);
+		expect(takeoverWithoutProject({ kind: 'connection.project_added', projectID: 'G1', subjectID: 'G1' })).toBe(false);
 	});
 });

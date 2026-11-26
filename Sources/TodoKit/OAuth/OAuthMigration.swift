@@ -24,6 +24,8 @@ struct AddOAuthReuseAndRevocation: AsyncMigration {
         for (table, field, type) in Self.columns { try await db.schema(table).field(field, type).update() }
     }
     func revert(on db: any Database) async throws {
+        // SQLite cannot drop an indexed column; the index belongs to `AddOAuthRotatedFromIndex`.
+        try await AddOAuthRotatedFromIndex.drop(on: db)
         for (table, field, _) in Self.columns { try await db.schema(table).deleteField(field).update() }
     }
 }
@@ -41,10 +43,25 @@ struct AddOAuthGrantLineage: AsyncMigration {
     }
 }
 
-/// Placeholder for the red step of the security review (26.11.2026); does nothing yet.
+/// Security review 26.11.2026 (ADR 0036): siblings are looked up by `rotated_from` inside the token transaction. Without an
+/// index MariaDB scans and locks the whole table there, so rotations of unrelated connections deadlock (ERROR 1213/1020).
+/// Separate migration and idempotent (`IF NOT EXISTS`), so databases that already ran `AddOAuthReuseAndRevocation` (dc842e3)
+/// get it as well as fresh ones and ones from before ADR 0036 (cf4237e).
 struct AddOAuthRotatedFromIndex: AsyncMigration {
-    func prepare(on db: any Database) async throws {}
-    func revert(on db: any Database) async throws {}
+    static let name = "oauth_secrets_rotated_from"
+    func prepare(on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase else { return }
+        try await sql.raw("CREATE INDEX IF NOT EXISTS \(ident: Self.name) ON \(ident: OAuthSecret.schema) (\(ident: "rotated_from"))").run()
+    }
+    func revert(on db: any Database) async throws { try await Self.drop(on: db) }
+    static func drop(on db: any Database) async throws {
+        guard let sql = db as? any SQLDatabase else { return }
+        if sql.dialect.name == "sqlite" {
+            try await sql.raw("DROP INDEX IF EXISTS \(ident: name)").run()
+        } else {
+            try await sql.raw("DROP INDEX IF EXISTS \(ident: name) ON \(ident: OAuthSecret.schema)").run()
+        }
+    }
 }
 
 struct CreateOAuthSchema: AsyncMigration {

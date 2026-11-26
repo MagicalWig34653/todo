@@ -4,7 +4,7 @@ export const deBrainMandate = {
 	'settings.brain-vollmacht.description': 'Welche deiner Verbindungen in deinem Auftrag Reviews, Fragen und Pläne entscheiden darf, je Verbindung mit eigener Projektliste.',
 
 	'brainMandate.page': 'Brain-Vollmacht verwalten',
-	'brainMandate.intro.allows': 'Mit einer Vollmacht darf eine deiner Verbindungen, zum Beispiel das Brain oder Codex, in deinem Auftrag Reviews entscheiden, Fragen beantworten und Pläne freigeben oder Änderungen daran verlangen. Jede Verbindung bekommt ihre eigene Vollmacht mit eigener Projektliste und lässt sich einzeln widerrufen. Entschieden wird nur mit einem Pflichtzitat deiner eigenen Worte; im Verlauf steht jede Entscheidung als „Brain im Auftrag von {name}“.',
+	'brainMandate.intro.allows': 'Mit einer Vollmacht darf eine deiner Verbindungen, zum Beispiel das Brain oder Codex, in deinem Auftrag Reviews entscheiden, Fragen beantworten, Pläne freigeben oder Änderungen daran verlangen, die Pipeline-Einstellungen ändern und die Projekte der Vollmacht für deine anderen Verbindungen freigeben oder entziehen. Jede Verbindung bekommt ihre eigene Vollmacht mit eigener Projektliste und lässt sich einzeln widerrufen. Entschieden wird nur mit einem Pflichtzitat deiner eigenen Worte; im Verlauf steht jede Entscheidung als „Brain im Auftrag von {name}“.',
 	'brainMandate.intro.limits': 'Nicht erlaubt: Die Vollmacht gilt nur für die Projekte, die du ausdrücklich wählst, nicht für deren Unterprojekte, und nie für Reviews oder Fragen, die die Verbindung selbst gestellt hat, und nie für Pläne, die sie selbst geschrieben hat. Eine Verbindung ohne eigene Vollmacht kann keine fremden Reviews, Fragen oder Pläne entscheiden.',
 	'brainMandate.loadFailed': 'Die Vollmacht konnte nicht geladen werden.',
 	'brainMandate.retry': 'Erneut versuchen',
@@ -29,7 +29,7 @@ export const deBrainMandate = {
 	'brainMandate.status.revoked': 'Widerrufen',
 	'brainMandate.status.grantRevoked': 'Verbindung widerrufen, Vollmacht wirkungslos',
 	'brainMandate.status.recoverable': 'Sicherheitsabmeldung',
-	'brainMandate.status.recoverable.text': 'Die Verbindung „{name}“ wurde aus Sicherheitsgründen abgemeldet, weil ein verbrauchtes Anmelde-Token erneut vorgelegt wurde. Melde sie neu an: Auf der Zustimmungsseite kannst du Projekte und Vollmacht übernehmen. Widerrufst du die Vollmacht hier, wird sie nicht übernommen.',
+	'brainMandate.status.recoverable.text': 'Die Verbindung „{name}“ wurde aus Sicherheitsgründen abgemeldet, weil ein verbrauchtes Anmelde-Token erneut vorgelegt wurde. Melde sie innerhalb von 7 Tagen neu an: Auf der Zustimmungsseite kannst du Projekte und Vollmacht übernehmen. Widerrufst du die Vollmacht hier, wird sie nicht übernommen.',
 	'brainMandate.current.takenOver': 'Übernommen von „{name}“ bei der Neuanmeldung am {when}.',
 	'brainMandate.audit.kind.takenOver': 'Vollmacht übernommen',
 	'brainMandate.audit.kind.accessTakenOver': 'Projektzugriff übernommen',

@@ -180,7 +180,8 @@ test('signing in again shows what moves before the click and takes it over', asy
 	const verifier = await openConsent(client);
 	const card = page.locator('#takeover');
 	await expect(card).toContainText('Projekte und Brain-Vollmacht von „' + CLIENT + '“ übernehmen');
-	await expect(card).toContainText('in diesen 2 Projekten: Heizung, Lager.');
+	await expect(card).toContainText('Brain-Vollmacht in diesen 2 Projekten: Heizung, Lager.');
+	await expect(card).toContainText('Pipeline-Einstellungen ändern und diese Projekte für deine anderen Verbindungen freigeben oder entziehen');
 	await expect(card).toContainText('aus Sicherheitsgründen abgemeldet');
 	await expect(card).not.toContainText('Nur am gleichen Namen erkannt');
 	const choice = card.getByRole('checkbox');

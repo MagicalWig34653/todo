@@ -55,6 +55,10 @@ export const listedMandates = (mandates: readonly BrainMandate[]) => mandates.fi
 /** Protocol entries of a takeover: their `quote` is a note of the server, `subjectID` the earlier connection. */
 export const isTakeover = (kind: string) => kind === 'mandate.taken_over' || kind === 'connection.taken_over';
 
+/** A takeover with no project in common and no mandate: the row names the earlier connection where a project would stand. */
+export const takeoverWithoutProject = (a: Pick<BrainAuditItem, 'kind' | 'projectID' | 'subjectID'>) =>
+	isTakeover(a.kind) && a.projectID.toLowerCase() === a.subjectID.toLowerCase();
+
 const key = (id: string) => id.toLowerCase();
 const sameID = (a: string, b: string) => key(a) === key(b);
 
