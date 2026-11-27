@@ -93,11 +93,11 @@ struct LiveController: RouteCollection {
             switch wake ?? .recheck {
             case .changed(let token):
                 return try await reply(.init(token: token, cursor: try await LiveToken.current(on: req.db).cursor), changed: true)
-            case .shutdown:
-                return try await reply(try await LiveToken.current(on: req.db), changed: false, retryAfter: 2)
-            case .superseded:
-                // Only an abandoned request (or a duplicate tab) sees this: nothing changed, the newer wait carries on.
-                return try await reply(try await LiveToken.current(on: req.db), changed: false, retryAfter: 2)
+            case .shutdown, .superseded:
+                // Replica going down, or a newer wait of the same client replaced this one (an abandoned request or a duplicate
+                // tab). The client takes over the token, so `changed` must say whether it differs: otherwise a change is lost.
+                let snap = try await LiveToken.current(on: req.db)
+                return try await reply(snap, changed: snap.token != since, retryAfter: 2)
             case .recheck:
                 if deadline.timeIntervalSinceNow <= 0.01 {
                     let snap = try await LiveToken.current(on: req.db)
