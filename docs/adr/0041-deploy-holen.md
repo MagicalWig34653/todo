@@ -48,8 +48,13 @@ GitHub und keine neuen Zugangsdaten**; er ändert auf dem Zielserver nichts.
 ## Nicht Teil von 2a (offen)
 
 - Täglicher Abgleich und die Karte „Server-Änderungen <Ziel> <Datum>“ mit Qualifizierung (8.6); dafür braucht der Server den Repo-Stand
-  ohne Agent. Entscheidung offen (Frage an Lino auf der Karte): nur lesender GitHub-Zugang (Deploy-Key/Token), Weg über Mac-Runner, oder
-  auch Schreibrecht für `server/*` (GitHub-App).
+  ohne Agent.
+- **Entscheidung Lino (27.11.2026 23:36, Frage 845A8C49):** Der Server bekommt später **Schreibzugriff über eine GitHub-App**, die
+  Branches `server/*` anlegt und PRs öffnet. Rechte minimal: nur Branches `server/*`, kein Schreibrecht auf `main`, lesen für das Manifest.
+  Die App und ihre Schlüssel legt Lino an; bis dahin wurde nichts gebaut und nichts hinterlegt. 2a bleibt lesend (Dateien und Manifest);
+  der Schreibweg (App-Anmeldung, Branch und Commit über die GitHub-API, PR mit der Zusammenfassung, Autor aus 8.10) gehört in Phase 2b.
+  Beim Bau beachten: Schlüssel der App wie die Deploy-Zugangsdaten verschlüsselt (`SETTINGS_ENCRYPTION_KEY`), nie in Antwort oder Log;
+  Branch-Namen nur `server/*` serverseitig erzwingen; Dateien gehen durch denselben Geheimnis-Schutz wie beim Holen.
 - GitHub-Konto der Person als Commit-Autor (8.10).
 - PWA-Knopf „Holen“ und Diff je Datei (Sync-Ansicht).
 - Hochladen (Phase 3).
