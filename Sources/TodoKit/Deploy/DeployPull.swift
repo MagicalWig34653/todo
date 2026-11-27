@@ -41,7 +41,7 @@ struct DeployPullFile: Content, Equatable {
 struct DeployPullFinding: Content, Equatable {
     let path: String
     let serverPath: String
-    /// `secret_name` | `blocked_path` | `secret_content` | `excluded` | `too_large` | `unreadable`
+    /// `secret_name` | `blocked_path` | `secret_content` | `excluded` | `too_large` | `unreadable` | `unverified`
     let reason: String
 }
 
@@ -59,9 +59,11 @@ struct DeployPullResult: Content {
     let findings: [DeployPullFinding]?
     let findingsTotal: Int?
     let remaining: [String]?
+    /// Number of repo paths not delivered yet; `remaining` holds at most 5000 of them.
+    let remainingTotal: Int?
 
     static func failure(_ code: String) -> DeployPullResult {
-        DeployPullResult(ok: false, code: code, branch: nil, commitMessage: nil, summary: nil, files: nil, findings: nil, findingsTotal: nil, remaining: nil)
+        DeployPullResult(ok: false, code: code, branch: nil, commitMessage: nil, summary: nil, files: nil, findings: nil, findingsTotal: nil, remaining: nil, remainingTotal: nil)
     }
 }
 
@@ -176,7 +178,7 @@ extension DeployService {
 
         var pending: [Candidate] = []
         for c in candidates {
-            if unverified.contains(c.serverPath) { out.summary.unverified += 1; continue }
+            if unverified.contains(c.serverPath) { out.summary.unverified += 1; finding(c.repoPath, c.serverPath, "unverified", withheld: false); continue }
             if verify.contains(c.serverPath) {
                 guard let data = contents[c.serverPath] else { finding(c.repoPath, c.serverPath, "unreadable", withheld: false); continue }
                 if isSame(data, c) { out.summary.same += 1; contents[c.serverPath] = nil; continue }
@@ -190,8 +192,8 @@ extension DeployService {
         var used = 0, stopped = false
         for c in pending {
             if c.size > DeployPullLimits.maxFile { finding(c.repoPath, c.serverPath, "too_large", withheld: false); continue }
-            if stopped { out.remaining.append(c.repoPath); continue }
-            if !accepted.isEmpty, used + c.size > maxBytes { stopped = true; out.remaining.append(c.repoPath); continue }
+            if stopped { out.remainingTotal += 1; if out.remaining.count < DeployPullLimits.maxSelection { out.remaining.append(c.repoPath) }; continue }
+            if !accepted.isEmpty, used + c.size > maxBytes { stopped = true; out.remainingTotal += 1; out.remaining.append(c.repoPath); continue }
             used += c.size
             accepted.append(c)
         }
@@ -201,6 +203,7 @@ extension DeployService {
         // 3. Secret content check, line endings, encoding.
         for c in accepted {
             guard let data = contents[c.serverPath] else { finding(c.repoPath, c.serverPath, "unreadable", withheld: false); continue }
+            if data.count > DeployPullLimits.maxFile { finding(c.repoPath, c.serverPath, "too_large", withheld: false); continue }
             if DeploySecretGuard.containsSecret(path: c.repoPath, data: data) { finding(c.repoPath, c.serverPath, "secret_content"); continue }
             let binary = DeployEOL.isBinary(data)
             let applied = policy(c)
@@ -243,7 +246,7 @@ extension DeployService {
         if !changed.isEmpty { lines += ["Auf dem Server geändert:"] + changed.map { "- \($0.path)" } + [""] }
         if !added.isEmpty { lines += ["Neu auf dem Server:"] + added.map { "- \($0.path)" } + [""] }
         let names: [String: String] = ["secret_name": "Dateiname wie ein Geheimnis", "blocked_path": "Pfad gesperrt", "secret_content": "Inhalt wie ein Geheimnis",
-                                       "excluded": "ausgeschlossen", "too_large": "zu groß", "unreadable": "nicht lesbar"]
+                                       "excluded": "ausgeschlossen", "too_large": "zu groß", "unreadable": "nicht lesbar", "unverified": "nicht prüfbar"]
         if !outcome.findings.isEmpty {
             lines.append("Nicht geholt:")
             lines += outcome.findings.prefix(20).map { "- \($0.path) (\(names[$0.reason] ?? $0.reason))" }
@@ -269,7 +272,7 @@ extension DeployService {
                                                          "withheld": .stringConvertible(outcome.summary.withheld)])
             return DeployPullResult(ok: true, code: nil, branch: Self.branchName(target: t.name), commitMessage: Self.commitMessage(target: t.name, outcome: outcome),
                                     summary: outcome.summary, files: outcome.files, findings: outcome.findings,
-                                    findingsTotal: outcome.findings.count + outcome.droppedFindings, remaining: outcome.remaining)
+                                    findingsTotal: outcome.findings.count + outcome.droppedFindings, remaining: outcome.remaining, remainingTotal: outcome.remainingTotal)
         } catch let e as DeployTransportError {
             return .failure(failure(t, e.code, "pull"))
         } catch let e as any AbortError where e.reason == "deploy_target_blocked" {

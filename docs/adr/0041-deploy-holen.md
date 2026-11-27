@@ -34,6 +34,17 @@ GitHub und keine neuen Zugangsdaten**; er ändert auf dem Zielserver nichts.
    Ziel, Datum, geänderte und neue Dateien und die nicht geholten Befunde; der Agent soll nach Zweck gruppieren (Konzept 8.6).
 7. Rechte: `edit` am Projekt (Dateiinhalte). Die REST-Route nimmt nur Personen-Sitzungen, MCP prüft Grant und Scope `projects:read`.
 
+## Grenzen (Restrisiko)
+
+- Der Inhaltsschutz ist eine Heuristik. Nicht erkannt werden Werte über mehrere Zeilen, ungewöhnliche Schlüsselnamen in Dateien ohne
+  Konfigurationsnamen und Geheimnisse in Binärdateien. Konfigurationsdateien über 2 MiB und nicht lesbare gelten als Geheimnis.
+- Server, die Symlinks im LIST auflösen (z. B. ProFTPD mit `ShowSymlinks off`), zeigen keine `l`-Einträge; dort schützt nur die chroot
+  des Servers (wie in Phase 1a dokumentiert).
+- Ein Link mit „ -> “ im Namen wird mit allen möglichen Namen geprüft (eher zu viel als zu wenig). Benutzernamen mit `:` scheitern an
+  curl (nur Anmeldefehler, fail closed).
+- Das Budget zählt die Größe auf dem Server; base64 und JSON-Escaping machen die Antwort größer (bis etwa das Vierfache).
+- Die erste Datei geht immer durch (bis 8 MB), auch bei MCP mit 256 kB.
+
 ## Nicht Teil von 2a (offen)
 
 - Täglicher Abgleich und die Karte „Server-Änderungen <Ziel> <Datum>“ mit Qualifizierung (8.6); dafür braucht der Server den Repo-Stand

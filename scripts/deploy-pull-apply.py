@@ -40,50 +40,78 @@ def main(argv):
     args, author, base = [], None, None
     it = iter(argv)
     for a in it:
-        if a == "--author": author = next(it, None)
-        elif a == "--base": base = next(it, None)
+        if a == "--author":
+            author = next(it, None)
+            if not author or author.startswith("-"): refuse("--author needs a value like 'Name <mail>'")
+        elif a == "--base":
+            base = next(it, None)
+            if not base or base.startswith("-"): refuse("--base needs a branch, tag or commit")
         else: args.append(a)
     if len(args) != 1: refuse("usage: deploy-pull-apply.py REPO [--author 'Name <mail>'] [--base REF] < answer.json")
     repo = os.path.realpath(args[0])
     if git(repo, "rev-parse", "--is-inside-work-tree").returncode != 0: refuse("not a git repository")
-    answer = json.load(sys.stdin)
-    if answer.get("ok") is not True: refuse(f"the answer is not ok (code {answer.get('code')})")
+    try: answer = json.load(sys.stdin)
+    except ValueError: refuse("the answer is not JSON")
+    if not isinstance(answer, dict) or answer.get("ok") is not True: refuse(f"the answer is not ok (code {answer.get('code') if isinstance(answer, dict) else None})")
     files = answer.get("files") or []
     if not files: refuse("the answer holds no files", 3)
     branch, message = answer.get("branch") or "", answer.get("commitMessage") or ""
     if not re.fullmatch(r"server/[a-z0-9][a-z0-9-]{0,60}-\d{4}-\d{2}-\d{2}", branch): refuse("unexpected branch name")
     if not message.strip(): refuse("empty commit message")
+    # Everything is checked and decoded before the repo is touched.
+    decoded = []
     for f in files:
-        if not safe_relative(f.get("path")): refuse(f"unsafe path {f.get('path')!r}")
+        if not isinstance(f, dict) or not safe_relative(f.get("path")): refuse(f"unsafe path {f.get('path') if isinstance(f, dict) else f!r}")
         if f.get("encoding") not in ("utf-8", "base64") or not isinstance(f.get("content"), str): refuse("unknown encoding")
+        try: data = base64.b64decode(f["content"], validate=True) if f["encoding"] == "base64" else f["content"].encode("utf-8")
+        except (ValueError, UnicodeError): refuse(f"cannot decode {f['path']}")
+        decoded.append((f["path"], data))
+    if len({p for p, _ in decoded}) != len(decoded): refuse("a path appears twice")
+    if base and git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", base + "^{commit}").returncode != 0: refuse("unknown base")
+    base_sha = run(repo, "rev-parse", "--verify", "--end-of-options", base + "^{commit}").strip() if base else None
     if run(repo, "status", "--porcelain").strip(): refuse("the working tree is not clean")
+    ignored = git(repo, "check-ignore", "--no-index", "--stdin", "-z", input="\0".join(p for p, _ in decoded).encode() + b"\0")
+    if ignored.stdout.strip(b"\0"): refuse("a path is ignored by git: " + ignored.stdout.split(b"\0")[0].decode(errors="replace"))
     name, n = branch, 1
     while git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/" + name).returncode == 0:
         n += 1; name = f"{branch}-{n}"
-    run(repo, "switch", "-c", name, *([base] if base else []))
+    previous = run(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    if previous == "HEAD": previous = run(repo, "rev-parse", "HEAD").strip()
+    run(repo, "switch", "-c", name, *([base_sha] if base_sha else []))
+    written, created_dirs = [], []
     try:
-        written = []
-        for f in files:
-            target = os.path.join(repo, *f["path"].split("/"))
+        for path, data in decoded:
+            target = os.path.join(repo, *path.split("/"))
             probe = repo
-            for part in f["path"].split("/")[:-1]:
+            for part in path.split("/")[:-1]:
                 probe = os.path.join(probe, part)
-                if os.path.islink(probe): raise SystemExit(refuse(f"a symlink is in the way: {f['path']}"))
-            if os.path.islink(target) or (os.path.exists(target) and not os.path.isfile(target)): refuse(f"not a regular file: {f['path']}")
-            if os.path.commonpath([repo, os.path.realpath(os.path.dirname(target))]) != repo: refuse(f"outside the repo: {f['path']}")
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            data = base64.b64decode(f["content"], validate=True) if f["encoding"] == "base64" else f["content"].encode("utf-8")
+                if os.path.islink(probe): refuse(f"a symlink is in the way: {path}")
+            if os.path.islink(target) or (os.path.exists(target) and not os.path.isfile(target)): refuse(f"not a regular file: {path}")
+            if os.path.commonpath([repo, os.path.realpath(os.path.dirname(target))]) != repo: refuse(f"outside the repo: {path}")
+            parent = os.path.dirname(target)
+            missing = []
+            while not os.path.exists(parent): missing.append(parent); parent = os.path.dirname(parent)
+            os.makedirs(os.path.dirname(target), exist_ok=True); created_dirs += reversed(missing)
+            existed = os.path.exists(target)
             with open(target, "wb") as out: out.write(data)
-            written.append(f["path"])
-        run(repo, "add", "--", *written)
+            written.append((path, existed))
+        run(repo, "--literal-pathspecs", "add", "--", *[p for p, _ in written])
         if git(repo, "diff", "--cached", "--quiet").returncode == 0: refuse("nothing changed against the repo", 3)
-        env_args = ["--author", author] if author else []
-        run(repo, "commit", "-q", *env_args, "-F", "-", input=message.encode())
-    except SystemExit as e:
-        git(repo, "reset", "-q", "--hard"); git(repo, "switch", "-q", "-")
-        git(repo, "branch", "-q", "-D", name)
-        raise e
-    print(json.dumps({"branch": name, "commit": run(repo, "rev-parse", "HEAD").strip(), "files": written}))
+        run(repo, "commit", "-q", *(["--author", author] if author else []), "-F", "-", input=message.encode())
+    except BaseException as e:
+        # Back to where we were: tracked files restored, files this run created removed, branch deleted.
+        git(repo, "reset", "-q", "--hard")
+        for path, existed in written:
+            if not existed:
+                try: os.remove(os.path.join(repo, *path.split("/")))
+                except OSError: pass
+        for d in reversed(created_dirs):
+            try: os.rmdir(d)
+            except OSError: pass
+        git(repo, "switch", "-q", previous); git(repo, "branch", "-q", "-D", name)
+        if isinstance(e, SystemExit): raise
+        refuse(f"unexpected error, nothing changed: {type(e).__name__}")
+    print(json.dumps({"branch": name, "commit": run(repo, "rev-parse", "HEAD").strip(), "files": [p for p, _ in written]}))
 
 
 if __name__ == "__main__":

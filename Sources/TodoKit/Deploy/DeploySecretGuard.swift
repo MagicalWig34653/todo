@@ -8,25 +8,28 @@ enum DeploySecretGuard {
     /// `secret_name`, `blocked_path` or `nil`. Works on a repo or server path, `/`-separated, case-insensitive.
     static func pathReason(_ path: String) -> String? {
         let parts = path.lowercased().split(separator: "/").map(String.init)
-        guard let name = parts.last else { return nil }
-        if parts.dropLast().contains(where: { secretDirectories.contains($0) }) || secretDirectories.contains(name) { return "secret_name" }
-        if secretNames.contains(name) { return "secret_name" }
-        if name.hasPrefix(".env") || name.hasSuffix(".env") || name.hasPrefix("id_rsa") || name.hasPrefix("id_ed25519") || name.hasPrefix("id_ecdsa")
-            || name.hasPrefix("id_dsa") || name.hasPrefix("credentials") { return "secret_name" }
-        for ext in secretExtensions where name.hasSuffix("." + ext) || name.contains("." + ext + ".") { return "secret_name" }
-        if parts.contains(where: { $0 == ".git" || $0 == ".github" || $0 == ".gitlab" }) || blockedNames.contains(name) { return "blocked_path" }
+        guard !parts.isEmpty else { return nil }
+        // The name rules apply to every segment: a directory called `.env` or `credentials` is as secret as a file.
+        for part in parts where secretDirectories.contains(part) || secretNames.contains(part) || looksLikeSecretName(part) { return "secret_name" }
+        if parts.contains(where: { $0 == ".git" || $0 == ".github" || $0 == ".gitlab" }) || blockedNames.contains(parts.last!) { return "blocked_path" }
         return nil
+    }
+
+    private static func looksLikeSecretName(_ name: String) -> Bool {
+        if name.hasPrefix(".env") || name.hasSuffix(".env") || name.hasPrefix("id_rsa") || name.hasPrefix("id_ed25519") || name.hasPrefix("id_ecdsa")
+            || name.hasPrefix("id_dsa") || name.hasPrefix("credentials") { return true }
+        return secretExtensions.contains { name.hasSuffix("." + $0) || name.contains("." + $0 + ".") }
     }
 
     private static let secretDirectories: Set<String> = [".ssh", ".aws", ".gnupg", ".kube", ".docker"]
     private static let secretNames: Set<String> = [".htpasswd", ".netrc", ".npmrc", ".pgpass", ".git-credentials", ".pypirc", "secrets.json",
-                                                   "secrets.yml", "secrets.yaml", "service-account.json"]
-    private static let secretExtensions = ["pem", "key", "p12", "pfx", "jks", "keystore", "ppk", "kdbx", "asc", "gpg"]
+                                                   "secrets.yml", "secrets.yaml", "service-account.json", "auth.json", ".s3cfg", ".dockercfg"]
+    private static let secretExtensions = ["pem", "key", "p12", "pfx", "jks", "keystore", "ppk", "kdbx", "asc", "gpg", "tfvars", "tfstate"]
     private static let blockedNames: Set<String> = [".gitlab-ci.yml", ".gitattributes", ".gitmodules"]
 
     // MARK: Content
 
-    private static let keyword = "pass(?:word|wd|phrase)?|pwd|secret|token|api[_\\-]?key|auth[_\\-]?key|private[_\\-]?key|access[_\\-]?key|salt|credential"
+    private static let keyword = "pass(?:word|wd|phrase)?|pwd|secret|token|\\bkey\\b|[_\\-]key|api[_\\-]?key|auth[_\\-]?key|private[_\\-]?key|access[_\\-]?key|salt|credential"
     private static func regex(_ pattern: String) -> NSRegularExpression { try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) }
 
     private static let keywordRegex = regex("(?:" + keyword + ")")
@@ -54,6 +57,8 @@ enum DeploySecretGuard {
         ("PDO", regex("PDO\\s*\\(\\s*['\"][^'\"]{0,256}['\"]\\s*,\\s*['\"][^'\"]{0,128}['\"]\\s*,\\s*['\"][^'\"]+['\"]")),
         ("mysqli", regex("(?:mysqli_connect|new\\s+mysqli)\\s*\\(\\s*['\"][^'\"]{0,128}['\"]\\s*,\\s*['\"][^'\"]{0,128}['\"]\\s*,\\s*['\"][^'\"]+['\"]")),
     ]
+
+    private static let scanLimit = 2 * 1024 * 1024
 
     /// A file whose path looks like configuration: the keyword heuristics apply to it.
     static func isConfigLike(_ path: String) -> Bool {
@@ -87,9 +92,11 @@ enum DeploySecretGuard {
             if matches(pattern, text) { return true }
         }
         guard config else { return false }
-        // Line heuristics on windows of at most 2 kB (hostile input: one huge line); the first 2 MiB only.
+        // A configuration file above the scan window is withheld rather than half checked.
+        if data.count > scanLimit { return true }
+        // Line heuristics on windows of at most 2 kB (hostile input: one huge line); configuration files above 2 MiB count as secret.
         let window = 2000, overlap = 200
-        for lineData in data.prefix(2 * 1024 * 1024).split(separator: 0x0a, omittingEmptySubsequences: true) {
+        for lineData in data.split(whereSeparator: { $0 == 0x0a || $0 == 0x0d }) {
             var start = lineData.startIndex
             while start < lineData.endIndex {
                 let end = lineData.index(start, offsetBy: window, limitedBy: lineData.endIndex) ?? lineData.endIndex

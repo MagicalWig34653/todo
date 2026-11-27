@@ -198,18 +198,42 @@ struct RcloneDeployTransport: DeployTransport {
         }
     }
 
-    /// Names of the symlinks in a unix LIST answer. An `l` line that cannot be read fails the whole check (fail closed).
+    /// Names of the symlinks in a unix LIST answer. The line cannot say where the name ends (`name -> target`, and a name may hold
+    /// ` -> ` itself), so every prefix before an arrow counts, with and without surrounding blanks: more than needed, never less.
+    /// An `l` line that cannot be read fails the whole check (fail closed).
     static func symlinkNames(inList text: String) throws -> Set<String> {
         var names = Set<String>()
-        for line in text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) where line.first == "l" {
-            let fields = line.split(separator: " ", maxSplits: 8, omittingEmptySubsequences: true)
-            guard fields.count == 9, let arrow = fields[8].range(of: " -> ") else { throw DeployTransportError(code: "deploy_failed") }
-            names.insert(String(fields[8][..<arrow.lowerBound]))
+        // "\r\n" is one Character in Swift: work on the scalars.
+        for scalars in text.unicodeScalars.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) where scalars.first == "l" {
+            let line = String(String.UnicodeScalarView(scalars))
+            // Skip eight columns, then exactly one blank: the rest is `name -> target`, untrimmed.
+            var rest = line[...]
+            for _ in 0..<8 {
+                rest = rest.drop(while: { $0 == " " })
+                guard !rest.isEmpty else { throw DeployTransportError(code: "deploy_failed") }
+                rest = rest.drop(while: { $0 != " " })
+            }
+            guard rest.first == " ", rest.contains(" -> ") || rest.dropFirst().contains(" -> ") else { throw DeployTransportError(code: "deploy_failed") }
+            let tail = String(rest.dropFirst())
+            var from = tail.startIndex
+            while let arrow = tail.range(of: " -> ", range: from..<tail.endIndex) {
+                let name = String(tail[..<arrow.lowerBound])
+                names.insert(name); names.insert(name.trimmingCharacters(in: .whitespaces))
+                from = arrow.upperBound
+            }
         }
         return names
     }
 
-    static func ftpListURL(proto: DeployProtocol, host: String, port: Int, basePath: String, directory: String) -> String { "" }
+    /// LIST URL of a directory below the base path. An absolute base path needs a second slash (`//abs`), the login directory is `/`.
+    static func ftpListURL(proto: DeployProtocol, host: String, port: Int, basePath: String, directory: String) -> String {
+        let absolute = basePath.hasPrefix("/")
+        let base = DeployPath.trimmed(absolute ? String(basePath.dropFirst()) : basePath)
+        let segments = (base.isEmpty ? [] : base.split(separator: "/").map(String.init)) + directory.split(separator: "/").map(String.init)
+        let path = segments.map { urlComponent($0) }.joined(separator: "/")
+        let h = host.contains(":") ? "[\(host)]" : host
+        return "\(proto == .ftpsImplicit ? "ftps" : "ftp")://\(h):\(port)/" + (absolute ? "/" : "") + path + (path.isEmpty ? "" : "/")
+    }
 
     private func linkFreePaths(_ c: DeployConnection, paths: [String], dir: URL) async throws -> [String] {
         guard let proto = DeployProtocol(rawValue: c.protocolName), proto != .sftp else { return paths }
@@ -219,29 +243,38 @@ struct RcloneDeployTransport: DeployTransport {
             let parts = p.split(separator: "/").map(String.init)
             for i in 0..<parts.count { directories.insert(parts[0..<i].joined(separator: "/")) }
         }
-        guard directories.count <= 1000 else { throw DeployTransportError(code: "deploy_failed") }
+        guard directories.count <= 5000 else { throw DeployTransportError(code: "deploy_failed") }
         let conf = dir.appendingPathComponent("curl.conf")
         FileManager.default.createFile(atPath: conf.path, contents: Data("user = \"\(Self.curlConfigValue(c.username)):\(Self.curlConfigValue(c.password ?? ""))\"\n".utf8),
                                        attributes: [.posixPermissions: 0o600])
-        var tls: [String] = proto.usesTLS && proto == .ftps ? ["--ssl-reqd"] : []
+        var tls: [String] = proto == .ftps ? ["--ssl-reqd"] : []
         if proto.usesTLS, let pem = c.tlsCertificate {
             let ca = dir.appendingPathComponent("curl-ca.pem")
             FileManager.default.createFile(atPath: ca.path, contents: Data(pem.utf8), attributes: [.posixPermissions: 0o600])
             tls += ["--cacert", ca.path]
         }
-        let host = c.host.contains(":") ? "[\(c.host)]" : c.host
-        let base = c.basePath.hasPrefix("/") ? "/" + DeployPath.trimmed(String(c.basePath.dropFirst())) : DeployPath.trimmed(c.basePath)
-        let basePrefix = base.split(separator: "/", omittingEmptySubsequences: false).map { Self.urlComponent(String($0)) }.joined(separator: "/")
+        // One curl run lists up to 50 directories over one connection (curl reuses it between the URLs of a run).
         var links: [String: Set<String>] = [:]
-        for d in directories.sorted() {
-            let path = [basePrefix, d.split(separator: "/").map { Self.urlComponent(String($0)) }.joined(separator: "/")].filter { !$0.isEmpty }.joined(separator: "/")
-            let url = "\(proto == .ftpsImplicit ? "ftps" : "ftp")://\(host):\(c.port)/" + (c.basePath.hasPrefix("/") ? "/" : "") + path.drop(while: { $0 == "/" }) + "/"
-            let outFile = dir.appendingPathComponent("list-\(UUID().uuidString)")
-            defer { try? FileManager.default.removeItem(at: outFile) }
-            let out = try await Self.run(curl, ["-q", "-sS", "--globoff", "--connect-timeout", "15", "--max-time", "60", "--ftp-skip-pasv-ip", "-K", conf.path] + tls
-                                         + ["-o", outFile.path, url], dir: dir, timeout: 90)
-            guard out.status == 0 else { throw DeployTransportError(code: Self.curlExitCode(out.status)) }
-            links[d] = try Self.symlinkNames(inList: String(decoding: (try? Data(contentsOf: outFile)) ?? Data(), as: UTF8.self))
+        let sorted = directories.sorted()
+        for start in stride(from: 0, to: sorted.count, by: 50) {
+            let batch = Array(sorted[start..<min(start + 50, sorted.count)])
+            var arguments = ["-q", "-sS", "--globoff", "--connect-timeout", "15", "--max-time", "300", "--ftp-skip-pasv-ip", "-K", conf.path] + tls
+            var outFiles: [URL] = []
+            for d in batch {
+                let out = dir.appendingPathComponent("list-\(UUID().uuidString)")
+                outFiles.append(out)
+                arguments += ["-o", out.path, Self.ftpListURL(proto: proto, host: c.host, port: c.port, basePath: c.basePath, directory: d)]
+            }
+            defer { for f in outFiles { try? FileManager.default.removeItem(at: f) } }
+            let result = try await Self.run(curl, arguments, dir: dir, timeout: 330)
+            guard result.status == 0 else { throw DeployTransportError(code: Self.curlExitCode(result.status)) }
+            for (d, file) in zip(batch, outFiles) {
+                // A listing above 4 MB is not read (fail closed): it cannot be checked.
+                guard let handle = try? FileHandle(forReadingFrom: file), let data = try? handle.read(upToCount: 4 * 1024 * 1024 + 1), data.count <= 4 * 1024 * 1024 else {
+                    throw DeployTransportError(code: "deploy_failed")
+                }
+                links[d] = try Self.symlinkNames(inList: String(decoding: data, as: UTF8.self))
+            }
         }
         return paths.filter { p in
             let parts = p.split(separator: "/").map(String.init)

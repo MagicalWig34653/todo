@@ -55,9 +55,11 @@ info:
     `server/<ziel>-JJJJ-MM-TT` (Europe/Berlin) und eine Commit-Nachricht. Dateien mit Geheimnis-Namen (.env*, *.pem, *.key, id_rsa*,
     .htpasswd, .ssh/, .aws/ ...), in .git/.github, mit Geheimnis-Inhalt (Konfigurationsdateien mit Passwort, Schlüssel oder Token,
     private Schlüssel, bekannte Token-Formate, Zugangsdaten in URLs), nach den Ausschlussregeln des Ziels oder über 8 MB werden nie
-    geliefert und nur in `findings` genannt (reason secret_name, blocked_path, secret_content, excluded, too_large, unreadable);
+    geliefert und nur in `findings` genannt (reason secret_name, blocked_path, secret_content, excluded, too_large, unreadable, unverified);
     Namen, Sperr- und Ausschlusspfade werden nicht einmal heruntergeladen. Das Ergebnis ist durch `maxBytes` begrenzt (REST 4 MB,
     MCP 256 kB, höchstens 16 MB; eine Datei geht immer durch), `remaining` nennt die Repo-Pfade für den nächsten Aufruf (`paths`).
+    Restrisiko: Der Inhaltsschutz ist eine Heuristik (Zuweisungen in einer Zeile, Konfigurationsdateien bis 2 MiB; Werte über mehrere
+    Zeilen, ungewöhnliche Schlüsselnamen in Dateien ohne Konfigurationsnamen werden nicht erkannt). Gehalten wird eher zu viel als zu wenig.
     Symlinks: SFTP listet und liest sie nicht; FTP/FTPS listen sie wie Dateien, deshalb wird vor dem Lesen jedes Verzeichnis auf dem
     Weg mit LIST geprüft (curl) und alles hinter einem Link verworfen. Der Server legt keinen Branch an und hat keinen Zugriff auf
     GitHub: Branch und Commit entstehen beim Aufrufer (scripts/deploy-pull-apply.py). Auf dem Server wird nichts geändert.
@@ -177,9 +179,10 @@ components:
             properties:
               path: {type: string}
               serverPath: {type: string}
-              reason: {type: string, enum: [secret_name, blocked_path, secret_content, excluded, too_large, unreadable]}
+              reason: {type: string, enum: [secret_name, blocked_path, secret_content, excluded, too_large, unreadable, unverified]}
         findingsTotal: {type: integer, description: 'höchstens 500 Einträge in findings'}
-        remaining: {type: array, items: {type: string}}
+        remaining: {type: array, maxItems: 5000, items: {type: string}}
+        remainingTotal: {type: integer, description: 'Zahl der noch nicht gelieferten Repo-Pfade (remaining nennt höchstens 5000)'}
 
     Rules:
       type: object
