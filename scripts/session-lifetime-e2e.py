@@ -132,12 +132,12 @@ st, late = refresh(client, stored)
 check("still accepted ten days later while no result was ever used", st == 200, late)
 
 # Theft detection stays: once the chain moved on, the old token ends the connection.
-st, moved = refresh(client, late["refresh_token"])
+st, moved = refresh(client, late.get("refresh_token", ""))
 check("the client goes on with a new token", st == 200, moved)
 st, b = refresh(client, stored)
 check("the old token after that is invalid_grant", st == 400 and b.get("error") == "invalid_grant", (st, b))
 check("and revokes the connection as replay", grant_row(client) == ["1", "replay"], grant_row(client))
-check("MCP is closed at once", not mcp_ok(moved["access_token"]))
+check("MCP is closed at once", not mcp_ok(moved.get("access_token", "")))
 
 # Ending a connection by hand stays immediate.
 client, access, stored = sign_in("Claude Code (E2E, by hand)")

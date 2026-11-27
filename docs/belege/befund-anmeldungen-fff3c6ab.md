@@ -59,3 +59,11 @@ Entscheidend ist die Zeile `oauth.replay_revoked` im Server-Log um 26.11. 21:35:
 | PWA und Apps | `Auth/AuthSupport.swift` `startSession`/`requireUser`, `Settings.sessionLifetime` | **Fehler:** festes Ende 30 Tage nach der Anmeldung, nie verlängert. PWA (`web/src/lib/auth.svelte.ts`) und App (Repo `Xcode/todo`, Stand `7f478be`) prüfen selbst keinen Ablauf, sie reagieren nur auf 401; die Server-Änderung wirkt ohne Client-Änderung |
 
 Die Änderung steht in `docs/adr/0040-anmeldungen-laufen-nicht-ab.md`. Wirksam wird sie erst mit einem Server-Deploy.
+
+## Nachstellung Ende zu Ende (rot und grün)
+
+`scripts/session-lifetime-e2e.sh` mit dem veröffentlichten Image des alten Stands (`ghcr.io/magicalwig34653/todo-backend:sha-1c85aa9`,
+MariaDB 12.3): **11 Fehler**. Eine Rotation geht verloren, 18 Minuten später schicken 8 parallele Sitzungen das gespeicherte Token: alle
+`400 invalid_grant`, die Verbindung steht auf `revoked=1, revoked_reason=replay`. Mit dem Fix (natives Binary): SQLite und MariaDB
+**0 Fehler** (25 Prüfungen). Der erste MariaDB-Lauf direkt nach dem Containerstart brach an einem SQL-Aufruf des Prüfskripts ab; dessen
+Meldung wurde damals nicht ausgegeben (Ursache offen). Danach drei Läufe in Folge ohne Fehler; das Skript gibt die Meldung jetzt aus.

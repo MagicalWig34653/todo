@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 27.11.2026 (Abend): Anmeldungen laufen nicht mehr ab (Karte `FFF3C6AB`)
+
+- ADR 0040 und Fix im Backend (`e038719`); Belege: `docs/STATUS.md` (oberster Nachtrag), `docs/belege/befund-anmeldungen-fff3c6ab.md`.
+- Offen: Server-Deploy (Lino); nach dem nächsten Abmelden im Server-Log `oauth.replay_revoked` samt `reason` ansehen; Folgekarte „Passwortwechsel/Passkey-Widerruf beendet andere Sitzungen“ vorschlagen.
+
 ## Checkpoint 27.11.2026 (15:15): Deploy-Ziele Phase 1a (Karte `354ADE12`)
 
 - Backend für Deploy-Ziele, Zugangsdaten, Verbindungstest und Abgleich nur lesen (REST + MCP), ADR 0039 (rclone), `contracts/deploy.yaml`. Stand und Belege: `docs/STATUS.md` (oberster Nachtrag), Kartentexte `docs/belege/kartentexte-f-59a9e0c9.md`.

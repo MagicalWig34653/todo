@@ -1,5 +1,15 @@
 # Status
 
+## Nachtrag 27.11.2026 (Abend): Anmeldungen laufen nicht mehr ab (Karte `FFF3C6AB`, Erwartung f-90b0a231; kein Deploy)
+
+- **Befund** `docs/belege/befund-anmeldungen-fff3c6ab.md` (Client-Protokolle, keine Server-Logs): 26.11. 21:35 UTC `invalid_grant`, danach löschte Claude Code die gemeinsame Anmeldung. Am Code belegt: Eine verlorene Rotation widerrief die Verbindung nach 300 s bzw. ab der 6. Wiederholung. Dass genau das am 26.11. passierte, ist wahrscheinlich, nicht bewiesen (offen bleibt `successor_used`; entscheidet die Log-Zeile `oauth.replay_revoked` mit `reason`). PWA/App-Sitzungen endeten fest 30 Tage nach der Anmeldung.
+- **ADR 0040:** verbrauchtes Refresh-Token ohne Zeitgrenze, solange kein Nachfolger benutzt wurde, höchstens 50 Wiederholungen; Refresh 90 Tage; PWA/App-Sitzungen gleitend, 90 Tage ohne Nutzung (höchstens ein Schreibzugriff je Tag, Cookie wird mitgeführt, nicht auf `/v1/sync/wait`). Replay-Erkennung und Widerruf von Hand unverändert. Keine Migration, keine Client-Änderung (PWA und App `7f478be` prüfen selbst keinen Ablauf).
+- Verträge `oauth-mcp.yaml` 1.16.0, `openapi.yaml` (SessionCookie), Handbuch 1.53.0.
+- Tests: rot `d2878d5` (27 Tests, 64 Fehler), grün `e038719` (Filter Anmeldung/OAuth/MCP: 310 Tests, 10 übersprungen, 0 Fehler). Gegenlesen (security-auditor, Sonnet): nichts Kritisches/Hohes; behoben: spätes Cookie der Live-Abfrage und 500 bei gescheiterter Verlängerung (je Test, vorher rot), Doku.
+- Volle Suiten auf `e038719`: SQLite 1108 Tests, 31 übersprungen, 0 Fehler (910 s); MariaDB 12.3 (eigener Container, entfernt) 1108, 14 übersprungen, 0 Fehler (3541 s).
+- E2E `scripts/session-lifetime-e2e.sh`: alter Stand (Image `sha-1c85aa9`) 11 Fehler, neu SQLite und MariaDB je 0 Fehler.
+- Offen: Server-Deploy (Lino, ohne Migration; erst dann wirksam). Passwortwechsel und Passkey-Widerruf beenden keine Sitzungen (alt, durch das Gleiten gewichtiger; eigene Karte vorschlagen). Seltene Rennen bei Kontosperre/Anmeldung (alt).
+
 ## Nachtrag 27.11.2026 (15:15): Deploy-Ziele Phase 1a – Ziele, Zugangsdaten, Verbindungstest, Abgleich nur lesen (Karte `354ADE12`, Erwartung f-59a9e0c9; kein Deploy)
 
 - Grundlage: Orchestrator `docs/konzept-deploy-sftp.md` (Abschnitt 8 vor 1–7), Reihenfolge 8.8 Punkt 1. Nicht enthalten (folgt als 1b): PWA-Ziele und Sync-Ansicht; danach Holen, Hochladen.
