@@ -46,6 +46,8 @@ actor LiveHub {
     init(app: Application) { self.app = app }
 
     var waiterCount: Int { waiters.count }
+    /// Waits registered since start (tests use it to know that a request has reached the hub).
+    private(set) var registrations = 0
 
     /// Waits until the token differs from `since`, `seconds` passed (recheck), or the replica shuts down.
     /// `client` names the browser tab (or app instance) that waits. A client has at most one wait: a newer one ends the older
@@ -59,6 +61,7 @@ actor LiveHub {
         if waiters.count >= settings.maxWaitersPerReplica { return (.replicaLimit, nil) }
         if waiters.values.filter({ $0.user == user }).count >= settings.maxWaitersPerAccount { return (.accountLimit, nil) }
         let id = UUID()
+        registrations += 1
         startPoller(settings)
         let wake = await withTaskCancellationHandler {
             await withCheckedContinuation { (c: CheckedContinuation<Wake, Never>) in

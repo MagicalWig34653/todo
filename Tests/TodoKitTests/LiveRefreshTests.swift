@@ -253,6 +253,18 @@ final class LiveRefreshDisconnectTests: XCTestCase {
             return try await RawRequest(port: port, path: path, bearer: session)
         }
 
+        /// Starts a wait and returns once the hub has registered it (so requests reach the server strictly in order).
+        func registeredWait(client: String?, timeout: Int = 3) async throws -> RawRequest {
+            let before = await t.app.liveHub.registrations
+            let w = try await wait(client: client, timeout: timeout)
+            for _ in 0..<250 {
+                if await t.app.liveHub.registrations > before { return w }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTFail("wait was not registered")
+            return w
+        }
+
         func waiters(_ n: Int) async throws {
             for _ in 0..<100 {
                 if await t.app.liveHub.waiterCount == n { return }
@@ -290,13 +302,13 @@ final class LiveRefreshDisconnectTests: XCTestCase {
             // often than the limit of 3 allows for abandoned requests.
             var older: [RawRequest] = []
             for _ in 0..<8 {
-                let w = try await f.wait(client: "tab-0123456789")
+                let w = try await f.registeredWait(client: "tab-0123456789")
                 older.append(w)
-                try await f.waiters(1)
+                try await f.waiters(1) // the newer wait replaced the abandoned one
                 w.cancel() // the browser let go; the server still holds the request
             }
             // The newest request is accepted (not 429) and is the only waiter left; every abandoned one ended at once.
-            let last = try await f.wait(client: "tab-0123456789", timeout: 1)
+            let last = try await f.registeredWait(client: "tab-0123456789", timeout: 1)
             let status = await last.value
             XCTAssertEqual(status, 200)
             for w in older { let s = await w.value; XCTAssertNotEqual(s, 429) }
@@ -306,9 +318,9 @@ final class LiveRefreshDisconnectTests: XCTestCase {
 
     func testOtherTabsKeepTheirOwnWaitAndLimitStillApplies() async throws {
         try await withFixture { f in
-            let a = try await f.wait(client: "tab-aaaaaaaa", timeout: 4)
-            let b = try await f.wait(client: "tab-bbbbbbbb", timeout: 4)
-            let c = try await f.wait(client: "tab-cccccccc", timeout: 4)
+            let a = try await f.registeredWait(client: "tab-aaaaaaaa", timeout: 4)
+            let b = try await f.registeredWait(client: "tab-bbbbbbbb", timeout: 4)
+            let c = try await f.registeredWait(client: "tab-cccccccc", timeout: 4)
             try await f.waiters(3)
             let d = await (try await f.wait(client: "tab-dddddddd", timeout: 1)).value
             XCTAssertEqual(d, 429, "a fourth tab is still limited")
