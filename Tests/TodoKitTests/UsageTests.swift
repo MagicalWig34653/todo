@@ -548,11 +548,15 @@ final class UsageTests: XCTestCase {
     func testFiveHundredLargeRowsFitAndHugeBodiesAre413() async throws {
         try await fixture { f in
             let repo = "github.com/example/" + String(repeating: "r", count: 175)
-            let rows = (0..<500).map { i in
-                row("2026-03-10", String(format: "%0128d", i), String(repeating: "m", count: 80), input: 1_000_000_000_000, output: 1_000_000_000_000,
-                    write: 1_000_000_000_000, read: 1_000_000_000_000,
-                    extra: ["cacheWrite1hTokens": 1_000_000_000_000, "turns": 1_000_000, "maxContextTokens": 1_000_000_000, "subagent": true,
-                            "projectID": UUID().uuidString, "repository": repo, "commits": 100_000, "cardUpdates": 100_000])
+            let huge64: Int = 1_000_000_000_000
+            let counters: Obj = ["cacheWrite1hTokens": huge64, "turns": 1_000_000, "maxContextTokens": 1_000_000_000, "subagent": true]
+            var extra: Obj = counters
+            extra["repository"] = repo; extra["commits"] = 100_000; extra["cardUpdates"] = 100_000
+            var rows: [Obj] = []
+            for i in 0..<500 {
+                extra["projectID"] = UUID().uuidString
+                let key = String(format: "%0128d", i), model = String(repeating: "m", count: 80)
+                rows.append(row("2026-03-10", key, model, input: huge64, output: huge64, write: huge64, read: huge64, extra: extra))
             }
             XCTAssertGreaterThan(try JSONSerialization.data(withJSONObject: ["rows": rows]).count, 256 * 1024)
             let r = try await report(f, rows)

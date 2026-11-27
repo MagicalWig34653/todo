@@ -15,6 +15,10 @@ info:
     provider, subagent, Ergebnis-Zähler; weggelassene optionale Felder gelten dann als nicht gemeldet). Nie wird addiert. Der Sammler
     meldet deshalb je Zeile immer den vollständigen Tagesstand, nie Differenzen. Dieselbe Schlüsselkombination zweimal in EINEM Aufruf
     ist ein Fehler (400 duplicate_row). Ein Aufruf ist atomar: ist eine Zeile ungültig, wird keine gespeichert.
+    Schlüssel unterscheiden Groß- und Kleinschreibung. Bei optionalen Feldern gilt JSON null wie weggelassen.
+    Fehler: 400 invalid_rows (rows fehlt, leer, mehr als 500 oder kein Objekt), unknown_field, duplicate_row, invalid_<feld>.
+    Bei MCP melden fehlendes rows oder ein unbekanntes Argument neben rows den allgemeinen Fehler invalid_arguments; die übrigen
+    Codes sind gleich.
 
     Tag: `day` ist der Kalendertag der Nutzung (YYYY-MM-DD, Zeitzone des Sammlers, empfohlen Europe/Berlin). Eine Sitzung über
     Mitternacht ergibt je Tag eine Zeile. Frühestens 2020-01-01, höchstens morgen (UTC).
@@ -30,10 +34,12 @@ info:
     Projekt: `repository` (Remote-URL oder freier Schlüssel, normalisiert wie find_project_by_repository) oder `projectID`.
     Beides optional; projectID hat Vorrang. Zugeordnet wird nur ein Projekt, das das meldende Konto lesen darf (bei MCP zusätzlich:
     im Grant der Verbindung). Sonst wird die Zeile OHNE Projekt gespeichert und in `unassigned` genannt (kein Fehler, kein Hinweis
-    darauf, ob das Projekt existiert).
+    darauf, ob das Projekt existiert). Sind mehrere lesbare Projekte an dasselbe Repository gebunden, gewinnt eine eigene
+    Bindung, sonst die älteste. Ein nicht normalisierbarer Schlüssel ist 400 invalid_repository.
 
     Ergebnis: `commits` und `cardUpdates` (Fortschrittsnotizen, übernommene oder geänderte Karten dieser Sitzung an diesem Tag) sind
     optional. Fehlen beide, ist das Ergebnis unbekannt und die Zeile zählt nicht für "Leerlauf-Kosten". Gemeldete 0/0 heißt Leerlauf.
+    Fehlt nur eines, zählt es als 0. In `sessions` sind commits/cardUpdates die Summe der Zeilen mit diesem Feld.
 
     Kosten rechnet der Server beim LESEN aus der Preistabelle (US-Dollar je 1 Mio. Tokens); geänderte Preise wirken rückwirkend.
     Modellzuordnung: längster Preis-Eintrag, der Präfix der Modellkennung ist (ohne Groß-/Kleinschreibung), wobei auf den Präfix
@@ -52,6 +58,7 @@ info:
     [until-days+1, until], Vorzeitraum die `days` Tage davor. "24 h" der Seite ist ein Kalendertag (die Meldung ist tagesgenau).
 
     Kennzahlen (id; Formel; Standardschwellen). rating: good | medium | bad | info | unknown.
+    `previous` steht da, sobald der Vorzeitraum einen Nenner hat; `change` nur bei vorhandenem value und previous > 0.
     - costPerDay: Summe / Tage mit Daten im Fenster; Änderung zum Vorzeitraum (gleiche Rechnung) < -5 % good, > +15 % bad, sonst medium;
       ohne Vorzeitraumdaten unknown.
     - cacheHitRate: cacheRead / (cacheRead + cacheWrite + input); >= 92 % good, >= 85 % medium, sonst bad.
@@ -61,10 +68,12 @@ info:
     - opusCostShare: Kostenanteil Modelle mit "opus"; info ohne Vorgabe (opusTargetPercent), sonst <= Vorgabe good,
       <= Vorgabe + 15 Punkte medium, sonst bad.
     - costPerDoneCard: Kosten aller Zeilen mit Projekt / Karten dieser Projekte (mit Nutzung im Fenster), die erledigt sind und deren
-      letzte Änderung im Fenster liegt (gleiche Näherung wie die Übersicht "Jetzt"); Änderung < -5 % good, > +5 % bad, sonst medium;
+      letzte Änderung im Fenster liegt (UTC-Tage; gleiche Näherung wie die Übersicht "Jetzt"; im Vorzeitraum ebenso mit dessen
+      Projekten und Tagen); Änderung < -5 % good, > +5 % bad, sonst medium;
       ohne Karten oder ohne Vorzeitraum unknown.
     - idleCostShare: Kosten der Sitzungen mit gemeldetem Ergebnis 0 Commits und 0 Kartenänderungen / Kosten aller Sitzungen mit
       gemeldetem Ergebnis; < 5 % good, <= 15 % medium, sonst bad; ohne gemeldetes Ergebnis unknown. Sitzung = sessionKey im Fenster.
+      In Zähler und Nenner gehen nur die Zeilen ein, die ein Ergebnis melden.
     Kennzahlen ohne Nenner sind unknown (value fehlt).
 
     Urteil (verdict.rating): über cacheHitRate, cacheWriteCostShare, contextPerTurn, costPerDay, idleCostShare, opusCostShare:
@@ -92,14 +101,14 @@ paths:
               schema: {$ref: '#/components/schemas/UsageReportResult'}
         '400': {description: 'invalid_rows, duplicate_row, unknown_field, invalid_<feld>'}
         '401': {description: nicht angemeldet}
-        '413': {description: Anfrage zu groß}
+        '413': {description: 'Anfrage zu groß (über 2 MB)'}
   /v1/usage/summary:
     get:
       operationId: getUsageSummary
       summary: Kennzahlen, Urteil, Verlauf, Modellmix, Top-Sessions und Projekte des eigenen Kontos
       parameters:
       - {name: days, in: query, required: false, schema: {type: integer, enum: [1, 7, 30], default: 7}}
-      - {name: until, in: query, required: false, schema: {type: string, format: date}}
+      - {name: until, in: query, required: false, schema: {type: string, format: date}, description: 'Ab 1970-01-01.'}
       responses:
         '200':
           description: ok
@@ -114,7 +123,7 @@ paths:
       summary: Preistabelle und Schwellen (Standardwerte mit eigenen Änderungen)
       responses:
         '200':
-          description: ok
+          description: 'ok; thresholds enthält alle wirksamen Werte (opusTargetPercent nur mit Vorgabe)'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/UsageSettings'}
@@ -122,7 +131,7 @@ paths:
     put:
       operationId: putUsageSettings
       summary: Eigene Preise und Schwellen ersetzen
-      description: 'Ersetzt die eigenen Änderungen vollständig. `prices` enthält nur eigene Einträge (höchstens 100; leer = Standard); ein Eintrag mit dem Präfix eines Standardwerts überschreibt ihn. Fehlende Schwellen gelten als Standard.'
+      description: 'Ersetzt die eigenen Änderungen vollständig. `prices` enthält nur eigene Einträge (höchstens 100; leer = Standard); ein Eintrag mit dem Präfix eines Standardwerts (ohne Groß-/Kleinschreibung gleiche Kennung) überschreibt ihn; jede Kennung nur einmal. `custom` darf mitgeschickt werden und wird ignoriert. Fehlende Schwellen (oder null) gelten als Standard. Bereiche: Anteile 0..100, Kontext 0..1e9, costTrend* -100..1000, cardTrendPercent 0..1000; die gut-Grenze darf die schlecht-Grenze nicht überschreiten (cacheHitMedium <= cacheHitGood), sonst invalid_thresholds.'
       requestBody:
         required: true
         content:

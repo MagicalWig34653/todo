@@ -1,4 +1,4 @@
-<!-- manual-version: 1.49.0 -->
+<!-- manual-version: 1.50.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -166,6 +166,13 @@ The card shows people, while you work, what you are doing: your current step and
 - Limits: 60 events per minute per session and 120 per minute per card (`429 rate_limited`), the newest 500 events per card are kept. Sessions and events are deleted automatically 3 days after the card is done; reopening the card keeps them.
 - Report sparingly: a step when it changes, an event for something a person following along would want to see. Not every shell command.
 
+## Usage reports (cost efficiency)
+
+- `report_usage {rows: [...]}` (scope `tasks:write`, REST `POST /v1/usage`, contract `contracts/usage.yaml`): report aggregated token counters for the account's cost efficiency page. Meant for a collector, not for normal card work. **Counters and ids only:** never prompts, titles, file paths, account names or e-mail addresses; unknown fields are rejected (`unknown_field`; an unknown top-level argument over MCP is `invalid_arguments`).
+- One row per `(day, sessionKey, model)`, 1 to 500 rows per call. Required: `day` (YYYY-MM-DD), `sessionKey`, `model`, `provider` (`claude`|`codex`), `inputTokens` (only input neither read from nor written to the cache), `outputTokens`, `cacheWriteTokens`, `cacheReadTokens`. Optional: `cacheWrite1hTokens`, `turns`, `maxContextTokens`, `subagent`, `projectID` or `repository`, `commits`, `cardUpdates`.
+- **Idempotent:** reporting the same key again replaces the whole row (never adds), so always send the full state of the day; omitted optional fields then count as not reported. A call is atomic; the same key twice in one call is `duplicate_row`. Invalid values: `invalid_<field>`, `invalid_rows`.
+- A project is assigned only if the account can read it and it is in your grant; otherwise the row is stored without project and listed in `unassigned` (no error). Answer: `{stored, created, updated, costUSD, unpricedModels, unassigned}`. Costs are computed when reading, from the account's price table; reading the numbers and changing prices or thresholds is only possible for the person (`/v1/usage/summary`, `/v1/usage/settings`).
+
 ## Project onboarding and keeping Todolino current
 
 Todolino is only useful if it is current. Treat the board as part of the repository's definition of done.
@@ -253,6 +260,7 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `report_session_step` | tasks:write | Tell the card's live view your current step (or only a heartbeat; `ended` closes the session). Secrets are masked. |
 | `report_session_event` | tasks:write | Add one compact event (tool, note, question, progress; up to 280 characters) to the card's live view. |
 | `get_task_live` | tasks:read | Read a card's live view: sessions with current step and the latest events. |
+| `report_usage` | tasks:write | Report aggregated token usage per day, session and model (idempotent, up to 500 rows, counters only). |
 | `report_session_status` | tasks:write | Light heartbeat for a project without a claimed card: one sentence, at most every 10 seconds per session; `ended: true` deletes it. |
 | `get_overview_now` | tasks:read | What is happening now across your projects: block `now` (running, waiting, recentlyDone, silent) first, then per project cards, sessions, jobs, builds, questions, reviews, activity. `compact: true` returns only `now`, short. |
 | `get_daily_brief` | tasks:read | Daily brief: what waits for the person, orphaned claims, stale projects, running, done since a date; `format=line` gives one short line. |
@@ -402,6 +410,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.48.0:** limits of the reuse window and of the takeover (security review of card BEF08998, ADR 0036, `oauth-mcp.yaml` 1.12.0, `connections.yaml` 1.7.0), no new tool, parameter or scope. A refresh token may be repeated at most 5 times within its 300 seconds; the sixth repeat ends the whole connection like a replay. A connection ended by replay detection is offered for takeover only for 7 days. Clients that registered without a `client_name` are never matched by name. The consent page lists everything the mandate allows and preselects its projects; projects the person unchecks leave the mandate.
 
 **Changed in 1.49.0:** project groups (card BEF08998, ADR 0037, `connections.yaml` 1.8.0, `oauth-mcp.yaml` 1.13.0). The person can give a connection or a brain mandate whole project groups or "all my projects except …"; what you reach is resolved on every call, so it can grow or shrink at any time (a project leaving a group is `not_found` / `outside_brain_mandate` at once). New read-only tool `list_project_groups`; `get_connection` gains `selection` and mandate `mode`/`groups`. No tool writes groups or mandates. Projects you create with `create_project` are yours alone: "all except" of other connections and of mandates does not include them until the person chooses them. `set_connection_projects` may now also answer `excluded_by_group` (409).
+
+**Changed in 1.50.0:** cost efficiency, phase 1 (card 71FD73CF, ADR 0038, `contracts/usage.yaml` 1.0.0, `oauth-mcp.yaml` 1.14.0), additive: new tool `report_usage` (scope `tasks:write`, no new scope) and REST `POST /v1/usage`, `GET /v1/usage/summary`, `GET/PUT /v1/usage/settings`.
 
 **Changed in 1.46.0:** `get_overview_now` (and REST `GET /v1/overview/now`) gains one optional field in the full answer, additive and without scope changes (card B0CF5F73, `contracts/session-status.yaml` 1.5.0): `projects[].builds[].id` (UUID), the id of the build artifact (one screenshot). Several artifacts of one build, on one card or on several cards of a project, share `buildID`, `label` and `platform`, so `buildID` is not a unique key for a list; use `id` for that. Old servers do not send it. All else unchanged.
 

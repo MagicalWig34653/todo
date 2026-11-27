@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Servereinstellungen in der PWA (Administration)
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0025, Betrieb: docs/KONFIGURATION.md. Alle Pfade verlangen ein Admin-Konto (Bearer oder Sitzung): 401 ohne Anmeldung,
     403 für Nicht-Admins. Auflösung eines Werts: Umgebungsvariable (nicht leer) > Datenbank (PWA) > Standard. Ein per Umgebung gesetzter Wert
     ist locked und nicht änderbar (409 setting_locked). Geheimnisse (secret true) werden nie ausgeliefert: value fehlt, isSet und ein
@@ -247,7 +247,7 @@ paths:
     get:
       operationId: exportMe
       summary: Datenexport des eigenen Kontos
-      description: 'JSON-Download (account, projects, tasks, comments, labels, channelMessages, voicePrivacy) nur mit eigenen Daten; channelMessages = Nachrichten des Kanals #brain (id, kind, author, text, hasAudio, createdAt, älteste zuerst), das Audio selbst ist nicht enthalten; voicePrivacy = {consent, consentAt, keepAudio} (Sprach-Datenschutz, contracts/voice.yaml 1.2.0); ohne Geheimnisse (kein Passwort-Hash,
+      description: 'JSON-Download (account, projects, tasks, comments, labels, channelMessages, voicePrivacy, usage, usageSettings) nur mit eigenen Daten; usage = gemeldete Nutzungszeilen (Felder wie UsageRow in contracts/usage.yaml, ohne repository; projectID nur bei lesbarem Projekt), usageSettings = eigene Preise und Schwellen (ADR 0038); channelMessages = Nachrichten des Kanals #brain (id, kind, author, text, hasAudio, createdAt, älteste zuerst), das Audio selbst ist nicht enthalten; voicePrivacy = {consent, consentAt, keepAudio} (Sprach-Datenschutz, contracts/voice.yaml 1.2.0); ohne Geheimnisse (kein Passwort-Hash,
         keine Passkeys, Token, Push-Token). Kommentare nur aus Projekten, die das Konto aktuell lesen darf. Höchstens 20 MiB, sonst 413 export_too_large.'
       responses:
         '200': {description: Export als Datei todolino-export.json, content: {application/json: {schema: {type: object}}}}
