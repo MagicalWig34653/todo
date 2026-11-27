@@ -276,7 +276,7 @@ test('real SFTP server: confirm the host key, test, and compare a local folder (
 	await expect(sync.getByTestId('deploy-sync-count-new')).toHaveText('3001 neu');
 	// A big folder starts collapsed with its counts; small ones are open.
 	const vendor = sync.locator('[data-testid="deploy-sync-dir"][data-path="vendor"]');
-	await expect(vendor.locator('details')).not.toHaveAttribute('open');
+	await expect(vendor.locator('details').first()).not.toHaveAttribute('open');
 	await expect(sync.locator('[data-testid="deploy-sync-dir"][data-path="css"] details').first()).toHaveAttribute('open');
 	const status = async (name: string) => sync.getByTestId('deploy-sync-file').filter({ has: page.getByText(name, { exact: true }) }).getAttribute('data-status');
 	expect(await status('index.php')).toBe('same');

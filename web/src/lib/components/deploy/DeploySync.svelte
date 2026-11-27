@@ -2,6 +2,7 @@
 	import { api } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import {
+		OPEN_FOLDER_LIMIT,
 		SYNC_STATUSES,
 		buildManifest,
 		buildTree,
@@ -57,13 +58,21 @@
 		}
 		phase = 'hashing';
 		progress = { done: 0, total: lastFiles.length };
-		const manifest = await buildManifest(
-			lastFiles.map((f) => ({ relativePath: f.webkitRelativePath || f.name, size: f.size, bytes: () => f.arrayBuffer() })),
-			(done, total) => (progress = { done, total })
-		);
-		if (manifest === 'tooMany') {
+		let manifest: Awaited<ReturnType<typeof buildManifest>>;
+		try {
+			manifest = await buildManifest(
+				lastFiles.map((f) => ({ relativePath: f.webkitRelativePath || f.name, size: f.size, bytes: () => f.arrayBuffer() })),
+				(done, total) => (progress = { done, total })
+			);
+		} catch {
+			// The browser refuses to read a file that changed after the folder was picked (NotReadableError).
 			phase = 'error';
-			error = t('deploy.sync.tooMany');
+			error = t('deploy.sync.unreadable');
+			return;
+		}
+		if (manifest === 'tooMany' || manifest === 'empty') {
+			phase = 'error';
+			error = t(manifest === 'tooMany' ? 'deploy.sync.tooMany' : 'deploy.sync.emptyFolder');
 			return;
 		}
 		phase = 'comparing';
@@ -104,11 +113,11 @@
 </script>
 
 {#snippet dirNode(dir: TreeDir, depth: number)}
-	<ul class={depth === 0 ? 'flex flex-col' : 'flex flex-col border-l pl-3'} role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? t('deploy.sync.tree') : undefined}>
-		{#each dir.children as node (node.path)}
+	<ul class={depth === 0 ? 'flex flex-col' : 'flex flex-col border-l pl-3'} aria-label={depth === 0 ? t('deploy.sync.tree') : undefined}>
+		{#each dir.children as node (`${node.kind}:${node.path}`)}
 			{#if node.kind === 'dir'}
-				<li role="treeitem" aria-expanded="true" aria-selected="false" data-testid="deploy-sync-dir" data-path={node.path}>
-					<details open class="group">
+				<li data-testid="deploy-sync-dir" data-path={node.path}>
+					<details open={node.total <= OPEN_FOLDER_LIMIT} class="group">
 						<summary class="hover:bg-muted flex min-h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-1.5 text-sm font-medium">
 							<Folder class="text-muted-foreground size-4 shrink-0 group-open:hidden" aria-hidden="true" />
 							<FolderOpen class="text-muted-foreground hidden size-4 shrink-0 group-open:block" aria-hidden="true" />
@@ -123,7 +132,7 @@
 					</details>
 				</li>
 			{:else}
-				<li role="treeitem" aria-selected="false" class="flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 rounded-md px-1.5 py-1 text-sm" data-testid="deploy-sync-file" data-status={node.status} data-path={node.path}>
+				<li class="flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 rounded-md px-1.5 py-1 text-sm" data-testid="deploy-sync-file" data-status={node.status} data-path={node.path}>
 					<FileIcon class={['size-4 shrink-0', tone[node.status]]} aria-hidden="true" />
 					<span class={['min-w-0 [overflow-wrap:anywhere]', node.status === 'same' ? 'text-muted-foreground' : 'font-medium']}>{node.name}</span>
 					<span class={['rounded-full px-2 py-0.5 text-[11px] font-semibold', chip[node.status]]}>{t(statusKey(node.status))}</span>

@@ -121,6 +121,8 @@ export interface DeployForm {
 	/** One `repo -> server` pair per line. */
 	mappings: string;
 	defaultExcludes: boolean;
+	/** Existing FTPS target with a pinned certificate: remove it (system trust again). */
+	removeCertificate: boolean;
 }
 
 export const emptyForm = (): DeployForm => ({
@@ -139,7 +141,8 @@ export const emptyForm = (): DeployForm => ({
 	includes: '',
 	excludes: '',
 	mappings: '',
-	defaultExcludes: true
+	defaultExcludes: true,
+	removeCertificate: false
 });
 
 const asProtocol = (p: string): DeployProtocol => ((DEPLOY_PROTOCOLS as readonly string[]).includes(p) ? (p as DeployProtocol) : 'sftp');
@@ -169,7 +172,7 @@ const lines = (text: string) =>
 		.map((l) => l.trim())
 		.filter(Boolean);
 
-export type FormProblem = 'name' | 'host' | 'port' | 'username' | 'secret' | 'mappings';
+export type FormProblem = 'name' | 'host' | 'port' | 'username' | 'secret' | 'authChange' | 'passphrase' | 'mappings';
 
 export function parseMappings(text: string): { local: string; remote: string }[] | null {
 	const out: { local: string; remote: string }[] = [];
@@ -191,8 +194,9 @@ export function writeBody(form: DeployForm, existing?: DeployTarget): { body: De
 	const host = form.host.trim();
 	if (!host) return { problem: 'host' };
 	const portText = form.port.trim();
+	if (portText !== '' && !/^\d{1,5}$/.test(portText)) return { problem: 'port' };
 	const port = portText === '' ? defaultPort(form.protocol) : Number(portText);
-	if (!Number.isInteger(port) || port < 1 || port > 65535) return { problem: 'port' };
+	if (port < 1 || port > 65535) return { problem: 'port' };
 	const username = form.username.trim();
 	if (!username) return { problem: 'username' };
 	const mappings = parseMappings(form.mappings);
@@ -200,6 +204,9 @@ export function writeBody(form: DeployForm, existing?: DeployTarget): { body: De
 	const auth = form.protocol === 'sftp' ? form.auth : 'password';
 	const secret = auth === 'key' ? form.privateKey.trim() : form.password;
 	if (!existing && !secret) return { problem: 'secret' };
+	// The server binds a passphrase to its key and the login method to the secret: neither changes without the secret.
+	if (auth === 'key' && form.passphrase && !secret) return { problem: 'passphrase' };
+	if (existing && !secret && (existing.authMethod === 'key') !== (auth === 'key')) return { problem: 'authChange' };
 
 	const rules: DeployRules = { includes: lines(form.includes), excludes: lines(form.excludes), mappings, defaultExcludes: form.defaultExcludes };
 	const full: DeployTargetWrite = { name, stage: form.stage, protocol: form.protocol, host, port, basePath: form.basePath.trim(), username, rules };
@@ -224,6 +231,7 @@ export function writeBody(form: DeployForm, existing?: DeployTarget): { body: De
 	if (username !== existing.username) body.username = username;
 	if (JSON.stringify(normalRules(rules)) !== JSON.stringify(normalRules(existing.rules))) body.rules = rules;
 	if (full.tlsCertificate) body.tlsCertificate = full.tlsCertificate;
+	else if (form.removeCertificate && existing.tlsCertificatePinned) body.tlsCertificate = null;
 	if (secret) {
 		if (auth === 'key') {
 			body.privateKey = secret;
@@ -280,15 +288,20 @@ export async function sha256Hex(data: ArrayBuffer): Promise<string> {
 	return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function buildManifest(files: PickedFile[], onProgress?: (done: number, total: number) => void): Promise<ManifestEntry[] | 'tooMany'> {
+/** Body limit of POST .../compare on the server (16 MB); checked before sending so the person gets a clear text, not a 413. */
+export const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+
+export async function buildManifest(files: PickedFile[], onProgress?: (done: number, total: number) => void): Promise<ManifestEntry[] | 'tooMany' | 'empty'> {
 	const picked = files.map((f) => ({ f, path: manifestPath(f.relativePath) })).filter((x): x is { f: PickedFile; path: string } => x.path !== null);
+	if (picked.length === 0) return 'empty';
 	if (picked.length > MAX_MANIFEST) return 'tooMany';
 	const out: ManifestEntry[] = [];
 	for (const [i, { f, path }] of picked.entries()) {
 		out.push({ path, size: f.size, sha256: await sha256Hex(await f.bytes()) });
 		onProgress?.(i + 1, picked.length);
 	}
-	return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+	out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+	return new TextEncoder().encode(JSON.stringify({ files: out })).length > MAX_MANIFEST_BYTES ? 'tooMany' : out;
 }
 
 // ---- file tree of a compare result ------------------------------------------------------------------------------------
@@ -310,27 +323,34 @@ export interface TreeDir {
 	children: TreeNode[];
 	/** Status counts of all files below. */
 	counts: Partial<Record<SyncStatus, number>>;
+	/** Number of files below. */
+	total: number;
 }
 export type TreeNode = TreeFile | TreeDir;
 
 /** Builds the folder tree along the server paths; folders first, then files, each alphabetically. */
 export function buildTree(files: CompareFile[], onlyDifferences = false): TreeDir {
-	const root: TreeDir = { kind: 'dir', name: '', path: '', children: [], counts: {} };
+	const root: TreeDir = { kind: 'dir', name: '', path: '', children: [], counts: {}, total: 0 };
+	const seen = new Set<string>();
 	for (const f of files) {
 		if (onlyDifferences && f.status === 'same') continue;
 		const shown = f.serverPath || f.path;
 		const segs = shown.split('/').filter(Boolean);
-		if (segs.length === 0) continue;
+		// One row per server path (several repo files mapped onto the same path would collide).
+		if (segs.length === 0 || seen.has(shown)) continue;
+		seen.add(shown);
 		let dir = root;
 		dir.counts[f.status] = (dir.counts[f.status] ?? 0) + 1;
+		dir.total += 1;
 		for (const [i, seg] of segs.slice(0, -1).entries()) {
 			const path = segs.slice(0, i + 1).join('/');
 			let next = dir.children.find((c): c is TreeDir => c.kind === 'dir' && c.name === seg);
 			if (!next) {
-				next = { kind: 'dir', name: seg, path, children: [], counts: {} };
+				next = { kind: 'dir', name: seg, path, children: [], counts: {}, total: 0 };
 				dir.children.push(next);
 			}
 			next.counts[f.status] = (next.counts[f.status] ?? 0) + 1;
+			next.total += 1;
 			dir = next;
 		}
 		dir.children.push({ kind: 'file', name: segs[segs.length - 1], path: shown, repoPath: f.path, status: f.status, repoSize: f.repoSize, serverSize: f.serverSize });
@@ -354,6 +374,9 @@ export function summaryOf(result: DeployCompareResult): Record<SyncStatus, numbe
 	for (const f of result.files ?? []) if (f.status in out) out[f.status] += 1;
 	return out;
 }
+
+/** Folders with more files than this start collapsed (a vendor/ folder would otherwise fill the view). */
+export const OPEN_FOLDER_LIMIT = 50;
 
 export const statusKey = (s: SyncStatus): MessageKey => `deploy.sync.status.${s}` as MessageKey;
 export const countKey = (s: SyncStatus): MessageKey => `deploy.sync.count.${s}` as MessageKey;

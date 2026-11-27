@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a, nur lesen
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Karte 354ADE12, ADR 0039, Konzept im Orchestrator docs/konzept-deploy-sftp.md (Abschnitt 8 vor 1–7).
 
@@ -42,7 +42,9 @@ info:
     .claude/**, CLAUDE.md, AGENTS.md, phpunit.xml*. mappings ordnet Repo-Pfade Server-Pfaden (relativ zum Basispfad) zu; der längste
     passende Präfix gewinnt; ohne mappings gilt "" -> "". Repo-Dateien außerhalb jeder Zuordnung gehören nicht zum Ziel.
 
-    Abgleich: Der Aufrufer sendet das Manifest des Repo-Stands (path, size, sha256 je Datei, höchstens 50 000). Der Server listet den
+    Abgleich: Der Aufrufer sendet das Manifest des Repo-Stands (path, size, sha256 je Datei, höchstens 50 000; REST-Body höchstens
+    16 MB, sonst 413; 1.0.1, vorher galt die allgemeine Grenze von 256 kB). Die PWA (Phase 1b) bildet das Manifest im Browser aus
+    einem gewählten Ordner. Der Server listet den
     Basispfad rekursiv und lädt nur Dateien, deren Status vom Inhalt abhängt (gleiche Größe, oder Server-Datei größer und höchstens
     2 MB, weil sie sich nur in Zeilenenden unterscheiden kann). Status: same (gleich; Textdateien bis 2 MB auch nach CRLF -> LF),
     new (nur im Repo), changed, serverOnly (nur auf dem Server, innerhalb der Zuordnung und nicht ausgeschlossen), unverified (zu groß

@@ -482,7 +482,9 @@ struct DeployController: RouteCollection {
         t.delete(use: remove)
         t.post("host-key", use: hostKey)
         t.post("test", use: test)
-        t.post("compare", use: compare)
+        // A whole repo manifest (up to DeployLimits.maxManifest entries, ~100 bytes each) is far above the default 256 kB body
+        // limit; 16 MB holds 50 000 entries with paths of up to ~250 characters on average.
+        t.on(.POST, "compare", body: .collect(maxSize: "16mb"), use: compare)
     }
 
     // `requireUser` accepts person sessions only: OAuth access tokens (MCP connections) are 401 here.

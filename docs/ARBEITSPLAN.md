@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 27.11.2026 (20:00): Deploy-Ziele Phase 1b in der PWA (Karte `354ADE12`)
+
+- PWA-Ziele (anlegen, bearbeiten, löschen, Host-Schlüssel, FTP-Warnung) und Sync-Ansicht nur lesen; rot `02b2ea2`, grün `b855ae7`. Belege: `docs/STATUS.md` (oberster Nachtrag), Bilder `docs/screenshots/deploy-ziele/`.
+- Offen: Brain-Validierung, Deploy (Lino). Nächster Schritt Phase 2: Holen als PR und tägliche Drift-Karte, mit Git-Zugriff des Servers für das Manifest.
+
 ## Checkpoint 27.11.2026 (Abend): Anmeldungen laufen nicht mehr ab (Karte `FFF3C6AB`)
 
 - ADR 0040 und Fix im Backend (`e038719`); Belege: `docs/STATUS.md` (oberster Nachtrag), `docs/belege/befund-anmeldungen-fff3c6ab.md`.

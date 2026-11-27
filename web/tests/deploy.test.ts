@@ -29,6 +29,8 @@ describe('deploy form', () => {
 		const ok = writeBody({ ...f, password: 'pw', protocol: 'ftps-implicit' });
 		expect('body' in ok && ok.body).toMatchObject({ port: 990, password: 'pw', protocol: 'ftps-implicit' });
 		expect(writeBody({ ...f, password: 'pw', port: '70000' })).toEqual({ problem: 'port' });
+		expect(writeBody({ ...f, password: 'pw', port: '0x16' })).toEqual({ problem: 'port' });
+		expect(writeBody({ ...f, password: 'pw', port: '1e3' })).toEqual({ problem: 'port' });
 		expect(writeBody({ ...f, password: 'pw', mappings: 'public htdocs' })).toEqual({ problem: 'mappings' });
 	});
 
@@ -40,6 +42,11 @@ describe('deploy form', () => {
 		expect(renamed).toEqual({ body: { name: 'Neu', rules: { includes: [], excludes: ['cache/**', '*.log'], mappings: [], defaultExcludes: true } } });
 		const withKey = writeBody({ ...form, auth: 'key', privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----' }, target);
 		expect(withKey).toEqual({ body: { privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----', password: null } });
+		// Neither the login method nor a passphrase changes without the secret itself.
+		expect(writeBody({ ...form, auth: 'key' }, target)).toEqual({ problem: 'authChange' });
+		expect(writeBody({ ...form, auth: 'key', passphrase: 'p' }, { ...target, authMethod: 'key' })).toEqual({ problem: 'passphrase' });
+		const ftps = { ...target, protocol: 'ftps', port: 21, tlsCertificatePinned: true };
+		expect(writeBody({ ...formOf(ftps), removeCertificate: true }, ftps)).toEqual({ body: { tlsCertificate: null } });
 	});
 
 	it('parses mappings and shows the endpoint', () => {
@@ -62,6 +69,12 @@ describe('manifest and tree', () => {
 		expect(manifestPath('kubus/.git/HEAD')).toBeNull();
 		expect(manifestPath('kubus/a/node_modules/x.js')).toBeNull();
 		expect(manifestPath('kubus')).toBeNull();
+	});
+
+	it('reports an empty folder instead of sending an empty manifest', async () => {
+		const none = async () => new ArrayBuffer(0);
+		expect(await buildManifest([{ relativePath: 'only-name.txt', size: 0, bytes: none }])).toBe('empty');
+		expect(await buildManifest([{ relativePath: 'r/.git/HEAD', size: 0, bytes: none }])).toBe('empty');
 	});
 
 	it('hashes files with SHA-256, sorted by path', async () => {
@@ -87,7 +100,16 @@ describe('manifest and tree', () => {
 		expect(tree.children.map((c) => c.name)).toEqual(['css', 'htdocs', 'index.php']);
 		const css = tree.children[0];
 		expect(css.kind === 'dir' && css.counts).toEqual({ changed: 1, serverOnly: 1 });
+		expect(css.kind === 'dir' && css.total).toBe(2);
 		expect(buildTree(files, true).children.map((c) => c.name)).toEqual(['css', 'htdocs']);
+		// A file and a folder of the same name, and two repo files on one server path: distinct rows, no crash.
+		const clash = buildTree([
+			{ path: 'a', serverPath: 'a', status: 'new' },
+			{ path: 'x/a/b', serverPath: 'a/b', status: 'new' },
+			{ path: 'y/a/b', serverPath: 'a/b', status: 'changed' }
+		]);
+		expect(clash.children.map((c) => `${c.kind}:${c.path}`)).toEqual(['dir:a', 'file:a']);
+		expect(clash.total).toBe(2);
 		expect(summaryOf({ ok: true, files })).toEqual({ changed: 1, new: 1, serverOnly: 1, unverified: 0, same: 1 });
 	});
 });

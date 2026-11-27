@@ -286,7 +286,8 @@ final class DeployTargetTests: XCTestCase {
     /// The REST route must take a manifest up to the contract's 50 000 entries; one more is a readable 400, never a 413.
     func testCompareAcceptsTheFullManifestOverREST() async throws {
         try await fixture { f in
-            let made = try await f.created(["protocol": "ftps", "port": 21])
+            // vendor/ is excluded by a rule: the request stays large, the answer small (the test client reads at most 1 MB).
+            let made = try await f.created(["protocol": "ftps", "port": 21, "rules": ["excludes": ["vendor/**"]]])
             let id = try XCTUnwrap(made["id"] as? String)
             f.transport.files = ["index.php": Data("hi\n".utf8)]
             let sha = String(repeating: "a", count: 64)
@@ -307,7 +308,7 @@ final class DeployTargetTests: XCTestCase {
             let (status, body) = try await post(files)
             XCTAssertEqual(status, .ok, "\(body ?? [:])")
             let summary = try XCTUnwrap(body?["summary"] as? Obj)
-            XCTAssertEqual(summary["new"] as? Int, 49_999)
+            XCTAssertEqual(summary["new"] as? Int, 0)
             XCTAssertEqual(summary["same"] as? Int, 1)
 
             files.append(["path": "one-too-many.php", "size": 1, "sha256": sha])

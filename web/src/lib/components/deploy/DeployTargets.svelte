@@ -84,6 +84,9 @@
 	function closeForm() {
 		editing = null;
 		formError = '';
+		form.password = '';
+		form.privateKey = '';
+		form.passphrase = '';
 	}
 	async function save() {
 		if (saving || !editing) return;
@@ -154,11 +157,12 @@
 	let deleteError = $state('');
 	async function remove() {
 		if (!deleting || deleteBusy) return;
+		const id = deleting.id;
 		deleteBusy = true;
 		deleteError = '';
 		try {
-			await api.deleteDeployTarget(deleting.id);
-			targets = targets.filter((x) => x.id !== deleting?.id);
+			await api.deleteDeployTarget(id);
+			targets = targets.filter((x) => x.id !== id);
 			deleting = null;
 			message = t('deploy.deleted');
 		} catch (e) {
@@ -266,6 +270,11 @@
 						<label class="text-sm font-medium" for={fid('cert')}>{t('deploy.form.tlsCertificate')}</label>
 						<Textarea id={fid('cert')} class="font-mono text-xs" rows={3} spellcheck={false} aria-describedby={fid('cert-h')} bind:value={form.tlsCertificate} />
 						<p class="text-muted-foreground text-xs" id={fid('cert-h')}>{existing?.tlsCertificatePinned ? t('deploy.form.tlsCertificateStored') : t('deploy.form.tlsCertificateHint')}</p>
+						{#if existing?.tlsCertificatePinned}
+							<label class="flex min-h-9 cursor-pointer items-center gap-2 text-sm">
+								<Checkbox bind:checked={form.removeCertificate} />{t('deploy.form.removeCertificate')}
+							</label>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -289,7 +298,7 @@
 					</div>
 				</div>
 				<label class="flex min-h-9 cursor-pointer items-start gap-3">
-					<Checkbox class="mt-0.5" bind:checked={form.defaultExcludes} aria-labelledby={fid('def')} aria-describedby={fid('def-d')} />
+					<Checkbox class="mt-0.5" bind:checked={form.defaultExcludes} aria-labelledby={fid('def')} aria-describedby={existing ? fid('def-d') : undefined} />
 					<span class="flex min-w-0 flex-col gap-0.5">
 						<span class="text-sm font-medium" id={fid('def')}>{t('deploy.form.defaultExcludes')}</span>
 						{#if existing}
