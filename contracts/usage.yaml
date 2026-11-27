@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: Todolino Kosteneffizienz (Nutzungsmeldung und Kennzahlen)
+  version: 1.0.0
+  description: |
+    Vertrag für die Seite "Kosteneffizienz" (Karte 71FD73CF, Phase 1 und 2). Maßgeblich für den Sammler im Orchestrator.
+
+    NUR AGGREGATE. Es werden ausschließlich Zählerstände und Kennungen übertragen: keine Prompt-Inhalte, Titel, Dateipfade,
+    Kontonamen oder E-Mail-Adressen. Unbekannte Felder werden abgelehnt (400 unknown_field).
+
+    Melden: MCP-Werkzeug `report_usage` (Scope tasks:write) oder REST POST /v1/usage (Sitzung/Bearer wie alle schreibenden Routen).
+    Beide haben dieselben Argumente (`UsageReport`), dieselben Regeln und dieselbe Antwort (`UsageReportResult`).
+
+    Idempotenz: eine Zeile je (Konto, day, sessionKey, model). Erneutes Melden ERSETZT die ganze Zeile (alle Zähler, Projekt,
+    provider, subagent, Ergebnis-Zähler; weggelassene optionale Felder gelten dann als nicht gemeldet). Nie wird addiert. Der Sammler
+    meldet deshalb je Zeile immer den vollständigen Tagesstand, nie Differenzen. Dieselbe Schlüsselkombination zweimal in EINEM Aufruf
+    ist ein Fehler (400 duplicate_row). Ein Aufruf ist atomar: ist eine Zeile ungültig, wird keine gespeichert.
+
+    Tag: `day` ist der Kalendertag der Nutzung (YYYY-MM-DD, Zeitzone des Sammlers, empfohlen Europe/Berlin). Eine Sitzung über
+    Mitternacht ergibt je Tag eine Zeile. Frühestens 2020-01-01, höchstens morgen (UTC).
+
+    Subagenten: eigener sessionKey (z. B. "<threadId>/agent-<id>") und subagent=true, sonst kollidieren sie mit der Hauptzeile.
+
+    Tokens: `inputTokens` zählt nur NICHT aus dem Cache gelesene und nicht in den Cache geschriebene Eingabe. Claude:
+    input_tokens, cache_creation_input_tokens -> cacheWriteTokens, davon cache_creation.ephemeral_1h_input_tokens ->
+    cacheWrite1hTokens (Teilmenge), cache_read_input_tokens -> cacheReadTokens. Codex: inputTokens = input_tokens minus
+    cached_input_tokens, cacheReadTokens = cached_input_tokens, cacheWriteTokens = 0, outputTokens inklusive Reasoning-Tokens.
+    Je API-Antwort nur einmal zählen (Claude-Transkripte wiederholen usage je Inhaltsblock derselben message.id).
+
+    Projekt: `repository` (Remote-URL oder freier Schlüssel, normalisiert wie find_project_by_repository) oder `projectID`.
+    Beides optional; projectID hat Vorrang. Zugeordnet wird nur ein Projekt, das das meldende Konto lesen darf (bei MCP zusätzlich:
+    im Grant der Verbindung). Sonst wird die Zeile OHNE Projekt gespeichert und in `unassigned` genannt (kein Fehler, kein Hinweis
+    darauf, ob das Projekt existiert).
+
+    Ergebnis: `commits` und `cardUpdates` (Fortschrittsnotizen, übernommene oder geänderte Karten dieser Sitzung an diesem Tag) sind
+    optional. Fehlen beide, ist das Ergebnis unbekannt und die Zeile zählt nicht für "Leerlauf-Kosten". Gemeldete 0/0 heißt Leerlauf.
+
+    Kosten rechnet der Server beim LESEN aus der Preistabelle (US-Dollar je 1 Mio. Tokens); geänderte Preise wirken rückwirkend.
+    Modellzuordnung: längster Preis-Eintrag, der Präfix der Modellkennung ist (ohne Groß-/Kleinschreibung), wobei auf den Präfix
+    nichts, "-<Datum aus 8 Ziffern>" oder "[...]" folgen darf. Cache-Writes: (cacheWrite - cacheWrite1h) * cacheWrite +
+    cacheWrite1h * cacheWrite1h. Ohne passenden Eintrag zählt die Zeile mit 0 Dollar und das Modell steht in `unpricedModels`.
+
+    Preis-Standardwerte (Anthropic-Listenpreise, Stand 03.11.2026; input / cacheWrite 5m / cacheWrite 1h / cacheRead / output):
+    claude-fable-5-2 8/10/16/0.2/40, claude-opus-5-5 4/5/8/0.2/20, claude-sonnet-5-5 2/2.5/4/0.1/10,
+    claude-haiku-5-5 0.1/0.125/0.2/0.01/0.5 (Haiku: nur die Stufe bis 100k Prompt-Tokens). Codex-/GPT-Modelle haben KEINEN
+    Standardpreis (nicht belegt); das Konto trägt ihn selbst ein.
+
+    Sichtbarkeit: Nutzungszeilen, Preise und Schwellen gehören dem Konto. Niemand sieht fremde Zeilen. Projektnamen erscheinen nur,
+    solange das Konto das Projekt lesen darf, sonst gilt die Zeile als "ohne Projekt".
+
+    Zeitraum beim Lesen: `days` (1, 7 oder 30, Standard 7) und `until` (YYYY-MM-DD, Standard heute UTC); Fenster
+    [until-days+1, until], Vorzeitraum die `days` Tage davor. "24 h" der Seite ist ein Kalendertag (die Meldung ist tagesgenau).
+
+    Kennzahlen (id; Formel; Standardschwellen). rating: good | medium | bad | info | unknown.
+    - costPerDay: Summe / Tage mit Daten im Fenster; Änderung zum Vorzeitraum (gleiche Rechnung) < -5 % good, > +15 % bad, sonst medium;
+      ohne Vorzeitraumdaten unknown.
+    - cacheHitRate: cacheRead / (cacheRead + cacheWrite + input); >= 92 % good, >= 85 % medium, sonst bad.
+    - cacheWriteCostShare: Kosten cacheWrite / Kosten gesamt; < 45 % good, <= 65 % medium, sonst bad.
+    - outputShare: output / alle Tokens; immer info.
+    - contextPerTurn: (input + cacheWrite + cacheRead) / turns, nur Zeilen mit turns > 0; < 60000 good, <= 120000 medium, sonst bad.
+    - opusCostShare: Kostenanteil Modelle mit "opus"; info ohne Vorgabe (opusTargetPercent), sonst <= Vorgabe good,
+      <= Vorgabe + 15 Punkte medium, sonst bad.
+    - costPerDoneCard: Kosten aller Zeilen mit Projekt / Karten dieser Projekte (mit Nutzung im Fenster), die erledigt sind und deren
+      letzte Änderung im Fenster liegt (gleiche Näherung wie die Übersicht "Jetzt"); Änderung < -5 % good, > +5 % bad, sonst medium;
+      ohne Karten oder ohne Vorzeitraum unknown.
+    - idleCostShare: Kosten der Sitzungen mit gemeldetem Ergebnis 0 Commits und 0 Kartenänderungen / Kosten aller Sitzungen mit
+      gemeldetem Ergebnis; < 5 % good, <= 15 % medium, sonst bad; ohne gemeldetes Ergebnis unknown. Sitzung = sessionKey im Fenster.
+    Kennzahlen ohne Nenner sind unknown (value fehlt).
+
+    Urteil (verdict.rating): über cacheHitRate, cacheWriteCostShare, contextPerTurn, costPerDay, idleCostShare, opusCostShare:
+    bad, wenn mindestens 2 bad; medium, wenn 1 bad oder mindestens 2 medium; sonst good; unknown ohne eine bewertete Kennzahl.
+    verdict.best / verdict.worst nennen die erste Kennzahl dieser Reihenfolge mit bestem bzw. schlechtestem Rating (worst nur, wenn
+    medium oder bad). verdict.lever = id von worst (die Oberfläche formuliert daraus den größten Hebel).
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/usage:
+    post:
+      operationId: postUsageReport
+      summary: Nutzungszeilen melden (idempotent je Tag, Sitzung und Modell)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UsageReport'}
+      responses:
+        '200':
+          description: gespeichert
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageReportResult'}
+        '400': {description: 'invalid_rows, duplicate_row, unknown_field, invalid_<feld>'}
+        '401': {description: nicht angemeldet}
+        '413': {description: Anfrage zu groß}
+  /v1/usage/summary:
+    get:
+      operationId: getUsageSummary
+      summary: Kennzahlen, Urteil, Verlauf, Modellmix, Top-Sessions und Projekte des eigenen Kontos
+      parameters:
+      - {name: days, in: query, required: false, schema: {type: integer, enum: [1, 7, 30], default: 7}}
+      - {name: until, in: query, required: false, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageSummary'}
+        '400': {description: 'invalid_days, invalid_until'}
+        '401': {description: nicht angemeldet}
+  /v1/usage/settings:
+    get:
+      operationId: getUsageSettings
+      summary: Preistabelle und Schwellen (Standardwerte mit eigenen Änderungen)
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageSettings'}
+        '401': {description: nicht angemeldet}
+    put:
+      operationId: putUsageSettings
+      summary: Eigene Preise und Schwellen ersetzen
+      description: 'Ersetzt die eigenen Änderungen vollständig. `prices` enthält nur eigene Einträge (höchstens 100; leer = Standard); ein Eintrag mit dem Präfix eines Standardwerts überschreibt ihn. Fehlende Schwellen gelten als Standard.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UsageSettingsUpdate'}
+      responses:
+        '200':
+          description: gespeichert
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageSettings'}
+        '400': {description: 'invalid_prices, invalid_thresholds, unknown_field'}
+        '401': {description: nicht angemeldet}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    sessionCookie: {type: apiKey, in: cookie, name: todo_session}
+  schemas:
+    UsageReport:
+      type: object
+      additionalProperties: false
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: {$ref: '#/components/schemas/UsageRow'}
+    UsageRow:
+      type: object
+      additionalProperties: false
+      required: [day, sessionKey, model, provider, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens]
+      properties:
+        day: {type: string, format: date}
+        sessionKey: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:/#-]+$', description: 'Thread- oder Sitzungs-ID; kein Titel, kein Freitext.'}
+        model: {type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9._:/\[\]-]+$'}
+        provider: {type: string, enum: [claude, codex]}
+        inputTokens: {type: integer, minimum: 0, maximum: 1000000000000}
+        outputTokens: {type: integer, minimum: 0, maximum: 1000000000000}
+        cacheWriteTokens: {type: integer, minimum: 0, maximum: 1000000000000}
+        cacheWrite1hTokens: {type: integer, minimum: 0, maximum: 1000000000000, description: 'Teilmenge von cacheWriteTokens (1-Stunden-Cache), Standard 0; größer als cacheWriteTokens: 400 invalid_cacheWrite1hTokens.'}
+        cacheReadTokens: {type: integer, minimum: 0, maximum: 1000000000000}
+        turns: {type: integer, minimum: 0, maximum: 1000000, description: 'Werkzeugschritte bzw. Modellantworten, Standard 0.'}
+        maxContextTokens: {type: integer, minimum: 0, maximum: 1000000000, description: 'Größter Kontext einer Anfrage an diesem Tag, Standard 0.'}
+        subagent: {type: boolean, default: false}
+        projectID: {type: string, format: uuid}
+        repository: {type: string, maxLength: 300}
+        commits: {type: integer, minimum: 0, maximum: 100000}
+        cardUpdates: {type: integer, minimum: 0, maximum: 100000}
+    UsageReportResult:
+      type: object
+      required: [stored, created, updated, costUSD, unpricedModels, unassigned]
+      properties:
+        stored: {type: integer, description: Anzahl Zeilen des Aufrufs}
+        created: {type: integer}
+        updated: {type: integer, description: 'Vorhandene Zeilen, die ersetzt wurden (auch bei gleichem Inhalt).'}
+        costUSD: {type: number, description: 'Kosten der gemeldeten Zeilen nach aktueller Preistabelle (zum Abgleich mit T3).'}
+        unpricedModels: {type: array, items: {type: string}}
+        unassigned:
+          type: array
+          description: 'Zeilen mit projectID oder repository, die keinem lesbaren Projekt zugeordnet wurden.'
+          items:
+            type: object
+            required: [index]
+            properties:
+              index: {type: integer, description: 0-basierte Position in rows}
+              repository: {type: string}
+              projectID: {type: string}
+    Rating:
+      type: string
+      enum: [good, medium, bad, info, unknown]
+    Metric:
+      type: object
+      required: [id, rating]
+      properties:
+        id: {type: string, enum: [costPerDay, cacheHitRate, cacheWriteCostShare, outputShare, contextPerTurn, opusCostShare, costPerDoneCard, idleCostShare]}
+        rating: {$ref: '#/components/schemas/Rating'}
+        value: {type: number, description: 'Anteile als 0..1, Geld in USD, Kontext in Tokens. Fehlt bei unbekannt.'}
+        previous: {type: number, description: Wert des Vorzeitraums, falls berechenbar}
+        change: {type: number, description: 'Relative Änderung (value - previous) / previous als Bruch.'}
+    CostParts:
+      type: object
+      required: [input, cacheWrite, cacheRead, output]
+      properties:
+        input: {type: number}
+        cacheWrite: {type: number}
+        cacheRead: {type: number}
+        output: {type: number}
+    UsageSummary:
+      type: object
+      required: [days, from, until, partial, hasData, totalCostUSD, verdict, metrics, series, models, sessions, projects, unpricedModels]
+      properties:
+        days: {type: integer}
+        from: {type: string, format: date}
+        until: {type: string, format: date}
+        partial: {type: boolean, description: 'until ist heute (UTC) oder später: der letzte Tag läuft noch.'}
+        hasData: {type: boolean, description: 'Zeilen im Fenster vorhanden.'}
+        hasAnyData: {type: boolean, description: 'Das Konto hat überhaupt schon Zeilen (sonst Leerzustand "Sammler einrichten").'}
+        totalCostUSD: {type: number}
+        previousCostUSD: {type: number, description: Fehlt ohne Vorzeitraumdaten.}
+        verdict:
+          type: object
+          required: [rating]
+          properties:
+            rating: {$ref: '#/components/schemas/Rating'}
+            best: {type: string}
+            worst: {type: string}
+            lever: {type: string}
+        metrics:
+          type: array
+          description: 'Immer alle acht, in der Reihenfolge costPerDay, cacheHitRate, cacheWriteCostShare, outputShare, contextPerTurn, opusCostShare, costPerDoneCard, idleCostShare.'
+          items: {$ref: '#/components/schemas/Metric'}
+        series:
+          type: array
+          description: 'Ein Eintrag je Tag des Fensters (auch ohne Daten, dann 0).'
+          items:
+            type: object
+            required: [day, costUSD, parts]
+            properties:
+              day: {type: string, format: date}
+              costUSD: {type: number}
+              parts: {$ref: '#/components/schemas/CostParts'}
+        models:
+          type: array
+          description: 'Modellmix nach Familie, absteigend nach Kosten.'
+          items:
+            type: object
+            required: [family, costUSD, share, tokens]
+            properties:
+              family: {type: string, enum: [opus, sonnet, haiku, fable, codex, other], description: 'codex = provider codex; sonst nach Namensbestandteil.'}
+              costUSD: {type: number}
+              share: {type: number}
+              tokens: {type: integer}
+        sessions:
+          type: array
+          description: 'Höchstens 10, teuerste zuerst.'
+          items:
+            type: object
+            required: [sessionKey, costUSD, share, models, turns, maxContextTokens, subagent, idle]
+            properties:
+              sessionKey: {type: string}
+              costUSD: {type: number}
+              share: {type: number}
+              models: {type: array, items: {type: string}, description: 'Teuerstes Modell zuerst.'}
+              projectID: {type: string, format: uuid, description: 'Projekt mit den höchsten Kosten dieser Sitzung.'}
+              projectName: {type: string}
+              turns: {type: integer}
+              maxContextTokens: {type: integer}
+              subagent: {type: boolean}
+              commits: {type: integer, description: Fehlt ohne Meldung.}
+              cardUpdates: {type: integer, description: Fehlt ohne Meldung.}
+              idle: {type: boolean, description: 'Ergebnis gemeldet und 0 Commits und 0 Kartenänderungen ("teuer und ohne Ergebnis").'}
+        projects:
+          type: array
+          description: 'Absteigend nach Kosten; ohne projectID = Zeilen ohne (lesbares) Projekt.'
+          items:
+            type: object
+            required: [costUSD, share, doneCards]
+            properties:
+              projectID: {type: string, format: uuid}
+              projectName: {type: string}
+              costUSD: {type: number}
+              share: {type: number}
+              doneCards: {type: integer}
+              costPerDoneCard: {type: number}
+        unpricedModels: {type: array, items: {type: string}}
+    Price:
+      type: object
+      additionalProperties: false
+      required: [model, input, cacheWrite, cacheWrite1h, cacheRead, output]
+      properties:
+        model: {type: string, maxLength: 80, description: 'Modellkennung oder Präfix, Zeichen wie UsageRow.model.'}
+        input: {type: number, minimum: 0, maximum: 10000}
+        cacheWrite: {type: number, minimum: 0, maximum: 10000}
+        cacheWrite1h: {type: number, minimum: 0, maximum: 10000}
+        cacheRead: {type: number, minimum: 0, maximum: 10000}
+        output: {type: number, minimum: 0, maximum: 10000}
+        custom: {type: boolean, readOnly: true, description: Nur in Antworten, true = eigener Eintrag.}
+    Thresholds:
+      type: object
+      additionalProperties: false
+      description: 'Anteile in Prozent (0..100), Kontext in Tokens. Änderungsschwellen in Prozent.'
+      properties:
+        costTrendGoodPercent: {type: number, default: -5}
+        costTrendBadPercent: {type: number, default: 15}
+        cacheHitGoodPercent: {type: number, default: 92}
+        cacheHitMediumPercent: {type: number, default: 85}
+        cacheWriteGoodPercent: {type: number, default: 45}
+        cacheWriteBadPercent: {type: number, default: 65}
+        contextGoodTokens: {type: number, default: 60000}
+        contextBadTokens: {type: number, default: 120000}
+        opusTargetPercent: {type: number, description: 'Ohne Standardwert; ohne Vorgabe wird der Opus-Anteil nicht bewertet.'}
+        cardTrendPercent: {type: number, default: 5}
+        idleGoodPercent: {type: number, default: 5}
+        idleBadPercent: {type: number, default: 15}
+    UsageSettings:
+      type: object
+      required: [prices, thresholds]
+      properties:
+        prices: {type: array, items: {$ref: '#/components/schemas/Price'}, description: Wirksame Tabelle}
+        thresholds: {$ref: '#/components/schemas/Thresholds'}
+    UsageSettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        prices: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/Price'}}
+        thresholds: {$ref: '#/components/schemas/Thresholds'}
