@@ -64,8 +64,12 @@ async function openConsent(c: Client): Promise<string> {
 
 async function allow(c: Client, verifier: string): Promise<Tokens> {
 	const arrived = page.waitForRequest((r) => r.url().startsWith(CALLBACK));
+	// Nothing listens on the callback port: the browser ends the redirect on its error page at the callback URL. Wait for that
+	// page, otherwise the redirect can still be under way and interrupt the next page.goto (Firefox, E2E run 45932941121).
+	const settled = page.waitForURL((u) => u.href.startsWith(CALLBACK), { timeout: 15_000 }).catch(() => undefined);
 	await page.getByRole('button', { name: 'Erlauben' }).click();
 	const code = new URL((await arrived).url()).searchParams.get('code');
+	await settled;
 	expect(code).toBeTruthy();
 	const t = await page.request.post('/oauth/token', { form: { grant_type: 'authorization_code', client_id: c.id, code: code!, redirect_uri: CALLBACK, code_verifier: verifier } });
 	expect(t.ok(), await t.text()).toBeTruthy();
