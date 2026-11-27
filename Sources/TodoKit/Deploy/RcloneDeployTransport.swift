@@ -173,12 +173,88 @@ struct RcloneDeployTransport: DeployTransport {
             .map { DeployRemoteFile(path: $0.Path, size: $0.Size) }
     }
 
+    // MARK: FTP symlinks (ADR 0041)
+
+    /// FTP and FTPS list a symlink like a file and the server follows it on download: a link to a file outside the base path
+    /// would deliver that file. rclone cannot tell the two apart, so every directory on the way to a requested file is listed with
+    /// `curl` (LIST, unix format: `l...`) and files below or behind a link are dropped. Credentials go in a configuration file
+    /// (0600), never on the command line.
+    private static func curlConfigValue(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r").replacingOccurrences(of: "\t", with: "\\t").replacingOccurrences(of: "\u{0b}", with: "\\v")
+    }
+
+    private static func urlComponent(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")) ?? ""
+    }
+
+    static func curlExitCode(_ status: Int32) -> String {
+        switch status {
+        case 35, 51, 53, 54, 58, 59, 60, 64, 77, 80, 82, 83, 90, 91: "deploy_tls_untrusted"
+        case 67, 69: "deploy_auth_failed"
+        case 9, 19, 78: "deploy_base_path_missing"
+        case 6, 7, 28, 56: "deploy_unreachable"
+        default: "deploy_failed"
+        }
+    }
+
+    /// Names of the symlinks in a unix LIST answer. An `l` line that cannot be read fails the whole check (fail closed).
+    static func symlinkNames(inList text: String) throws -> Set<String> {
+        var names = Set<String>()
+        for line in text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) where line.first == "l" {
+            let fields = line.split(separator: " ", maxSplits: 8, omittingEmptySubsequences: true)
+            guard fields.count == 9, let arrow = fields[8].range(of: " -> ") else { throw DeployTransportError(code: "deploy_failed") }
+            names.insert(String(fields[8][..<arrow.lowerBound]))
+        }
+        return names
+    }
+
+    private func linkFreePaths(_ c: DeployConnection, paths: [String], dir: URL) async throws -> [String] {
+        guard let proto = DeployProtocol(rawValue: c.protocolName), proto != .sftp else { return paths }
+        guard let curl = Self.binary("DEPLOY_CURL_PATH", "curl") else { throw DeployTransportError(code: "deploy_transport_unavailable") }
+        var directories = Set<String>()
+        for p in paths {
+            let parts = p.split(separator: "/").map(String.init)
+            for i in 0..<parts.count { directories.insert(parts[0..<i].joined(separator: "/")) }
+        }
+        guard directories.count <= 1000 else { throw DeployTransportError(code: "deploy_failed") }
+        let conf = dir.appendingPathComponent("curl.conf")
+        FileManager.default.createFile(atPath: conf.path, contents: Data("user = \"\(Self.curlConfigValue(c.username)):\(Self.curlConfigValue(c.password ?? ""))\"\n".utf8),
+                                       attributes: [.posixPermissions: 0o600])
+        var tls: [String] = proto.usesTLS && proto == .ftps ? ["--ssl-reqd"] : []
+        if proto.usesTLS, let pem = c.tlsCertificate {
+            let ca = dir.appendingPathComponent("curl-ca.pem")
+            FileManager.default.createFile(atPath: ca.path, contents: Data(pem.utf8), attributes: [.posixPermissions: 0o600])
+            tls += ["--cacert", ca.path]
+        }
+        let host = c.host.contains(":") ? "[\(c.host)]" : c.host
+        let base = c.basePath.hasPrefix("/") ? "/" + DeployPath.trimmed(String(c.basePath.dropFirst())) : DeployPath.trimmed(c.basePath)
+        let basePrefix = base.split(separator: "/", omittingEmptySubsequences: false).map { Self.urlComponent(String($0)) }.joined(separator: "/")
+        var links: [String: Set<String>] = [:]
+        for d in directories.sorted() {
+            let path = [basePrefix, d.split(separator: "/").map { Self.urlComponent(String($0)) }.joined(separator: "/")].filter { !$0.isEmpty }.joined(separator: "/")
+            let url = "\(proto == .ftpsImplicit ? "ftps" : "ftp")://\(host):\(c.port)/" + (c.basePath.hasPrefix("/") ? "/" : "") + path.drop(while: { $0 == "/" }) + "/"
+            let outFile = dir.appendingPathComponent("list-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: outFile) }
+            let out = try await Self.run(curl, ["-q", "-sS", "--globoff", "--connect-timeout", "15", "--max-time", "60", "--ftp-skip-pasv-ip", "-K", conf.path] + tls
+                                         + ["-o", outFile.path, url], dir: dir, timeout: 90)
+            guard out.status == 0 else { throw DeployTransportError(code: Self.curlExitCode(out.status)) }
+            links[d] = try Self.symlinkNames(inList: String(decoding: (try? Data(contentsOf: outFile)) ?? Data(), as: UTF8.self))
+        }
+        return paths.filter { p in
+            let parts = p.split(separator: "/").map(String.init)
+            return !parts.indices.contains { links[parts[0..<$0].joined(separator: "/")]?.contains(parts[$0]) == true }
+        }
+    }
+
     func read(_ c: DeployConnection, paths: [String]) async throws -> [String: Data] {
-        let safe = paths.filter { DeployPath.isSafeRelative($0, allowEmpty: false) }
-        guard !safe.isEmpty else { return [:] }
+        let wanted = paths.filter { DeployPath.isSafeRelative($0, allowEmpty: false) }
+        guard !wanted.isEmpty else { return [:] }
         let rclone = try rclone()
         let dir = try makeRunDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
+        let safe = try await linkFreePaths(c, paths: wanted, dir: dir)
+        guard !safe.isEmpty else { return [:] }
         let args = try await configure(c, rclone: rclone, dir: dir)
         let list = dir.appendingPathComponent("files.txt"), copy = dir.appendingPathComponent("copy")
         FileManager.default.createFile(atPath: list.path, contents: Data((safe.joined(separator: "\n") + "\n").utf8), attributes: [.posixPermissions: 0o600])

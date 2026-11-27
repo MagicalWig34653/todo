@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.16.0
+  version: 1.17.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -52,6 +52,8 @@ info:
     neuen Scopes; Ziele anlegen und ändern nur Personen (REST).
     1.16.0 (Karte FFF3C6AB, ADR 0040, lockernd, Handbuch 1.53.0): das verbrauchte Refresh-Token wird ohne Zeitgrenze wieder angenommen,
     solange keiner seiner Nachfolger benutzt wurde, höchstens 50 Wiederholungen; Refresh-Frist 90 statt 30 Tage.
+    1.17.0 (Karte 354ADE12, ADR 0041, additiv, Handbuch 1.54.0, contracts/deploy.yaml 1.1.0): neues Werkzeug pull_server_changes (projects:read,
+    Bearbeiten-Rechte), Server-Änderungen holen, nur lesen; Geheimnisse und ausgeschlossene Dateien werden nie geliefert. Keine neuen Scopes.
 servers:
   - url: http://localhost:28080
 paths:
@@ -339,6 +341,7 @@ x-mcp-tools:
   list_deploy_targets: {scope: 'projects:read', required: [projectID], notes: 'Siehe contracts/deploy.yaml. Ergebnis {targets: [DeployTargetSummary]}: id, name, stage, protocol, hostKeyConfirmed; nie Host oder Zugangsdaten.'}
   test_deploy_target: {scope: 'projects:read', required: [targetID], notes: 'Siehe contracts/deploy.yaml. Bearbeiten-Rechte am Projekt. Ergebnis {ok, code?, files?}; ändert nichts am Server.'}
   compare_deploy_target: {scope: 'projects:read', required: [targetID, files], notes: 'Siehe contracts/deploy.yaml. files = Repo-Manifest [{path, size, sha256}]; Ergebnis DeployCompareResult (same, new, changed, serverOnly, unverified). Nur lesen.'}
+  pull_server_changes: {scope: 'projects:read', required: [targetID, files], notes: 'Siehe contracts/deploy.yaml. files = Repo-Manifest [{path, size, sha256, eol?}], optional paths, maxBytes (Vorgabe 262144), eol. Ergebnis DeployPullResult; Geheimnisse und Ausschlüsse nur als findings. Branch und Commit legt der Agent selbst an. Nur lesen.'}
   report_usage: {scope: 'tasks:write', required: [rows], notes: 'Siehe contracts/usage.yaml. Argument rows (1 bis 500 UsageRow); idempotent je Tag, Sitzung und Modell; Ergebnis UsageReportResult. REST POST /v1/usage.'}
   get_task_live: {scope: 'tasks:read', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Live-Ansicht. REST GET /v1/tasks/{id}/live.'}
   get_task_pipeline: {scope: 'tasks:read', required: [taskID], notes: 'Siehe contracts/pipeline.yaml. REST GET /v1/tasks/{id}/pipeline.'}

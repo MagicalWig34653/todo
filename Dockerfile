@@ -33,7 +33,7 @@ RUN case "$TARGETARCH" in \
  && mkdir /out && unzip -j /tmp/rclone.zip '*/rclone' -d /out && chmod 755 /out/rclone
 
 FROM ubuntu:noble
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libjemalloc2 libcurl4t64 libxml2 openssh-client && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libjemalloc2 libcurl4t64 libxml2 openssh-client curl && rm -rf /var/lib/apt/lists/* \
  && useradd --system --create-home todo
 COPY --from=build /src/.build/release/App /usr/local/bin/todo-app
 COPY --from=rclone /out/rclone /usr/local/bin/rclone

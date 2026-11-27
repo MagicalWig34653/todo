@@ -72,7 +72,7 @@ In `stack.env`: `SETTINGS_KEY_ENABLED=true` (optional `SETTINGS_KEY_SECRET=<ande
 ## Deploy-Ziele (ADR 0039, nur lesen)
 
 - Zugangsdaten der Deploy-Ziele werden mit `SETTINGS_ENCRYPTION_KEY` verschlüsselt; ohne Schlüssel lässt sich kein Ziel anlegen. `settings rotate-key` verschlüsselt sie noch **nicht** neu: den alten Schlüssel als `SETTINGS_ENCRYPTION_KEY_PREVIOUS` behalten oder die Zugangsdaten neu eintragen.
-- Das Image enthält `rclone` und `ssh-keyscan`. Andere Pfade: `DEPLOY_RCLONE_PATH`, `DEPLOY_SSH_KEYSCAN_PATH` (nur Umgebung).
+- Das Image enthält `rclone`, `ssh-keyscan` und `curl` (prüft beim Holen über FTP/FTPS, ob eine Datei ein Symlink ist). Andere Pfade: `DEPLOY_RCLONE_PATH`, `DEPLOY_SSH_KEYSCAN_PATH`, `DEPLOY_CURL_PATH` (nur Umgebung).
 - Private und Loopback-Adressen als Ziel sind gesperrt. `DEPLOY_ALLOW_PRIVATE_HOSTS=1` (nur Umgebung) erlaubt sie, z. B. für einen Server im eigenen Netz.
 
 ## Einstellungsprogramm `settings.sh` (Env-Datei per Menü oder Kommandozeile)

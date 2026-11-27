@@ -91,6 +91,8 @@ struct DeployManifestEntry: Content {
     let path: String
     let size: Int
     let sha256: String
+    /// Line endings of this file in the repo (pull): `lf` (default) | `crlf` | `keep`. Ignored by compare.
+    var eol: String? = nil
 }
 
 struct DeployCompareRequest: Content { let files: [DeployManifestEntry] }
@@ -325,7 +327,7 @@ struct DeployService: Sendable {
 
     // MARK: Connection test and compare
 
-    private func connection(_ t: DeployTarget, address: String) throws -> DeployConnection {
+    func connection(_ t: DeployTarget, address: String) throws -> DeployConnection {
         let endpoint = SettingsKeyRing.deployEndpoint(protocolName: t.protocolName, host: t.host, port: t.port, username: t.username)
         let secret = try app.requireSettingsRuntime().keyRing.openDeploy(t.secretCiphertext, keyID: t.secretKeyID, targetID: try t.requireID(), endpoint: endpoint)
         return DeployConnection(protocolName: t.protocolName, host: address, port: t.port, basePath: t.basePath, username: t.username,
@@ -333,7 +335,7 @@ struct DeployService: Sendable {
                                 hostKey: t.hostKey, tlsCertificate: t.tlsCertificate)
     }
 
-    private func failure(_ t: DeployTarget, _ code: String, _ action: String) -> String {
+    func failure(_ t: DeployTarget, _ code: String, _ action: String) -> String {
         app.logger.info("deploy \(action) failed", metadata: ["target": .string(t.id?.uuidString ?? "-"), "code": .string(code)])
         return code
     }
@@ -365,8 +367,8 @@ struct DeployService: Sendable {
         for f in files {
             let sha = f.sha256.lowercased()
             guard DeployPath.isSafeRelative(f.path, allowEmpty: false), f.size >= 0, sha.count == 64, sha.allSatisfy({ hex.contains($0) }),
-                  out[f.path] == nil else { throw Abort(.badRequest, reason: "deploy_manifest_invalid") }
-            out[f.path] = DeployManifestEntry(path: f.path, size: f.size, sha256: sha)
+                  out[f.path] == nil, f.eol.map({ ["lf", "crlf", "keep"].contains($0) }) ?? true else { throw Abort(.badRequest, reason: "deploy_manifest_invalid") }
+            out[f.path] = DeployManifestEntry(path: f.path, size: f.size, sha256: sha, eol: f.eol)
         }
         return out
     }
@@ -485,6 +487,8 @@ struct DeployController: RouteCollection {
         // A whole repo manifest (up to DeployLimits.maxManifest entries, ~100 bytes each) is far above the default 256 kB body
         // limit; 16 MB holds 50 000 entries with paths of up to ~250 characters on average.
         t.on(.POST, "compare", body: .collect(maxSize: "16mb"), use: compare)
+        // Pull (phase 2a, ADR 0041): same manifest, the answer carries file contents (up to 16 MB).
+        t.on(.POST, "pull", body: .collect(maxSize: "16mb"), use: pull)
     }
 
     // `requireUser` accepts person sessions only: OAuth access tokens (MCP connections) are 401 here.

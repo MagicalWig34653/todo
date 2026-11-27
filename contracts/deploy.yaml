@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
-  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a, nur lesen
-  version: 1.0.1
+  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a und 2a, nur lesen
+  version: 1.1.0
   description: |
     Karte 354ADE12, ADR 0039, Konzept im Orchestrator docs/konzept-deploy-sftp.md (Abschnitt 8 vor 1–7).
 
@@ -49,6 +49,18 @@ info:
     2 MB, weil sie sich nur in Zeilenenden unterscheiden kann). Status: same (gleich; Textdateien bis 2 MB auch nach CRLF -> LF),
     new (nur im Repo), changed, serverOnly (nur auf dem Server, innerhalb der Zuordnung und nicht ausgeschlossen), unverified (zu groß
     zum Laden, > 64 MB je Datei oder > 256 MB je Lauf). Verbindungsfehler kommen als 200 mit ok=false und code.
+
+    Holen (1.1.0, Phase 2a, ADR 0041): POST .../pull liefert die Dateien, die auf dem Server geändert wurden oder nur dort liegen,
+    mit den Zeilenenden des Repos (Manifest-Eintrag `eol`: lf (Vorgabe), crlf, keep; Binärdateien bleiben unberührt), dazu Branch-Name
+    `server/<ziel>-JJJJ-MM-TT` (Europe/Berlin) und eine Commit-Nachricht. Dateien mit Geheimnis-Namen (.env*, *.pem, *.key, id_rsa*,
+    .htpasswd, .ssh/, .aws/ ...), in .git/.github, mit Geheimnis-Inhalt (Konfigurationsdateien mit Passwort, Schlüssel oder Token,
+    private Schlüssel, bekannte Token-Formate, Zugangsdaten in URLs), nach den Ausschlussregeln des Ziels oder über 8 MB werden nie
+    geliefert und nur in `findings` genannt (reason secret_name, blocked_path, secret_content, excluded, too_large, unreadable);
+    Namen, Sperr- und Ausschlusspfade werden nicht einmal heruntergeladen. Das Ergebnis ist durch `maxBytes` begrenzt (REST 4 MB,
+    MCP 256 kB, höchstens 16 MB; eine Datei geht immer durch), `remaining` nennt die Repo-Pfade für den nächsten Aufruf (`paths`).
+    Symlinks: SFTP listet und liest sie nicht; FTP/FTPS listen sie wie Dateien, deshalb wird vor dem Lesen jedes Verzeichnis auf dem
+    Weg mit LIST geprüft (curl) und alles hinter einem Link verworfen. Der Server legt keinen Branch an und hat keinen Zugriff auf
+    GitHub: Branch und Commit entstehen beim Aufrufer (scripts/deploy-pull-apply.py). Auf dem Server wird nichts geändert.
 
     Fehlercodes der Verbindung: deploy_host_key_unconfirmed, deploy_host_key_mismatch, deploy_tls_untrusted, deploy_auth_failed,
     deploy_base_path_missing, deploy_unreachable, deploy_target_blocked, deploy_transport_unavailable (rclone fehlt),
@@ -110,8 +122,65 @@ paths:
       responses:
         '200': {description: Ergebnis, content: {application/json: {schema: {$ref: '#/components/schemas/DeployCompareResult'}}}}
         '400': {description: deploy_manifest_invalid}
+  /v1/deploy-targets/{targetID}/pull:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Server-Änderungen holen, nur lesen (Person, edit; Body bis 16 MB). MCP pull_server_changes hat dieselben Argumente und dieselbe Antwort.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files: {type: array, maxItems: 50000, items: {$ref: '#/components/schemas/ManifestEntry'}}
+                paths: {type: array, maxItems: 5000, items: {type: string}, description: 'nur diese Repo-Pfade (z. B. remaining der letzten Antwort); die Zusammenfassung gilt dann für diese Auswahl'}
+                maxBytes: {type: integer, minimum: 1, maximum: 16777216, description: 'Budget der gelieferten Inhalte, REST Vorgabe 4194304, MCP 262144'}
+                eol: {type: string, enum: [lf, keep], description: 'Zeilenenden für Dateien ohne Manifest-Eintrag (Vorgabe lf)'}
+      responses:
+        '200': {description: Ergebnis (Verbindungsfehler als ok=false mit code), content: {application/json: {schema: {$ref: '#/components/schemas/DeployPullResult'}}}}
+        '400': {description: 'deploy_manifest_invalid, deploy_pull_invalid'}
+        '401': {description: Keine Personen-Sitzung}
+        '403': {description: Nur lesen am Projekt}
+        '404': {description: Ziel unbekannt oder nicht sichtbar}
 components:
   schemas:
+    DeployPullResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+        code: {type: string}
+        branch: {type: string, example: server/kubus-test-2026-11-27}
+        commitMessage: {type: string}
+        summary: {type: object, properties: {changed: {type: integer}, serverOnly: {type: integer}, onlyInRepo: {type: integer}, same: {type: integer}, withheld: {type: integer}, unverified: {type: integer}}}
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, serverPath, status, eol, encoding, content, size, sha256]
+            properties:
+              path: {type: string, description: Repo-Pfad}
+              serverPath: {type: string}
+              status: {type: string, enum: [changed, serverOnly]}
+              eol: {type: string, enum: [lf, crlf, keep, binary]}
+              encoding: {type: string, enum: [utf-8, base64], description: 'base64 bei Binärdateien, ungültigem UTF-8 oder führendem BOM'}
+              content: {type: string}
+              size: {type: integer}
+              sha256: {type: string, description: SHA-256 des gelieferten Inhalts}
+        findings:
+          type: array
+          items:
+            type: object
+            required: [path, serverPath, reason]
+            properties:
+              path: {type: string}
+              serverPath: {type: string}
+              reason: {type: string, enum: [secret_name, blocked_path, secret_content, excluded, too_large, unreadable]}
+        findingsTotal: {type: integer, description: 'höchstens 500 Einträge in findings'}
+        remaining: {type: array, items: {type: string}}
+
     Rules:
       type: object
       properties:
@@ -179,6 +248,7 @@ components:
         path: {type: string, maxLength: 1024}
         size: {type: integer, minimum: 0}
         sha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+        eol: {type: string, enum: [lf, crlf, keep], description: 'nur Holen: Zeilenenden der Datei im Repo (Vorgabe lf); beim Abgleich ignoriert'}
     DeployCompareResult:
       type: object
       required: [ok]

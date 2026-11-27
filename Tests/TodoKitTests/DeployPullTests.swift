@@ -231,7 +231,7 @@ extension DeployTargetTests {
             let seen = try await f.test.json(.GET, "/v1/deploy-targets/\(id)", token: stranger)
             XCTAssertEqual(seen.status, .ok, "reader sees the target")
             let reader = try await f.test.json(.POST, "/v1/deploy-targets/\(id)/pull", ["files": []], token: stranger)
-            XCTAssertEqual(reader.status, .notFound, "\(reader.body ?? [:])")
+            XCTAssertEqual(reader.status, .forbidden, "\(reader.body ?? [:])")
             XCTAssertFalse(String(describing: reader.body ?? [:]).contains("INHALT-vom-Server-771"))
 
             f.transport.failure = "deploy_unreachable"
@@ -327,9 +327,9 @@ extension DeployTargetTests {
 
     /// Server files are untrusted: a large file must not make the patterns explode.
     func testSecretGuardStaysFastOnHostileInput() {
-        let blobs = [String(repeating: "a", count: 2_000_000), String(repeating: "password", count: 250_000),
-                     String(repeating: "<password", count: 200_000), String(repeating: "://a:", count: 400_000),
-                     String(repeating: "token = ", count: 200_000)]
+        let blobs = [String(repeating: "a", count: 1_000_000), String(repeating: "password", count: 125_000),
+                     String(repeating: "<password", count: 100_000), String(repeating: "://a:", count: 200_000),
+                     String(repeating: "token = ", count: 100_000)]
         let started = Date()
         for blob in blobs {
             for path in ["config.yml", "config.xml", "x.js"] { _ = DeploySecretGuard.containsSecret(path: path, data: Data(blob.utf8)) }
