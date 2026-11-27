@@ -187,6 +187,57 @@ final class LiveRefreshTests: XCTestCase {
         XCTAssertEqual(r.status, .unauthorized)
     }
 
+    private func waitForRegistrations(_ t: TestApp, _ count: Int) async throws {
+        for _ in 0..<500 {
+            if await t.app.liveHub.registrations >= count { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("waits not registered")
+    }
+
+    /// A replaced or shut-down wait that carries a newer token must say `changed`, otherwise the client takes over the token
+    /// without reloading and misses the change until the next one.
+    func testSupersededAndShutdownRepliesReportAChangedToken() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        t.app.liveSettings.pollInterval = 30 // the poller must not wake the first wait before it is replaced
+        let a = try await account(t)
+        let old = try await token(t, a.token)
+        async let first = t.json(.GET, "/v1/sync/wait?since=\(old)&timeout=10&client=tab-aaaaaaaa", token: a.token)
+        try await waitForRegistrations(t, 1)
+        try await mutate(t, a.token, "project.create", id: UUID().uuidString, ["name": "X"])
+        let new = try await token(t, a.token)
+        async let second = t.json(.GET, "/v1/sync/wait?since=\(new)&timeout=10&client=tab-aaaaaaaa", token: a.token)
+        let replaced = try await first
+        XCTAssertEqual(replaced.body?["token"] as? String, new)
+        XCTAssertEqual(replaced.body?["changed"] as? Bool, true)
+        XCTAssertEqual(replaced.body?["retryAfter"] as? Int, 2)
+        try await waitForRegistrations(t, 2)
+        try await mutate(t, a.token, "project.create", id: UUID().uuidString, ["name": "Y"])
+        await t.app.liveHub.shutdown()
+        let ended = try await second
+        XCTAssertNotEqual(ended.body?["token"] as? String, new)
+        XCTAssertEqual(ended.body?["changed"] as? Bool, true)
+        XCTAssertEqual(ended.body?["retryAfter"] as? Int, 2)
+    }
+
+    func testSameClientKeyOfAnotherAccountReplacesNothing() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        t.app.liveSettings.pollInterval = 30
+        let a = try await account(t), b = try await account(t)
+        let cur = try await token(t, a.token)
+        async let first = t.json(.GET, "/v1/sync/wait?since=\(cur)&timeout=1&client=tab-aaaaaaaa", token: a.token)
+        try await waitForRegistrations(t, 1)
+        async let second = t.json(.GET, "/v1/sync/wait?since=\(cur)&timeout=1&client=tab-aaaaaaaa", token: b.token)
+        try await waitForRegistrations(t, 2)
+        let count = await t.app.liveHub.waiterCount
+        XCTAssertEqual(count, 2)
+        let (r1, r2) = try await (first, second)
+        XCTAssertNil(r1.body?["retryAfter"] as? Int)
+        XCTAssertNil(r2.body?["retryAfter"] as? Int)
+    }
+
     func testDisabledHidesRoutesAndCapability() async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
