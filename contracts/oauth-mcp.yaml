@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.13.0
+  version: 1.14.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -44,6 +44,8 @@ info:
     Auswahl je Aufruf auf; neues lesendes Werkzeug list_project_groups. Bedeutung und Felder: contracts/connections.yaml x-project-selection.
     takeover.explicit_project_ids nennt die ausdruecklich gewaehlten Projekte der alten Verbindung; nur diese und die ausdruecklich
     genannten Vollmacht-Projekte sind vorausgewaehlt. Mit Mandatsregel wird jedes nicht bestaetigte Vollmacht-Projekt ausgeschlossen.
+    1.14.0 (Karte 71FD73CF, ADR 0038, additiv, Handbuch 1.50.0, contracts/usage.yaml 1.0.0): neues Werkzeug report_usage (tasks:write), dieselben
+    Argumente, Regeln und Antwort wie POST /v1/usage; Projektzuordnung nur für Projekte im Grant. Keine neuen Scopes.
 servers:
   - url: http://localhost:28080
 paths:
@@ -327,6 +329,7 @@ x-mcp-tools:
   post_channel_message: {scope: 'channels:write', required: [], notes: 'Siehe docs/MCP-PARITAET.md, Kanal #brain. Arten text, voice_out, status; voice_in nur durch die Person; Idempotenz über clientUUID.'}
   report_session_step: {scope: 'tasks:write', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Live-Ansicht und contracts/live-session.yaml. Rolle edit; Secrets werden vor dem Speichern maskiert.'}
   report_session_event: {scope: 'tasks:write', required: [taskID, kind, text], notes: 'Siehe docs/MCP-PARITAET.md, Live-Ansicht. Arten tool, note, question, progress; Text bis 280 Zeichen; Idempotenz über clientUUID.'}
+  report_usage: {scope: 'tasks:write', required: [rows], notes: 'Siehe contracts/usage.yaml. Argument rows (1 bis 500 UsageRow); idempotent je Tag, Sitzung und Modell; Ergebnis UsageReportResult. REST POST /v1/usage.'}
   get_task_live: {scope: 'tasks:read', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Live-Ansicht. REST GET /v1/tasks/{id}/live.'}
   get_task_pipeline: {scope: 'tasks:read', required: [taskID], notes: 'Siehe contracts/pipeline.yaml. REST GET /v1/tasks/{id}/pipeline.'}
   set_task_plan: {scope: 'tasks:write', required: [taskID, plan], notes: 'Siehe contracts/pipeline.yaml. Argumente: taskID, plan, expectedVersion?, agentName?. REST PUT /v1/tasks/{id}/plan.'}

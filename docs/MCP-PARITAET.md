@@ -370,3 +370,11 @@ Es gibt kein MCP-Werkzeug zum Lesen, Setzen oder Aendern des Webhooks und keinen
 ## Wächter-Start (17.11.2026, Handbuch 1.32.0, ADR 0033 Stufe C)
 
 `start_agent_job` erhält `releaseID` (UUID; gleicher Aufruf liefert den vorhandenen Job, abweichende Daten `release_id_conflict`) und `origin` (`manual` | `scheduler`). `origin: scheduler` ist der Wächter-Zugang (eigene Verbindung mit `tasks:read` und `runs:write`) und startet nur, wenn Kontoschalter "Automatische Starts erlauben" (Standard aus, REST `GET/PUT /v1/settings/auto-start`, nur Sitzung) und Karten-Erlaubnis `autoStart` (REST `PUT /v1/tasks/{id}/auto-start`, nur Sitzung und Projekteigentümer) gesetzt sind, die Karte nicht `done` und nicht blockiert ist (`auto_start_disabled_for_account`, `auto_start_not_enabled`, `task_done`, `task_blocked`). Der Server setzt nach der Übergabe `autoStartedAt` und löscht `autoStart` (Ein-Mal-Erlaubnis). Änderungen an Titel, Beschreibung, Projekt oder `plannedAt` löschen `autoStart`, ebenso eine Änderung von `plannedMinutes` durch jemand anderen als den Eigentümer in Person (auch MCP `update_task`/`update_task_planning`, Sync); Aktivität `agent.auto_start_revoked`. Es gibt keinen MCP-Weg, `autoStart` zu setzen. `get_system_status` liefert zusätzlich `autoStartAllowed`.
+
+## Kosteneffizienz (Handbuch 1.50.0, ADR 0038, Karte 71FD73CF)
+
+| Werkzeug | Scope | Klasse | Argumente |
+| --- | --- | --- | --- |
+| `report_usage` | tasks:write | A | `rows` (1 bis 500, `contracts/usage.yaml` UsageRow); gleiche Regeln und Antwort wie `POST /v1/usage` |
+
+Bewusst ohne MCP: Zusammenfassung lesen (`GET /v1/usage/summary`) sowie Preise und Schwellen (`/v1/usage/settings`), beides nur mit Personen-Sitzung. `list_cost_findings` folgt in Phase 3.

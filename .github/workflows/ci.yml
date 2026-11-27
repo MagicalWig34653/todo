@@ -55,6 +55,11 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
           scripts/pipeline-e2e.sh "$RUNNER_TEMP/pipeline-e2e"
+      # Cost efficiency (card 71FD73CF): usage reports via REST and MCP, hand-calculated summary, settings, account deletion.
+      - name: Usage E2E (cost efficiency, report_usage)
+        run: |
+          apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
+          scripts/usage-e2e.sh "$RUNNER_TEMP/usage-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)

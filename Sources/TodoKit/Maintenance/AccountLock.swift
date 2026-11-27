@@ -147,6 +147,8 @@ enum AccountLock {
         try await PushDevice.query(on: db).filter(\.$userID == uid).delete()
         try await PushPrefs.query(on: db).filter(\.$userID == uid).delete()
         try await PushOutbox.query(on: db).filter(\.$userID == uid).delete()
+        try await UsageDaily.query(on: db).filter(\.$userID == uid).delete()
+        try await UsageSetting.query(on: db).filter(\.$userID == uid).delete()
         let deviceIDs = try await RunnerDevice.query(on: db).filter(\.$ownerID == uid).all().map { try $0.requireID() }
         if !deviceIDs.isEmpty {
             try await RunnerPairing.query(on: db).filter(\.$deviceID ~~ deviceIDs).delete()
@@ -226,11 +228,20 @@ struct AccountLockController: RouteCollection {
         let labels: [ExportLabel]
         let channelMessages: [ExportChannelMessage]
         let voicePrivacy: ExportVoicePrivacy
+        /// Cost efficiency (ADR 0038): the account's reported counters and its own prices and thresholds.
+        let usage: [ExportUsage]
+        let usageSettings: UsageOwnSettings
+    }
+    struct ExportUsage: Content {
+        let day: String, sessionKey: String, model: String, provider: String
+        let inputTokens: Int64, outputTokens: Int64, cacheWriteTokens: Int64, cacheWrite1hTokens: Int64, cacheReadTokens: Int64
+        let turns: Int64, maxContextTokens: Int64, subagent: Bool
+        let projectID: UUID?, commits: Int64?, cardUpdates: Int64?
     }
     /// Voice privacy settings of the account (ADR 0030 step 7).
     struct ExportVoicePrivacy: Content { let consent: Bool, consentAt: Date?, keepAudio: Bool }
 
-    /// Own data only: the account, projects and tasks it owns, comments it wrote (in projects it can still read), its labels and its channel #brain messages. No secrets
+    /// Own data only: the account, projects and tasks it owns, comments it wrote (in projects it can still read), its labels, its channel #brain messages and its usage counters. No secrets
     /// (no password hash, passkeys, tokens, push tokens).
     @Sendable func export(_ req: Request) async throws -> Response {
         let user = try await req.requireUser()
@@ -279,12 +290,20 @@ struct AccountLockController: RouteCollection {
         }
         let channel = try await BrainChannel.query(on: db).filter(\.$ownerID == uid).first()
         let voicePrivacy = ExportVoicePrivacy(consent: channel?.consentAt != nil, consentAt: channel?.consentAt, keepAudio: channel?.keepAudio ?? false)
+        // The project reference only where the account may still read the project.
+        let usage = try await UsageDaily.query(on: db).filter(\.$userID == uid).sort(\.$day).sort(\.$sessionKey).sort(\.$model).all().map { r in
+            ExportUsage(day: r.day, sessionKey: r.sessionKey, model: r.model, provider: r.provider, inputTokens: r.inputTokens,
+                        outputTokens: r.outputTokens, cacheWriteTokens: r.cacheWriteTokens, cacheWrite1hTokens: r.cacheWrite1hTokens,
+                        cacheReadTokens: r.cacheReadTokens, turns: r.turns, maxContextTokens: r.maxContextTokens, subagent: r.subagent,
+                        projectID: r.projectID.flatMap { readable.contains($0) ? $0 : nil }, commits: r.commits, cardUpdates: r.cardUpdates)
+        }
+        let usageSettings = try await UsageService(user: user, db: db).ownSettings()
         let document = ExportDocument(
             exportedAt: Date(),
             account: ExportAccount(id: uid, displayName: user.displayName, username: user.username, isAdmin: user.isAdmin,
                                    createdAt: user.createdAt, email: email),
             projects: projects, tasks: tasks, comments: comments, labels: labels,
-            channelMessages: channelMessages, voicePrivacy: voicePrivacy)
+            channelMessages: channelMessages, voicePrivacy: voicePrivacy, usage: usage, usageSettings: usageSettings)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
