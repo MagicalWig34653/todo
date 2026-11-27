@@ -133,7 +133,7 @@ test('creates, edits and deletes targets; FTP is marked unencrypted; credentials
 	await expect(form().getByLabel('Passwort', { exact: true })).toHaveValue('');
 	await expect(form().getByTestId('deploy-secret-stored')).toBeVisible();
 	await form().getByLabel('Name', { exact: true }).fill('Kubus Testserver');
-	await form().getByLabel('Ausschlüsse').fill('cache/**\n*.log');
+	await form().getByLabel('Ausschlüsse', { exact: true }).fill('cache/**\n*.log');
 	await expect(form().getByLabel('Vorgabe-Ausschlüsse anwenden')).toBeChecked();
 	await form().getByTestId('deploy-save').click();
 	await expect(dialog().getByTestId('deploy-status')).toHaveText('Ziel gespeichert.');
@@ -270,9 +270,11 @@ test('real SFTP server: confirm the host key, test, and compare a local folder (
 	expect(await status('kontakt.php')).toBe('new');
 	expect(await status('designer.html')).toBe('serverOnly');
 	// Default excludes: neither .env nor node_modules show up; symlinks on the server are not listed.
-	await expect(sync.getByText('.env', { exact: true })).toHaveCount(0);
-	await expect(sync.getByText('node_modules')).toHaveCount(0);
-	await expect(sync.getByText('link.txt')).toHaveCount(0);
+	const fileAt = (path: string) => sync.locator(`[data-testid="deploy-sync-file"][data-path*="${path}"]`);
+	await expect(fileAt('.env')).toHaveCount(0);
+	await expect(fileAt('node_modules')).toHaveCount(0);
+	await expect(fileAt('link.txt')).toHaveCount(0);
+	await expect(fileAt('etclink')).toHaveCount(0);
 
 	if (SHOTS) {
 		mkdirSync(SHOTS, { recursive: true });
@@ -281,6 +283,8 @@ test('real SFTP server: confirm the host key, test, and compare a local folder (
 			await theme(mode);
 			await page.setViewportSize({ width: 1280, height: 900 });
 			await openTargets('Kubus Echt');
+			await expect(rows()).toHaveCount(1);
+			await expect(rows().first().getByTestId('deploy-hostkey')).toHaveText('Host-Schlüssel bestätigt');
 			await page.screenshot({ path: `${SHOTS}/ziele-${suffix}.png` });
 			await dialog().getByTestId('deploy-add').click();
 			await form().getByLabel('Name', { exact: true }).fill('Kubus Altserver');

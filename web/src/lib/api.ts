@@ -8,6 +8,7 @@ import type { PipelineStepName, PlanDecisionInput, RetryInput, TaskPipeline } fr
 import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
 import type { ContinueInput, StartInput } from './pipelineExecution.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
+import type { DeployCompareResult, DeployTarget, DeployTargetWrite, DeployTestResult, ManifestEntry } from './deploy.js';
 import type { SettingsUpdate, UsageDays, UsageSettings, UsageSummary } from './usage.js';
 import { selectionBody, type ProjectGroup, type Selection, type SelectionChange, type SelectionDTO, type SelectionPreview } from './projectGroups.js';
 
@@ -1481,7 +1482,21 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		/** Sends a test call at once and returns its protocol entry (429 rate_limited: one per 10 s). */
 		testWebhook: () => request<WebhookDelivery>('POST', '/settings/webhook/test', {}),
 		/** The last 50 deliveries, newest first. */
-		listWebhookDeliveries: async () => (await request<{ items: WebhookDelivery[] }>('GET', '/settings/webhook/deliveries')).items
+		listWebhookDeliveries: async () => (await request<{ items: WebhookDelivery[] }>('GET', '/settings/webhook/deliveries')).items,
+
+		// Deploy targets (contracts/deploy.yaml, ADR 0039, card 354ADE12): person session only. Passwords and keys are write-only.
+		listDeployTargets: async (projectID: string) =>
+			(await request<{ items: DeployTarget[] }>('GET', `/projects/${encodeURIComponent(projectID)}/deploy-targets`)).items,
+		createDeployTarget: (projectID: string, body: DeployTargetWrite) => request<DeployTarget>('POST', `/projects/${encodeURIComponent(projectID)}/deploy-targets`, body),
+		/** Missing fields stay; an endpoint change needs a new secret in the same call (400 deploy_credentials_required). */
+		updateDeployTarget: (id: string, body: DeployTargetWrite) => request<DeployTarget>('PATCH', `/deploy-targets/${encodeURIComponent(id)}`, body),
+		deleteDeployTarget: (id: string) => request<void>('DELETE', `/deploy-targets/${encodeURIComponent(id)}`),
+		/** Connection test (read only). Unconfirmed SFTP: code deploy_host_key_unconfirmed plus offeredHostKey. */
+		testDeployTarget: (id: string) => request<DeployTestResult>('POST', `/deploy-targets/${encodeURIComponent(id)}/test`, {}),
+		/** The server scans again and stores the key only when the fingerprint still matches (409 deploy_host_key_changed). */
+		confirmDeployHostKey: (id: string, fingerprint: string) => request<DeployTarget>('POST', `/deploy-targets/${encodeURIComponent(id)}/host-key`, { fingerprint }),
+		/** Read-only compare of a repo manifest with the server. */
+		compareDeployTarget: (id: string, files: ManifestEntry[]) => request<DeployCompareResult>('POST', `/deploy-targets/${encodeURIComponent(id)}/compare`, { files })
 	};
 }
 

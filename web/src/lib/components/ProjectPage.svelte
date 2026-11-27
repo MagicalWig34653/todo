@@ -197,6 +197,8 @@
 	let commentsOpen = $state(false);
 	/** Pipeline settings of the project (card B926E7D8); route `/project/<id>/pipeline`. */
 	let pipelineOpen = $state(false);
+	/** Deploy targets and read-only sync view (card 354ADE12); route `/project/<id>/deploy`. */
+	let deployOpen = $state(false);
 	let colorOpen = $state(false);
 	let groupsOpen = $state(false);
 	let detail = $state<Task | null>(null);
@@ -212,6 +214,7 @@
 		if (sub === 'overview') tab = 'overview';
 		else if (sub === 'comments') commentsOpen = true;
 		else if (sub === 'pipeline') pipelineOpen = true;
+		else if (sub === 'deploy') deployOpen = true;
 		else if (sub === 'graph') graphOpen = true;
 		else if ((sub === 'board' || sub === 'list') && (sub === 'board') !== (display.view === 'board')) setDisplay({ view: sub === 'board' ? 'board' : 'list' });
 	});
@@ -224,7 +227,7 @@
 	});
 	$effect(() => {
 		if (!routeApplied) return;
-		const current: ProjectSub = commentsOpen ? 'comments' : pipelineOpen ? 'pipeline' : graphOpen && !(management && tab === 'overview') ? 'graph' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
+		const current: ProjectSub = commentsOpen ? 'comments' : pipelineOpen ? 'pipeline' : deployOpen ? 'deploy' : graphOpen && !(management && tab === 'overview') ? 'graph' : tab === 'overview' ? 'overview' : display.view === 'board' ? 'board' : 'list';
 		const task = detailOpen ? detail?.id : undefined;
 		// Deep link to a task still loading: keep ?task= until it was applied or is known to be missing.
 		const keep = taskID && !taskApplied ? taskID : task;
@@ -340,6 +343,7 @@
 				{/if}
 				<MenuItem testid="project-groups-open" onclick={() => { close(); groupsOpen = true; }}>{t('projectGroups.ofProject')}</MenuItem>
 				<MenuItem testid="pipeline-settings-open" onclick={() => { close(); pipelineOpen = true; }}>{t('pipeline.settings.title')}</MenuItem>
+				<MenuItem testid="deploy-targets-open" onclick={() => { close(); deployOpen = true; }}>{t('deploy.title')}</MenuItem>
 			{/snippet}
 		</Popover>
 	</div>
@@ -433,6 +437,11 @@
 </Dialog>
 <Dialog bind:open={pipelineOpen} title={t('pipeline.settings.title')} class="max-w-2xl" testid="pipeline-settings-dialog">
 	<ProjectPipelineSettings {project} />
+</Dialog>
+<Dialog bind:open={deployOpen} title={t('deploy.title')} class="max-w-2xl" testid="deploy-targets-dialog">
+	{#if deployOpen}
+		{#await import('./deploy/DeployTargets.svelte') then m}<m.default {project} />{/await}
+	{/if}
 </Dialog>
 <Dialog bind:open={groupsOpen} title={t('projectGroups.ofProject')} testid="project-groups-dialog">
 	{#if groupsOpen}<ProjectGroupsDialog projectID={project.id} onclose={() => (groupsOpen = false)} />{/if}
