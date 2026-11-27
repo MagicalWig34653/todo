@@ -1,6 +1,6 @@
 # Plan Telefon T1: Sprachnachrichten an das Brain
 
-Stand 11.11.2026, Vorschlag. Grundlage: [ADR 0030](adr/0030-telefon-t1-sprachnachrichten.md) (Status Vorschlag). Nichts davon ist implementiert. Worker-Typen: swift (Backend/Runner), svelte (PWA), swiftui (App). Der Mac-Runner liegt außerhalb dieses Repos; Schritt 4 wird dort umgesetzt (anderes Repo, vorher klären).
+Stand 11.11.2026, Vorschlag. Grundlage: [ADR 0030](adr/0030-telefon-t1-sprachnachrichten.md) (Status Vorschlag). Umgesetzt: Schritte 1, 2, 3, 5, 7, 8; offen: 4 (Runner-Repo) und 6 (App). Worker-Typen: swift (Backend/Runner), svelte (PWA), swiftui (App). Der Mac-Runner liegt außerhalb dieses Repos; Schritt 4 wird dort umgesetzt (anderes Repo, vorher klären).
 
 Vorbedingung: ADR 0030 angenommen, offene Fragen 1 bis 4 beantwortet.
 
@@ -30,11 +30,12 @@ Worker: swift (Runner-Repo). Aufwand: L. Abhängigkeiten: 3.
 - Ergebnis (Transkript, Antworttext, Antwortaudio) wird hochgeladen; Eingangs- und Zwischendateien sind nach Abschluss oder Fehler gelöscht (Test).
 - Engine-Adapter ist austauschbar (HTTP/Prozess); VoiceStudio nur optional und nicht gebündelt; Dokumentation nennt Loopback-Bindung und API-Key.
 
-### 5. Antwortlogik Brain (Text, T1-Minimum)
+### 5. Antwortlogik Brain (Text, T1-Minimum) – umgesetzt 27.11.2026 (Karte 580E4644, ADR 0030 Nachtrag Schritt 5)
 Worker: swift. Aufwand: M. Abhängigkeiten: 3 (parallel zu 4 vorbereitbar).
 - Das Transkript erscheint als `voice_in` mit Text im Kanal; eine Lage-Anfrage („wie steht es“) wird aus Command Center und offenen Fragen beantwortet (Text, höchstens 4000 Zeichen).
 - Sprachbefehle lösen keine Aktionen der Klasse C aus; Test: „lösche Projekt X“ erzeugt höchstens eine Bestätigungsanfrage in der App.
 - Anfragen an die Brain-Session liegen als Kanalnachricht lesbar bereit (`list_channel_messages`).
+- Umgesetzt als `POST /v1/runner/voice/jobs/{id}/transcript` (Transkript sofort im Kanal, Antwort `{intent, replyText}`), `BrainResponder` (Wortregeln: status, refused, forwarded) und Serverantwort im Ergebnis ohne Antworttext. Klasse C erzeugt gar keine Bestätigungsanfrage (Entscheidung im ADR). Tests: `VoiceBrainReplyTests`, `scripts/voice-brain-e2e.sh`.
 
 ### 6. App: Aufnahme, Einwilligung, Wiedergabe
 Worker: swiftui. Aufwand: L. Abhängigkeiten: 2, 3 (Mock bis 4 fertig ist).

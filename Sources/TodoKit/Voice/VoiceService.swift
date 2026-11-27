@@ -42,6 +42,7 @@ struct VoiceResultBody: Content {
     let replyText: String?
     let errorCode: String?
 }
+struct VoiceTranscriptBody: Content { let generation: Int; let transcript: String }
 struct SetCapabilitiesRequest: Content { let disabled: [String] }
 
 /// Fachregeln der Sprachaufträge. Jede Abfrage filtert auf das Konto; ein fremdes Gerät oder Konto sieht 404.
@@ -347,10 +348,16 @@ enum VoiceService {
                 try await job.save(on: tx)
                 return try VoiceJobDTO(job)
             }
-            guard reply != nil || job.replyAttachmentID != nil else { throw Abort(.badRequest, reason: "result_required") }
             if let original, let transcript { original.text = transcript; try await original.save(on: tx) }
+            // ADR 0030 step 5: a runner that sends no answer (no TTS, no brain connection) gets the server's own answer
+            // to the transcript as text: the status, the refusal of a class C action or the receipt for the brain session.
+            var answer = reply
+            if answer == nil, job.replyAttachmentID == nil, let spoken = transcript ?? original?.text {
+                answer = try await BrainResponder.reply(to: spoken, user: user, db: tx).replyText
+            }
+            guard answer != nil || job.replyAttachmentID != nil else { throw Abort(.badRequest, reason: "result_required") }
             let hasAudio = job.replyAttachmentID != nil
-            try await channel.appendBrainMessage(kind: hasAudio ? "voice_out" : "text", text: reply, attachmentID: job.replyAttachmentID,
+            try await channel.appendBrainMessage(kind: hasAudio ? "voice_out" : "text", text: answer, attachmentID: job.replyAttachmentID,
                                                  notBefore: original?.createdAt)
             job.state = "done"; job.leaseUntil = nil; job.endedAt = Date(); job.resultHash = hash
             try await job.save(on: tx)
@@ -363,6 +370,28 @@ enum VoiceService {
             }
             return try VoiceJobDTO(job)
         }
+    }
+
+    // MARK: Transcript and answer (ADR 0030 step 5)
+
+    /// The runner reports what was said. The transcript appears at once on the `voice_in` message (the brain session reads
+    /// it with `list_channel_messages`); the answer text comes back for the runner to speak. Holder rules as everywhere:
+    /// stale generation 409, ended job 410, another account or device 404. Repeatable; a later result still writes the answer.
+    static func transcript(device: RunnerDevice, id: UUID, generation: Int, text raw: String, db: any Database) async throws -> BrainReply {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= maxText else { throw Abort(.badRequest, reason: "invalid_text") }
+        try await expireDue(owner: device.ownerID, db: db)
+        let user = try await db.transaction { tx -> User in
+            try await lockRow(table: VoiceJob.schema, id: id, on: tx)
+            let job = try await holderJob(id: id, device: device, generation: generation, db: tx)
+            guard let user = try await User.find(job.ownerID, on: tx), !user.isLocked else { throw Abort(.unauthorized) }
+            if let original = try await ChannelMessage.find(job.messageID, on: tx), original.text != text {
+                original.text = text
+                try await original.save(on: tx)
+            }
+            return user
+        }
+        return try await BrainResponder.reply(to: text, user: user, db: db)
     }
 
     static func queued(device: RunnerDevice, db: any Database) async throws -> [VoiceJobDTO] {

@@ -13,6 +13,7 @@ struct VoiceController: RouteCollection {
         runner.get("jobs", ":id", "audio", use: audio)
         runner.on(.PUT, "jobs", ":id", "reply-audio", body: .stream, use: replyAudio)
         runner.post("jobs", ":id", "heartbeat", use: jobHeartbeat)
+        runner.post("jobs", ":id", "transcript", use: transcript)
         runner.post("jobs", ":id", "result", use: result)
         routes.grouped("v1", "agents").put("devices", ":id", "capabilities", use: setCapabilities)
     }
@@ -93,6 +94,12 @@ struct VoiceController: RouteCollection {
         let device = try await device(req)
         let body = try decode(VoiceGenerationBody.self, req)
         return try await VoiceService.jobHeartbeat(device: device, id: id(req), generation: body.generation, db: req.db)
+    }
+
+    @Sendable func transcript(_ req: Request) async throws -> BrainReply {
+        let device = try await device(req)
+        let body = try decode(VoiceTranscriptBody.self, req)
+        return try await VoiceService.transcript(device: device, id: id(req), generation: body.generation, text: body.transcript, db: req.db)
     }
 
     @Sendable func result(_ req: Request) async throws -> VoiceJobDTO {

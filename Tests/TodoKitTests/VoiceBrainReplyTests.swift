@@ -152,10 +152,10 @@ final class VoiceBrainReplyTests: XCTestCase {
             XCTAssertEqual(done.status, .ok, "\(done.body ?? [:])")
 
             // Nothing happened: project and task are still there, at most a pending confirmation request exists.
-            let project = try await f.app.json(.GET, "/v1/projects/\(f.projectID)", token: f.human)
-            XCTAssertEqual(project.status, .ok)
-            let task = try await f.app.json(.GET, "/v1/tasks/\(f.taskID)", token: f.human)
-            XCTAssertEqual(task.status, .ok)
+            let project = try await Project.find(UUID(uuidString: f.projectID), on: f.app.app.db)
+            XCTAssertNotNil(project, "the project still exists")
+            let task = try await TodoTask.find(UUID(uuidString: f.taskID), on: f.app.app.db)
+            XCTAssertNotNil(task, "the task still exists")
             let requests = try await ActionRequest.query(on: f.app.app.db).all()
             XCTAssertLessThanOrEqual(requests.count, 1)
             XCTAssertTrue(requests.allSatisfy { $0.state == "pending" }, "\(requests.map(\.state))")

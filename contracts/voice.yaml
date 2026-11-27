@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Kanal #brain (Sprach- und Textnachrichten) und Sprachaufträge
-  version: 1.2.0
+  version: 1.3.0
   description: 'Telefon T1 (ADR 0030), Schritte 2 und 3 (1.1.0: Sprachaufträge, Runner-Fähigkeit sprache). Jedes Konto hat genau einen Kanal brain (beim ersten Gebrauch angelegt). Nur der Besitzer liest und
     schreibt; kein Teilen, kein Team, kein Projekt- oder Aufgabenbezug. Eine Nachricht hat eine Art (kind: text, voice_in, voice_out, status), einen
     Autor (author: person, agent), Text bzw. Transkript und optional einen Audio-Anhang (Rolle voice, contracts/attachments.yaml 1.1.0; der Anhang
@@ -14,7 +14,7 @@ info:
     des Kontos die Fähigkeit sprache meldet (nicht vom Besitzer abgeschaltet, nicht widerrufen) und sein letzter Sprach-Heartbeat höchstens 90 s alt
     ist. Sonst entsteht sofort eine status-Nachricht des Brain (Autor agent) „Brain gerade nur per Text erreichbar.“ und kein Auftrag. Ein Mac-Runner
     bearbeitet den Auftrag über /v1/runner/voice/* mit seinem Geräte-Token (nicht mit einer Sitzung, nicht per MCP): Claim (Lease 60 s, Generation),
-    Heartbeat, Audio laden, Antwortaudio hochladen, Ergebnis. Ergebnis erzeugt Kanalnachrichten: das Transkript füllt den Text der voice_in-Nachricht,
+    Heartbeat, Audio laden, Antwortaudio hochladen, Ergebnis. Ergebnis (ohne replyText und ohne Antwortaudio: Antwort des Servers, Schritt 5) erzeugt Kanalnachrichten: das Transkript füllt den Text der voice_in-Nachricht,
     die Antwort kommt als voice_out (mit Antwortaudio) oder text (ohne). Ein Auftrag verfällt 10 Minuten nach dem Anlegen (expired): die Aufnahme wird
     gelöscht, der Kanal erhält „Die Sprachnachricht ist abgelaufen.“. Fehler des Runners (errorCode) ergeben failed, gelöschte Aufnahme und die
     Nachricht „Die Sprachnachricht konnte nicht verarbeitet werden.“. Ablauf prüft ein Dienst alle 30 s und jeder Lese-/Runner-Zugriff des Kontos.
@@ -30,7 +30,13 @@ info:
     DELETE /v1/channels/brain/messages (Sprachverlauf löschen: alle Nachrichten, Sprachaufträge und Voice-Audio des Kontos; Kanal und Einstellungen bleiben). Mit keepAudio
     leben Eingangs- und Antwortaudio bis zu 30 Tage statt 24 h bzw. 7 Tage, und die Eingangsaufnahme bleibt nach erfolgreicher Verarbeitung erhalten (failed/expired löschen sie weiter sofort).
     Die Einwilligung wird gespeichert und angezeigt, serverseitig aber nicht erzwungen (Aufnahmeflüsse bleiben unverändert; die Durchsetzung ist Sache der Clients).
-    Bewusst ohne MCP-Werkzeug (Risikoklasse C, nur App/PWA). GET /v1/me/export enthält zusätzlich voicePrivacy (contracts/admin-settings.yaml).'
+    Bewusst ohne MCP-Werkzeug (Risikoklasse C, nur App/PWA). GET /v1/me/export enthält zusätzlich voicePrivacy (contracts/admin-settings.yaml).
+    Antwortlogik (1.3.0, ADR 0030 Schritt 5): POST /v1/runner/voice/jobs/{id}/transcript meldet das Transkript. Es steht sofort als Text der voice_in-Nachricht im Kanal
+    (der Brain-Session über list_channel_messages lesbar) und der Server antwortet mit intent und replyText, den der Runner spricht. intent status (Lage-Anfrage wie „wie steht es“:
+    Antwort aus Command Center und offenen Fragen, Klartext ohne Markdown, höchstens 4000 Zeichen, nur Daten des Kontos mit den Rechten der Person), refused (Klasse C wie löschen, übertragen,
+    Freigabe entziehen, deployen: wird per Sprache nie ausgeführt, die Antwort verweist auf die App; es entsteht auch keine Bestätigungsanfrage) und forwarded (alles andere: bleibt für die Brain-Session
+    im Kanal, der Person wird der Empfang bestätigt). Klasse C hat Vorrang vor einer Lage-Frage im selben Satz. Meldet der Runner das Ergebnis ohne replyText und ohne Antwortaudio, schreibt der Server
+    diese Antwort selbst als text-Nachricht des Brain.'
 security:
 - bearerAuth: []
 - sessionCookie: []
@@ -247,6 +253,33 @@ paths:
         '413': {description: voice_too_large}
         '415': {description: unsupported_audio_type}
         '422': {description: 'voice_too_long (über 120 s) oder voice_unreadable'}
+  /v1/runner/voice/jobs/{id}/transcript:
+    post:
+      operationId: transcriptRunnerVoiceJob
+      summary: Transkript melden und Antworttext erhalten (Schritt 5)
+      description: 'Setzt den Text der voice_in-Nachricht (sofort im Kanal sichtbar) und liefert die Antwort des Servers (intent status, refused oder forwarded). Wiederholbar.
+        Haltergeregelt wie die anderen Aufrufe. Nichts davon steht in einem Log.'
+      security:
+      - runnerToken: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [generation, transcript]
+              properties:
+                generation: {type: integer, minimum: 0}
+                transcript: {type: string, minLength: 1, maxLength: 4000}
+      responses:
+        '200': {description: Antwort, content: {application/json: {schema: {$ref: '#/components/schemas/VoiceBrainReply'}}}}
+        '400': {description: 'invalid_text (leer oder über 4000 Zeichen)'}
+        '401': {description: Geräte-Token ungültig}
+        '404': {description: fremdes Konto oder nicht der Halter}
+        '409': {description: stale_generation}
+        '410': {description: job_ended oder lease_lost}
   /v1/runner/voice/jobs/{id}/result:
     post:
       operationId: resultRunnerVoiceJob
@@ -272,7 +305,7 @@ paths:
                 errorCode: {type: string, pattern: '^[a-z0-9_]{1,40}$'}
       responses:
         '200': {description: angenommen, content: {application/json: {schema: {$ref: '#/components/schemas/VoiceJob'}}}}
-        '400': {description: 'invalid_text, invalid_error_code, result_required (weder Antwort noch Fehler)'}
+        '400': {description: 'invalid_text, invalid_error_code, result_required (weder Antwort noch Transkript noch Fehler)'}
         '401': {description: Geräte-Token ungültig}
         '404': {description: fremdes Konto oder nicht der Halter}
         '409': {description: stale_generation}
@@ -349,6 +382,12 @@ components:
         capabilities: {type: array, items: {type: string}, description: 'wirksam: gemeldet ohne abgeschaltet'}
         disabledCapabilities: {type: array, items: {type: string}}
         serverTime: {type: string, format: date-time}
+    VoiceBrainReply:
+      type: object
+      required: [intent, replyText]
+      properties:
+        intent: {type: string, enum: [status, refused, forwarded]}
+        replyText: {type: string, maxLength: 4000}
     VoiceJob:
       type: object
       required: [id, state, generation, messageID, attachmentID, requiredCapability, expiresAt, createdAt]
