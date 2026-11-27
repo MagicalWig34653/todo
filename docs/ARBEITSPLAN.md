@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 27.11.2026 (04:10): 429 auf `/v1/sync/wait` behoben (Karte `A1A4690B`), Dependabot Kit (Karte `9608B355`)
+
+- `A1A4690B`: Ursache und Belege in `docs/STATUS.md` (oberster Nachtrag), `docs/belege/A1A4690B-sync-wait-429.md`. Kein Deploy; Apple-App könnte später ebenfalls `client` senden (optional).
+- `9608B355`: Branch `t3/dependabot-sveltekit` (kit 3.4.1, adapter-static 4.0.1, docs-site yaml 2.9.1), Beleg `docs/belege/9608B355-dependabot-sveltekit.md`.
+- Offen: Brain-Validierung, Board-Einträge aus `docs/belege/kartentexte-f-0caacb34.md` (Todolino-MCP nicht angemeldet), Deploy (Lino).
+
 ## Checkpoint 27.11.2026 (02:25): Seite „Kosteneffizienz“, Phase 1 und 2 umgesetzt (Karte `71FD73CF`)
 
 - Stand und Belege: `docs/STATUS.md` (oberster Nachtrag), Vertrag `contracts/usage.yaml`, `design/kosteneffizienz/`.
@@ -82,7 +88,7 @@
 ## Checkpoint 25.11.2026: Absturz der Seite „Jetzt“ (Karte `B0CF5F73`)
 
 - Stand: behoben auf `main` (`a29f7a2`, `a704700`), Belege in `docs/STATUS.md` (oberster Nachtrag); nicht deployt.
-- Offen: Apple-Listen-IDs (`21A79A08`), 429 auf `/v1/sync/wait` (`A1A4690B`).
+- Offen: Apple-Listen-IDs (`21A79A08`); 429 auf `/v1/sync/wait` (`A1A4690B`) am 27.11. behoben.
 - Nächster Schritt: Deploy durch Lino (nur Image).
 
 ## Checkpoint 25.11.2026: Pipeline Stufe 3, Ausführung über den Runner (Karte `F5DD1C00`)

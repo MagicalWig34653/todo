@@ -5,7 +5,7 @@ Stand 27.11.2026, Lauf gegen das echte native Backend (`.build/debug/App serve`,
 ## Ursache
 Eine Seitenladung öffnet einen Long-Poll `GET /v1/sync/wait` (bis 25 s). Das Neuladen bricht ihn im Browser ab, der Server (Vapor) bekommt davon nichts mit und hält die Anfrage als Wartende bis zum Timeout. Das Limit ist 8 Wartende je Konto (`LiveSettings.maxWaitersPerAccount`), die neunte Seitenladung binnen 25 s bekommt 429.
 
-## Rot (vor dem Fix), Commits 6347e5d und der E2E-Commit danach
+## Rot (vor dem Fix), Commits 6347e5d (Swift) und 3d0adc2 (E2E)
 `npx playwright test e2e/live-wait-reload.spec.ts --project=chromium`: 12 Seitenladungen hintereinander, jede wartet erst, bis ihr `/v1/sync/wait` abgeschickt ist.
 ```
 Expected: []   Received: [429, 429, 429, 429]      (Ladung 9 bis 12)
@@ -18,7 +18,7 @@ Swift (`LiveRefreshDisconnectTests`, echter HTTP-Server): nach dem Abbruch bleib
 ✓ 1 [chromium] › e2e/live-wait-reload.spec.ts:9:1 › twelve quick page loads in a row never get 429 on /v1/sync/wait (6.7s)
 1 passed (8.7s)
 ```
-Rohausgabe: `web/e2e/` Lauf, siehe unten für die Gesamtläufe.
+Fix-Commit `6f9da77`. Weitere Specs gegen dasselbe Backend (frische SQLite je Spec), alle grün: live-wait-reload 1, live-refresh 1, card-live 7 (+1 übersprungen), now 15, passkey-flow 21, overview-pages 1.
 
 ## Fix
 Server: optionaler Parameter `client` (`Sources/TodoKit/Live/LiveController.swift`, `LiveHub.swift`), je (Konto, client) höchstens eine Wartende, die neuere beendet die ältere. PWA: `web/src/lib/liveRefresh.ts`, `liveClientId` (Schlüssel je Tab in `sessionStorage`). Vertrag `contracts/live-refresh.yaml` 1.1.0, ADR 0022.

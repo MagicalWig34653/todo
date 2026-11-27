@@ -1,5 +1,13 @@
 # Status
 
+## Nachtrag 27.11.2026 (04:10): 429 auf `/v1/sync/wait` bei schnellem Seitenwechsel behoben (Karte `A1A4690B`, Erwartung f-0caacb34; kein Deploy)
+
+- Ursache (belegt): Jede volle Seitenladung bricht den laufenden Long-Poll im Browser ab. Vapor meldet dem Handler den Verbindungsabbruch nicht, der Server hielt die Anfrage bis zum Timeout (bis 25 s) als Wartende und zählte sie gegen das Limit 8 je Konto. Die 9. Ladung binnen 25 s bekam 429. Kein Fehler im SPA-Wechsel per `pushState` (Workspace bleibt montiert); betroffen sind Neuladen, volle Navigation und Sichtbarkeitswechsel.
+- Fix: optionaler Query-Parameter `client` (8 bis 64 Zeichen `A-Za-z0-9_-`). Je (Konto, client) höchstens eine Wartende, die neuere beendet die ältere sofort (`changed:false`, `retryAfter:2`, neuer Wake `.superseded`). PWA hält den Schlüssel je Tab in `sessionStorage` (`liveClientId` in `web/src/lib/liveRefresh.ts`). Ohne `client` (Apple-App, MCP `wait_for_events`) unverändert. Vertrag `contracts/live-refresh.yaml` 1.1.0, ADR 0022 (Nachtrag mit verworfenen Alternativen).
+- Rot: `6347e5d` (Swift, echter HTTP-Server: "expected 0 registered waiters, have 1"), E2E `web/e2e/live-wait-reload.spec.ts` rot gegen natives Backend (12 Ladungen: `[429, 429, 429, 429]`), vitest 4 von 25 rot. Grün: `6f9da77`.
+- Tests grün: `swift test` (SQLite) ohne Fehler; vitest 860/860; `npm run check` 0/0; build ok. Playwright Chromium gegen natives Backend, frische SQLite je Spec: live-wait-reload 1/1, live-refresh 1/1, card-live 7 (1 übersprungen), now 15/15, passkey-flow 21/21, overview-pages 1/1. Beleg: `docs/belege/A1A4690B-sync-wait-429.md`.
+- Todolino-MCP nicht angemeldet: kein `post_progress`/`record_sync`; Kartentexte in `docs/belege/kartentexte-f-0caacb34.md`.
+
 ## Nachtrag 27.11.2026 (02:25): Seite „Kosteneffizienz“, Phase 1 und 2 (Karte `71FD73CF`, Erwartung f-3a7cf456; kein Deploy)
 
 - Server: Tabellen `usage_daily` und `usage_settings` (additive Migration `CreateUsage`), `POST /v1/usage` und MCP `report_usage` (idempotent je Konto, Tag, Sitzung, Modell; Scope `tasks:write`; nur Zähler), `GET /v1/usage/summary`, `GET/PUT /v1/usage/settings` (Preise, Schwellen). Höchstens 20 000 Zeilen je Konto. ADR 0038.
