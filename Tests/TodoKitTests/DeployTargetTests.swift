@@ -282,6 +282,41 @@ final class DeployTargetTests: XCTestCase {
         }
     }
 
+    /// Phase 1b review finding: the PWA sends whole repo manifests (vendor/ folders), far above the default 256 kB body limit.
+    /// The REST route must take a manifest up to the contract's 50 000 entries; one more is a readable 400, never a 413.
+    func testCompareAcceptsTheFullManifestOverREST() async throws {
+        try await fixture { f in
+            let made = try await f.created(["protocol": "ftps", "port": 21])
+            let id = try XCTUnwrap(made["id"] as? String)
+            f.transport.files = ["index.php": Data("hi\n".utf8)]
+            let sha = String(repeating: "a", count: 64)
+            var files: [Obj] = (0..<49_999).map { ["path": "vendor/package-\($0 / 100)/src/Generated/File\($0).php", "size": 10, "sha256": sha] }
+            files.append(Self.entry("index.php", "hi\n"))
+            // A real server enforces the collect limit of the route (the in-process client bypasses it).
+            func post(_ files: [Obj]) async throws -> (HTTPStatus, Obj?) {
+                let data = try JSONSerialization.data(withJSONObject: ["files": files])
+                var out: (HTTPStatus, Obj?) = (.internalServerError, nil)
+                try await f.test.app.testable(method: .running(hostname: "127.0.0.1", port: 0)).test(.POST, "/v1/deploy-targets/\(id)/compare", beforeRequest: { req in
+                    req.headers.bearerAuthorization = .init(token: f.session); req.headers.contentType = .json; req.body = ByteBuffer(data: data)
+                }, afterResponse: { res async in
+                    out = (res.status, (try? JSONSerialization.jsonObject(with: Data(buffer: res.body))) as? Obj)
+                })
+                return out
+            }
+            XCTAssertGreaterThan(try JSONSerialization.data(withJSONObject: ["files": files]).count, 4 * 1024 * 1024)
+            let (status, body) = try await post(files)
+            XCTAssertEqual(status, .ok, "\(body ?? [:])")
+            let summary = try XCTUnwrap(body?["summary"] as? Obj)
+            XCTAssertEqual(summary["new"] as? Int, 49_999)
+            XCTAssertEqual(summary["same"] as? Int, 1)
+
+            files.append(["path": "one-too-many.php", "size": 1, "sha256": sha])
+            let (overStatus, overBody) = try await post(files)
+            XCTAssertEqual(overStatus, .badRequest)
+            XCTAssertEqual(overBody?["reason"] as? String, "deploy_manifest_invalid")
+        }
+    }
+
     func testMCPAgentSeesOnlyIdsAndResultsNeverSecretsOrHost() async throws {
         try await fixture { f in
             let made = try await f.created()

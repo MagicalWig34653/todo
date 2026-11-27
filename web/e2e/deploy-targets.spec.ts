@@ -68,7 +68,7 @@ async function theme(mode: 'dark' | 'light') {
 }
 
 /** A local folder like a repository checkout: same, changed (CRLF on the server only), new, and files the default rules exclude. */
-function repoFolder(): string {
+function repoFolder(vendorFiles = 0): string {
 	const root = mkdtempSync(join(tmpdir(), 'deploy-pwa-'));
 	temps.push(root);
 	const dir = join(root, 'kubus');
@@ -80,6 +80,8 @@ function repoFolder(): string {
 		'.env': 'SECRET=1\n',
 		'node_modules/x/index.js': 'x\n'
 	};
+	// Many small files like a vendor/ folder: the manifest is then far above the server's default 256 kB body limit.
+	for (let i = 0; i < vendorFiles; i++) files[`vendor/pkg-${Math.floor(i / 100)}/src/File${i}.php`] = `<?php // ${i}\n`;
 	for (const [path, text] of Object.entries(files)) {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), text);
@@ -135,7 +137,10 @@ test('creates, edits and deletes targets; FTP is marked unencrypted; credentials
 	await form().getByLabel('Name', { exact: true }).fill('Kubus Testserver');
 	await form().getByLabel('Ausschlüsse', { exact: true }).fill('cache/**\n*.log');
 	await expect(form().getByLabel('Vorgabe-Ausschlüsse anwenden')).toBeChecked();
+	const patch = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/v1/deploy-targets/'));
 	await form().getByTestId('deploy-save').click();
+	// Only what changed goes out; an unchanged endpoint never sends (or asks for) the secret again.
+	expect(Object.keys((await patch).postDataJSON()).sort()).toEqual(['name', 'rules']);
 	await expect(dialog().getByTestId('deploy-status')).toHaveText('Ziel gespeichert.');
 	await expect(rows().first().getByTestId('deploy-name')).toHaveText('Kubus Testserver');
 	const target = ((await (await page.request.get(`/v1/projects/${p.id}/deploy-targets`)).json()) as { items: { rules: { excludes: string[] } }[] }).items[0];
@@ -208,15 +213,20 @@ test('host key confirmation and the read-only sync view (server answers simulate
 	await expect(offer).toContainText('ssh-ed25519');
 	await expect(offer.getByTestId('deploy-fingerprint')).toHaveText(fingerprint);
 	await offer.getByTestId('deploy-hostkey-confirm').click();
-	expect(confirmed).toBe(fingerprint);
 	await expect(rows().first().getByTestId('deploy-hostkey')).toHaveText('Host-Schlüssel bestätigt');
+	expect(confirmed).toBe(fingerprint);
 	await rows().first().getByTestId('deploy-test').click();
 	await expect(dialog().getByTestId('deploy-test-result')).toHaveText('Verbindung ok: 4 Dateien im Basispfad.');
 
 	await rows().first().getByTestId('deploy-sync').click();
 	const sync = dialog().getByTestId('deploy-sync-view');
 	await expect(sync.getByTestId('deploy-sync-readonly')).toContainText('lädt nichts hoch');
+	const compare = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/compare'));
 	await sync.getByTestId('deploy-sync-folder').setInputFiles(repoFolder());
+	// The browser sends paths relative to the folder with size and SHA-256, never contents; node_modules is skipped.
+	const sent = ((await compare).postDataJSON() as { files: { path: string; size: number; sha256: string }[] }).files;
+	expect(sent.map((f) => f.path)).toEqual(['.env', 'about.php', 'css/app.css', 'index.php', 'kontakt.php']);
+	expect(sent.find((f) => f.path === 'index.php')).toEqual({ path: 'index.php', size: 3, sha256: '98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4' });
 	await expect(sync.getByTestId('deploy-sync-count-same')).toHaveText('2 gleich');
 	await expect(sync.getByTestId('deploy-sync-count-changed')).toHaveText('1 geändert');
 	await expect(sync.getByTestId('deploy-sync-count-new')).toHaveText('1 neu');
@@ -261,8 +271,13 @@ test('real SFTP server: confirm the host key, test, and compare a local folder (
 
 	await rows().first().getByTestId('deploy-sync').click();
 	const sync = dialog().getByTestId('deploy-sync-view');
-	await sync.getByTestId('deploy-sync-folder').setInputFiles(repoFolder());
-	await expect(sync.getByTestId('deploy-sync-summary')).toBeVisible({ timeout: 30_000 });
+	await sync.getByTestId('deploy-sync-folder').setInputFiles(repoFolder(3000));
+	await expect(sync.getByTestId('deploy-sync-summary')).toBeVisible({ timeout: 60_000 });
+	await expect(sync.getByTestId('deploy-sync-count-new')).toHaveText('3001 neu');
+	// A big folder starts collapsed with its counts; small ones are open.
+	const vendor = sync.locator('[data-testid="deploy-sync-dir"][data-path="vendor"]');
+	await expect(vendor.locator('details')).not.toHaveAttribute('open');
+	await expect(sync.locator('[data-testid="deploy-sync-dir"][data-path="css"] details').first()).toHaveAttribute('open');
 	const status = async (name: string) => sync.getByTestId('deploy-sync-file').filter({ has: page.getByText(name, { exact: true }) }).getAttribute('data-status');
 	expect(await status('index.php')).toBe('same');
 	expect(await status('app.css')).toBe('same'); // CRLF on the server, LF in the folder
