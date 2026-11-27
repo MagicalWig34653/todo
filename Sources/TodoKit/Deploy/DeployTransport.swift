@@ -24,6 +24,7 @@ struct DeployConnection: Sendable {
     let username: String
     let password: String?
     let privateKey: String?
+    let passphrase: String?
     let hostKey: DeployHostKey?
     let tlsCertificate: String?
 }
@@ -67,12 +68,4 @@ extension Application {
         get { storage[DeployWorkKey.self] ?? FileManager.default.temporaryDirectory }
         set { storage[DeployWorkKey.self] = newValue }
     }
-}
-
-/// Placeholder until the rclone transport exists (red phase).
-struct RcloneDeployTransport: DeployTransport {
-    let workDirectory: URL
-    func scanHostKey(host: String, port: Int) async throws -> DeployHostKey { throw DeployTransportError(code: "deploy_transport_unavailable") }
-    func list(_ connection: DeployConnection) async throws -> [DeployRemoteFile] { throw DeployTransportError(code: "deploy_transport_unavailable") }
-    func read(_ connection: DeployConnection, paths: [String]) async throws -> [String: Data] { throw DeployTransportError(code: "deploy_transport_unavailable") }
 }

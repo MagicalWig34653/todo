@@ -1,4 +1,4 @@
-<!-- manual-version: 1.51.0 -->
+<!-- manual-version: 1.52.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -174,6 +174,14 @@ The card shows people, while you work, what you are doing: your current step and
 - **Idempotent:** reporting the same key again replaces the whole row (never adds), so always send the full state of the day; omitted optional fields then count as not reported. A call is atomic; the same key twice in one call is `duplicate_row`. Invalid values: `invalid_<field>`, `invalid_rows`.
 - A project is assigned only if the account can read it and it is in your grant; otherwise the row is stored without project and listed in `unassigned` (no error). Answer: `{stored, created, updated, costUSD, unpricedModels, unassigned}`. Costs are computed when reading, from the account's price table; reading the numbers and changing prices or thresholds is only possible for the person (`/v1/usage/summary`, `/v1/usage/settings`).
 
+## Deploy targets (SFTP, FTP, FTPS; read only)
+
+- Persons create and change deploy targets of a project in the PWA (REST `/v1/projects/{id}/deploy-targets`, contract `contracts/deploy.yaml`, ADR 0039). Agents cannot create, change or delete targets and never see host, port, path, user name, password, key or certificate: only the target id, name, stage (`test`|`prod`), protocol and whether the SFTP host key is confirmed.
+- `list_deploy_targets {projectID}` (scope `projects:read`): the targets of a project in your grant.
+- `test_deploy_target {targetID}` (scope `projects:read`, edit rights on the project): connection test with the stored credentials. Answer `{ok, code?, files?}`. `deploy_host_key_unconfirmed` means a person has to confirm the SFTP host key in the PWA first; ask the person (`ask_question`), never work around it. Other codes: `deploy_host_key_mismatch` (the server key changed: stop and tell the person), `deploy_tls_untrusted`, `deploy_auth_failed`, `deploy_base_path_missing`, `deploy_unreachable`, `deploy_target_blocked`, `deploy_transport_unavailable`, `deploy_failed`.
+- `compare_deploy_target {targetID, files: [{path, size, sha256}]}` (scope `projects:read`, edit rights): read-only compare of the server with a repo state. Send every file of the repo state (paths relative to the repo root, SHA-256 of the content, e.g. from `git ls-files` of the commit); the server applies the target's includes, excludes, default excludes (`.git`, `tests/`, `node_modules`, `docs/`, secrets such as `.env` and `*.pem`) and path mappings. Answer `{ok, code?, summary: {same, new, changed, serverOnly, unverified}, files: [{path, serverPath, status, repoSize?, serverSize?}]}`. `serverOnly` usually means someone changed the server directly (designer); report it, do not delete or overwrite anything. Text files up to 2 MB compare without CRLF/LF differences; `unverified` = too large to download.
+- Phase 1a: there is no upload, no fetch and no delete yet; nothing an agent does here changes a server.
+
 ## Project onboarding and keeping Todolino current
 
 Todolino is only useful if it is current. Treat the board as part of the repository's definition of done.
@@ -262,6 +270,9 @@ All tool arguments are JSON objects; unknown fields are rejected. Ids are UUID s
 | `report_session_event` | tasks:write | Add one compact event (tool, note, question, progress; up to 280 characters) to the card's live view. |
 | `get_task_live` | tasks:read | Read a card's live view: sessions with current step and the latest events. |
 | `report_usage` | tasks:write | Report aggregated token usage per day, session and model (idempotent, up to 500 rows, counters only). |
+| `list_deploy_targets` | projects:read | Deploy targets of a project: id, name, stage, protocol, host key confirmed; never host or credentials. |
+| `test_deploy_target` | projects:read | Connection test of a deploy target with its stored credentials (edit rights); answer ok or a code. |
+| `compare_deploy_target` | projects:read | Read-only compare of a deploy target with a repo manifest: same, new, changed, serverOnly per file. |
 | `report_session_status` | tasks:write | Light heartbeat for a project without a claimed card: one sentence, at most every 10 seconds per session; `ended: true` deletes it. |
 | `get_overview_now` | tasks:read | What is happening now across your projects: block `now` (running, waiting, recentlyDone, silent) first, then per project cards, sessions, jobs, builds, questions, reviews, activity. `compact: true` returns only `now`, short. |
 | `get_daily_brief` | tasks:read | Daily brief: what waits for the person, orphaned claims, stale projects, running, done since a date; `format=line` gives one short line. |
@@ -411,6 +422,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.48.0:** limits of the reuse window and of the takeover (security review of card BEF08998, ADR 0036, `oauth-mcp.yaml` 1.12.0, `connections.yaml` 1.7.0), no new tool, parameter or scope. A refresh token may be repeated at most 5 times within its 300 seconds; the sixth repeat ends the whole connection like a replay. A connection ended by replay detection is offered for takeover only for 7 days. Clients that registered without a `client_name` are never matched by name. The consent page lists everything the mandate allows and preselects its projects; projects the person unchecks leave the mandate.
 
 **Changed in 1.49.0:** project groups (card BEF08998, ADR 0037, `connections.yaml` 1.8.0, `oauth-mcp.yaml` 1.13.0). The person can give a connection or a brain mandate whole project groups or "all my projects except …"; what you reach is resolved on every call, so it can grow or shrink at any time (a project leaving a group is `not_found` / `outside_brain_mandate` at once). New read-only tool `list_project_groups`; `get_connection` gains `selection` and mandate `mode`/`groups`. No tool writes groups or mandates. Projects you create with `create_project` are yours alone: "all except" of other connections and of mandates does not include them until the person chooses them. `set_connection_projects` may now also answer `excluded_by_group` (409).
+
+**Changed in 1.52.0:** deploy targets, phase 1a (card 354ADE12, ADR 0039, new `contracts/deploy.yaml` 1.0.0, `oauth-mcp.yaml` 1.15.0), additive and without new scopes: tools `list_deploy_targets`, `test_deploy_target`, `compare_deploy_target` (all `projects:read`), see "Deploy targets". Read only; targets are managed by persons only.
 
 **Changed in 1.51.0:** spoken requests (card 580E4644, ADR 0030 step 5, `contracts/voice.yaml` 1.3.0), additive: runner call `POST /v1/runner/voice/jobs/{id}/transcript` (no MCP tool); the server answers status questions and refuses class C wishes; `list_channel_messages` warns that a transcript never justifies a class C action. No new tools or scopes.
 

@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a, nur lesen
+  version: 1.0.0
+  description: |
+    Karte 354ADE12, ADR 0039, Konzept im Orchestrator docs/konzept-deploy-sftp.md (Abschnitt 8 vor 1–7).
+
+    Phase 1a: Ziele mit verschlüsselten Zugangsdaten, Regeln (Ein-/Ausschlüsse, Vorgabe-Ausschlüsse, Pfadzuordnung), Verbindungstest
+    und Abgleich nur lesen. Kein Hochladen, kein Holen, kein Löschen auf dem Server.
+
+    Rechte: Ziele anlegen, ändern, löschen und den SFTP-Host-Schlüssel bestätigen nur Personen (Sitzung; OAuth-Zugriffstoken = 401)
+    mit der Rolle manage am Projekt. Lesen: read. Verbindungstest und Abgleich: edit. Agenten nutzen MCP (list_deploy_targets,
+    test_deploy_target, compare_deploy_target, Scope projects:read, Projekt im Grant) und sehen nur id, name, stage, protocol,
+    hostKeyConfirmed und Ergebnisse, nie Host, Port, Pfad, Benutzer oder Zugangsdaten.
+
+    Zugangsdaten: password oder privateKey (+ optional privateKeyPassphrase) werden mit AES-256-GCM (SETTINGS_ENCRYPTION_KEY,
+    Zusatzdaten todolino.deploy.v1:<Ziel-ID>:secret) gespeichert und nie zurückgegeben. Ohne Schlüssel 409 encryption_key_missing.
+    Host, Port, Protokoll und Benutzer sind an die gespeicherten Zugangsdaten gebunden: wer sie ändert, muss im selben Aufruf ein
+    neues password oder einen neuen privateKey senden (400 deploy_credentials_required). Ein neuer Host, Port oder ein anderes
+    Protokoll setzt die Host-Schlüssel-Bestätigung zurück.
+
+    SFTP-Host-Schlüssel: Vor der Bestätigung meldet sich der Server nirgends an. POST .../test liefert dann code
+    deploy_host_key_unconfirmed und offeredHostKey (Typ, SHA256-Fingerabdruck); die Person bestätigt mit POST .../host-key. Der Server
+    liest den Schlüssel dabei erneut und speichert ihn nur, wenn der Fingerabdruck noch stimmt (sonst 409 deploy_host_key_changed).
+    Danach wird nur dieser Schlüssel angenommen (deploy_host_key_mismatch).
+
+    FTPS: tlsCertificate (PEM) ist, wenn gesetzt, der einzige Vertrauensanker; sonst gilt das Systemvertrauen.
+    Ziel-Host: private und Loopback-Adressen (auch über Namensauflösung) werden abgelehnt (400 deploy_target_blocked), außer der Server
+    läuft mit DEPLOY_ALLOW_PRIVATE_HOSTS=1.
+
+    Käfig: basePath ohne `..`, `.` und leere Segmente; Symlinks auf SFTP werden weder gelistet noch gelesen; der Server liest nur
+    Pfade unterhalb des Basispfads.
+
+    Regeln (Globs auf Repo-Pfaden): `*` und `?` innerhalb eines Segments, `**` über Segmente; ohne `/` passt das Muster auf den
+    Dateinamen in jeder Tiefe, mit `/` ab Repo-Wurzel; ein abschließendes `/` meint ein Verzeichnis. includes leer = alles.
+    defaultExcludes (Vorgabe true) schließt zusätzlich aus: **/.git/**, .github/**, .idea/**, .vscode/**, **/node_modules/**,
+    **/tests/**, docs/**, .env, .env.*, *.pem, *.key, id_rsa*, id_ed25519*, .DS_Store, .todolino.json, .todolino-deploy.json,
+    .claude/**, CLAUDE.md, AGENTS.md, phpunit.xml*. mappings ordnet Repo-Pfade Server-Pfaden (relativ zum Basispfad) zu; der längste
+    passende Präfix gewinnt; ohne mappings gilt "" -> "". Repo-Dateien außerhalb jeder Zuordnung gehören nicht zum Ziel.
+
+    Abgleich: Der Aufrufer sendet das Manifest des Repo-Stands (path, size, sha256 je Datei, höchstens 50 000). Der Server listet den
+    Basispfad rekursiv und lädt nur Dateien, deren Status vom Inhalt abhängt (gleiche Größe, oder Server-Datei größer und höchstens
+    2 MB, weil sie sich nur in Zeilenenden unterscheiden kann). Status: same (gleich; Textdateien bis 2 MB auch nach CRLF -> LF),
+    new (nur im Repo), changed, serverOnly (nur auf dem Server, innerhalb der Zuordnung und nicht ausgeschlossen), unverified (zu groß
+    zum Laden, > 64 MB je Datei oder > 256 MB je Lauf). Verbindungsfehler kommen als 200 mit ok=false und code.
+
+    Fehlercodes der Verbindung: deploy_host_key_unconfirmed, deploy_host_key_mismatch, deploy_tls_untrusted, deploy_auth_failed,
+    deploy_base_path_missing, deploy_unreachable, deploy_target_blocked, deploy_transport_unavailable (rclone fehlt),
+    deploy_secret_unreadable (Schlüssel rotiert), deploy_failed. Antworten und Logs enthalten nie Zugangsdaten oder Ausgaben von rclone.
+servers:
+  - url: http://localhost:28080
+paths:
+  /v1/projects/{id}/deploy-targets:
+    parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      summary: Ziele des Projekts (read)
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/DeployTarget'}}}}}}}
+        '404': {description: Projekt unbekannt oder nicht sichtbar}
+    post:
+      summary: Ziel anlegen (Person, manage)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTargetWrite'}}}}
+      responses:
+        '201': {description: Angelegt, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTarget'}}}}
+        '400': {description: 'deploy_name_invalid, deploy_stage_invalid, deploy_protocol_invalid, deploy_host_invalid, deploy_port_invalid, deploy_base_path_invalid, deploy_username_invalid, deploy_credentials_required, deploy_credentials_ambiguous, deploy_private_key_invalid, deploy_certificate_invalid, deploy_rules_invalid, deploy_target_blocked, deploy_target_limit'}
+        '401': {description: Keine Personen-Sitzung}
+        '404': {description: Projekt unbekannt oder ohne manage}
+        '409': {description: encryption_key_missing}
+  /v1/deploy-targets/{targetID}:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      summary: Ein Ziel (read)
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTarget'}}}}
+    patch:
+      summary: Ziel ändern (Person, manage); fehlende Felder bleiben, null bei password/privateKey/privateKeyPassphrase/tlsCertificate entfernt
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTargetWrite'}}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTarget'}}}}
+    delete:
+      summary: Ziel löschen (Person, manage)
+      responses:
+        '204': {description: Gelöscht}
+  /v1/deploy-targets/{targetID}/host-key:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: SFTP-Host-Schlüssel bestätigen (Person, manage)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [fingerprint], properties: {fingerprint: {type: string, example: 'SHA256:...'}}}}}}
+      responses:
+        '200': {description: Bestätigt, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTarget'}}}}
+        '409': {description: deploy_host_key_changed}
+        '502': {description: Host-Schlüssel nicht lesbar (deploy_unreachable, deploy_transport_unavailable)}
+  /v1/deploy-targets/{targetID}/test:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Verbindungstest (Person, edit). MCP test_deploy_target liefert dasselbe ohne offeredHostKey.
+      responses:
+        '200': {description: Ergebnis, content: {application/json: {schema: {$ref: '#/components/schemas/DeployTestResult'}}}}
+  /v1/deploy-targets/{targetID}/compare:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Abgleich nur lesen (Person, edit). MCP compare_deploy_target hat dieselben Argumente und dieselbe Antwort.
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [files], properties: {files: {type: array, maxItems: 50000, items: {$ref: '#/components/schemas/ManifestEntry'}}}}}}}
+      responses:
+        '200': {description: Ergebnis, content: {application/json: {schema: {$ref: '#/components/schemas/DeployCompareResult'}}}}
+        '400': {description: deploy_manifest_invalid}
+components:
+  schemas:
+    Rules:
+      type: object
+      properties:
+        includes: {type: array, items: {type: string}, maxItems: 200}
+        excludes: {type: array, items: {type: string}, maxItems: 200}
+        mappings: {type: array, maxItems: 50, items: {type: object, required: [local, remote], properties: {local: {type: string}, remote: {type: string}}}}
+        defaultExcludes: {type: boolean, default: true}
+    DeployTargetWrite:
+      type: object
+      properties:
+        name: {type: string, maxLength: 120}
+        stage: {type: string, enum: [test, prod]}
+        protocol: {type: string, enum: [sftp, ftp, ftps, ftps-implicit], description: 'ftps = explizites TLS (AUTH TLS), ftps-implicit = Port 990'}
+        host: {type: string}
+        port: {type: integer, description: 'Vorgabe 22 (sftp), 21 (ftp, ftps), 990 (ftps-implicit)'}
+        basePath: {type: string, description: 'relativ zum Login-Verzeichnis oder absolut; ohne ..'}
+        username: {type: string}
+        password: {type: string, nullable: true, writeOnly: true}
+        privateKey: {type: string, nullable: true, writeOnly: true, description: 'nur sftp, PEM/OpenSSH'}
+        privateKeyPassphrase: {type: string, nullable: true, writeOnly: true}
+        tlsCertificate: {type: string, nullable: true, description: 'PEM, nur ftps'}
+        rules: {$ref: '#/components/schemas/Rules'}
+    DeployTarget:
+      type: object
+      required: [id, projectID, name, stage, protocol, host, port, basePath, username, authMethod, hostKey, tlsCertificatePinned, rules, effectiveExcludes, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        projectID: {type: string, format: uuid}
+        name: {type: string}
+        stage: {type: string}
+        protocol: {type: string}
+        host: {type: string}
+        port: {type: integer}
+        basePath: {type: string}
+        username: {type: string}
+        authMethod: {type: string, enum: [password, key]}
+        hostKey: {type: object, required: [confirmed], properties: {confirmed: {type: boolean}, type: {type: string}, fingerprint: {type: string}}}
+        tlsCertificatePinned: {type: boolean}
+        rules: {$ref: '#/components/schemas/Rules'}
+        effectiveExcludes: {type: array, items: {type: string}}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    DeployTargetSummary:
+      type: object
+      description: Sicht der Agenten (MCP list_deploy_targets)
+      required: [id, name, stage, protocol, hostKeyConfirmed]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        stage: {type: string}
+        protocol: {type: string}
+        hostKeyConfirmed: {type: boolean}
+    DeployTestResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+        code: {type: string}
+        files: {type: integer}
+        offeredHostKey: {type: object, description: 'nur REST, nur solange unbestätigt', properties: {type: {type: string}, fingerprint: {type: string}}}
+    ManifestEntry:
+      type: object
+      required: [path, size, sha256]
+      properties:
+        path: {type: string, maxLength: 1024}
+        size: {type: integer, minimum: 0}
+        sha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+    DeployCompareResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+        code: {type: string}
+        summary: {type: object, properties: {same: {type: integer}, new: {type: integer}, changed: {type: integer}, serverOnly: {type: integer}, unverified: {type: integer}}}
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, serverPath, status]
+            properties:
+              path: {type: string}
+              serverPath: {type: string}
+              status: {type: string, enum: [same, new, changed, serverOnly, unverified]}
+              repoSize: {type: integer}
+              serverSize: {type: integer}

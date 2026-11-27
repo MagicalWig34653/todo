@@ -43,6 +43,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: SettingsController())
     try app.register(collection: BrainMandateController())
     try app.register(collection: WebhookController())
+    try app.register(collection: DeployController())
     try app.register(collection: AccountLockController())
     try app.register(collection: ProjectTransferController())
     try app.register(collection: LiveController())

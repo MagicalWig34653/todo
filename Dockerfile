@@ -18,10 +18,25 @@ COPY Sources Sources
 COPY Tests Tests
 RUN swift build -c release --product App --static-swift-stdlib
 
+# rclone for deploy targets (ADR 0039): official release, pinned version and checksum per architecture.
+FROM ubuntu:noble AS rclone
+ARG TARGETARCH
+ARG RCLONE_VERSION=1.76.0
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
+RUN case "$TARGETARCH" in \
+      amd64) sum=b00f00b3266c3764413afe599d3ec316f6f43b3e0ea8a0bc1d186d2133e46df7 ;; \
+      arm64) sum=ee169016675e23a69d77240565133ff7dbc9b33d16fa8f7053d4af39f1eaeb78 ;; \
+      *) echo "unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSLo /tmp/rclone.zip "https://downloads.rclone.org/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.zip" \
+ && echo "$sum  /tmp/rclone.zip" | sha256sum -c - \
+ && mkdir /out && unzip -j /tmp/rclone.zip '*/rclone' -d /out && chmod 755 /out/rclone
+
 FROM ubuntu:noble
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libjemalloc2 libcurl4t64 libxml2 && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libjemalloc2 libcurl4t64 libxml2 openssh-client && rm -rf /var/lib/apt/lists/* \
  && useradd --system --create-home todo
 COPY --from=build /src/.build/release/App /usr/local/bin/todo-app
+COPY --from=rclone /out/rclone /usr/local/bin/rclone
 COPY --from=web /web/build /srv/web
 COPY licenses /usr/share/licenses/todo-app
 ENV WEB_ROOT=/srv/web

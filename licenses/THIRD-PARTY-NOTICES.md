@@ -55,3 +55,13 @@ Die swift-crypto-`NOTICE.txt` erwähnt BoringSSL nicht; die Lizenz der dort enth
 Diese Datei deckt die BoringSSL-Kopien und die beiden Pakete ab, die sie enthalten. Die übrigen Swift-Abhängigkeiten (Vapor,
 Fluent, SwiftNIO usw.) sind in `Package.resolved` aufgeführt; eine vollständige Inventarliste aller Lizenzen ist nicht Teil
 dieser Änderung.
+
+# rclone (Deploy-Ziele, ADR 0039)
+
+Das Backend-Image enthält das Programm `rclone` (`/usr/local/bin/rclone`) aus der offiziellen Release-Datei
+`rclone-v1.76.0-linux-<arch>.zip` von downloads.rclone.org, im Dockerfile mit Version und SHA-256 je Architektur festgelegt.
+rclone steht unter der **MIT License** (Copyright (C) 2019 by Nick Craig-Wood https://www.craig-wood.com/nick/); der Lizenztext
+liegt der Release-Datei bei (`COPYING`) und unter https://github.com/rclone/rclone/blob/master/COPYING. Todolino ruft rclone als
+eigenen Prozess auf und linkt es nicht.
+
+`ssh-keyscan` stammt aus dem Ubuntu-Paket `openssh-client` (BSD-Lizenz, Paketangaben unter `/usr/share/doc/openssh-client`).

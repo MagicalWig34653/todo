@@ -14,7 +14,7 @@ final class AgentManualTests: XCTestCase {
         let file = try String(contentsOf: root.appendingPathComponent("docs/agent-manual.md"), encoding: .utf8)
         XCTAssertEqual(file.trimmingCharacters(in: .whitespacesAndNewlines), AgentManual.markdown.trimmingCharacters(in: .whitespacesAndNewlines),
                        "docs/agent-manual.md changed: run scripts/embed-agent-manual.sh")
-        XCTAssertEqual(AgentManual.version, "1.51.0")
+        XCTAssertEqual(AgentManual.version, "1.52.0")
     }
 
     func testManualDocumentsEveryRegisteredToolAndEveryFieldIsDescribed() {

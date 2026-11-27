@@ -81,7 +81,7 @@ struct MCPController: RouteCollection {
                 guard tool.scope.isEmpty || grant.scopes.contains(tool.scope) else { throw Abort(.forbidden, reason: "insufficient_scope") }
                 let value = name == "wait_for_events"
                     ? try await waitForEvents(body["params"]["arguments"], req: req, user: user, grant: grant)
-                    : try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db, settings: req.application.settings)
+                    : try await call(name, arguments: body["params"]["arguments"], user: user, grant: grant, db: req.db, settings: req.application.settings, app: req.application)
                 let text = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
                 result = .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])]), "isError": .bool(false)])
             } catch let pending as ConfirmationRequired {
@@ -114,7 +114,7 @@ struct MCPController: RouteCollection {
             "inputSchema": .object(["type": .string("object"), "properties": .object(properties), "required": .strings(required), "additionalProperties": .bool(false)])]) }
     }
     /// All tools: the planning core (below) plus the command-center/workflow tools (`MCPWorkflowTools.swift`).
-    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools + projectTools + planningTools + discoveryTools + sharingTools + activityTools + boardTools + accountTools + runTools + channelTools + liveSessionTools + connectionTools + pipelineTools + usageTools
+    static let tools: [Tool] = coreTools + workflowTools + syncTools + eventTools + actionTools + projectTools + planningTools + discoveryTools + sharingTools + activityTools + boardTools + accountTools + runTools + channelTools + liveSessionTools + connectionTools + pipelineTools + usageTools + deployTools
     /// Task access = the grant lists the task's project AND the user's current role suffices (REST rules).
     func task(_ id: UUID, user: User, grant: OAuthGrant, db: any Database, role: ProjectRole = .read) async throws -> TodoTask {
         let task = try await ProjectAccess(user: user, db: db).task(id, role: role)
@@ -133,7 +133,7 @@ struct MCPController: RouteCollection {
         let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value.count <= 200 else { throw Abort(.badRequest, reason: "invalid_title") }; return value
     }
-    func call(_ name: String, arguments a: JSONValue, user: User, grant: OAuthGrant, db: any Database, settings: AppSettings) async throws -> JSONValue {
+    func call(_ name: String, arguments a: JSONValue, user: User, grant: OAuthGrant, db: any Database, settings: AppSettings, app: Application? = nil) async throws -> JSONValue {
         let a: JSONValue = a.isNull ? .object([:]) : a
         guard case .object(let args) = a, let tool = Self.tools.first(where: { $0.name == name }),
               Set(args.keys).isSubset(of: Set(tool.properties.keys)), tool.required.allSatisfy({ args[$0] != nil }) else { throw Abort(.badRequest, reason: "invalid_arguments") }
@@ -151,6 +151,10 @@ struct MCPController: RouteCollection {
         }
         if Self.usageTools.contains(where: { $0.name == name }) {
             return try await callUsage(a, user: user, grant: grant, db: db)
+        }
+        if Self.deployTools.contains(where: { $0.name == name }) {
+            guard let app else { throw Abort(.internalServerError) }
+            return try await callDeploy(name, a, user: user, grant: grant, db: db, app: app)
         }
         if Self.connectionTools.contains(where: { $0.name == name }) {
             return try await callConnection(name, a, user: user, grant: grant, db: db)

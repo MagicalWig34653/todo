@@ -126,6 +126,7 @@ public func configureMigrations(_ app: Application) {
     app.migrations.add(AddSignOfLifeIndexes())
     configurePipeline(app)
     configureUsage(app)
+    configureDeploy(app)
     // Last: appends label upserts to the change log (needs the sync tables and the discovery tables).
     app.migrations.add(BackfillLabelSync())
 }

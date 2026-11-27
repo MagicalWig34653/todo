@@ -38,6 +38,9 @@ fill='set -e; S=/home/deploy/site; mkdir -p $S/css; printf "hi\n" > $S/index.php
   printf "alt\n" > $S/about.php; printf "<p>vom Designer</p>\n" > $S/designer.html; printf "outside-secret\n" > /home/deploy/outside.txt'
 for _ in $(seq 1 30); do docker exec "$SFTP" test -d /home/deploy/site 2>/dev/null && break; sleep 1; done
 docker exec "$SFTP" sh -c "$fill; ln -sf ../outside.txt \$S/link.txt; ln -sf /etc \$S/etclink; chown -R 1001 \$S"
+# OpenSSH 10 penalises a source address after failed logins (PerSourcePenalties); the tests fail logins on purpose.
+docker exec "$SFTP" sh -c 'echo "PerSourcePenalties no" >> /etc/ssh/sshd_config && kill -HUP 1'
+sleep 1
 for _ in $(seq 1 30); do docker exec "$FTP" test -f /etc/pure-ftpd/pureftpd.pdb 2>/dev/null && break; sleep 1; done
 docker exec "$FTP" sh -c "$fill; chown -R ftpuser:ftpgroup /home/deploy"
 docker exec "$FTP" cat /etc/ssl/private/pure-ftpd.pem | openssl x509 > "$DIR/ftp-cert.pem"

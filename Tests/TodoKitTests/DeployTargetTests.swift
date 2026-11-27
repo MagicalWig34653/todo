@@ -84,7 +84,7 @@ final class DeployTargetTests: XCTestCase {
             let rules = try XCTUnwrap(t["rules"] as? Obj)
             XCTAssertEqual(rules["excludes"] as? [String], ["*.log"])
             XCTAssertEqual(rules["defaultExcludes"] as? Bool, true)
-            XCTAssertTrue((t["effectiveExcludes"] as? [String] ?? []).contains(".git/**"))
+            XCTAssertTrue((t["effectiveExcludes"] as? [String] ?? []).contains("**/.git/**"))
             let id = try XCTUnwrap(t["id"] as? String)
 
             let list = try await f.test.json(.GET, "/v1/projects/\(f.projectID)/deploy-targets", token: f.session)
@@ -257,7 +257,7 @@ final class DeployTargetTests: XCTestCase {
             for file in files { status[file["path"] as? String ?? "?"] = file["status"] as? String }
             XCTAssertEqual(status, [
                 "public/index.php": "same", "public/css/app.css": "same", "public/about.php": "changed", "public/big.js": "changed",
-                "public/contact.php": "new", "designer.html": "serverOnly",
+                "public/contact.php": "new", "public/designer.html": "serverOnly",
             ])
             let server = files.first { $0["path"] as? String == "public/index.php" }?["serverPath"] as? String
             XCTAssertEqual(server, "index.php")
