@@ -10,6 +10,8 @@ Todolino-MCP war in dieser Sitzung nicht angemeldet. Das Brain trägt diese Text
 4. Gegenlesen (Verifier, Sonnet): kein Blocker, 8 Befunde; rot `01bc04a` (2 Tests, 50 Fehler), grün `034f8d6`.
 5. Volle Suiten auf `5ffbceb`: SQLite 1095 Tests, 26 übersprungen, 0 Fehler; MariaDB 12.3 1095 Tests, 14 übersprungen, 0 Fehler. E2E `scripts/deploy-e2e.sh` (`eeff1e9`) SQLite und MariaDB je 0 Fehler.
 
+6. Push `1c85aa9`; GitHub grün: CI 46021112677 (Linux 1095 Tests, 31 übersprungen, 0 Fehler), Docker publish 46021112729, Pages 46021112548, E2E 46022940609. Linux-Smoke mit dem veröffentlichten Image gegen SFTP/FTPS: 14 ok.
+
 ## record_decision (je mit Commit)
 
 - Transport rclone statt nativer SFTP/FTPS-Schicht (ADR 0039, `c11501e`).
