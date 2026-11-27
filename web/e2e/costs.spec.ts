@@ -240,11 +240,14 @@ test('an unsaved price row survives a failed load of another range', async () =>
 	await view().getByRole('button', { name: `Preis für ${CODEX} ergänzen` }).click();
 	const row = view().locator(`[data-testid="costs-price-row"][data-model="${CODEX}"]`);
 	await row.getByLabel('Output', { exact: true }).fill('17');
-	// The only simulated part: the network drops for the next summary request.
+	// The only simulated part: the next summary request fails. Both ways are needed: requests that pass the service worker
+	// bypass page.route in WebKit, and Firefox keeps loading them while the context is offline.
 	await page.route('**/v1/usage/summary*', (route) => route.abort());
+	await page.context().setOffline(true);
 	await view().getByTestId('costs-range').getByRole('button', { name: '30 T' }).click();
 	await expect(view().getByTestId('costs-error')).toBeVisible();
 	await expect(row.getByLabel('Output', { exact: true })).toHaveValue('17');
+	await page.context().setOffline(false);
 	await page.unroute('**/v1/usage/summary*');
 	await view().getByTestId('costs-error').getByRole('button').click();
 	await expect(view().getByTestId('costs-verdict')).toBeVisible();

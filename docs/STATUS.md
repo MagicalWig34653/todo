@@ -1,5 +1,17 @@
 # Status
 
+## Nachtrag 27.11.2026 (02:25): Seite „Kosteneffizienz“, Phase 1 und 2 (Karte `71FD73CF`, Erwartung f-3a7cf456; kein Deploy)
+
+- Server: Tabellen `usage_daily` und `usage_settings` (additive Migration `CreateUsage`), `POST /v1/usage` und MCP `report_usage` (idempotent je Konto, Tag, Sitzung, Modell; Scope `tasks:write`; nur Zähler), `GET /v1/usage/summary`, `GET/PUT /v1/usage/settings` (Preise, Schwellen). Höchstens 20 000 Zeilen je Konto. ADR 0038.
+- Vertrag für den Sammler (Selbstverbesserung): **`contracts/usage.yaml`**.
+- Web: `/costs` mit Urteil, acht bewerteten Kacheln, Diagrammen, Top-Sitzungen, Preisen/Schwellen und Leerzustand. Bilder und Beschreibung: `design/kosteneffizienz/`.
+- Commits: Vertrag `1df3880`; Server rot `0998399` (26 Tests, 357 Fehler), grün `8207241`; Web rot `9d26eb2`, grün `bfa1ebc`/`bf1a8a6`; Gegenlesen (kein Blocker, 4 Befunde) rot `9c14f9b`, grün `28cc743`; danach nur Testtechnik in `costs.spec.ts` und Doku.
+- Tests (Stand `28cc743`): MariaDB 12.3 (eigener Wegwerf-Container, samt Volume entfernt) volle Suite 1066, 9 übersprungen, 0 Fehler. SQLite 1066, 26 übersprungen, 1 Fehler: `WebhookSecurityReviewTests.testTenSlowTargetsAreNotServedOneAfterTheOther` (Zeitmessung 3,7 s statt < 2 s unter gedrosselter Last; einzeln 3× grün, Webhook-Code unverändert, im MariaDB-Lauf grün). `scripts/usage-e2e.sh` SQLite und MariaDB je 56 ok. web: check 0 Fehler, build ok, vitest 857/857.
+- Playwright gegen natives Backend, frische SQLite je Lauf: alle Specs außer mail, server-settings, review-variants-demo (wie CI): 429 bestanden, 3 übersprungen, 1 rot (`costs` WebKit, Netzfehler ließ sich dort nicht per `page.route` erzeugen). Nach Korrektur `costs.spec.ts` 8 Läufe × 9 in Chromium, Firefox, WebKit grün.
+- Todolino-MCP nicht angemeldet: kein `post_progress`/`record_sync`. Fertige Kartentexte: `design/kosteneffizienz/kartentexte.md`.
+- Deploy (Lino): `App migrate --yes` vor `serve`.
+- Offen: Sammler `tools/kosten.py` (Orchestrator) samt Abgleich ±10 % mit T3; Preise für Codex/GPT trägt das Konto ein; Haiku-Staffel über 100k nicht abgebildet; Phase 3 (Befunde, `list_cost_findings`), Apple; Nebenbefunde in ADR 0038.
+
 ## Nachtrag 26.11.2026 (23:25): UX-Umbau Schritt 1 „Lesbarkeit“ in der PWA (Karte `8B820AA8`; kein Deploy)
 
 - Umgesetzt (nur `web/`): „Für dich“ zeigt Fragen/Reviews/Neuigkeiten als kurze Vorschau ohne Markdown-Zeichen (`previewParts`, Überschrift max. 2 Zeilen, Rest max. 3); Frage im Kartenfenster/Überblick über die sichere Markdown-Teilmenge; Erklärtexte einen Satz, Rest hinter „Mehr erfahren“ (`Explainer.svelte`, alle `PageHeader`-Beschreibungen, Graph, Brain-Vollmacht mit neuem Kurzsatz); Kartenfenster zeigt nur Reiter mit Daten (`visibleTabs`, Deep-Link-Reiter bleibt); Plus-Knopf auf dem Handy in der Kopfzeile, Hilfe dort nur im Kontomenü. Details, Bilder, Klickwege: `design/ux-konzept/schritt-1/README.md`.
