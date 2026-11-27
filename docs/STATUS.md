@@ -5,7 +5,7 @@
 - Nicht nachstellbar: 250 von 250 Einzelläufen grün (5 Worker gleichzeitig, eigene MariaDB `todo-flake` Port 24761, unter iPhone-UI-Suite und FB-Validierung), dazu zwei volle MariaDB-Suiten je 1071 Tests, 9 übersprungen, 0 Fehler. InnoDB: 0 Deadlocks, 6516 Sperrwartezeiten, längste 943 ms.
 - Code: alle drei Schreibpfade (Verschieben, Spalte anlegen, Aufgabe anlegen) nehmen zuerst die Sharing-Graph-Sperre; keine Lücke für 500 oder doppelte Positionen erkennbar. Kein Fix auf Verdacht.
 - Test meldet beim nächsten Rot alle Statuscodes plus Status und Antworttext jeder unerwarteten Antwort (`TestApp.rawReply`); Prüfaussagen unverändert. Nachweis mit vorübergehend falscher Erwartung im Beleg.
-- Beleg: `docs/belege/7619514B-mariadb-column-flake.md`. Testdatenbank-Container `todo-flake` danach entfernt.
+- Commit `587906f`; GitHub grün: CI 45961897404, Docker publish 45961897370, Pages 45961897408, E2E 45963280667. Lokal `swift test` (SQLite) 1071, 26 übersprungen, 0 Fehler. Beleg: `docs/belege/7619514B-mariadb-column-flake.md`. Container und Volume `todo-flake` entfernt, keine Worktrees.
 - Nächster Schritt: Beim nächsten Rot den Antworttext lesen; 500 mit MySQL 1213/1205 = Produktfrage (Retry), sonst Testfrage.
 
 ## Nachtrag 27.11.2026 (04:40): Dependabot @sveltejs/kit, adapter-static, yaml (Karte `9608B355`; kein Deploy)

@@ -24,5 +24,8 @@ Executed 1 test, with 1 failure (0 unexpected) in 4.592 (4.592) seconds
 ```
 Ein 500 erschiene dort als `500: {"error":true,"reason":"…"}` samt MySQL-Fehlertext im Log.
 
+## Endstand
+Commit `587906f` auf `origin/main`. Lokal `swift test` (SQLite) 1071 Tests, 26 übersprungen, 0 Fehler. GitHub auf `587906f`: CI 45961897404, Docker publish 45961897370 und Pages 45961897408 grün; E2E 45963280667 grün. Testdatenbank-Container und Volume `todo-flake` entfernt, keine Worktrees.
+
 ## Entscheidung
 Kein Fix ohne belegte Ursache: weder ein Produktfehler noch ein Testfehler ist nachweisbar; ein „Fix" auf Verdacht (z. B. Retry im Test) würde die Prüfaussage abschwächen. Stattdessen Diagnose im Test. Kommt das nächste Rot, entscheidet der Antworttext (500 mit Deadlock/Timeout = Produktfrage, z. B. Retry bei 1213/1205; anderer Status = Testfrage).
