@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 27.11.2026 (15:15): Deploy-Ziele Phase 1a (Karte `354ADE12`)
+
+- Backend für Deploy-Ziele, Zugangsdaten, Verbindungstest und Abgleich nur lesen (REST + MCP), ADR 0039 (rclone), `contracts/deploy.yaml`. Stand und Belege: `docs/STATUS.md` (oberster Nachtrag), Kartentexte `docs/belege/kartentexte-f-59a9e0c9.md`.
+- Nächster Schritt 1b: PWA-Ziele und Sync-Ansicht nur lesen. Danach Phase 2 (Holen, tägliche Drift-Karte).
+
 ## Checkpoint 27.11.2026 (09:00): Unsteter MariaDB-Spaltentest (Karte `7619514B`)
 
 - 252 Läufe ohne Rot, Ursache nicht belegt; Test gibt beim nächsten Rot Status und Antworttext aus. Belege: `docs/STATUS.md` (oberster Nachtrag), `docs/belege/7619514B-mariadb-column-flake.md`.

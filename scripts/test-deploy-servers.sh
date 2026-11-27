@@ -13,7 +13,7 @@ PASV="${TODO_TEST_DEPLOY_PASV:-30000}"
 SFTP=todo-deploy-test-sftp
 FTP=todo-deploy-test-ftp
 DIR="$(mktemp -d "${TMPDIR:-/tmp}/todo-deploy-test.XXXXXX")"
-SWIFT="${SWIFT:-swift}"
+SWIFT="${SWIFT:-swift}"  # may be a command with arguments, e.g. "sparsam swift"
 
 cleanup() {
   if [ "${KEEP:-0}" != 1 ]; then docker rm -f "$SFTP" "$FTP" >/dev/null 2>&1 || true; fi
@@ -49,4 +49,4 @@ for _ in $(seq 1 30); do ssh-keyscan -T 2 -p "$SFTP_PORT" 127.0.0.1 2>/dev/null 
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(--filter Deploy)
 TODO_TEST_DEPLOY_SERVERS=1 TODO_TEST_DEPLOY_DIR="$DIR" TODO_TEST_DEPLOY_SFTP_PORT="$SFTP_PORT" TODO_TEST_DEPLOY_FTP_PORT="$FTP_PORT" \
-  "$SWIFT" test "${ARGS[@]}"
+  $SWIFT test "${ARGS[@]}"
