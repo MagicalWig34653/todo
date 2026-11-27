@@ -16,6 +16,8 @@
 - CI-Nacharbeit: Der Disconnect-Test nutzte `URLSession`, auf Linux fehlt das ohne FoundationNetworking. Umgestellt auf einen rohen NIO-Client (`69d5e42`). Danach Wettlauf auf Linux: Eine verspätete ältere Anfrage ersetzte die neueste. Jetzt wartet jede Runde auf die Registrierung im Hub (`LiveHub.registrations`, `bca9775`). Ohne Fix ist der Test rot, mit Fix 3x grün.
 - E2E-Lauf 45932941121 rot: `mandate-relogin` Firefox („goto interrupted“ durch die noch laufende OAuth-Callback-Weiterleitung, nicht durch diese Änderung). `allow()` wartet jetzt auf die Fehlerseite unter der Callback-URL (`cd0efc3`); lokal Firefox 3x, Chromium, WebKit grün, Laufzeit unverändert.
 - Gegenlesen (Verifier, Sonnet): kein Blocker, 1 wichtiger Befund: ersetzte/heruntergefahrene Wartende meldete `changed:false` trotz neuem Token (Änderung konnte verloren gehen; beim Herunterfahren schon vorher). Rot mit 2 Fehlern, danach behoben; zusätzlich Test „gleicher client-Schlüssel anderes Konto ersetzt nichts“. Grenze (mehr als 8 verwaiste Tabs oder blockierter Speicher) im ADR 0022.
+- GitHub auf `c0df373` grün: CI 45939914442, Docker publish 45939914526, Pages 45939914448, E2E 45941121925 (97 Läufe OK, darin `live-wait-reload` gegen das veröffentlichte Image). Dependabot-Alerts #1 bis #7 stehen auf `fixed`. Dieser Doku-Nachtrag ist mit `[skip ci]` gepusht.
+- Offen: Brain-Validierung, Board-Einträge, Deploy (Lino). Keine laufenden Prozesse oder Worktrees aus diesem Auftrag.
 - Todolino-MCP nicht angemeldet: kein `post_progress`/`record_sync`; Kartentexte in `docs/belege/kartentexte-f-0caacb34.md`.
 
 ## Nachtrag 27.11.2026 (02:25): Seite „Kosteneffizienz“, Phase 1 und 2 (Karte `71FD73CF`, Erwartung f-3a7cf456; kein Deploy)

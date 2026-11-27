@@ -22,3 +22,6 @@ Fix-Commit `6f9da77`. Weitere Specs gegen dasselbe Backend (frische SQLite je Sp
 
 ## Fix
 Server: optionaler Parameter `client` (`Sources/TodoKit/Live/LiveController.swift`, `LiveHub.swift`), je (Konto, client) höchstens eine Wartende, die neuere beendet die ältere. PWA: `web/src/lib/liveRefresh.ts`, `liveClientId` (Schlüssel je Tab in `sessionStorage`). Vertrag `contracts/live-refresh.yaml` 1.1.0, ADR 0022.
+
+## Endstand
+Gegenlesen: ersetzte/heruntergefahrene Wartende meldet `changed` jetzt passend zum Token (`c0df373`). GitHub auf `c0df373` grün: CI 45939914442, Docker publish 45939914526, Pages 45939914448, E2E 45941121925 (97 Läufe OK, darin `live-wait-reload` gegen das veröffentlichte Image).
