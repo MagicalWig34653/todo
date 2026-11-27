@@ -6,7 +6,7 @@ Stand 27.11.2026, Erwartung f-3999655d. Kein Deploy.
 
 1. Rote Tests zuerst: `048ab31`, `swift test --filter VoiceBrainReplyTests`: 6 Tests, 30 Fehler (404 statt Funktion; Lage-Antwort `intent` nil, Klasse-C `refused` nil, Wortregeln Stub). Nach Gegenlesen `0dc735c`: 9 Tests, 16 Fehler.
 2. Umsetzung grün: `a048e80`, `2c205ad`. `VoiceBrainReplyTests` 9/9. E2E über REST und MCP (`scripts/voice-brain-e2e.sh`, native Backend, frische SQLite, zwei Konten, echter Runner-Token, echte M4A, echtes OAuth-Token): 25 ok, `voice_in` mit Transkript per `list_channel_messages` gelesen, kein Transkript oder Antworttext im Backend-Log. Nachbarn: `voice-jobs` 88, `channel-brain` 46, `voice-attachments` 29 ok.
-3. Suiten auf `2c205ad`: SQLite 1080, 26 übersprungen, 0 Fehler. MariaDB 12.3.3 1080, 9 übersprungen, 0 Fehler (eigener Wegwerf-Container wie `scripts/test-mariadb.sh`, zwei Teile: 603 + 477). GitHub-CI: siehe STATUS.
+3. Suiten auf `2c205ad`: SQLite 1080, 26 übersprungen, 0 Fehler. MariaDB 12.3.3 1080, 9 übersprungen, 0 Fehler (eigener Wegwerf-Container wie `scripts/test-mariadb.sh`, zwei Teile: 603 + 477). GitHub-CI auf `9044b17` grün: CI 45984479852, Docker publish 45984480210, Pages 45984479862, E2E 45986522964.
 4. STATUS, `docs/PLAN-TELEFON-T1.md` Schritt 5, ADR 0030 Nachtrag, `contracts/voice.yaml` 1.3.0, Handbuch 1.51.0.
 
 ## Board-Texte (Todolino-MCP nicht angemeldet, vom Brain einzutragen)
