@@ -1,5 +1,15 @@
 # Status
 
+## Nachtrag 27.11.2026 (10:15): Telefon T1 Schritt 5 „Antwortlogik Brain (Text)“ (Karte `580E4644`, Erwartung f-3999655d; kein Deploy)
+
+- Umgesetzt (Backend, ADR 0030 Nachtrag Schritt 5, Plan `docs/PLAN-TELEFON-T1.md` Schritt 5 markiert): `POST /v1/runner/voice/jobs/{id}/transcript` (Runner, Geräte-Token, Generation) setzt das Transkript sofort als Text der `voice_in`-Nachricht und liefert `{intent, replyText}`. `BrainResponder` (feste Wortregeln, kein Modell): `status` („wie steht es“, Lage, Überblick, offene Fragen) = Klartext aus Command Center und offenen Fragen, Reviews, laufenden Aufgaben, höchstens 4000 Zeichen; `refused` = Klasse C (löschen, entfernen, übertragen, Freigabe entziehen, deployen) wird per Sprache nie ausgeführt und hat Vorrang vor einer Lage-Frage im selben Satz; `forwarded` = alles andere bleibt für die Brain-Session im Kanal (`list_channel_messages`), Empfangsbestätigung an die Person. Meldet der Runner das Ergebnis ohne Antworttext und ohne Antwortaudio, schreibt der Server dieselbe Antwort als `text`-Nachricht.
+- **Entscheidung:** Klasse C erzeugt gar keine Bestätigungsanfrage (Plan: „höchstens eine“). Sprache hat keine Verbindung (`grant`), und ein falsch verstandener Name soll keine Löschung vorbereiten. Begründung und Vorgabe für später im ADR.
+- Rot zuerst: `048ab31` (`VoiceBrainReplyTests`, 6 Tests, 30 Fehler: 404 statt Funktion, Wortregeln als Stub). Grün: `a048e80` (6/6). E2E `scripts/voice-brain-e2e.sh` (native Backend, frische SQLite, zwei Konten, simulierter Runner mit echtem Gerätetoken, echte M4A, MCP mit echtem OAuth-Token): 24 ok, kein Transkript und kein Antworttext im Backend-Log.
+- Vollsuite lokal: `swift test` (SQLite) 1077, 26 übersprungen, 0 Fehler.
+- Vertrag `contracts/voice.yaml` 1.3.0. Handbuch (`agent-manual`) unverändert (kein Versionssprung nötig; MCP-Werkzeuge unverändert).
+- Grenzen: Wortregeln statt Sprachverständnis (ungewöhnliche Lage-Fragen gehen als `forwarded` an die Brain-Session); Klasse-C-Stammliste bewusst weit. Ein eigener Zustand „von der Brain-Session beantwortet“ je Nachricht fehlt; erkennbar ist eine offene Anfrage daran, dass nach der `voice_in`-Nachricht nur die Empfangsbestätigung des Servers folgt. Kein Live-Refresh/Push (Schritt 6, App). Schritt 4 (Runner-Repo) und 6 (App) bleiben offen; der Runner muss `/transcript` vor der Sprachausgabe aufrufen.
+- Nächster Schritt: Schritt 6 (App) und Schritt 4 (Runner-Sprach-Worker, anderes Repo) als eigene Aufträge.
+
 ## Nachtrag 27.11.2026 (09:00): Unsteter MariaDB-Test `ColumnTests.testConcurrentMovesAndColumnCreationAcrossReplicas` (Karte `7619514B`, Erwartung f-4ea38d66; kein Deploy)
 
 - Nicht nachstellbar: 250 von 250 Einzelläufen grün (5 Worker gleichzeitig, eigene MariaDB `todo-flake` Port 24761, unter iPhone-UI-Suite und FB-Validierung), dazu zwei volle MariaDB-Suiten je 1071 Tests, 9 übersprungen, 0 Fehler. InnoDB: 0 Deadlocks, 6516 Sperrwartezeiten, längste 943 ms.

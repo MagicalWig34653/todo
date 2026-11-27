@@ -29,16 +29,31 @@ enum BrainResponder {
 
     // MARK: Classification
 
-    /// Lowercase words, umlauts spelled out (`Löschen` and `loeschen` match the same stem).
+    /// Lowercase words, umlauts spelled out (`Löschen` and `loeschen` match the same stem). Composes decomposed umlauts
+    /// and drops invisible format characters (soft hyphen, zero width space) first, so that they cannot split a word.
     static func words(_ text: String) -> [String] {
-        var folded = text.lowercased()
+        let visible = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.properties.generalCategory != .format }))
+        var folded = visible.precomposedStringWithCanonicalMapping.lowercased()
         for (from, to) in [("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")] { folded = folded.replacingOccurrences(of: from, with: to) }
         return folded.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
     }
 
     /// Stems of class C actions (docs/MCP-PARITAET.md): deleting, transferring ownership, revoking shares, deploying.
-    private static let classCStems = ["loesch", "entfern", "deploy", "uebertrag", "entzieh", "entzog", "veroeffentlich", "zerstoer",
-                                      "vernicht", "delete", "remove", "revoke", "transfer", "ausroll"]
+    private static let classCStems = ["loesch", "entfern", "deploy", "uebertrag", "uebergib", "uebergeb", "entzieh", "entzog",
+                                      "widerruf", "veroeffentlich", "zerstoer", "vernicht", "ausroll", "ausliefer", "delete",
+                                      "remove", "erase", "revoke", "transfer", "publish"]
+
+    /// Wishes made of two parts: every word group needs one word that starts with one of its stems.
+    private static let classCPairs: [[[String]]] = [
+        [["freigabe"], ["beend", "aufheb", "hebe", "zurueck", "zieh", "kuendig", "sperr"]],
+        [["wirf", "werf", "schmeiss"], ["weg"]],
+        [["live"], ["schalt", "stell", "bring"]],
+    ]
+
+    private static func isClassC(_ words: [String]) -> Bool {
+        func has(_ stems: [String]) -> Bool { words.contains { word in stems.contains { word.hasPrefix($0) } } }
+        return has(classCStems) || classCPairs.contains { $0.allSatisfy(has) }
+    }
 
     private static func contains(_ words: [String], _ phrase: [String]) -> Bool {
         guard !phrase.isEmpty, words.count >= phrase.count else { return false }
@@ -49,10 +64,11 @@ enum BrainResponder {
     static func classify(_ text: String) -> BrainIntent {
         let w = words(text)
         // Class C wins over everything else, also in a sentence that starts with a status question.
-        if w.contains(where: { word in classCStems.contains { word.hasPrefix($0) } }) { return .refused }
+        if isClassC(w) { return .refused }
         let phrases = [["wie", "steht"], ["wie", "stehts"], ["was", "steht", "an"], ["was", "ist", "los"], ["was", "gibt", "es", "neues"]]
         if phrases.contains(where: { contains(w, $0) }) { return .status }
-        if w.contains(where: { ["lage", "ueberblick", "status", "lagebericht", "zusammenfassung"].contains($0) }) { return .status }
+        // A single word like "Status" asks for it only in a short sentence; inside a longer order it goes to the brain.
+        if w.count <= 5, w.contains(where: { ["lage", "ueberblick", "status", "lagebericht", "zusammenfassung"].contains($0) }) { return .status }
         if zip(w, w.dropFirst()).contains(where: { $0.0.hasPrefix("offen") && $0.1.hasPrefix("frage") }) { return .status }
         return .forwarded
     }

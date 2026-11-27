@@ -328,6 +328,16 @@ enum VoiceService {
             else { throw Abort(.badRequest, reason: "invalid_error_code") }
         }
         try await expireDue(owner: device.ownerID, db: db)
+        // ADR 0030 step 5: the server's own answer, built before the job row is locked (it reads the whole board). It is
+        // only used below, after the holder check.
+        var serverAnswer: String?
+        if reply == nil, body.errorCode == nil, let job = try await VoiceJob.find(id, on: db), job.ownerID == device.ownerID,
+           !job.isEnded, job.replyAttachmentID == nil, let owner = try await User.find(job.ownerID, on: db) {
+            var spoken = transcript
+            if spoken == nil { spoken = try await ChannelMessage.find(job.messageID, on: db)?.text }
+            if let spoken { serverAnswer = try await BrainResponder.reply(to: spoken, user: owner, db: db).replyText }
+        }
+        let prepared = serverAnswer
         return try await db.transaction { tx in
             try await lockRow(table: VoiceJob.schema, id: id, on: tx)
             if let job = try await VoiceJob.find(id, on: tx), job.ownerID == device.ownerID, job.state == "done" || job.state == "failed",
@@ -351,10 +361,7 @@ enum VoiceService {
             if let original, let transcript { original.text = transcript; try await original.save(on: tx) }
             // ADR 0030 step 5: a runner that sends no answer (no TTS, no brain connection) gets the server's own answer
             // to the transcript as text: the status, the refusal of a class C action or the receipt for the brain session.
-            var answer = reply
-            if answer == nil, job.replyAttachmentID == nil, let spoken = transcript ?? original?.text {
-                answer = try await BrainResponder.reply(to: spoken, user: user, db: tx).replyText
-            }
+            let answer = reply ?? (job.replyAttachmentID == nil ? prepared : nil)
             guard answer != nil || job.replyAttachmentID != nil else { throw Abort(.badRequest, reason: "result_required") }
             let hasAudio = job.replyAttachmentID != nil
             try await channel.appendBrainMessage(kind: hasAudio ? "voice_out" : "text", text: answer, attachmentID: job.replyAttachmentID,
