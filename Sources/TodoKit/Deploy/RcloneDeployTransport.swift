@@ -132,7 +132,11 @@ struct RcloneDeployTransport: DeployTransport {
                 "--contimeout", "15s", "--timeout", "60s", "--ask-password=false"] + extra
     }
 
-    private func remote(_ c: DeployConnection) -> String { "t:" + DeployPath.trimmed(c.basePath) }
+    private func remote(_ c: DeployConnection) -> String { Self.remote(basePath: c.basePath) }
+    static func remote(basePath: String) -> String { "t:" + DeployPath.trimmed(basePath) }
+    static func keyPEMLine(_ pem: String) -> String {
+        "key_pem = " + pem.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\\n")
+    }
 
     func scanHostKey(host: String, port: Int) async throws -> DeployHostKey {
         guard let keyscan = Self.binary("DEPLOY_SSH_KEYSCAN_PATH", "ssh-keyscan") else { throw DeployTransportError(code: "deploy_transport_unavailable") }

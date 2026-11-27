@@ -327,6 +327,62 @@ final class DeployTargetTests: XCTestCase {
         }
     }
 
+    // MARK: Review findings (Gegenlesen)
+
+    func testReviewFindingsCredentialsBindingResolvedAddressNullSecretsAndPaths() async throws {
+        try await fixture(allowPrivate: false) { f in
+            let made = try await f.created()
+            let id = try XCTUnwrap(made["id"] as? String)
+            f.transport.hostKey = DeployHostKey(type: "ssh-ed25519", base64: Data(repeating: 4, count: 51).base64EncodedString())
+            _ = try await f.test.json(.POST, "/v1/deploy-targets/\(id)/host-key", ["fingerprint": f.transport.hostKey!.fingerprint], token: f.session)
+
+            // 1: SFTP connects to the address that passed the check, not to a second lookup of the name.
+            let ok = try await f.test.json(.POST, "/v1/deploy-targets/\(id)/test", token: f.session)
+            XCTAssertEqual(ok.body?["ok"] as? Bool, true, "\(ok.body ?? [:])")
+            XCTAssertEqual(f.transport.connections.last?.host, "203.0.113.10")
+            XCTAssertEqual(f.transport.scannedHosts.last, "203.0.113.10")
+
+            // 2: the secret is bound to protocol, host, port and user: an endpoint changed behind its back (race of two
+            // PATCH requests) makes the secret unreadable instead of sending it to the new host.
+            let found = try await DeployTarget.find(UUID(uuidString: id), on: f.app.db)
+            let target = try XCTUnwrap(found)
+            target.host = "evil.example.com"
+            try await target.save(on: f.app.db)
+            let raced = try await f.test.json(.POST, "/v1/deploy-targets/\(id)/test", token: f.session)
+            XCTAssertEqual(raced.body?["code"] as? String, "deploy_secret_unreadable", "\(raced.body ?? [:])")
+            XCTAssertNotEqual(f.transport.connections.last?.host, "evil.example.com")
+
+            // 5: null for the only credential is refused, a passphrase needs a key.
+            let cleared = try await f.test.json(.PATCH, "/v1/deploy-targets/\(id)", ["password": NSNull()], token: f.session)
+            XCTAssertEqual(cleared.status, .badRequest)
+            XCTAssertEqual(cleared.body?["reason"] as? String, "deploy_credentials_required")
+            let passphrase = try await f.test.json(.PATCH, "/v1/deploy-targets/\(id)", ["privateKeyPassphrase": "x"], token: f.session)
+            XCTAssertEqual(passphrase.status, .badRequest)
+            XCTAssertEqual(passphrase.body?["reason"] as? String, "deploy_private_key_invalid")
+        }
+        // 4: an absolute base path stays absolute, "/" is the root, not the login directory.
+        XCTAssertEqual(RcloneDeployTransport.remote(basePath: "/"), "t:/")
+        XCTAssertEqual(RcloneDeployTransport.remote(basePath: "/var/www/"), "t:/var/www")
+        XCTAssertEqual(RcloneDeployTransport.remote(basePath: "site"), "t:site")
+        XCTAssertEqual(RcloneDeployTransport.remote(basePath: ""), "t:")
+        // 8: a lone CR in a key never reaches the configuration line.
+        XCTAssertFalse(RcloneDeployTransport.keyPEMLine("-----BEGIN X PRIVATE KEY-----\rA\r\nB\n-----END X PRIVATE KEY-----").contains("\r"))
+    }
+
+    func testOverlappingMappingsCompareDeterministically() async throws {
+        // 7: repo files a/f and b/f both map to server b/f; only the file the server path maps back to counts.
+        let rules = try DeployRules(includes: [], excludes: [], mappings: [.init(local: "a", remote: "b"), .init(local: "", remote: "")], defaultExcludes: false)
+        let repo = try DeployService.validManifest([
+            DeployManifestEntry(path: "a/f", size: 2, sha256: Self.sha(Data("a\n".utf8))),
+            DeployManifestEntry(path: "b/f", size: 2, sha256: Self.sha(Data("b\n".utf8))),
+        ])
+        for _ in 0..<20 {
+            let r = try await DeployService.compare(repo: repo, server: [DeployRemoteFile(path: "b/f", size: 2)], rules: rules) { _ in ["b/f": Data("a\n".utf8)] }
+            XCTAssertEqual(r.files?.map(\.path), ["a/f"])
+            XCTAssertEqual(r.files?.first?.status, "same")
+        }
+    }
+
     // MARK: Rules (pure)
 
     func testGlobRulesAndDefaultExcludes() throws {
@@ -358,7 +414,8 @@ final class DeployTargetTests: XCTestCase {
 final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var _files: [String: Data] = [:], _hostKey: DeployHostKey?, _failure: String?
-    private var _connections: [DeployConnection] = [], _reads: [[String]] = []
+    private var _connections: [DeployConnection] = [], _reads: [[String]] = [], _scanned: [String] = []
+    var scannedHosts: [String] { lock.withLock { _scanned } }
     var files: [String: Data] { get { lock.withLock { _files } } set { lock.withLock { _files = newValue } } }
     var hostKey: DeployHostKey? { get { lock.withLock { _hostKey } } set { lock.withLock { _hostKey = newValue } } }
     var failure: String? { get { lock.withLock { _failure } } set { lock.withLock { _failure = newValue } } }
@@ -366,6 +423,7 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
     var reads: [[String]] { lock.withLock { _reads } }
 
     func scanHostKey(host: String, port: Int) async throws -> DeployHostKey {
+        lock.withLock { _scanned.append(host) }
         guard let hostKey else { throw DeployTransportError(code: "deploy_unreachable") }
         return hostKey
     }
