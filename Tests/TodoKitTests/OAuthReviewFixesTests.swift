@@ -90,18 +90,19 @@ final class OAuthReviewFixesTests: XCTestCase {
 
     // MARK: Reuse window
 
-    /// Every repeat makes one more sibling; a client that keeps repeating is not a lost answer any more.
-    func testATokenMayBeRepeatedAtMostFiveTimes() async throws {
+    /// Every repeat makes one more sibling; the number per token stays bounded (ADR 0040: 50, enough for many sessions that
+    /// find the same stored token; before: 5).
+    func testATokenMayBeRepeatedAtMostFiftyTimes() async throws {
         try await run { f in
             let first = try await login(f, client: f.clientID, projects: [try pid(f.project)])
             let used = try await refresh(f, first, first.refresh)
             XCTAssertEqual(used.status, .ok)
-            for n in 1...5 {
+            for n in 1...50 {
                 let again = try await refresh(f, first, first.refresh)
                 XCTAssertEqual(again.status, .ok, "repeat \(n)")
             }
-            let sixth = try await refresh(f, first, first.refresh)
-            XCTAssertEqual(sixth.status, .badRequest)
+            let over = try await refresh(f, first, first.refresh)
+            XCTAssertEqual(over.status, .badRequest)
             let reason = try await revokedReason(f, first.grant)
             XCTAssertEqual(reason, "replay")
         }

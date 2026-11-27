@@ -3,8 +3,9 @@ import SQLKit
 import XCTVapor
 @testable import TodoKit
 
-/// Card BEF08998 (ADR 0036): a client that lost the answer of a rotation (log 26.11.: "Token persist failed", the old refresh
-/// token sent again 58 s later) keeps its connection and its brain mandate. Real replay still revokes the whole connection.
+/// Card BEF08998 (ADR 0036), card FFF3C6AB (ADR 0040): a client that lost the answer of a rotation (log 26.11.: "Token persist
+/// failed", the old refresh token sent again 58 s later; same evening: seven minutes later) keeps its connection and its brain
+/// mandate. Real replay (a successor was already used) still revokes the whole connection.
 final class OAuthRefreshReuseTests: XCTestCase {
     private typealias Reply = (status: HTTPStatus, body: [String: Any]?, list: [[String: Any]]?, cookie: String?)
 
@@ -117,15 +118,86 @@ final class OAuthRefreshReuseTests: XCTestCase {
         }
     }
 
-    func testReuseAfterTheWindowRevokesEverything() async throws {
+    /// Card FFF3C6AB, the failure of 26.11. (client logs): a process rotated the token and never stored the answer; the next
+    /// session sent the stored (previous) token about seven minutes later. Nobody ever used the result of that rotation, so
+    /// this is a lost answer, not a second holder: the connection and its mandate stay.
+    func testALostRotationNoticedMinutesLaterKeepsConnectionAndMandate() async throws {
+        try await run { e in
+            let put = try await e.f.test.json(.PUT, "/v1/settings/brain-mandate",
+                ["grantID": e.grant.uuidString, "projectIDs": [try e.f.project.requireID().uuidString]], token: e.f.session)
+            XCTAssertEqual(put.status, .ok)
+            _ = try token(try await e.f.refresh(e.refresh))
+            try await age(e, e.refresh, seconds: 436)
+            let again = try await e.f.refresh(e.refresh)
+            let access = try token(again, "access_token"), refresh = try token(again)
+            try await alive(e)
+            let list = try await e.f.rpc("tools/list", access: access)
+            XCTAssertEqual(list.status, .ok)
+            let m = try await mandate(e)
+            XCTAssertEqual(m["active"] as? Bool, true)
+            _ = try token(try await e.f.refresh(refresh))
+            try await alive(e)
+        }
+    }
+
+    /// The same after the Mac slept for days: age alone never turns a lost answer into theft.
+    func testALostRotationNoticedDaysLaterKeepsTheConnection() async throws {
+        try await run { e in
+            _ = try token(try await e.f.refresh(e.refresh))
+            try await age(e, e.refresh, seconds: 10 * 86_400)
+            let refresh = try token(try await e.f.refresh(e.refresh))
+            try await alive(e)
+            _ = try token(try await e.f.refresh(refresh))
+        }
+    }
+
+    /// Many parallel sessions share one stored sign-in. While the store keeps the previous token, each of them sends it.
+    func testManyParallelSessionsSendingTheStoredTokenKeepTheConnection() async throws {
+        try await run { e in
+            _ = try token(try await e.f.refresh(e.refresh))
+            var last = ""
+            for n in 1...12 { last = try token(try await e.f.refresh(e.refresh)); XCTAssertFalse(last.isEmpty, "session \(n)") }
+            try await alive(e)
+            _ = try token(try await e.f.refresh(last))
+            try await alive(e)
+        }
+    }
+
+    /// Theft detection stays: as soon as any successor was used, the old token revokes everything, however long ago.
+    func testAnOldTokenAfterTheChainMovedOnStillRevokesEverything() async throws {
         try await run { e in
             let second = try token(try await e.f.refresh(e.refresh))
-            try await age(e, e.refresh, seconds: 301)
+            try await age(e, e.refresh, seconds: 3 * 86_400)
+            let third = try token(try await e.f.refresh(second))
             let replay = try await e.f.refresh(e.refresh)
             XCTAssertEqual(replay.status, .badRequest)
             try await revoked(e, reason: "replay")
-            let after = try await e.f.refresh(second)
+            let after = try await e.f.refresh(third)
             XCTAssertEqual(after.status, .badRequest)
+        }
+    }
+
+    /// And the branch that lost the race after a late repeat is a replay too: two holders of one sign-in cannot both go on.
+    func testAfterALateRepeatTheLosingBranchIsAReplay() async throws {
+        try await run { e in
+            let lost = try token(try await e.f.refresh(e.refresh))
+            try await age(e, e.refresh, seconds: 3600)
+            let recovered = try token(try await e.f.refresh(e.refresh))
+            _ = try token(try await e.f.refresh(recovered))
+            let loser = try await e.f.refresh(lost)
+            XCTAssertEqual(loser.status, .badRequest)
+            try await revoked(e, reason: "replay")
+        }
+    }
+
+    /// An idle connection stays signed in for 90 days after its last refresh (before: 30).
+    func testRefreshTokensLastNinetyDaysFromTheLastRefresh() async throws {
+        try await run { e in
+            let next = try token(try await e.f.refresh(e.refresh))
+            for raw in [e.refresh, next] {
+                let stored = try await OAuthSecret.query(on: e.f.test.app.db).filter(\.$hash == AuthSupport.hash(raw)).first()
+                XCTAssertEqual(try XCTUnwrap(stored?.expiresAt).timeIntervalSinceNow, 90 * 86_400, accuracy: 120)
+            }
         }
     }
 
