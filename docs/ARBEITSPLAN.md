@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 27.11.2026 (23:40): Deploy-Ziele Phase 2a „Holen“ (Karte `354ADE12`)
+
+- REST `pull` und MCP `pull_server_changes` (ADR 0041); rot `24731d3`, grün `8b1029c`, Gegenlesen rot `cdeaeb9`, grün `2d37d1c`. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Offen: Frage an Lino auf der Karte (GitHub-Zugang des Servers: nur lesen / kein Zugang / auch schreiben); danach tägliche Drift-Karte mit Qualifizierung, PWA-Knopf „Holen“, Phase 3 Hochladen. Deploy (Lino).
+
 ## Checkpoint 27.11.2026 (20:00): Deploy-Ziele Phase 1b in der PWA (Karte `354ADE12`)
 
 - PWA-Ziele (anlegen, bearbeiten, löschen, Host-Schlüssel, FTP-Warnung) und Sync-Ansicht nur lesen; rot `02b2ea2`, grün `b855ae7`. Gegenlesen rot `fd75ffd`, grün `e0390f0` (gepusht; CI, Docker publish, Pages, E2E grün). Belege: `docs/STATUS.md` (oberster Nachtrag), Bilder `docs/screenshots/deploy-ziele/`.
