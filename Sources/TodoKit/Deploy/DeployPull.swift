@@ -98,6 +98,7 @@ enum DeployEOL {
 
 struct DeployPullOutcome {
     var droppedFindings = 0
+    var remainingTotal = 0
     var summary = DeployPullSummary()
     var files: [DeployPullFile] = []
     var findings: [DeployPullFinding] = []

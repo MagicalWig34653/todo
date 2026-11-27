@@ -281,6 +281,22 @@ evil = dict(answer, files=[{"path": "../evil.txt", "encoding": "utf-8", "content
 apply(evil, expect=2)
 evil["files"] = [{"path": ".git/hooks/pre-commit", "encoding": "utf-8", "content": "x"}]
 apply(evil, expect=2)
+bad_base64 = dict(answer, files=[{"path": "fine.txt", "encoding": "utf-8", "content": "ok\n"}, {"path": "broken.bin", "encoding": "base64", "content": "***not base64***"}])
+apply(bad_base64, expect=2)
+check("an undecodable file leaves nothing behind (no branch, no file, clean tree)", not os.path.exists(os.path.join(repo, "fine.txt"))
+      and git("status", "--porcelain").strip() == "" and git("rev-parse", "--abbrev-ref", "HEAD").strip() == "main"
+      and git("branch", "--list", "server/*").count("server/") == 2, git("branch", "--list"))
+open(os.path.join(repo, ".gitignore"), "w").write("ignored/\n"); git("add", ".gitignore"); git("commit", "-q", "-m", "ignore")
+ignored = dict(answer, files=[{"path": "fine.txt", "encoding": "utf-8", "content": "ok\n"}, {"path": "ignored/x.txt", "encoding": "utf-8", "content": "x\n"}])
+apply(ignored, expect=2)
+check("a path git would ignore is refused and nothing stays", not os.path.exists(os.path.join(repo, "fine.txt")) and not os.path.exists(os.path.join(repo, "ignored"))
+      and git("status", "--porcelain").strip() == "" and git("rev-parse", "--abbrev-ref", "HEAD").strip() == "main")
+apply(answer, "--base", "-foo", expect=2)
+apply(answer, "--author", expect=2)
+magic = dict(answer, files=[{"path": ":(top)x.txt", "encoding": "utf-8", "content": "x\n"}, {"path": "a*.php", "encoding": "utf-8", "content": "<?php\n"}])
+pm = apply(magic)
+check("pathspec magic in a file name is taken literally", pm.returncode == 0 and git("show", "--name-only", "--format=", "HEAD").split("\n")[:2] == [":(top)x.txt", "a*.php"], (pm.stderr, git("show", "--name-only", "--format=", "HEAD")))
+git("switch", "-q", "main")
 check("refused answers wrote nothing", not os.path.exists(os.path.join(scratch, "evil.txt")) and git("status", "--porcelain").strip() == "" and
       git("rev-parse", "--abbrev-ref", "HEAD").strip() == "main")
 

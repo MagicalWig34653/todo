@@ -209,6 +209,8 @@ struct RcloneDeployTransport: DeployTransport {
         return names
     }
 
+    static func ftpListURL(proto: DeployProtocol, host: String, port: Int, basePath: String, directory: String) -> String { "" }
+
     private func linkFreePaths(_ c: DeployConnection, paths: [String], dir: URL) async throws -> [String] {
         guard let proto = DeployProtocol(rawValue: c.protocolName), proto != .sftp else { return paths }
         guard let curl = Self.binary("DEPLOY_CURL_PATH", "curl") else { throw DeployTransportError(code: "deploy_transport_unavailable") }

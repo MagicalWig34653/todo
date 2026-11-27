@@ -336,4 +336,67 @@ extension DeployTargetTests {
         }
         XCTAssertLessThan(Date().timeIntervalSince(started), 20)
     }
+
+    // MARK: Review findings (Gegenlesen)
+
+    /// A symlink named like `x -> y` or with a leading blank must still be recognised: the LIST line cannot say where the name ends,
+    /// so every prefix before an arrow counts as a name (conservative).
+    func testSymlinkNamesOfTrickyListLines() throws {
+        let list = [
+            "lrwxrwxrwx    1 1000       ftpgroup           14 Nov 27 21:51 link.txt -> ../outside.txt",
+            "lrwxrwxrwx    1 1000       ftpgroup           30 Nov 27 21:51 x -> y -> /home/other/wp-config.php",
+            "lrwxrwxrwx    1 1000       ftpgroup           30 Nov 27 21:51  lead -> /etc/passwd",
+            "-rw-r--r--    1 1000       ftpgroup            4 Nov 27 21:51 about.php",
+            "drwxr-xr-x    2 1000       ftpgroup         4096 Nov 27 21:51 css",
+        ].joined(separator: "\r\n")
+        let names = try RcloneDeployTransport.symlinkNames(inList: list)
+        XCTAssertTrue(names.isSuperset(of: ["link.txt", "x", "x -> y", "lead", " lead"]), "\(names)")
+        XCTAssertFalse(names.contains("about.php")); XCTAssertFalse(names.contains("css"))
+        // An `l` line that cannot be read fails the whole check.
+        XCTAssertThrowsError(try RcloneDeployTransport.symlinkNames(inList: "lrwxrwxrwx weird"))
+    }
+
+    func testFTPListURLs() {
+        func url(_ proto: DeployProtocol, _ host: String, _ base: String, _ dir: String) -> String {
+            RcloneDeployTransport.ftpListURL(proto: proto, host: host, port: proto.defaultPort, basePath: base, directory: dir)
+        }
+        XCTAssertEqual(url(.ftp, "h.example", "", ""), "ftp://h.example:21/", "empty base path = login directory, not /")
+        XCTAssertEqual(url(.ftp, "h.example", "site", ""), "ftp://h.example:21/site/")
+        XCTAssertEqual(url(.ftp, "h.example", "site/", "sub/deep dir"), "ftp://h.example:21/site/sub/deep%20dir/")
+        XCTAssertEqual(url(.ftps, "h.example", "/abs/site", "a#b?c%d"), "ftp://h.example:21//abs/site/a%23b%3Fc%25d/")
+        XCTAssertEqual(url(.ftps, "h.example", "/", ""), "ftp://h.example:21//")
+        XCTAssertEqual(url(.ftpsImplicit, "::1", "x", "y"), "ftps://[::1]:990/x/y/")
+    }
+
+    func testSecretGuardReviewGaps() {
+        for path in [".env/prod", "deploy/.envs/x", "credentials/x.txt", "app/id_rsa/key", "auth.json", "a/prod.tfvars", "terraform.tfstate", ".s3cfg", "x/.git/hooks/pre-commit"] {
+            XCTAssertNotNil(DeploySecretGuard.pathReason(path), path)
+        }
+        let secret: [(String, String)] = [
+            ("app/config.php", "return ['key' => 'base64:q8Zl0aB3'];"),
+            ("config/app.php", "'encryption_key' => 'abcdef123456',"),
+            ("config.php", "<?php\r$cfg['password'] = 'x';\r"),
+            ("config.yml", "db:\r  password: hunter2\r"),
+            ("local.settings.json", "{\"jwt_key\": \"abc123456\"}"),
+        ]
+        for (path, text) in secret { XCTAssertTrue(DeploySecretGuard.containsSecret(path: path, data: Data(text.utf8)), "\(path): \(text)") }
+        // A configuration file above the scan window is withheld rather than half checked.
+        XCTAssertTrue(DeploySecretGuard.containsSecret(path: "config.php", data: Data(repeating: 0x20, count: 2 * 1024 * 1024 + 10)))
+        XCTAssertFalse(DeploySecretGuard.containsSecret(path: "lang/de.php", data: Data("return ['key' => 'value'];".utf8)))
+    }
+
+    func testPullNamesUnverifiedFilesCapsRemainingAndChecksTheRealSize() async throws {
+        let rules = try DeployRules(includes: [], excludes: [], mappings: [], defaultExcludes: true)
+        let sha = String(repeating: "a", count: 64)
+        let repo = ["huge.bin": DeployManifestEntry(path: "huge.bin", size: 100 * 1024 * 1024, sha256: sha)]
+        var listed = [DeployRemoteFile(path: "huge.bin", size: 100 * 1024 * 1024), DeployRemoteFile(path: "liar.txt", size: 10)]
+        listed += (0..<6000).map { DeployRemoteFile(path: String(format: "many/f%05d.txt", $0), size: 3) }
+        let outcome = try await DeployService.pull(repo: repo, server: listed, rules: rules, selection: nil, maxBytes: 1, defaultEOL: "lf") { paths in
+            Dictionary(uniqueKeysWithValues: paths.map { ($0, $0 == "liar.txt" ? Data(count: 9 * 1024 * 1024) : Data("abc".utf8)) })
+        }
+        XCTAssertEqual(outcome.findings.first { $0.path == "huge.bin" }?.reason, "unverified")
+        XCTAssertEqual(outcome.findings.first { $0.path == "liar.txt" }?.reason, "too_large", "the size that was read counts, not the listed one")
+        XCTAssertEqual(outcome.remaining.count, 5000)
+        XCTAssertEqual(outcome.remainingTotal, 6000, "liar.txt took the one file that always goes through; the 6000 small files wait")
+    }
 }
