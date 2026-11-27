@@ -1,4 +1,6 @@
 import Fluent
+import NIOCore
+import NIOPosix
 import XCTVapor
 @testable import TodoKit
 
@@ -194,5 +196,65 @@ final class LiveRefreshTests: XCTestCase {
         XCTAssertEqual(r.status, .notFound)
         let caps = try await t.json(.GET, "/v1/capabilities")
         XCTAssertNil(caps.body?["liveRefresh"])
+    }
+}
+
+/// Card A1A4690B: the PWA got 429 on /v1/sync/wait after quick page changes. Every page change aborts the browser's
+/// pending long poll; the server kept the abandoned waiter registered until its deadline (up to 25 s) and counted it
+/// against the per-account limit of 8, so the next waits of the same account were refused.
+final class LiveRefreshDisconnectTests: XCTestCase {
+    func testAbortedWaitsFreeTheirSlotImmediately() async throws {
+        let t = try await TestApp.make()
+        defer { Task { await t.shutdown() } }
+        t.app.liveSettings.pollInterval = 0.1
+        t.app.liveSettings.maxWaitersPerAccount = 3
+        let user = User(displayName: "Test", isAdmin: false)
+        try await user.save(on: t.app.db)
+        let session = AuthSupport.randomToken()
+        try await UserSession(userID: user.requireID(), tokenHash: AuthSupport.hash(session),
+            expiresAt: Date().addingTimeInterval(3600)).save(on: t.app.db)
+        let head = try await t.json(.GET, "/v1/sync/head", token: session)
+        let cur = try XCTUnwrap(head.body?["token"] as? String)
+
+        // A real HTTP server: client disconnects only exist there.
+        let port = try Self.freePort()
+        try await t.app.server.start(address: .hostname("127.0.0.1", port: port))
+        defer { Task { await t.app.server.shutdown() } }
+        do {
+            let urlSession = URLSession(configuration: .ephemeral)
+            func wait() -> Task<Int, Never> {
+                var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/sync/wait?since=\(cur)&timeout=25")!)
+                req.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
+                return Task { (try? await urlSession.data(for: req)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode } ?? -1 }
+            }
+            func waiters(_ n: Int) async throws {
+                for _ in 0..<300 {
+                    if await t.app.liveHub.waiterCount == n { return }
+                    try await Task.sleep(nanoseconds: 20_000_000)
+                }
+                let now = await t.app.liveHub.waiterCount
+                XCTFail("expected \(n) registered waiters, have \(now)")
+            }
+
+            // Quick page changes: each round opens a wait and aborts it again, far more often than the limit.
+            for _ in 0..<8 {
+                let w = wait()
+                try await waiters(1)
+                w.cancel()
+                _ = await w.value
+                try await waiters(0)
+            }
+            // The next wait is accepted (not 429) and registers.
+            let next = wait()
+            try await waiters(1)
+            next.cancel()
+            _ = await next.value
+        }
+    }
+
+    private static func freePort() throws -> Int {
+        let probe = try ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).wait()
+        defer { try? probe.close().wait() }
+        return try XCTUnwrap(probe.localAddress?.port)
     }
 }
