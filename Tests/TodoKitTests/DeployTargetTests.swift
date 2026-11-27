@@ -315,6 +315,18 @@ final class DeployTargetTests: XCTestCase {
             let (overStatus, overBody) = try await post(files)
             XCTAssertEqual(overStatus, .badRequest)
             XCTAssertEqual(overBody?["reason"] as? String, "deploy_manifest_invalid")
+
+            // Pull (phase 2a) takes the same full manifest over a real server.
+            files.removeLast()
+            let data = try JSONSerialization.data(withJSONObject: ["files": files])
+            var pulled: (HTTPStatus, Obj?) = (.internalServerError, nil)
+            try await f.test.app.testable(method: .running(hostname: "127.0.0.1", port: 0)).test(.POST, "/v1/deploy-targets/\(id)/pull", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: f.session); req.headers.contentType = .json; req.body = ByteBuffer(data: data)
+            }, afterResponse: { res async in
+                pulled = (res.status, (try? JSONSerialization.jsonObject(with: Data(buffer: res.body))) as? Obj)
+            })
+            XCTAssertEqual(pulled.0, .ok, "\(pulled.1 ?? [:])")
+            XCTAssertEqual(pulled.1?["ok"] as? Bool, true, "\(pulled.1 ?? [:])")
         }
     }
 
@@ -451,6 +463,9 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var _files: [String: Data] = [:], _hostKey: DeployHostKey?, _failure: String?
     private var _connections: [DeployConnection] = [], _reads: [[String]] = [], _scanned: [String] = []
+    private var _unreadable: Set<String> = []
+    /// Listed but not delivered by `read` (a symlink on FTP, or a file that vanished between list and read).
+    var unreadable: Set<String> { get { lock.withLock { _unreadable } } set { lock.withLock { _unreadable = newValue } } }
     var scannedHosts: [String] { lock.withLock { _scanned } }
     var files: [String: Data] { get { lock.withLock { _files } } set { lock.withLock { _files = newValue } } }
     var hostKey: DeployHostKey? { get { lock.withLock { _hostKey } } set { lock.withLock { _hostKey = newValue } } }
@@ -471,7 +486,7 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
     func read(_ connection: DeployConnection, paths: [String]) async throws -> [String: Data] {
         lock.withLock { _reads.append(paths) }
         if let failure { throw DeployTransportError(code: failure) }
-        let files = self.files
-        return Dictionary(uniqueKeysWithValues: paths.compactMap { p in files[p].map { (p, $0) } })
+        let files = self.files, unreadable = self.unreadable
+        return Dictionary(uniqueKeysWithValues: paths.filter { !unreadable.contains($0) }.compactMap { p in files[p].map { (p, $0) } })
     }
 }

@@ -85,7 +85,8 @@ def entry(path, text):
 
 
 manifest = [entry("index.php", "hi\n"), entry("css/app.css", "a{}\nb{}\n"), entry("about.php", "neu\n"), entry("contact.php", "kontakt\n")]
-expected = {"index.php": "same", "css/app.css": "same", "about.php": "changed", "contact.php": "new", "designer.html": "serverOnly"}
+expected = {"index.php": "same", "css/app.css": "same", "about.php": "changed", "contact.php": "new", "designer.html": "serverOnly",
+            "inc/config.php": "serverOnly"}
 
 
 def statuses(r): return {f["path"]: f["status"] for f in r.get("files") or []}
@@ -116,7 +117,7 @@ check("wrong fingerprint is not pinned", st == 409 and r["reason"] == "deploy_ho
 st, r = http("POST", f"/v1/deploy-targets/{sid}/host-key", {"fingerprint": fingerprint}, session)
 check("confirm host key", st == 200 and r["hostKey"]["confirmed"] is True, r)
 st, r = http("POST", f"/v1/deploy-targets/{sid}/test", token=session)
-check("SFTP connection test", r.get("ok") is True and r.get("files") == 4, r)
+check("SFTP connection test", r.get("ok") is True and r.get("files") == 7, r)
 st, r = http("POST", f"/v1/deploy-targets/{sid}/compare", {"files": manifest}, session)
 check("SFTP compare statuses", r.get("ok") is True and statuses(r) == expected, r)
 check("SFTP compare does not show symlinks or what they point to", not any(w in json.dumps(r) for w in ("link.txt", "etclink", "outside", "passwd")), r)
@@ -183,7 +184,112 @@ check("another account sees 404", st == 404, (st, r))
 st, r = http("POST", f"/v1/deploy-targets/{sid}/compare", {"files": manifest}, stranger)
 check("another account cannot compare", st == 404, (st, r))
 
-check("servers unchanged after test and compare (read only)", server_state() == before)
+# --- Pull (phase 2a): server changes into a branch with one commit of a local test repo ---------------------------------------
+repo = os.path.join(scratch, "repo")
+os.makedirs(repo)
+
+
+def git(*args, cwd=repo, ok=True):
+    r = subprocess.run(["git", "-c", "core.autocrlf=false", *args], cwd=cwd, capture_output=True, text=True)
+    if ok and r.returncode != 0: raise SystemExit(f"git {args}: {r.stderr}")
+    return r.stdout
+
+
+git("init", "-q", "-b", "main"); git("config", "user.name", "E2E"); git("config", "user.email", "e2e@example.invalid")
+for name, text in (("index.php", "hi\n"), ("css/app.css", "a{}\nb{}\n"), ("about.php", "neu\n"), ("contact.php", "kontakt\n")):
+    os.makedirs(os.path.dirname(os.path.join(repo, name)) or repo, exist_ok=True)
+    open(os.path.join(repo, name), "wb").write(text.encode())
+git("add", "-A"); git("commit", "-q", "-m", "Stand im Repo")
+base_commit = git("rev-parse", "HEAD").strip()
+tracked = [{"path": p, "size": os.path.getsize(os.path.join(repo, p)), "sha256": hashlib.sha256(open(os.path.join(repo, p), "rb").read()).hexdigest(), "eol": "lf"}
+           for p in git("ls-files").split()]
+
+
+def pull_all(call):
+    """All pages of a pull: follows `remaining` until it is empty; returns the merged answer."""
+    merged, paths = None, None
+    for _ in range(20):
+        r = call(paths)
+        if merged is None: merged = r
+        else: merged["files"] += r["files"]
+        if not r.get("ok") or not r.get("remaining"): break
+        paths = r["remaining"]
+    return merged
+
+
+def rest_pull(tid):
+    def call(paths):
+        body = {"files": tracked, "maxBytes": 1024}
+        if paths: body["paths"] = paths
+        return http("POST", f"/v1/deploy-targets/{tid}/pull", body, session)[1]
+    return pull_all(call)
+
+
+def mcp_pull(tid):
+    def call(paths):
+        args = {"targetID": tid, "files": tracked}
+        if paths: args["paths"] = paths
+        return tool(agent, "pull_server_changes", args)[2]
+    return pull_all(call)
+
+
+def delivered(r): return {f["path"]: f["content"] for f in r.get("files") or []}
+
+
+pull_expected = {"about.php": "alt\n", "designer.html": "<p>vom Designer</p>\n"}
+named_expected = {".env": "secret_name", ".git/config": "blocked_path", "inc/config.php": "secret_content"}
+agent_pull_texts = []
+for label, make in (("SFTP", lambda: rest_pull(sid)), ("FTPS", lambda: rest_pull(fid)), ("agent SFTP", lambda: mcp_pull(sid)), ("agent FTPS", lambda: mcp_pull(fid))):
+    r = make()
+    check(f"pull {label}: only the drift, with the line endings of the repo", r.get("ok") is True and delivered(r) == pull_expected, r)
+    check(f"pull {label}: secrets and excluded files named, never delivered",
+          {x["serverPath"]: x["reason"] for x in r.get("findings") or []} == named_expected
+          and not any(w in json.dumps(r) for w in ("E2E-GEHEIM", "outside-secret", "link.txt", "etclink")), r)
+    check(f"pull {label}: branch name and commit message", r.get("branch", "").startswith("server/") and "geholt" in r.get("commitMessage", "") and "inc/config.php" in r["commitMessage"], r)
+    agent_pull_texts.append(json.dumps(r))
+    if label == "SFTP": answer = r
+check("pull answers carry no host, user or secret", not any(w in t for t in agent_pull_texts for w in (SFTP_PASSWORD, FTP_PASSWORD, "127.0.0.1", fingerprint)), agent_pull_texts)
+
+# The branch with one commit: the helper of the repo applies the answer to the local test repo.
+apply_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy-pull-apply.py")
+
+
+def apply(payload, *extra, expect=0):
+    p = subprocess.run([sys.executable, "-I", apply_script, repo, *extra], input=json.dumps(payload), capture_output=True, text=True)
+    check(f"apply exit code {expect} ({extra})", p.returncode == expect, (p.returncode, p.stderr, p.stdout))
+    return p
+
+
+p = apply(answer, "--author", "Designer <designer@example.invalid>")
+made = json.loads(p.stdout) if p.returncode == 0 else {}
+check("branch server/<ziel>-JJJJ-MM-TT with one commit on top of main",
+      made.get("branch") == answer["branch"] and git("rev-parse", "--abbrev-ref", "HEAD").strip() == answer["branch"]
+      and git("rev-list", "--count", f"{base_commit}..HEAD").strip() == "1" and git("rev-parse", "HEAD~1").strip() == base_commit, made)
+check("the commit changes exactly the drift files (about.php modified, designer.html new)",
+      git("diff", "--name-status", base_commit, "HEAD").split() == ["M", "about.php", "A", "designer.html"], git("diff", "--name-status", base_commit, "HEAD"))
+check("commit content is the server content with LF line endings",
+      git("show", "HEAD:about.php") == "alt\n" and git("show", "HEAD:designer.html") == "<p>vom Designer</p>\n" and git("show", "HEAD:css/app.css") == "a{}\nb{}\n")
+check("commit author and message", git("log", "-1", "--format=%an <%ae>").strip() == "Designer <designer@example.invalid>"
+      and git("log", "-1", "--format=%B").startswith("Server-Änderungen von „SFTP“ geholt"), git("log", "-1", "--format=%an|%B"))
+check("no secret reached the repo", "E2E-GEHEIM" not in git("grep", "-I", "-l", "E2E-GEHEIM", "--", ".", ok=False) and not os.path.exists(os.path.join(repo, ".env"))
+      and not os.path.exists(os.path.join(repo, "inc/config.php")) and git("status", "--porcelain").strip() == "")
+git("switch", "-q", "main")
+again = apply(answer)
+check("a second run the same day uses -2", json.loads(again.stdout or "{}").get("branch") == answer["branch"] + "-2", again.stdout)
+git("switch", "-q", "main")
+evil = dict(answer, files=[{"path": "../evil.txt", "encoding": "utf-8", "content": "x"}])
+apply(evil, expect=2)
+evil["files"] = [{"path": ".git/hooks/pre-commit", "encoding": "utf-8", "content": "x"}]
+apply(evil, expect=2)
+check("refused answers wrote nothing", not os.path.exists(os.path.join(scratch, "evil.txt")) and git("status", "--porcelain").strip() == "" and
+      git("rev-parse", "--abbrev-ref", "HEAD").strip() == "main")
+
+st, r = http("POST", f"/v1/deploy-targets/{sid}/pull", {"files": tracked}, stranger)
+check("another account cannot pull", st == 404, (st, r))
+st, r = http("POST", f"/v1/deploy-targets/{sid}/pull", {"files": tracked}, agent)
+check("agent token cannot use the person route", st == 401, (st, r))
+
+check("servers unchanged after test, compare and pull (read only)", server_state() == before)
 
 # --- Refusals -----------------------------------------------------------------------------------------------------------
 st, r = http("PATCH", f"/v1/deploy-targets/{fid}", {"tlsCertificate": other}, session)
