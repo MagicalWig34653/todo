@@ -41,6 +41,9 @@ info:
     optional. Fehlen beide, ist das Ergebnis unbekannt und die Zeile zählt nicht für "Leerlauf-Kosten". Gemeldete 0/0 heißt Leerlauf.
     Fehlt nur eines, zählt es als 0. In `sessions` sind commits/cardUpdates die Summe der Zeilen mit diesem Feld.
 
+    Aufbewahrung: höchstens 20000 Zeilen je Konto. Wird die Grenze durch neue Zeilen überschritten, löscht der Server im selben
+    Aufruf die Zeilen der ältesten Tage (auch gerade gemeldete); der Sammler wird nie abgewiesen. Ersetzen vorhandener Zeilen löscht nichts.
+
     Kosten rechnet der Server beim LESEN aus der Preistabelle (US-Dollar je 1 Mio. Tokens); geänderte Preise wirken rückwirkend.
     Modellzuordnung: längster Preis-Eintrag, der Präfix der Modellkennung ist (ohne Groß-/Kleinschreibung), wobei auf den Präfix
     nichts, "-<Datum aus 8 Ziffern>" oder "[...]" folgen darf. Cache-Writes: (cacheWrite - cacheWrite1h) * cacheWrite +

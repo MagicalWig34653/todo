@@ -39,12 +39,15 @@ enum UsageDay {
 struct UsageService: Sendable {
     static let maxRows = 500
     static let maxTokens = 1_000_000_000_000.0
+    /// Keeps the summary, the account export (20 MB limit) and the token sums bounded.
+    static let defaultMaxStoredRows = 20_000
     static let rowFields: Set<String> = ["day", "sessionKey", "model", "provider", "inputTokens", "outputTokens", "cacheWriteTokens",
         "cacheWrite1hTokens", "cacheReadTokens", "turns", "maxContextTokens", "subagent", "projectID", "repository", "commits", "cardUpdates"]
 
     let user: User
     let db: any Database
     var allowedProjects: Set<UUID>? = nil
+    var maxStoredRows = UsageService.defaultMaxStoredRows
 
     static func isModel(_ s: String) -> Bool { s.range(of: #"\A[A-Za-z0-9._:/\[\]-]{1,80}\z"#, options: .regularExpression) != nil }
     static func isSessionKey(_ s: String) -> Bool { s.range(of: #"\A[A-Za-z0-9._:/#-]{1,128}\z"#, options: .regularExpression) != nil }
@@ -169,6 +172,7 @@ struct UsageService: Sendable {
 
         let uid = try user.requireID()
         let assigned = projects
+        let cap = maxStoredRows
         let stored: (rows: [UsageDaily], updated: Int) = try await db.transaction { tx in
             // Serialises reports of one account, so parallel identical calls update instead of colliding on the unique key.
             try await lockRow(table: User.schema, id: uid, on: tx)
@@ -190,6 +194,15 @@ struct UsageService: Sendable {
             }
             for start in stride(from: 0, to: fresh.count, by: 100) {
                 try await Array(fresh[start..<min(start + 100, fresh.count)]).create(on: tx)
+            }
+            // Over the cap the oldest days go first, so the collector is never blocked.
+            let excess = fresh.isEmpty ? 0 : try await UsageDaily.query(on: tx).filter(\.$userID == uid).count() - cap
+            if excess > 0 {
+                let oldest = try await UsageDaily.query(on: tx).filter(\.$userID == uid)
+                    .sort(\.$day).sort(\.$id).limit(excess).all(\.$id)
+                for start in stride(from: 0, to: oldest.count, by: 500) {
+                    try await UsageDaily.query(on: tx).filter(\.$id ~~ Array(oldest[start..<min(start + 500, oldest.count)])).delete()
+                }
             }
             return (result, updated)
         }
@@ -248,9 +261,10 @@ struct UsageService: Sendable {
         let thresholds = own.thresholds.effective
         let readable = try await readableProjects()
         let names = readable.mapValues(\.name)
+        let readableIDs = Set(readable.keys)
         let rows = try await UsageDaily.query(on: db).filter(\.$userID == uid)
             .filter(\.$day >= UsageDay.format(previousStart)).filter(\.$day <= last).all()
-            .map { UsagePricedRow($0, prices: prices, readable: Set(readable.keys)) }
+            .map { UsagePricedRow($0, prices: prices, readable: readableIDs) }
         let current = rows.filter { $0.row.day >= from }, previous = rows.filter { $0.row.day < from }
         let hasAny: Bool
         if rows.isEmpty { hasAny = try await UsageDaily.query(on: db).filter(\.$userID == uid).first() != nil } else { hasAny = true }

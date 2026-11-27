@@ -85,51 +85,54 @@
 		{/snippet}
 	</PageHeader>
 
-	{#if !data}
-		{#if loading}
-			<p class="text-muted-foreground text-sm" role="status" data-testid="costs-loading">{t('usage.loading')}</p>
+	<div class="flex flex-col gap-6">
+		{#if !data}
+			{#if loading}
+				<p class="text-muted-foreground text-sm" role="status" data-testid="costs-loading">{t('usage.loading')}</p>
+			{:else}
+				<div role="alert" class="flex flex-col items-start gap-2" data-testid="costs-error">
+					<p class="text-sm">{t('usage.error')}</p>
+					<Button variant="outline" class="max-menu:h-10" onclick={() => load()}>{t('usage.retry')}</Button>
+				</div>
+			{/if}
 		{:else}
-			<div role="alert" class="flex flex-col items-start gap-2" data-testid="costs-error">
-				<p class="text-sm">{t('usage.error')}</p>
-				<Button variant="outline" class="max-menu:h-10" onclick={() => load()}>{t('usage.retry')}</Button>
+			<div class={['flex flex-col gap-6 transition-opacity', loading && 'opacity-60']} aria-busy={loading}>
+				{#if status === 'setup'}
+					<div data-testid="costs-setup">
+						<EmptyState title={t('usage.setup.title')} icon={ChartColumn}><p class="max-w-md">{t('usage.setup.hint')}</p></EmptyState>
+					</div>
+				{:else if status === 'quiet'}
+					<div data-testid="costs-quiet">
+						<EmptyState title={t('usage.quiet.title')} icon={ChartColumn}><p class="max-w-md">{t('usage.quiet.hint')}</p></EmptyState>
+					</div>
+				{:else}
+					<div class="flex flex-col gap-3">
+						{#if partial}<p class="text-muted-foreground text-[13px]" data-testid="costs-partial">{partial}</p>{/if}
+						<Verdict summary={data} />
+						{#if data.unpricedModels.length > 0}
+							<div class="border-warning/40 bg-warning-soft flex flex-col gap-2 rounded-xl border px-4 py-3 text-sm" data-testid="costs-unpriced">
+								<p class="flex items-start gap-2 font-medium">
+									<TriangleAlert class="text-warning mt-0.5 size-4 shrink-0" aria-hidden="true" />{t('usage.unpriced.title')}
+								</p>
+								<ul class="flex flex-wrap gap-2">
+									{#each data.unpricedModels as model (model)}
+										<li class="max-w-full">
+											<Button variant="outline" class="max-menu:h-10 h-auto min-h-8 max-w-full py-1 text-left whitespace-normal [overflow-wrap:anywhere]" onclick={() => addPrice(model)}>
+												{t('usage.unpriced.add', { model })}
+											</Button>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</div>
+					<Tiles metrics={data.metrics} thresholds={settings?.thresholds ?? {}} />
+					<DayChart summary={data} />
+					<Breakdown summary={data} />
+				{/if}
 			</div>
 		{/if}
-	{:else}
-		<div class={['flex flex-col gap-6 transition-opacity', loading && 'opacity-60']} aria-busy={loading}>
-			{#if status === 'setup'}
-				<div data-testid="costs-setup">
-					<EmptyState title={t('usage.setup.title')} icon={ChartColumn}><p class="max-w-md">{t('usage.setup.hint')}</p></EmptyState>
-				</div>
-			{:else if status === 'quiet'}
-				<div data-testid="costs-quiet">
-					<EmptyState title={t('usage.quiet.title')} icon={ChartColumn}><p class="max-w-md">{t('usage.quiet.hint')}</p></EmptyState>
-				</div>
-			{:else}
-				<div class="flex flex-col gap-3">
-					{#if partial}<p class="text-muted-foreground text-[13px]" data-testid="costs-partial">{partial}</p>{/if}
-					<Verdict summary={data} />
-					{#if data.unpricedModels.length > 0}
-						<div class="border-warning/40 bg-warning-soft flex flex-col gap-2 rounded-xl border px-4 py-3 text-sm" data-testid="costs-unpriced">
-							<p class="flex items-start gap-2 font-medium">
-								<TriangleAlert class="text-warning mt-0.5 size-4 shrink-0" aria-hidden="true" />{t('usage.unpriced.title')}
-							</p>
-							<ul class="flex flex-wrap gap-2">
-								{#each data.unpricedModels as model (model)}
-									<li class="max-w-full">
-										<Button variant="outline" class="max-menu:h-10 h-auto min-h-8 max-w-full py-1 text-left whitespace-normal [overflow-wrap:anywhere]" onclick={() => addPrice(model)}>
-											{t('usage.unpriced.add', { model })}
-										</Button>
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
-				</div>
-				<Tiles metrics={data.metrics} thresholds={settings?.thresholds ?? {}} />
-				<DayChart summary={data} />
-				<Breakdown summary={data} />
-			{/if}
-			<Settings bind:this={settingsPanel} {settings} failed={settingsFailed} onretry={loadSettings} onsaved={saved} />
-		</div>
-	{/if}
+		<!-- Outside the summary branch: a failed load must not discard an unsaved draft. -->
+		<Settings bind:this={settingsPanel} {settings} failed={settingsFailed} onretry={loadSettings} onsaved={saved} />
+	</div>
 </div>

@@ -305,6 +305,15 @@ function parseNumber(text: string): number | null {
 
 const MODEL = /^[A-Za-z0-9._:/[\]-]{1,80}$/;
 
+/** Limits that must not cross; the server refuses them with `invalid_thresholds`. */
+const ORDERED_PAIRS = [
+	['costTrendGoodPercent', 'costTrendBadPercent'],
+	['cacheHitMediumPercent', 'cacheHitGoodPercent'],
+	['cacheWriteGoodPercent', 'cacheWriteBadPercent'],
+	['contextGoodTokens', 'contextBadTokens'],
+	['idleGoodPercent', 'idleBadPercent']
+] as const;
+
 export function buildSettingsUpdate(draft: SettingsDraft): { ok: true; body: SettingsUpdate } | { ok: false; error: string } {
 	const fail = (key: MessageKey, params?: Record<string, string>) => ({ ok: false as const, error: t(key, params) });
 	if (draft.prices.length > 100) return fail('usage.invalid.tooMany');
@@ -330,11 +339,16 @@ export function buildSettingsUpdate(draft: SettingsDraft): { ok: true; body: Set
 		// Token counts may be typed the German way ("60.000").
 		const v = parseNumber(k.startsWith('context') && /^\d{1,3}(\.\d{3})+$/.test(text) ? text.replaceAll('.', '') : text);
 		const field = t(`usage.threshold.${k}`);
-		// Trend thresholds may be negative; token counts are open ended; everything else is a share in percent.
-		const isShare = !k.startsWith('costTrend') && !k.startsWith('context') && k !== 'cardTrendPercent';
-		if (isShare && (v === null || v < 0 || v > 100)) return fail('usage.invalid.percent', { field });
-		if (v === null || (!k.startsWith('costTrend') && v < 0)) return fail('usage.invalid.number', { field });
+		// Same ranges as the server: trends may be negative, token counts are large, everything else is a share in percent.
+		const [min, max] = k.startsWith('costTrend') ? [-100, 1000] : k.startsWith('context') ? [0, 1e9] : k === 'cardTrendPercent' ? [0, 1000] : [0, 100];
+		if (max === 100 && (v === null || v < min || v > max)) return fail('usage.invalid.percent', { field });
+		if (v === null) return fail('usage.invalid.number', { field });
+		if (v < min || v > max) return fail('usage.invalid.range', { field, min: formatCount(min), max: formatCount(max) });
 		thresholds[k] = v;
+	}
+	const effective = { ...DEFAULT_THRESHOLDS, ...thresholds };
+	for (const [low, high] of ORDERED_PAIRS) {
+		if (effective[low] > effective[high]) return fail('usage.invalid.order', { low: t(`usage.threshold.${low}`), high: t(`usage.threshold.${high}`) });
 	}
 	return { ok: true, body: { prices, thresholds } };
 }

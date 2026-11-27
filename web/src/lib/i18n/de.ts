@@ -104,6 +104,8 @@ export const de = {
 	'error.bootstrap_closed': 'Die Ersteinrichtung wurde bereits abgeschlossen.',
 	'error.invalid_name': 'Bitte gib einen Namen (höchstens 200 Zeichen) ein.',
 	'error.invalid_title': 'Bitte gib einen Titel (höchstens 200 Zeichen) ein.',
+	'error.invalid_thresholds': 'Die Schwellen sind ungültig: Bitte Wertebereiche prüfen; die gut-Grenze darf die schlecht-Grenze nicht überschreiten.',
+	'error.invalid_prices': 'Die Preise sind ungültig: je Modell fünf Zahlen von 0 bis 10000, jede Kennung nur einmal.',
 	'error.project_cycle': 'Ein Projekt kann nicht in sich selbst oder ein eigenes Unterprojekt verschoben werden.',
 	'error.not_found': 'Nicht gefunden. Möglicherweise wurde es bereits gelöscht.',
 	'error.passkey_cancelled': 'Der Vorgang wurde abgebrochen oder ist auf diesem Gerät nicht möglich.',

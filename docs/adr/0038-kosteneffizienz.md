@@ -17,5 +17,7 @@ Stand 27.11.2026, Karte `71FD73CF`, Phase 1 (Server). Vertrag: `contracts/usage.
 
 - Additive Migration `CreateUsage` (`usage_daily`, `usage_settings`); ASCII-Spalten mit `ascii_bin`, damit der Schlüssel unter MariaDB kurz bleibt und Groß-/Kleinschreibung wie unter SQLite zählt.
 - Kontolöschung und Anonymisieren entfernen beide Tabellen; Projektlöschung setzt `project_id` auf NULL; Projektübertragung ändert nichts.
-- Der Datenexport enthält `usage` und `usageSettings`. Er zählt zur 20-MB-Grenze; sehr lange Historien könnten sie erreichen.
-- Keine Aufbewahrungsfrist; Befunde, Regeln und `list_cost_findings` folgen in Phase 3.
+- Der Datenexport enthält `usage` und `usageSettings` und zählt zur 20-MB-Grenze.
+- Höchstens 20 000 Zeilen je Konto (Befund aus dem Gegenlesen): sonst wachsen Export und Zusammenfassung unbegrenzt. Über der Grenze fallen die ältesten Tage weg, der Sammler wird nicht abgewiesen. Bei rund 100 Zeilen am Tag reicht das für etwa 200 Tage; die Seite braucht höchstens 60.
+- Keine zeitliche Aufbewahrungsfrist; Befunde, Regeln und `list_cost_findings` folgen in Phase 3.
+- Offen (Nebenbefunde des Gegenlesens, nicht behoben): `sessionKey` lässt `/` und `.` zu (Kennung, kein Freitext ohne Leerzeichen prüfbar); Preiseingabe „1.000“ zählt als 1; Einstellungen aus einem alten Tab überschreiben neuere; „läuft noch“ vergleicht mit dem UTC-Tag.

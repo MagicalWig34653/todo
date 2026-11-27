@@ -188,5 +188,7 @@ export const deUsage = {
 	'usage.invalid.duplicate': '{model} steht zweimal in der Preisliste.',
 	'usage.invalid.tooMany': 'Höchstens 100 eigene Preise.',
 	'usage.invalid.percent': '{field}: Bitte eine Zahl von 0 bis 100 eingeben.',
-	'usage.invalid.number': '{field}: Bitte eine Zahl eingeben.'
+	'usage.invalid.number': '{field}: Bitte eine Zahl eingeben.',
+	'usage.invalid.range': '{field}: Bitte eine Zahl von {min} bis {max} eingeben.',
+	'usage.invalid.order': '„{low}“ darf nicht größer sein als „{high}“.'
 } as const;
