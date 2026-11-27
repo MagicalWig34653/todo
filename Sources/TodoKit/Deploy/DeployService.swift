@@ -190,17 +190,27 @@ struct DeployService: Sendable {
     }
 
     /// Literal private or loopback addresses and names that resolve to them are refused unless the server allows them.
-    func checkHostAllowed(_ host: String, port: Int) async throws {
-        if app.deployAllowPrivateHosts { return }
+    /// Returns the address that passed the check (the host itself when private hosts are allowed or the host is literal).
+    @discardableResult
+    func checkHostAllowed(_ host: String, port: Int) async throws -> String {
+        if app.deployAllowPrivateHosts { return host }
         let literal = host.contains(":") || host.allSatisfy({ $0.isNumber || $0 == "." })
         if literal {
             guard !WebhookTarget.isBlocked(host) else { throw Abort(.badRequest, reason: "deploy_target_blocked") }
-            return
+            return host
         }
         let address: String
         do { address = try await WebhookResolution.resolve(app.webhookResolver, host: host, port: port, timeout: app.webhookResolveTimeout) }
         catch { throw Abort(.badRequest, reason: "deploy_target_blocked") }
         guard !WebhookTarget.isBlocked(address) else { throw Abort(.badRequest, reason: "deploy_target_blocked") }
+        return address
+    }
+
+    /// Where the transport connects: SFTP and plain FTP use the checked address (no second name lookup by rclone or
+    /// ssh-keyscan, no DNS rebinding); FTPS keeps the name because the certificate check needs it (ADR 0039, limit).
+    func connectAddress(_ t: DeployTarget) async throws -> String {
+        let checked = try await checkHostAllowed(t.host, port: t.port)
+        return DeployProtocol(rawValue: t.protocolName)?.usesTLS == true ? t.host : checked
     }
 
     // MARK: Create, change, delete
@@ -272,6 +282,10 @@ struct DeployService: Sendable {
             if case .set(let pass) = r.privateKeyPassphrase { secret.passphrase = try Self.validSecret(pass) }
         }
         if secret.password != nil, secret.privateKey != nil { throw Abort(.badRequest, reason: "deploy_credentials_ambiguous") }
+        // `null` cannot leave a target without credentials: only allowed while the other kind is set in the same request.
+        if case .clear = r.password, secret.privateKey == nil { throw Abort(.badRequest, reason: "deploy_credentials_required") }
+        if case .clear = r.privateKey, secret.password == nil { throw Abort(.badRequest, reason: "deploy_credentials_required") }
+        if case .set = r.privateKeyPassphrase, secret.privateKey == nil { throw Abort(.badRequest, reason: "deploy_private_key_invalid") }
         let endpointChanged = !creating && (host != t.host || port != t.port || proto != t.protocolName || username != t.username)
         if creating || endpointChanged {
             guard secretChanged else { throw Abort(.badRequest, reason: "deploy_credentials_required") }
@@ -280,7 +294,8 @@ struct DeployService: Sendable {
 
         if secretChanged {
             let ring = try app.requireSettingsRuntime().keyRing
-            let sealed = try ring.sealDeploy(secret, targetID: try t.requireID())
+            let sealed = try ring.sealDeploy(secret, targetID: try t.requireID(),
+                                             endpoint: SettingsKeyRing.deployEndpoint(protocolName: proto, host: host, port: port, username: username))
             t.secretCiphertext = sealed.blob; t.secretKeyID = sealed.keyID
             t.authMethod = secret.privateKey != nil ? "key" : "password"
         }
@@ -297,9 +312,9 @@ struct DeployService: Sendable {
     func confirmHostKey(_ id: UUID, fingerprint: String) async throws -> DeployTarget {
         let t = try await target(id, role: .manage)
         guard t.protocolName == DeployProtocol.sftp.rawValue else { throw Abort(.badRequest, reason: "deploy_protocol_invalid") }
-        try await checkHostAllowed(t.host, port: t.port)
+        let address = try await connectAddress(t)
         let offered: DeployHostKey
-        do { offered = try await app.deployTransport.scanHostKey(host: t.host, port: t.port) }
+        do { offered = try await app.deployTransport.scanHostKey(host: address, port: t.port) }
         catch let e as DeployTransportError { throw Abort(.badGateway, reason: e.code) }
         guard offered.fingerprint == fingerprint else { throw Abort(.conflict, reason: "deploy_host_key_changed") }
         t.hostKeyType = offered.type; t.hostKeyBase64 = offered.base64; t.updatedAt = Date()
@@ -310,9 +325,10 @@ struct DeployService: Sendable {
 
     // MARK: Connection test and compare
 
-    private func connection(_ t: DeployTarget) throws -> DeployConnection {
-        let secret = try app.requireSettingsRuntime().keyRing.openDeploy(t.secretCiphertext, keyID: t.secretKeyID, targetID: try t.requireID())
-        return DeployConnection(protocolName: t.protocolName, host: t.host, port: t.port, basePath: t.basePath, username: t.username,
+    private func connection(_ t: DeployTarget, address: String) throws -> DeployConnection {
+        let endpoint = SettingsKeyRing.deployEndpoint(protocolName: t.protocolName, host: t.host, port: t.port, username: t.username)
+        let secret = try app.requireSettingsRuntime().keyRing.openDeploy(t.secretCiphertext, keyID: t.secretKeyID, targetID: try t.requireID(), endpoint: endpoint)
+        return DeployConnection(protocolName: t.protocolName, host: address, port: t.port, basePath: t.basePath, username: t.username,
                                 password: secret.password, privateKey: secret.privateKey, passphrase: secret.passphrase,
                                 hostKey: t.hostKey, tlsCertificate: t.tlsCertificate)
     }
@@ -326,13 +342,13 @@ struct DeployService: Sendable {
     func test(_ id: UUID, forPerson: Bool) async throws -> DeployTestResult {
         let t = try await target(id, role: .edit)
         do {
-            try await checkHostAllowed(t.host, port: t.port)
+            let address = try await connectAddress(t)
             if t.protocolName == DeployProtocol.sftp.rawValue, t.hostKey == nil {
-                let offered = try? await app.deployTransport.scanHostKey(host: t.host, port: t.port)
+                let offered = try? await app.deployTransport.scanHostKey(host: address, port: t.port)
                 return DeployTestResult(ok: false, code: offered == nil ? failure(t, "deploy_unreachable", "test") : "deploy_host_key_unconfirmed", files: nil,
                                         offeredHostKey: forPerson ? offered.map { DeployOfferedHostKey(type: $0.type, fingerprint: $0.fingerprint) } : nil)
             }
-            let files = try await app.deployTransport.list(try connection(t))
+            let files = try await app.deployTransport.list(try connection(t, address: address))
             app.logger.info("deploy test ok", metadata: ["target": .string(id.uuidString)])
             return DeployTestResult(ok: true, code: nil, files: files.count, offeredHostKey: nil)
         } catch let e as DeployTransportError {
@@ -363,8 +379,7 @@ struct DeployService: Sendable {
             return DeployCompareResult(ok: false, code: "deploy_host_key_unconfirmed", summary: nil, files: nil)
         }
         do {
-            try await checkHostAllowed(t.host, port: t.port)
-            let conn = try connection(t)
+            let conn = try connection(t, address: try await connectAddress(t))
             let listed = try await app.deployTransport.list(conn)
             let result = try await Self.compare(repo: repo, server: listed, rules: rules) { paths in
                 try await app.deployTransport.read(conn, paths: paths)
@@ -400,13 +415,14 @@ struct DeployService: Sendable {
                         read: ([String]) async throws -> [String: Data]) async throws -> DeployCompareResult {
         var wanted: [String: (repoPath: String, entry: DeployManifestEntry)] = [:]   // server path -> repo file
         for (path, entry) in repo where !rules.isExcluded(path) {
-            if let s = rules.serverPath(forRepo: path) { wanted[s] = (path, entry) }
+            // Overlapping mappings: only the repo file the server path maps back to counts (deterministic, ADR 0039).
+            if let s = rules.serverPath(forRepo: path), rules.repoPath(forServer: s) == path { wanted[s] = (path, entry) }
         }
         var onServer: [String: Int] = [:]
         for f in listed where DeployPath.isSafeRelative(f.path, allowEmpty: false) { onServer[f.path] = f.size }
 
         var files: [DeployCompareFile] = []
-        var toRead: [String] = []
+        var toRead = Set<String>()
         var readBudget = DeployLimits.maxReadTotal
         var unverified = Set<String>()
         for (serverPath, (_, entry)) in wanted {
@@ -415,7 +431,7 @@ struct DeployService: Sendable {
             guard mayBeEqual else { continue }
             if size > DeployLimits.maxReadFile || size > readBudget { unverified.insert(serverPath); continue }
             readBudget -= size
-            toRead.append(serverPath)
+            toRead.insert(serverPath)
         }
         let contents = toRead.isEmpty ? [:] : try await read(toRead.sorted())
 

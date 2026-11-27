@@ -784,12 +784,12 @@ final class PipelineStage2Tests: XCTestCase {
                      "get_pipeline_settings", "update_pipeline_settings", "retry_pipeline_step", "pipeline.settings", "maxFixRounds"] {
             XCTAssertTrue(pipeline.contains(word), word)
         }
-        XCTAssertTrue(read("oauth-mcp.yaml").contains("version: 1.14.0"))
+        XCTAssertTrue(read("oauth-mcp.yaml").contains("version: 1.15.0"))
         XCTAssertTrue(read("oauth-mcp.yaml").contains("retry_pipeline_step"))
         XCTAssertTrue(read("feed.yaml").contains("plan.written") && read("feed.yaml").contains("kind=question|review|plan"))
         XCTAssertTrue(read("command-center.yaml").contains("planWaiting") && read("command-center.yaml").contains("plansWaiting"))
         XCTAssertTrue(read("connections.yaml").contains("pipeline.settings"))
-        XCTAssertEqual(AgentManual.version, "1.51.0")
+        XCTAssertEqual(AgentManual.version, "1.52.0")
         for tool in ["get_pipeline_settings", "update_pipeline_settings", "retry_pipeline_step"] {
             XCTAssertTrue(AgentManual.markdown.contains("`\(tool)`"), tool)
         }

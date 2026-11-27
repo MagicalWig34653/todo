@@ -113,7 +113,7 @@ struct RcloneDeployTransport: DeployTransport {
             lines += ["known_hosts_file = \(known.path)", "host_key_algorithms = \(Self.hostKeyAlgorithms(key.type))",
                       "skip_links = true", "shell_type = none", "disable_hashcheck = true"]
             if let pem = c.privateKey {
-                lines.append("key_pem = " + pem.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\\n"))
+                lines.append(Self.keyPEMLine(pem))
                 if let pass = c.passphrase { lines.append("key_file_pass = \(try await obscure(pass, rclone: rclone, dir: dir))") }
             }
         case .ftp:
@@ -133,9 +133,12 @@ struct RcloneDeployTransport: DeployTransport {
     }
 
     private func remote(_ c: DeployConnection) -> String { Self.remote(basePath: c.basePath) }
-    static func remote(basePath: String) -> String { "t:" + DeployPath.trimmed(basePath) }
+    static func remote(basePath: String) -> String {
+        basePath.hasPrefix("/") ? "t:/" + DeployPath.trimmed(String(basePath.dropFirst())) : "t:" + DeployPath.trimmed(basePath)
+    }
     static func keyPEMLine(_ pem: String) -> String {
-        "key_pem = " + pem.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\\n")
+        "key_pem = " + pem.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "\\n")
     }
 
     func scanHostKey(host: String, port: Int) async throws -> DeployHostKey {

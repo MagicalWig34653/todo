@@ -184,7 +184,7 @@ struct DeployRulesDTO: Content, Equatable {
 }
 
 /// One target. `secret_ciphertext` is AES-256-GCM over `{"password"|"privateKey"|"passphrase"}` with additional data
-/// `todolino.deploy.v1:<targetID>:secret`; the plain secret is never stored, returned or logged.
+/// `todolino.deploy.v1:<targetID>:secret:<protocol|host|port|user>`; the plain secret is never stored, returned or logged.
 final class DeployTarget: Model, @unchecked Sendable {
     static let schema = "deploy_targets"
     @ID(key: .id) var id: UUID?
@@ -255,20 +255,26 @@ struct DeploySecret: Codable, Sendable {
 }
 
 extension SettingsKeyRing {
-    private func deployAAD(_ targetID: UUID) -> Data { Data("todolino.deploy.v1:\(targetID.uuidString):secret".utf8) }
+    /// Bound to the target and its endpoint: a secret saved for one protocol, host, port and user cannot be opened for another one
+    /// (also not after a lost-update race of two changes).
+    private func deployAAD(_ targetID: UUID, _ endpoint: String) -> Data { Data("todolino.deploy.v1:\(targetID.uuidString):secret:\(endpoint)".utf8) }
 
-    func sealDeploy(_ secret: DeploySecret, targetID: UUID) throws -> (blob: String, keyID: String) {
+    static func deployEndpoint(protocolName: String, host: String, port: Int, username: String) -> String {
+        "\(protocolName)|\(host)|\(port)|\(username)"
+    }
+
+    func sealDeploy(_ secret: DeploySecret, targetID: UUID, endpoint: String) throws -> (blob: String, keyID: String) {
         guard let current else { throw Abort(.conflict, reason: "encryption_key_missing") }
         let plain = try JSONEncoder().encode(secret)
-        let box = try AES.GCM.seal(plain, using: current.key, nonce: AES.GCM.Nonce(), authenticating: deployAAD(targetID))
+        let box = try AES.GCM.seal(plain, using: current.key, nonce: AES.GCM.Nonce(), authenticating: deployAAD(targetID, endpoint))
         guard let combined = box.combined else { throw Abort(.internalServerError, reason: "seal_failed") }
         return ("v1." + combined.base64EncodedString(), current.id)
     }
 
-    func openDeploy(_ blob: String, keyID: String?, targetID: UUID) throws -> DeploySecret {
+    func openDeploy(_ blob: String, keyID: String?, targetID: UUID, endpoint: String) throws -> DeploySecret {
         guard blob.hasPrefix("v1."), let combined = Data(base64Encoded: String(blob.dropFirst(3))) else { throw DeployTransportError(code: "deploy_secret_unreadable") }
         for k in ([current].compactMap { $0 } + previous).filter({ keyID == nil || $0.id == keyID }) {
-            if let box = try? AES.GCM.SealedBox(combined: combined), let plain = try? AES.GCM.open(box, using: k.key, authenticating: deployAAD(targetID)),
+            if let box = try? AES.GCM.SealedBox(combined: combined), let plain = try? AES.GCM.open(box, using: k.key, authenticating: deployAAD(targetID, endpoint)),
                let secret = try? JSONDecoder().decode(DeploySecret.self, from: plain) { return secret }
         }
         throw DeployTransportError(code: "deploy_secret_unreadable")

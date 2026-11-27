@@ -47,12 +47,34 @@ Begründung:
     ohne `..` und unterhalb des Basispfads.
   - Ziel-Host: Literale private Adressen und Namen, die auf private Adressen zeigen, lehnt der Server beim Speichern und vor jeder
     Verbindung ab (gleiche Sperrliste wie der Webhook, ADR 0035), außer `DEPLOY_ALLOW_PRIVATE_HOSTS=1` (Tests, eigenes Netz).
-    rclone löst den Namen selbst noch einmal auf; ein DNS-Rebinding zwischen Prüfung und Verbindung ist damit nicht ganz
-    ausgeschlossen. Agenten können Hosts nicht wählen (nur Personen legen Ziele an).
+    SFTP (auch `ssh-keyscan`) und FTP verbinden zur geprüften Adresse, nicht zu einer zweiten Namensauflösung (kein DNS-Rebinding).
+    FTPS braucht den Namen für die Zertifikatsprüfung; dort bleibt ein Rebinding zwischen Prüfung und Verbindung möglich.
+    Agenten können Hosts nicht wählen (nur Personen legen Ziele an).
+  - Das Geheimnis ist per Zusatzdaten an Ziel-ID, Protokoll, Host, Port und Benutzer gebunden. Ändert sich der Endpunkt ohne
+    neues Geheimnis (z. B. Wettlauf zweier Änderungen), ist es nicht mehr lesbar (`deploy_secret_unreadable`) statt an den neuen Host
+    zu gehen. `null` für die einzige Anmeldung wird abgelehnt.
+  - FTP/FTPS: rclone kennzeichnet dort keine Symlinks; ein Link im Basispfad, den der Server auflöst, wird gelistet und gelesen.
+    Schutz ist dort die chroot des Servers (pure-ftpd `-A`, im Test belegt), nicht Todolino.
+  - Überlappende Zuordnungen: zählt nur die Repo-Datei, auf die der Server-Pfad zurückführt (deterministisch).
   - Das FTPS-Zertifikat wird als Vertrauensanker hinterlegt, nicht als reiner Fingerabdruck.
 - Getestet wird gegen echte Server im Container: `atmoz/sftp` und ein eigenes pure-ftpd-Testimage
   (`scripts/deploy-test-servers/pure-ftpd`, weil das übliche `stilliard/pure-ftpd` nur amd64 ist und unter Rosetta nicht startet).
   Skript: `scripts/test-deploy-servers.sh`.
+
+## Weitere Entscheidungen in Phase 1a (ohne Rückfrage, protokolliert)
+
+- **Repo-Seite des Abgleichs = Manifest vom Aufrufer.** Der Agent (oder später die PWA) schickt `path`, `size`, `sha256` je Datei
+  des Repo-Stands. Der Server holt in 1a keinen Git-Stand (Deploy-Key, Token); das folgt mit „Holen“ (Phase 2). So bleibt 1a
+  ohne neue Zugangsdaten zu GitHub.
+- **Status in 1a:** `same`, `new`, `changed`, `serverOnly`, `unverified`. „Drift“ und „Konflikt“ (Konzept Abschnitt 2) brauchen
+  ein Upload-Manifest und kommen mit dem Hochladen.
+- **Zeilenenden:** gleich ist auch, wer nach CRLF -> LF gleich ist (Text ohne NUL-Byte, bis 2 MB). Gelesen werden nur Dateien, deren
+  Status vom Inhalt abhängt (gleiche Größe oder Server-Datei bis doppelt so groß und höchstens 2 MB).
+- **Rechte:** anlegen, ändern, löschen, Host-Schlüssel bestätigen = Person mit `manage`; Test und Abgleich = `edit` (auch MCP, dort
+  zusätzlich Projekt im Grant, Scope `projects:read`); Liste = `read`.
+- **Container-Tests nicht in GitHub CI:** `DeployServerTests` laufen lokal mit `scripts/test-deploy-servers.sh` (wie die MariaDB-Suite);
+  in CI werden sie übersprungen, die Tests mit Transport-Double laufen dort mit. `atmoz/sftp` gibt es nur für amd64; auf Apple
+  Silicon läuft es unter Emulation, pure-ftpd als eigenes arm64-/amd64-Image.
 
 ## Verworfen
 

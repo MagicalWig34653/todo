@@ -28,8 +28,12 @@ info:
     Ziel-Host: private und Loopback-Adressen (auch über Namensauflösung) werden abgelehnt (400 deploy_target_blocked), außer der Server
     läuft mit DEPLOY_ALLOW_PRIVATE_HOSTS=1.
 
-    Käfig: basePath ohne `..`, `.` und leere Segmente; Symlinks auf SFTP werden weder gelistet noch gelesen; der Server liest nur
-    Pfade unterhalb des Basispfads.
+    Käfig: basePath ohne `..`, `.` und leere Segmente ("/" = Wurzel, "" = Login-Verzeichnis); Symlinks auf SFTP werden weder gelistet
+    noch gelesen; der Server liest nur Pfade unterhalb des Basispfads. FTP/FTPS kennzeichnen Symlinks nicht: dort schützt nur die chroot
+    des Servers. SFTP und FTP verbinden zur geprüften Adresse; FTPS über den Namen (Zertifikat).
+    Das Geheimnis ist an Protokoll, Host, Port und Benutzer gebunden (sonst deploy_secret_unreadable). null für password bzw.
+    privateKey ist nur zusammen mit der jeweils anderen Anmeldung erlaubt (sonst deploy_credentials_required); privateKeyPassphrase
+    nur zusammen mit privateKey (sonst deploy_private_key_invalid).
 
     Regeln (Globs auf Repo-Pfaden): `*` und `?` innerhalb eines Segments, `**` über Segmente; ohne `/` passt das Muster auf den
     Dateinamen in jeder Tiefe, mit `/` ab Repo-Wurzel; ein abschließendes `/` meint ein Verzeichnis. includes leer = alles.
