@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { backoffDelay, createLiveRefresh, type LiveEnv } from '../src/lib/liveRefresh';
+import { backoffDelay, createLiveRefresh, liveClientId, type LiveEnv } from '../src/lib/liveRefresh';
 
 type Handler = () => void;
 function fakeDoc(visible = true) {
@@ -47,7 +47,7 @@ beforeEach(() => { vi.useFakeTimers(); doc = fakeDoc(); });
 afterEach(() => { vi.useRealTimers(); });
 
 function make(server: ReturnType<typeof fakeServer>, extra: Partial<LiveEnv> = {}) {
-	return createLiveRefresh({ fetch: server.fetchFn, doc: doc as never, locks: null, channel: null, random: () => 1, onUnauthorized: vi.fn(), ...extra });
+	return createLiveRefresh({ fetch: server.fetchFn, doc: doc as never, locks: null, channel: null, random: () => 1, clientId: 'tab-test-0001', onUnauthorized: vi.fn(), ...extra });
 }
 const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
 
@@ -55,6 +55,37 @@ describe('backoff', () => {
 	it('doubles to a 30 s cap with jitter between half and full', () => {
 		expect([1, 2, 3, 4, 5, 6, 9].map((n) => backoffDelay(n, () => 1))).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
 		expect(backoffDelay(3, () => 0)).toBe(2000);
+	});
+});
+
+describe('client key (card A1A4690B)', () => {
+	it('is generated once, kept in the tab storage across reloads, and valid for the server (8 to 64 of A-Za-z0-9_-)', () => {
+		const store = new Map<string, string>();
+		const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+		const first = liveClientId(storage);
+		expect(first).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+		expect(liveClientId(storage)).toBe(first); // a reload in the same tab reuses it, so its new wait replaces the aborted one
+		expect(liveClientId({ getItem: () => 'bad key!', setItem: () => undefined })).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+	});
+	it('still yields a key when the storage is blocked', () => {
+		const blocked = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
+		expect(liveClientId(blocked)).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+		expect(liveClientId(undefined)).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+	});
+	it('every wait of one service carries the same key, also after the leader loop was restarted by hiding and showing the tab', async () => {
+		const server = fakeServer({
+			'/v1/capabilities': [caps()],
+			'/v1/sync/head': [() => json(200, { cursor: 'c1', token: 'l1.1.1' })],
+			'/v1/sync/wait': [hang]
+		});
+		const live = make(server);
+		live.start();
+		await tick();
+		for (let i = 0; i < 3; i++) { doc.show(false); await tick(); doc.show(true); await tick(); }
+		const waits = server.calls.filter((c) => c.url.startsWith('/v1/sync/wait'));
+		expect(waits.length).toBeGreaterThanOrEqual(4);
+		expect(new Set(waits.map((c) => new URL(c.url, 'http://x').searchParams.get('client')))).toEqual(new Set(['tab-test-0001']));
+		live.stop();
 	});
 });
 
@@ -75,9 +106,9 @@ describe('long-poll loop', () => {
 		live.start();
 		await tick();
 		expect(live.mode).toBe('live');
-		expect(server.calls.filter((c) => c.url.startsWith('/v1/sync/wait'))[0].url).toBe('/v1/sync/wait?since=l1.1.1&timeout=25');
+		expect(server.calls.filter((c) => c.url.startsWith('/v1/sync/wait'))[0].url).toBe('/v1/sync/wait?since=l1.1.1&timeout=25&client=tab-test-0001');
 		expect(fn).toHaveBeenCalledTimes(1);
-		expect(server.calls.filter((c) => c.url.startsWith('/v1/sync/wait'))[1].url).toBe('/v1/sync/wait?since=l1.2.1&timeout=25');
+		expect(server.calls.filter((c) => c.url.startsWith('/v1/sync/wait'))[1].url).toBe('/v1/sync/wait?since=l1.2.1&timeout=25&client=tab-test-0001');
 		expect(n).toBe(1);
 		live.stop();
 	});

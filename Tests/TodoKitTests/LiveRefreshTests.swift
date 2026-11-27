@@ -199,11 +199,39 @@ final class LiveRefreshTests: XCTestCase {
     }
 }
 
-/// Card A1A4690B: the PWA got 429 on /v1/sync/wait after quick page changes. Every page change aborts the browser's
-/// pending long poll; the server kept the abandoned waiter registered until its deadline (up to 25 s) and counted it
-/// against the per-account limit of 8, so the next waits of the same account were refused.
+/// Card A1A4690B: the PWA got 429 on /v1/sync/wait after quick page changes. Every page change or reload aborts the browser's
+/// pending long poll, but the server cannot see that and kept the abandoned waiter registered until its deadline (up to 25 s),
+/// counted against the per-account limit of 8. A client key (`client=`, one per tab) lets a newer wait replace the older one.
 final class LiveRefreshDisconnectTests: XCTestCase {
-    func testAbortedWaitsFreeTheirSlotImmediately() async throws {
+    private struct Fixture {
+        let t: TestApp
+        let session: String
+        let current: String
+        let port: Int
+        let urlSession = URLSession(configuration: .ephemeral)
+
+        /// Starts a wait over real HTTP; the task ends with the HTTP status (-1: aborted or failed).
+        func wait(client: String?, timeout: Int = 3) -> Task<Int, Never> {
+            var url = "http://127.0.0.1:\(port)/v1/sync/wait?since=\(current)&timeout=\(timeout)"
+            if let client { url += "&client=\(client)" }
+            var req = URLRequest(url: URL(string: url)!)
+            req.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
+            let s = urlSession
+            return Task { (try? await s.data(for: req)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode } ?? -1 }
+        }
+
+        func waiters(_ n: Int) async throws {
+            for _ in 0..<100 {
+                if await t.app.liveHub.waiterCount == n { return }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let now = await t.app.liveHub.waiterCount
+            XCTFail("expected \(n) registered waiters, have \(now)")
+        }
+    }
+
+    /// Real HTTP server (client disconnects only exist there), account limit 3.
+    private func withFixture(_ body: (Fixture) async throws -> Void) async throws {
         let t = try await TestApp.make()
         defer { Task { await t.shutdown() } }
         t.app.liveSettings.pollInterval = 0.1
@@ -214,47 +242,55 @@ final class LiveRefreshDisconnectTests: XCTestCase {
         try await UserSession(userID: user.requireID(), tokenHash: AuthSupport.hash(session),
             expiresAt: Date().addingTimeInterval(3600)).save(on: t.app.db)
         let head = try await t.json(.GET, "/v1/sync/head", token: session)
-        let cur = try XCTUnwrap(head.body?["token"] as? String)
-
-        // A real HTTP server: client disconnects only exist there.
-        let port = try Self.freePort()
+        let current = try XCTUnwrap(head.body?["token"] as? String)
+        let probe = try ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).wait()
+        let port = try XCTUnwrap(probe.localAddress?.port)
+        try probe.close().wait()
         try await t.app.server.start(address: .hostname("127.0.0.1", port: port))
-        defer { Task { await t.app.server.shutdown() } }
-        do {
-            let urlSession = URLSession(configuration: .ephemeral)
-            func wait() -> Task<Int, Never> {
-                var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/sync/wait?since=\(cur)&timeout=25")!)
-                req.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
-                return Task { (try? await urlSession.data(for: req)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode } ?? -1 }
-            }
-            func waiters(_ n: Int) async throws {
-                for _ in 0..<300 {
-                    if await t.app.liveHub.waiterCount == n { return }
-                    try await Task.sleep(nanoseconds: 20_000_000)
-                }
-                let now = await t.app.liveHub.waiterCount
-                XCTFail("expected \(n) registered waiters, have \(now)")
-            }
+        do { try await body(Fixture(t: t, session: session, current: current, port: port)) } catch { await t.app.server.shutdown(); throw error }
+        await t.app.server.shutdown()
+    }
 
-            // Quick page changes: each round opens a wait and aborts it again, far more often than the limit.
+    func testQuickPageChangesOfOneTabNeverExceedTheAccountLimit() async throws {
+        try await withFixture { f in
+            // Each round is one page load: the browser aborts its pending wait and the new page waits again, far more
+            // often than the limit of 3 allows for abandoned requests.
+            var older: [Task<Int, Never>] = []
             for _ in 0..<8 {
-                let w = wait()
-                try await waiters(1)
-                w.cancel()
-                _ = await w.value
-                try await waiters(0)
+                let w = f.wait(client: "tab-0123456789")
+                older.append(w)
+                try await f.waiters(1)
+                w.cancel() // the browser let go; the server still holds the request
             }
-            // The next wait is accepted (not 429) and registers.
-            let next = wait()
-            try await waiters(1)
-            next.cancel()
-            _ = await next.value
+            // The newest request is accepted (not 429) and is the only waiter left; every abandoned one ended at once.
+            let last = f.wait(client: "tab-0123456789", timeout: 1)
+            let status = await last.value
+            XCTAssertEqual(status, 200)
+            for w in older { let s = await w.value; XCTAssertNotEqual(s, 429) }
+            try await f.waiters(0)
         }
     }
 
-    private static func freePort() throws -> Int {
-        let probe = try ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).wait()
-        defer { try? probe.close().wait() }
-        return try XCTUnwrap(probe.localAddress?.port)
+    func testOtherTabsKeepTheirOwnWaitAndLimitStillApplies() async throws {
+        try await withFixture { f in
+            let a = f.wait(client: "tab-aaaaaaaa", timeout: 4), b = f.wait(client: "tab-bbbbbbbb", timeout: 4), c = f.wait(client: "tab-cccccccc", timeout: 4)
+            try await f.waiters(3)
+            let d = await f.wait(client: "tab-dddddddd", timeout: 1).value
+            XCTAssertEqual(d, 429, "a fourth tab is still limited")
+            // Without a client key (old clients) every request counts on its own, as before.
+            let anonymous = await f.wait(client: nil, timeout: 1).value
+            XCTAssertEqual(anonymous, 429)
+            // They end by their own deadline: the server must be idle again before the test app shuts down.
+            for w in [a, b, c] { let s = await w.value; XCTAssertEqual(s, 200) }
+        }
+    }
+
+    func testClientKeyIsValidated() {
+        XCTAssertEqual(LiveController.clientID("tab-0123456789"), "tab-0123456789")
+        XCTAssertNil(LiveController.clientID(nil))
+        XCTAssertNil(LiveController.clientID("short"))
+        XCTAssertNil(LiveController.clientID(String(repeating: "a", count: 65)))
+        XCTAssertNil(LiveController.clientID("tab 0123456789"))
+        XCTAssertNil(LiveController.clientID("tab-ä123456789"))
     }
 }

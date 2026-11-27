@@ -69,7 +69,7 @@ extension MCPController {
             switch wake ?? .recheck {
             case .changed:
                 return try await respond(try await LiveToken.current(on: db), changed: true)
-            case .shutdown:
+            case .shutdown, .superseded:
                 return try await respond(try await LiveToken.current(on: db), changed: false)
             case .recheck:
                 if deadline.timeIntervalSinceNow <= 0.01 {

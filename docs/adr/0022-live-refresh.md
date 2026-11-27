@@ -18,6 +18,8 @@ Nutzerwunsch: nahezu Live-Aktualisierung in PWA und Swift-App; 5-s-Polling wäre
 
 **Grenzen:** max. 8 Wartende je Konto, 500 je Replika (429 mit Retry-After 5), Timeout 1..120 s (Standard 25), Sitzungsprüfung bei jedem Aufwachen und mindestens alle 10 s (Widerruf/Ablauf -> 401), Shutdown weckt alle mit `retryAfter: 2`. Token bleibt nach Ablauf gleich -> `changed:false`.
 
+**Abgebrochene Anfragen (Karte A1A4690B, Nachtrag):** Vapor meldet einem Handler nicht, dass der Browser die Verbindung geschlossen hat. Jeder Seitenwechsel mit vollem Laden und jedes Neuladen brach die wartende Anfrage ab, der Server hielt sie weiter als Wartende bis zum Timeout (bis 25 s) und zählte sie gegen das Limit von 8 je Konto; die neunte Seitenladung binnen 25 s bekam 429. Beleg: `web/e2e/live-wait-reload.spec.ts` (12 Ladungen, rot mit 4x 429, grün nach dem Fix) und `LiveRefreshDisconnectTests`. Entscheidung: optionaler Query-Parameter `client` (8 bis 64 Zeichen), den die PWA je Tab in `sessionStorage` hält; je (Konto, client) gibt es höchstens eine Wartende, eine neuere beendet die ältere sofort (`changed:false`, `retryAfter:2`). Verworfen: Antwort als Stream mit Herzschlag (Status steht dann vor dem Ergebnis fest, 401 nach Sitzungswiderruf ginge nicht), `sendBeacon` beim Verlassen (zusätzlicher Schreibpfad, unzuverlässig auf iOS), Limit anheben (verdeckt nur). Ohne `client` (Apple-App, MCP) bleibt alles wie vorher; ein dupliziertes Tab teilt den Schlüssel, dort wartet dank Web Locks ohnehin nur ein Tab. Das Limit selbst gilt unverändert für verschiedene Tabs und Geräte.
+
 **Capability:** `GET /v1/capabilities` -> `liveRefresh {head, wait, stream:false, pollSeconds:5, waitMaxSeconds}`; additiv. `LIVE_REFRESH_ENABLED=false` entfernt Feld und Routen (404).
 
 ## Folgen

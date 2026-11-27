@@ -44,8 +44,45 @@ export interface LiveEnv {
 	locks: LockManagerLike | null;
 	channel: ((name: string) => ChannelLike | null) | null;
 	random: () => number;
+	/** Key of this tab for `/v1/sync/wait`, see `liveClientId`. */
+	clientId: string;
 	/** Called when the server answers 401 (session ended). */
 	onUnauthorized: () => void;
+}
+
+const CLIENT_KEY = 'todolino-live-client';
+const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const randomKey = () =>
+	typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+
+/**
+ * Names this browser tab towards `/v1/sync/wait?client=`. The server keeps one wait per key: a page change or reload aborts the
+ * pending request in the browser, the server cannot see that and would count the abandoned request against the account limit
+ * (429 after eight quick page loads, card A1A4690B); the next wait with the same key replaces it. Kept in the tab's own
+ * storage so a reload finds the key again; a blocked storage only costs the replacement (random key per page load).
+ */
+export function liveClientId(storage?: Pick<Storage, 'getItem' | 'setItem'>): string {
+	try {
+		const known = storage?.getItem(CLIENT_KEY);
+		if (known && CLIENT_ID.test(known)) return known;
+	} catch {
+		/* blocked storage */
+	}
+	const fresh = `tab-${randomKey()}`;
+	try {
+		storage?.setItem(CLIENT_KEY, fresh);
+	} catch {
+		/* blocked storage */
+	}
+	return fresh;
+}
+
+function tabStorage(): Storage | undefined {
+	try {
+		return typeof sessionStorage === 'undefined' ? undefined : sessionStorage;
+	} catch {
+		return undefined;
+	}
 }
 
 export type LiveMode = 'idle' | 'live' | 'poll' | 'unauthorized';
@@ -62,6 +99,7 @@ export function createLiveRefresh(overrides: Partial<LiveEnv> = {}) {
 		locks: typeof navigator !== 'undefined' && 'locks' in navigator ? (navigator.locks as unknown as LockManagerLike) : null,
 		channel: typeof BroadcastChannel === 'undefined' ? null : (n) => new BroadcastChannel(n) as unknown as ChannelLike,
 		random: Math.random,
+		clientId: overrides.clientId ?? liveClientId(tabStorage()),
 		onUnauthorized: () => undefined,
 		...overrides
 	};
@@ -251,7 +289,7 @@ export function createLiveRefresh(overrides: Partial<LiveEnv> = {}) {
 				continue;
 			}
 			const began = Date.now();
-			const r = await call(`/v1/sync/wait?since=${encodeURIComponent(token)}&timeout=${waitSeconds}`, { signal, timeoutMs: CLIENT_TIMEOUT_MS });
+			const r = await call(`/v1/sync/wait?since=${encodeURIComponent(token)}&timeout=${waitSeconds}&client=${encodeURIComponent(env.clientId)}`, { signal, timeoutMs: CLIENT_TIMEOUT_MS });
 			if (signal.aborted) return;
 			if (r.status === 200 && r.body) {
 				failures = 0;

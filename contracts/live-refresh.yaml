@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Live-Refresh
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0022. Hinweise statt Daten: head liefert den aktuellen Änderungs-Token, wait (Long-Poll) kehrt zurück, sobald sich der Token
     ändert. Daten holt der Client mit den bestehenden Routen (/v1/sync/changes, /v1/command-center, Aufgabendetails). Token ist undurchsichtig,
     nur auf Gleichheit vergleichen. Er ist kontoübergreifend (ein Hinweis kann Änderungen anderer Konten bedeuten); der Client holt dann nur
@@ -28,10 +28,11 @@ paths:
       description: 'Query since=<token> (fehlt: sofortige Antwort), timeout=1..LIVE_WAIT_MAX_SECONDS (Standard 25). Antwort {token, changed, cursor, retryAfter?}.
         changed=true: Token weicht von since ab, Daten neu holen und mit dem neuen token erneut warten. changed=false: Timeout, sofort erneut warten.
         retryAfter gesetzt: Server fährt herunter, nach so vielen Sekunden neu verbinden. 401 beendet die Verbindung bei Sitzungsablauf/-widerruf
-        (Prüfung spätestens alle 10 s). 429 (Retry-After 5): zu viele Wartende je Konto (8) oder Replika (500). Header Cache-Control: no-store, X-Accel-Buffering: no.'
+        (Prüfung spätestens alle 10 s). 429 (Retry-After 5): zu viele Wartende je Konto (8) oder Replika (500). client (optional, 8 bis 64 Zeichen A-Za-z0-9_-): Schlüssel des wartenden Tabs; je (Konto, client) gibt es höchstens eine Wartende, eine neuere beendet die ältere sofort mit changed=false, retryAfter=2. Grund: Seitenwechsel und Neuladen brechen die Anfrage im Browser ab, der Server sieht das nicht und zählte sie bis zum Ablauf (bis 25 s) gegen das Limit (Karte A1A4690B). Ohne client (ältere Clients) zählt jede Anfrage einzeln wie bisher. Header Cache-Control: no-store, X-Accel-Buffering: no.'
       parameters:
       - {name: since, in: query, required: false, schema: {type: string}}
       - {name: timeout, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 120}}
+      - {name: client, in: query, required: false, schema: {type: string, pattern: '^[A-Za-z0-9_-]{8,64}$'}}
       responses:
         '200': {description: '{token, changed, cursor, retryAfter?}'}
         '401': {description: nicht angemeldet oder Sitzung beendet}

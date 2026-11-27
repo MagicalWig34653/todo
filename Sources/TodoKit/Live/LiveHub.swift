@@ -26,11 +26,13 @@ actor LiveHub {
         case changed(String)   // new token
         case recheck           // time to re-validate the session / deadline reached
         case shutdown
+        case superseded        // the same client opened a newer wait; this request is an abandoned leftover
     }
     enum Registration { case ok, accountLimit, replicaLimit }
 
     private struct Waiter {
         let user: UUID
+        let client: String?
         let since: String
         let continuation: CheckedContinuation<Wake, Never>
     }
@@ -46,15 +48,21 @@ actor LiveHub {
     var waiterCount: Int { waiters.count }
 
     /// Waits until the token differs from `since`, `seconds` passed (recheck), or the replica shuts down.
-    func wait(user: UUID, since: String, seconds: TimeInterval, settings: LiveSettings) async -> (Registration, Wake?) {
+    /// `client` names the browser tab (or app instance) that waits. A client has at most one wait: a newer one ends the older
+    /// at once. A page change or reload aborts the old request in the browser, but the server cannot see that, so without this
+    /// the abandoned requests would count against the account limit until their deadline (card A1A4690B).
+    func wait(user: UUID, client: String? = nil, since: String, seconds: TimeInterval, settings: LiveSettings) async -> (Registration, Wake?) {
         if closed { return (.ok, .shutdown) }
+        if let client {
+            for (id, w) in waiters where w.user == user && w.client == client { resume(id, .superseded) }
+        }
         if waiters.count >= settings.maxWaitersPerReplica { return (.replicaLimit, nil) }
         if waiters.values.filter({ $0.user == user }).count >= settings.maxWaitersPerAccount { return (.accountLimit, nil) }
         let id = UUID()
         startPoller(settings)
         let wake = await withTaskCancellationHandler {
             await withCheckedContinuation { (c: CheckedContinuation<Wake, Never>) in
-                waiters[id] = Waiter(user: user, since: since, continuation: c)
+                waiters[id] = Waiter(user: user, client: client, since: since, continuation: c)
                 Task { [weak self] in
                     try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
                     await self?.resume(id, .recheck)
