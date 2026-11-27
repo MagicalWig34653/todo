@@ -136,13 +136,19 @@ struct TestApp {
 
     /// Sends a pre-serialised JSON body; usable from concurrent tasks (Data is Sendable).
     func rawStatus(_ method: HTTPMethod, _ path: String, body: Data, token: String? = nil) async throws -> HTTPStatus {
-        var status = HTTPStatus.ok
+        try await rawReply(method, path, body: body, token: token).status
+    }
+
+    /// Like `rawStatus`, but keeps the response text, so a failing concurrency test can report what the server said
+    /// (a bare status such as 500 hides the database error behind it).
+    func rawReply(_ method: HTTPMethod, _ path: String, body: Data, token: String? = nil) async throws -> (status: HTTPStatus, text: String) {
+        var reply = (status: HTTPStatus.ok, text: "")
         try await app.test(method, path, beforeRequest: { req in
             if let token { req.headers.bearerAuthorization = .init(token: token) }
             req.headers.contentType = .json
             req.body = ByteBuffer(data: body)
-        }, afterResponse: { res async in status = res.status })
-        return status
+        }, afterResponse: { res async in reply = (res.status, String(decoding: res.body.readableBytesView, as: UTF8.self)) })
+        return reply
     }
 
     /// Path of the SQLite file this instance (or its primary) runs on; nil for MariaDB or an in-memory database.

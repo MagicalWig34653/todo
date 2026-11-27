@@ -358,6 +358,12 @@ final class ColumnTests: XCTestCase {
 
     // MARK: MariaDB (skipped without TODO_TEST_DB / TODO_TEST_MARIADB)
 
+    /// Statuses of all replies, plus status and text of every reply outside `expected` (the only evidence a rare red leaves).
+    private static func describe(_ replies: [(status: HTTPStatus, text: String)], expected: [HTTPStatus]) -> String {
+        let unexpected = replies.filter { !expected.contains($0.status) }.map { "\($0.status.code): \($0.text.prefix(500))" }
+        return "\(replies.map(\.status.code)); unexpected replies: \(unexpected)"
+    }
+
     func testConcurrentMovesAndColumnCreationAcrossReplicas() async throws {
         try XCTSkipUnless(TestApp.useMariaDB, "needs MariaDB")
         let a = try await TestApp.make()
@@ -371,29 +377,32 @@ final class ColumnTests: XCTestCase {
 
         // Same version, eight concurrent moves from both replicas: exactly one winner. All target c2 so the winner is
         // deterministic for the final count (a winner moving to c1 made the c2 count 10 instead of 11).
-        let statuses = try await withThrowingTaskGroup(of: HTTPStatus.self) { group -> [HTTPStatus] in
+        let moves = try await withThrowingTaskGroup(of: (status: HTTPStatus, text: String).self) { group -> [(status: HTTPStatus, text: String)] in
             for i in 0..<8 {
                 let app = i % 2 == 0 ? a : b
                 let body = try JSONSerialization.data(withJSONObject: ["version": 1, "columnID": c2["id"]!, "index": 0])
-                group.addTask { try await app.rawStatus(.PUT, "/v1/tasks/\(tid)/column", body: body, token: u.token) }
+                group.addTask { try await app.rawReply(.PUT, "/v1/tasks/\(tid)/column", body: body, token: u.token) }
             }
             return try await group.reduce(into: []) { $0.append($1) }
         }
-        XCTAssertEqual(statuses.filter { $0 == .ok }.count, 1, "\(statuses)")
-        XCTAssertEqual(statuses.filter { $0 == .conflict }.count, 7, "\(statuses)")
+        let statuses = moves.map(\.status)
+        // On red, say what the server answered (status and text), not only the status.
+        let moveReport = Self.describe(moves, expected: [.ok, .conflict])
+        XCTAssertEqual(statuses.filter { $0 == .ok }.count, 1, moveReport)
+        XCTAssertEqual(statuses.filter { $0 == .conflict }.count, 7, moveReport)
 
         // Concurrent column creation with index 0 and task creation: dense unique positions, dense board positions.
-        let results = try await withThrowingTaskGroup(of: HTTPStatus.self) { group -> [HTTPStatus] in
+        let results = try await withThrowingTaskGroup(of: (status: HTTPStatus, text: String).self) { group -> [(status: HTTPStatus, text: String)] in
             for i in 0..<10 {
                 let app = i % 2 == 0 ? a : b
                 let body = try JSONSerialization.data(withJSONObject: ["name": "N\(i)", "index": 0])
-                group.addTask { try await app.rawStatus(.POST, "/v1/projects/\(p)/columns", body: body, token: u.token) }
+                group.addTask { try await app.rawReply(.POST, "/v1/projects/\(p)/columns", body: body, token: u.token) }
                 let tb = try JSONSerialization.data(withJSONObject: ["projectID": p, "title": "Q\(i)", "columnID": c2["id"]!])
-                group.addTask { try await app.rawStatus(.POST, "/v1/tasks", body: tb, token: u.token) }
+                group.addTask { try await app.rawReply(.POST, "/v1/tasks", body: tb, token: u.token) }
             }
             return try await group.reduce(into: []) { $0.append($1) }
         }
-        XCTAssertTrue(results.allSatisfy { $0 == .created }, "\(results)")
+        XCTAssertTrue(results.allSatisfy { $0.status == .created }, Self.describe(results, expected: [.created]))
         let cols = try await a.json(.GET, "/v1/projects/\(p)/columns", token: u.token)
         XCTAssertEqual(cols.list?.compactMap { $0["position"] as? Int }, Array(0..<12))
         let brd = try await board(b, u.token, p)

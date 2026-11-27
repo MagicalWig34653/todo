@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 27.11.2026 (09:00): Unsteter MariaDB-Spaltentest (Karte `7619514B`)
+
+- 252 Läufe ohne Rot, Ursache nicht belegt; Test gibt beim nächsten Rot Status und Antworttext aus. Belege: `docs/STATUS.md` (oberster Nachtrag), `docs/belege/7619514B-mariadb-column-flake.md`.
+- Offen: Brain-Validierung, Board-Einträge (Todolino-MCP nicht angemeldet). Nächster Schritt erst beim nächsten Rot.
+
 ## Checkpoint 27.11.2026 (04:10): 429 auf `/v1/sync/wait` behoben (Karte `A1A4690B`), Dependabot Kit (Karte `9608B355`)
 
 - `A1A4690B`: Ursache und Belege in `docs/STATUS.md` (oberster Nachtrag), `docs/belege/A1A4690B-sync-wait-429.md`. Kein Deploy; Apple-App könnte später ebenfalls `client` senden (optional).
