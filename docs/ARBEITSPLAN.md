@@ -3,7 +3,7 @@
 ## Checkpoint 27.11.2026 (02:25): Seite „Kosteneffizienz“, Phase 1 und 2 umgesetzt (Karte `71FD73CF`)
 
 - Stand und Belege: `docs/STATUS.md` (oberster Nachtrag), Vertrag `contracts/usage.yaml`, `design/kosteneffizienz/`.
-- Offen: Push/CI-Beleg (folgt unten in STATUS), Brain-Validierung, Board-Einträge aus `design/kosteneffizienz/kartentexte.md`, Deploy (Lino).
+- GitHub `0ea9549` grün (CI, Docker publish, Pages, E2E; Nummern in STATUS). Offen: Brain-Validierung, Board-Einträge aus `design/kosteneffizienz/kartentexte.md`, Deploy (Lino).
 - Nächster Schritt: Sammler im Orchestrator (Selbstverbesserung); Phase 3 (Befunde und Maßnahmen) nur auf Auftrag.
 
 ## Checkpoint 26.11.2026 (23:25): UX-Umbau Schritt 1 „Lesbarkeit“ umgesetzt (Karte `8B820AA8`)
