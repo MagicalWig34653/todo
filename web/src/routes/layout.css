@@ -39,6 +39,11 @@
 	--success-soft: oklch(0.96 0.04 150);
 	--warning: oklch(0.55 0.13 70);
 	--warning-soft: oklch(0.97 0.05 85);
+	/* Cost parts (page Kosteneffizienz): fixed categorical order, checked for colour vision deficiencies on both surfaces. */
+	--cost-input: #257de0;
+	--cost-cache-write: #f47230;
+	--cost-cache-read: #00b894;
+	--cost-output: #f2a600;
 	--shadow-card: 0 1px 2px oklch(0 0 0 / 5%);
 	--shadow-pop: 0 12px 40px oklch(0 0 0 / 14%);
 	color-scheme: light;
@@ -74,6 +79,10 @@
 	--success-soft: oklch(0.27 0.05 150);
 	--warning: oklch(0.8 0.14 80);
 	--warning-soft: oklch(0.29 0.05 80);
+	--cost-input: #338ced;
+	--cost-cache-write: #e76624;
+	--cost-cache-read: #00a888;
+	--cost-output: #d28e05;
 	--shadow-card: 0 1px 2px oklch(0 0 0 / 30%);
 	--shadow-pop: 0 12px 40px oklch(0 0 0 / 50%);
 	color-scheme: dark;

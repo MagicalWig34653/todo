@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildPath, loginRedirectTarget, parseRoute, safeRedirect } from '../src/lib/routing';
+import { ROUTE_TITLES, buildPath, loginRedirectTarget, parseRoute, safeRedirect } from '../src/lib/routing';
 
 const id = '0DCBB03D-997B-4C08-80CB-9FBD69226644';
 describe('routing', () => {
 	it('maps simple views both ways', () => {
-		for (const p of ['/today', '/inbox', '/upcoming', '/up-next', '/calendar', '/search', '/overview', '/now', '/activity', '/agents', '/teams', '/brain', '/filter', '/settings', '/help']) {
+		for (const p of ['/today', '/inbox', '/upcoming', '/up-next', '/calendar', '/search', '/overview', '/now', '/activity', '/agents', '/teams', '/brain', '/costs', '/filter', '/settings', '/help']) {
 			expect(buildPath(parseRoute(p))).toBe(p);
 		}
 		expect(parseRoute('/')).toEqual({ view: 'forYou' });
@@ -35,6 +35,15 @@ describe('routing', () => {
 		expect(loginRedirectTarget('?redirect=%2Fproject%2Fabc%2Fboard%3Ftask%3D1')).toBe('/project/abc/board?task=1');
 		for (const bad of ['', '?x=1', '?redirect=', '?redirect=https%3A%2F%2Fevil.example', '?redirect=%2F%2Fevil.example', '?redirect=%2Fv1%2Ftasks', '?redirect=%2F', '?redirect=javascript%3Aalert(1)'])
 			expect(loginRedirectTarget(bad)).toBeNull();
+	});
+});
+
+describe('costs page', () => {
+	it('has an English path, a German title and no legacy alias', () => {
+		expect(parseRoute('/costs')).toEqual({ view: 'costs' });
+		expect(buildPath({ view: 'costs' })).toBe('/costs');
+		expect(ROUTE_TITLES.costs).toBe('Kosteneffizienz');
+		for (const p of ['/kosten', '/kosteneffizienz', '/costs/x']) expect(parseRoute(p).view).toBe('notfound');
 	});
 });
 

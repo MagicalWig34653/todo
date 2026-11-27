@@ -9,6 +9,7 @@ import { deProjectGroups } from './de-project-groups.js';
 import { deWebhook } from './de-webhook.js';
 import { deVoicePrivacy } from './de-voice-privacy.js';
 import { dePipeline } from './de-pipeline.js';
+import { deUsage } from './de-usage.js';
 
 export const de = {
 	...deVoicePrivacy,
@@ -21,6 +22,7 @@ export const de = {
 	...deProjectGroups,
 	...deWebhook,
 	...dePipeline,
+	...deUsage,
 	'app.name': 'Todolino',
 	'common.loading': 'Wird geladen …',
 	'common.save': 'Speichern',

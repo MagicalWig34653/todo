@@ -5,7 +5,7 @@ import { buildCardParam, parseCardParam, type CardRef } from './cardRef.js';
 import { DEFAULT_TAB, parseCardTab, type CardTab } from './cardTabs.js';
 
 export type RouteView =
-	| 'project' | 'forYou' | 'inbox' | 'overview' | 'now' | 'today' | 'upcoming' | 'upNext' | 'calendar' | 'search' | 'filters' | 'teams' | 'agents' | 'brain' | 'activity' | 'account' | 'help';
+	| 'project' | 'forYou' | 'inbox' | 'overview' | 'now' | 'today' | 'upcoming' | 'upNext' | 'calendar' | 'search' | 'filters' | 'teams' | 'agents' | 'brain' | 'costs' | 'activity' | 'account' | 'help';
 
 export type ProjectSub = 'list' | 'board' | 'overview' | 'comments' | 'graph' | 'pipeline';
 
@@ -28,7 +28,7 @@ export interface Route {
 
 const SIMPLE: Record<string, RouteView> = {
 	'for-you': 'forYou', today: 'today', inbox: 'inbox', upcoming: 'upcoming', 'up-next': 'upNext', calendar: 'calendar', search: 'search',
-	overview: 'overview', now: 'now', activity: 'activity', agents: 'agents', teams: 'teams', brain: 'brain'
+	overview: 'overview', now: 'now', activity: 'activity', agents: 'agents', teams: 'teams', brain: 'brain', costs: 'costs'
 };
 /** Old German paths: still understood, the app replaces the URL with the English one (bookmarks, mail links, app deep links). */
 const LEGACY_SIMPLE: Record<string, RouteView> = {
@@ -37,7 +37,7 @@ const LEGACY_SIMPLE: Record<string, RouteView> = {
 };
 const PATH_OF: Partial<Record<RouteView, string>> = {
 	forYou: '/for-you', today: '/today', inbox: '/inbox', upcoming: '/upcoming', upNext: '/up-next', calendar: '/calendar', search: '/search',
-	overview: '/overview', now: '/now', activity: '/activity', agents: '/agents', brain: '/brain', teams: '/teams', filters: '/filter', account: '/settings', help: '/help'
+	overview: '/overview', now: '/now', activity: '/activity', agents: '/agents', brain: '/brain', costs: '/costs', teams: '/teams', filters: '/filter', account: '/settings', help: '/help'
 };
 const SUBS: ProjectSub[] = ['list', 'board', 'overview', 'comments', 'graph', 'pipeline'];
 const LEGACY_SUBS: Record<string, ProjectSub> = { liste: 'list', ueberblick: 'overview', kommentare: 'comments' };
@@ -90,7 +90,7 @@ export function buildPath(r: Route): string {
 
 export const ROUTE_TITLES: Record<RouteView | 'notfound', string> = {
 	project: 'Projekt', forYou: 'Für dich', inbox: 'Eingang', overview: 'Überblick', now: 'Jetzt', today: 'Heute', upcoming: 'Anstehend', upNext: 'Als Nächstes', calendar: 'Kalender',
-	search: 'Suche', filters: 'Filter und Labels', teams: 'Teams', agents: 'Agenten', brain: 'Brain', activity: 'Aktivität', account: 'Einstellungen', help: 'Hilfe', notfound: 'Nicht gefunden'
+	search: 'Suche', filters: 'Filter und Labels', teams: 'Teams', agents: 'Agenten', brain: 'Brain', costs: 'Kosteneffizienz', activity: 'Aktivität', account: 'Einstellungen', help: 'Hilfe', notfound: 'Nicht gefunden'
 };
 
 /** Same-origin, path-only redirect targets; everything else (absolute URLs, `//host`, backslashes, API paths) falls back. */

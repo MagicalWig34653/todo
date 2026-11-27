@@ -8,6 +8,7 @@ import type { PipelineStepName, PlanDecisionInput, RetryInput, TaskPipeline } fr
 import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
 import type { ContinueInput, StartInput } from './pipelineExecution.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
+import type { SettingsUpdate, UsageDays, UsageSettings, UsageSummary } from './usage.js';
 import { selectionBody, type ProjectGroup, type Selection, type SelectionChange, type SelectionDTO, type SelectionPreview } from './projectGroups.js';
 
 export interface Capabilities {
@@ -1112,6 +1113,11 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		confirmActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/confirm`),
 		rejectActionRequest: (id: string) => request<ActionRequest>('POST', `/action-requests/${id}/reject`),
 		performAction: (method: string, path: string, body: unknown) => request<unknown>(method, path, body),
+		/** contracts/usage.yaml; `until` is the browser's local calendar date. */
+		usageSummary: (days: UsageDays, until: string) => request<UsageSummary>('GET', `/usage/summary?days=${days}&until=${until}`),
+		usageSettings: () => request<UsageSettings>('GET', '/usage/settings'),
+		/** Replaces all own prices and thresholds. */
+		putUsageSettings: (body: SettingsUpdate) => request<UsageSettings>('PUT', '/usage/settings', body),
 		overviewNow: (opts: { compact?: boolean; limit?: number } = {}) =>
 			request<OverviewNow>('GET', `/overview/now${query({ compact: opts.compact ? 'true' : undefined, limit: opts.compact ? opts.limit : undefined })}`),
 		feed: (params: { projectID?: string; before?: string | null; limit?: number } = {}) =>
