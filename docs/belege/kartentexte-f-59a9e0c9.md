@@ -17,6 +17,11 @@ Todolino-MCP war in dieser Sitzung nicht angemeldet. Das Brain trägt diese Text
 - Container-Tests nicht in GitHub CI, lokal per `scripts/test-deploy-servers.sh` (wie MariaDB).
 - Selbst umgesetzt statt delegiert (Lino 26.11.: Subagenten sparsam); Gegenlesen per Verifier (Sonnet).
 
+4. Gegenlesen (Verifier, Sonnet): kein Blocker, 8 Befunde; rot `01bc04a` (2 Tests, 50 Fehler), grün `034f8d6`.
+5. Volle Suiten auf `5ffbceb`: SQLite 1095 Tests, 26 übersprungen, 0 Fehler; MariaDB 12.3 1095 Tests, 14 übersprungen, 0 Fehler. E2E `scripts/deploy-e2e.sh` (`eeff1e9`) SQLite und MariaDB je 0 Fehler.
+
 ## Letzte Notiz (Abschluss)
 
-Siehe Ende dieser Datei (wird mit Testzahlen, CI-Läufen und Lehre ergänzt).
+- Phase 1a fertig: Deploy-Ziele, Zugangsdaten, Verbindungstest, Abgleich nur lesen (REST + MCP). Kein Upload, kein Holen, keine PWA-Ansicht, kein Deploy.
+- Nächster Schritt 1b: PWA-Ziele (Host-Schlüssel bestätigen, FTP-Warnung) und Sync-Ansicht nur lesen.
+- Lehre: Zeit gekostet haben Eigenheiten der Testserver (stilliard-Image nur amd64, pure-ftpd braucht Capabilities, OpenSSH sperrt nach Fehlanmeldungen) und zwei volle Suiten, die neu laufen mussten. Nächstes Mal vor dem vollen Lauf nach festen Versionsprüfungen suchen (`grep` auf alte Handbuch-/Vertragsversion) und das Gegenlesen vor den vollen Lauf legen.

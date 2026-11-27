@@ -59,7 +59,7 @@ Begründung:
   - Das FTPS-Zertifikat wird als Vertrauensanker hinterlegt, nicht als reiner Fingerabdruck.
 - Getestet wird gegen echte Server im Container: `atmoz/sftp` und ein eigenes pure-ftpd-Testimage
   (`scripts/deploy-test-servers/pure-ftpd`, weil das übliche `stilliard/pure-ftpd` nur amd64 ist und unter Rosetta nicht startet).
-  Skript: `scripts/test-deploy-servers.sh`.
+  Skript: `scripts/test-deploy-servers.sh`; E2E mit dem echten Binary (REST und MCP): `scripts/deploy-e2e.sh`.
 
 ## Weitere Entscheidungen in Phase 1a (ohne Rückfrage, protokolliert)
 

@@ -69,6 +69,12 @@ In `stack.env`: `SETTINGS_KEY_ENABLED=true` (optional `SETTINGS_KEY_SECRET=<ande
 
 **Backup-Hinweis:** Der Schlüssel gehört **nicht** in dasselbe Backup wie die Datenbank (sonst schützt die Verschlüsselung nichts). Sichere ihn getrennt (Passwortmanager, getrennter Tresor). Datenbank-Backups ohne Schlüssel sind für Geheimnisse wertlos, aber vollständig für alles andere; nach einer Wiederherstellung ohne Schlüssel gibst du die Geheimnisse neu ein.
 
+## Deploy-Ziele (ADR 0039, nur lesen)
+
+- Zugangsdaten der Deploy-Ziele werden mit `SETTINGS_ENCRYPTION_KEY` verschlüsselt; ohne Schlüssel lässt sich kein Ziel anlegen. `settings rotate-key` verschlüsselt sie noch **nicht** neu: den alten Schlüssel als `SETTINGS_ENCRYPTION_KEY_PREVIOUS` behalten oder die Zugangsdaten neu eintragen.
+- Das Image enthält `rclone` und `ssh-keyscan`. Andere Pfade: `DEPLOY_RCLONE_PATH`, `DEPLOY_SSH_KEYSCAN_PATH` (nur Umgebung).
+- Private und Loopback-Adressen als Ziel sind gesperrt. `DEPLOY_ALLOW_PRIVATE_HOSTS=1` (nur Umgebung) erlaubt sie, z. B. für einen Server im eigenen Netz.
+
 ## Einstellungsprogramm `settings.sh` (Env-Datei per Menü oder Kommandozeile)
 
 `deploy/swarm/settings.sh` bearbeitet die Env-Datei (`deploy/swarm/stack.env`) geprüft statt von Hand: mit Menü (`whiptail` oder `dialog`, wie `raspi-config`) oder per Kommandozeile. Es braucht Bash 4.4 oder neuer (Linux-Server: Bash 5; macOS liefert 3.2, dort `brew install bash`). Es ändert **nur die Datei**; ausgerollt wird nichts, außer du bestätigst im Menü „Anwenden“.
