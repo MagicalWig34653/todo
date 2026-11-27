@@ -5,6 +5,7 @@
 #
 #   scripts/test-deploy-servers.sh                  # swift test --filter Deploy
 #   scripts/test-deploy-servers.sh --filter X       # other swift test arguments
+#   scripts/test-deploy-servers.sh --exec CMD ...   # any command with the servers running (scripts/deploy-e2e.sh)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SFTP_PORT="${TODO_TEST_DEPLOY_SFTP_PORT:-24822}"
@@ -47,6 +48,8 @@ docker exec "$FTP" cat /etc/ssl/private/pure-ftpd.pem | openssl x509 > "$DIR/ftp
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout "$DIR/other.key" -out "$DIR/other-cert.pem" 2>/dev/null
 for _ in $(seq 1 30); do ssh-keyscan -T 2 -p "$SFTP_PORT" 127.0.0.1 2>/dev/null | grep -q ssh- && break; sleep 1; done
 
-ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(--filter Deploy)
-TODO_TEST_DEPLOY_SERVERS=1 TODO_TEST_DEPLOY_DIR="$DIR" TODO_TEST_DEPLOY_SFTP_PORT="$SFTP_PORT" TODO_TEST_DEPLOY_FTP_PORT="$FTP_PORT" \
+export TODO_TEST_DEPLOY_SERVERS=1 TODO_TEST_DEPLOY_DIR="$DIR" TODO_TEST_DEPLOY_SFTP_PORT="$SFTP_PORT" TODO_TEST_DEPLOY_FTP_PORT="$FTP_PORT"
+if [ "${1:-}" = --exec ]; then shift; "$@"; else
+  ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(--filter Deploy)
   $SWIFT test "${ARGS[@]}"
+fi
