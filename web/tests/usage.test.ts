@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createApi } from '../src/lib/api';
+import { ApiError, createApi } from '../src/lib/api';
+import { describeError } from '../src/lib/errors';
+import { t } from '../src/lib/i18n';
 import {
 	DEFAULT_THRESHOLDS, METRIC_ORDER, PART_KEYS, addPriceRow, buildSettingsUpdate, costTrend, formatChange, formatShare, formatTokens, formatUSD,
 	labelIndices, localDate, metricTile, niceMax, pageState, partialHint, settingsDraft, stackedBars, verdictText,
@@ -256,6 +258,41 @@ describe('prices and thresholds', () => {
 		expect(error([], { cacheHitGoodPercent: '101' })).toContain('0 bis 100');
 		expect(error([], { contextGoodTokens: 'viel' })).toContain('Zahl');
 		expect(error([], { costTrendGoodPercent: '-10' })).toBeNull();
+	});
+	it('names both fields when a pair of limits is in the wrong order, defaults included', () => {
+		const error = (thresholds: Record<string, string>) => {
+			const d = settingsDraft({ prices: [], thresholds: {} });
+			const r = buildSettingsUpdate({ prices: [], thresholds: { ...d.thresholds, ...thresholds } });
+			return r.ok ? null : r.error;
+		};
+		for (const [input, first, second] of [
+			[{ cacheHitMediumPercent: '95' }, 'cacheHitMediumPercent', 'cacheHitGoodPercent'],
+			[{ cacheWriteGoodPercent: '70' }, 'cacheWriteGoodPercent', 'cacheWriteBadPercent'],
+			[{ contextBadTokens: '50000' }, 'contextGoodTokens', 'contextBadTokens'],
+			[{ costTrendGoodPercent: '20' }, 'costTrendGoodPercent', 'costTrendBadPercent'],
+			[{ idleGoodPercent: '16' }, 'idleGoodPercent', 'idleBadPercent']
+		] as const) {
+			const message = error(input);
+			expect(message).toContain(t(`usage.threshold.${first}`));
+			expect(message).toContain(t(`usage.threshold.${second}`));
+		}
+		expect(error({ cacheHitMediumPercent: '92' })).toBeNull();
+	});
+	it('refuses values outside the server ranges', () => {
+		const error = (thresholds: Record<string, string>) => {
+			const d = settingsDraft({ prices: [], thresholds: {} });
+			const r = buildSettingsUpdate({ prices: [], thresholds: { ...d.thresholds, ...thresholds } });
+			return r.ok ? null : r.error;
+		};
+		expect(error({ contextBadTokens: '2000000000' })).toContain(t('usage.threshold.contextBadTokens'));
+		expect(error({ costTrendBadPercent: '1001' })).toContain(t('usage.threshold.costTrendBadPercent'));
+		expect(error({ costTrendGoodPercent: '-101' })).toContain(t('usage.threshold.costTrendGoodPercent'));
+		expect(error({ cardTrendPercent: '1001' })).toContain(t('usage.threshold.cardTrendPercent'));
+	});
+	it('explains the server refusals instead of a generic error', () => {
+		for (const reason of ['invalid_thresholds', 'invalid_prices']) {
+			expect(describeError(new ApiError(400, reason))).not.toBe(t('error.generic'));
+		}
 	});
 });
 

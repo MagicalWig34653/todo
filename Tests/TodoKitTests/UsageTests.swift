@@ -492,6 +492,34 @@ final class UsageTests: XCTestCase {
 
     // MARK: Validation
 
+    /// Review finding (card 71FD73CF): without a cap the account export and the summary grow without bound.
+    func testStoredRowsPerAccountAreCappedAndTheOldestDaysGoFirst() async throws {
+        try await fixture { f in
+            XCTAssertEqual(UsageService.defaultMaxStoredRows, 20_000)
+            let other = try await account(f, "Other")
+            try await report(f, [row("2026-03-01", "keep")], session: other.session)
+            var service = UsageService(user: f.user, db: f.test.app.db)
+            service.maxStoredRows = 3
+            func send(_ rows: [Obj]) async throws {
+                let data = try JSONSerialization.data(withJSONObject: ["rows": rows])
+                _ = try await service.report(try JSONDecoder().decode(JSONValue.self, from: data))
+            }
+            func days() async throws -> [String] {
+                try await UsageDaily.query(on: f.test.app.db).filter(\.$userID == f.user.requireID()).all().map(\.day).sorted()
+            }
+            try await send([row("2026-03-02"), row("2026-03-01"), row("2026-03-03")])
+            try await send([row("2026-03-05"), row("2026-03-04")])
+            let kept = try await days()
+            XCTAssertEqual(kept, ["2026-03-03", "2026-03-04", "2026-03-05"])
+            // Replacing an existing row at the cap removes nothing.
+            try await send([row("2026-03-03", input: 5)])
+            let unchanged = try await days()
+            XCTAssertEqual(unchanged, kept)
+            let all = try await count(f)
+            XCTAssertEqual(all, 4, "the other account keeps its row")
+        }
+    }
+
     func testDuplicateRowsInOneCallAreRejectedAtomically() async throws {
         try await fixture { f in
             try await rejected(f, ["rows": [row("2026-03-09", input: 1), row(input: 1), row(input: 2)]], "duplicate_row")

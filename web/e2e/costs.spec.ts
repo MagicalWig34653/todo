@@ -235,6 +235,22 @@ test('screenshots of the filled page, without horizontal scroll on the phone', a
 	await pictures('filled');
 });
 
+test('an unsaved price row survives a failed load of another range', async () => {
+	await openPage();
+	await view().getByRole('button', { name: `Preis für ${CODEX} ergänzen` }).click();
+	const row = view().locator(`[data-testid="costs-price-row"][data-model="${CODEX}"]`);
+	await row.getByLabel('Output', { exact: true }).fill('17');
+	// The only simulated part: the network drops for the next summary request.
+	await page.route('**/v1/usage/summary*', (route) => route.abort());
+	await view().getByTestId('costs-range').getByRole('button', { name: '30 T' }).click();
+	await expect(view().getByTestId('costs-error')).toBeVisible();
+	await expect(row.getByLabel('Output', { exact: true })).toHaveValue('17');
+	await page.unroute('**/v1/usage/summary*');
+	await view().getByTestId('costs-error').getByRole('button').click();
+	await expect(view().getByTestId('costs-verdict')).toBeVisible();
+	await expect(row.getByLabel('Output', { exact: true })).toHaveValue('17');
+});
+
 test('a price for the unpriced model recalculates the costs; removing it restores them', async () => {
 	await openPage();
 	const before = dollars(await total());
