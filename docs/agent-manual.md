@@ -1,4 +1,4 @@
-<!-- manual-version: 1.52.0 -->
+<!-- manual-version: 1.53.0 -->
 # Todolino agent manual
 
 This manual is written for coding agents (Claude Code and others) that work for a person through the Todolino MCP server. It is served by the MCP tool `get_manual`, the MCP resource `todo://manual` and `GET /v1/manual`. Fetch it once at the start of a session and re-read the section you need when unsure. The manual is versioned (see the first line); `get_manual` returns the version and a structured `conventions` object.
@@ -422,6 +422,8 @@ Resources: `todo://manual` (this manual, Markdown), `todo://conventions` (JSON),
 **Changed in 1.48.0:** limits of the reuse window and of the takeover (security review of card BEF08998, ADR 0036, `oauth-mcp.yaml` 1.12.0, `connections.yaml` 1.7.0), no new tool, parameter or scope. A refresh token may be repeated at most 5 times within its 300 seconds; the sixth repeat ends the whole connection like a replay. A connection ended by replay detection is offered for takeover only for 7 days. Clients that registered without a `client_name` are never matched by name. The consent page lists everything the mandate allows and preselects its projects; projects the person unchecks leave the mandate.
 
 **Changed in 1.49.0:** project groups (card BEF08998, ADR 0037, `connections.yaml` 1.8.0, `oauth-mcp.yaml` 1.13.0). The person can give a connection or a brain mandate whole project groups or "all my projects except …"; what you reach is resolved on every call, so it can grow or shrink at any time (a project leaving a group is `not_found` / `outside_brain_mandate` at once). New read-only tool `list_project_groups`; `get_connection` gains `selection` and mandate `mode`/`groups`. No tool writes groups or mandates. Projects you create with `create_project` are yours alone: "all except" of other connections and of mandates does not include them until the person chooses them. `set_connection_projects` may now also answer `excluded_by_group` (409).
+
+**Changed in 1.53.0:** sign-ins no longer end by themselves (card FFF3C6AB, ADR 0040, `oauth-mcp.yaml` 1.16.0), no new tool, parameter or scope. A refresh token may be sent again, with no time limit, as long as none of its successors was used (at most 50 times, replaces the 300 seconds and 5 repeats of 1.47.0 and 1.48.0); refresh tokens last 90 days from the last refresh. Using an old token after a newer one was used still ends the connection, and the person can end it at any time. If you are signed out although the person has signed in again, your session may still hold the old state: reconnect with `/mcp` or start a new session.
 
 **Changed in 1.52.0:** deploy targets, phase 1a (card 354ADE12, ADR 0039, new `contracts/deploy.yaml` 1.0.0, `oauth-mcp.yaml` 1.15.0), additive and without new scopes: tools `list_deploy_targets`, `test_deploy_target`, `compare_deploy_target` (all `projects:read`), see "Deploy targets". Read only; targets are managed by persons only.
 

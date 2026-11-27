@@ -283,7 +283,7 @@ struct OAuthController: RouteCollection {
                 }
                 let access = AuthSupport.randomToken(), refresh = AuthSupport.randomToken()
                 try await OAuthSecret(raw: access, kind: "access", grantID: gid, lifetime: 900).save(on: db)
-                let next = OAuthSecret(raw: refresh, kind: "refresh", grantID: gid, lifetime: 30 * 86400)
+                let next = OAuthSecret(raw: refresh, kind: "refresh", grantID: gid, lifetime: OAuthRotation.refreshLifetime)
                 if s.kind == "refresh" { next.rotatedFrom = try s.requireID() }
                 try await next.save(on: db)
                 return .object(["access_token": .string(access), "refresh_token": .string(refresh), "token_type": .string("Bearer"),

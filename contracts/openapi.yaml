@@ -663,7 +663,8 @@ components:
     SessionCookie:
       description: todo_session=<token>; Path=/; Expires=<session expiry>; HttpOnly; SameSite=Strict.
         Secure when RP_ORIGIN starts with https://. Logout sets an empty value, Expires at Unix epoch
-        and Max-Age=0. Session lifetime defaults to 30 days.
+        and Max-Age=0. A session ends after 90 days without use (ADR 0040): a request moves the end at most once a day and, for
+        cookie authentication, sends this header again (not on /v1/sync/wait).
       schema:
         type: string
   responses:

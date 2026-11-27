@@ -1,5 +1,8 @@
 # ADR 0036 – Nachlauffenster beim Refresh und Übernahme von Projekten und Vollmacht bei der Neuanmeldung
 
+> **Geändert durch ADR 0040 (27.11.2026, Karte FFF3C6AB):** Die Frist von 300 s entfällt, die Obergrenze ist 50 statt 5, Refresh-Tokens
+> gelten 90 statt 30 Tage. Die Abschnitte unten beschreiben den früheren Stand; Entscheidung 2 (Übernahme) gilt weiter.
+
 Status: umgesetzt 26.11.2026 (Karte `BEF08998`, Teil 1 und 2, Nachtrag Security-Review), nicht deployt. Ergänzt ADR 0007 und ADR 0032.
 
 ## Anlass

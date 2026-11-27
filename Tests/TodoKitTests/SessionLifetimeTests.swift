@@ -1,4 +1,5 @@
 import Fluent
+import SQLKit
 import XCTVapor
 @testable import TodoKit
 
@@ -74,6 +75,39 @@ final class SessionLifetimeTests: XCTestCase {
             XCTAssertNil(cookie)
             let left = try await remaining(t, raw)
             XCTAssertEqual(try XCTUnwrap(left), 90 * day - 3600, accuracy: 60)
+        }
+    }
+
+    /// A long poll answers late: meanwhile another account may have signed in in this browser. It neither moves the end nor
+    /// sets a cookie; the next ordinary request does.
+    func testTheLiveLongPollNeverSetsTheCookie() async throws {
+        try await run { t, user in
+            t.app.liveSettings.enabled = true
+            let raw = try await session(t, user, endsIn: 3 * day)
+            var out: (HTTPStatus, HTTPCookies.Value?) = (.imATeapot, nil)
+            try await t.app.test(.GET, "/v1/sync/wait", beforeRequest: { req in
+                req.headers.cookie = HTTPCookies(dictionaryLiteral: (AuthSupport.cookieName, HTTPCookies.Value(string: raw)))
+            }, afterResponse: { res async in out = (res.status, res.headers.setCookie?[AuthSupport.cookieName]) })
+            XCTAssertEqual(out.0, .ok)
+            XCTAssertNil(out.1)
+            let left = try await remaining(t, raw)
+            XCTAssertEqual(try XCTUnwrap(left), 3 * day, accuracy: 120)
+        }
+    }
+
+    /// A renewal that cannot be written never fails the request, and the cookie is only moved after a successful write.
+    func testAFailedRenewalKeepsTheRequestAndTheCookieAsTheyAre() async throws {
+        try await run { t, user in
+            let raw = try await session(t, user, endsIn: 3 * day)
+            let sql = try XCTUnwrap(t.app.db as? any SQLDatabase)
+            if sql.dialect.name == "sqlite" {
+                try await sql.raw("CREATE TRIGGER no_renewal BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT, 'locked'); END").run()
+            } else {
+                try await sql.raw("CREATE TRIGGER no_renewal BEFORE UPDATE ON sessions FOR EACH ROW SIGNAL SQLSTATE '45000'").run()
+            }
+            let (status, cookie) = try await get(t, cookie: raw)
+            XCTAssertEqual(status, .ok)
+            XCTAssertNil(cookie)
         }
     }
 

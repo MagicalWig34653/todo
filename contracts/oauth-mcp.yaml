@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.15.0
+  version: 1.16.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -50,6 +50,8 @@ info:
     Werkzeuge list_deploy_targets, test_deploy_target, compare_deploy_target (projects:read; Test und Abgleich brauchen Bearbeiten-Rechte).
     Agenten sehen nur id, name, stage, protocol, hostKeyConfirmed und Ergebnisse, nie Host, Benutzer, Pfad oder Zugangsdaten. Keine
     neuen Scopes; Ziele anlegen und ändern nur Personen (REST).
+    1.16.0 (Karte FFF3C6AB, ADR 0040, lockernd, Handbuch 1.53.0): das verbrauchte Refresh-Token wird ohne Zeitgrenze wieder angenommen,
+    solange keiner seiner Nachfolger benutzt wurde, höchstens 50 Wiederholungen; Refresh-Frist 90 statt 30 Tage.
 servers:
   - url: http://localhost:28080
 paths:
@@ -163,11 +165,12 @@ paths:
         '200':
           description: >-
             access_token, refresh_token, token_type=Bearer, expires_in=900, scope.
-            Cache-Control no-store. Refresh rotiert mit neuer 30-Tage-Frist. Seit 1.11.0: das verbrauchte Refresh-Token darf 300 s ab seiner
-            ersten Benutzung erneut kommen (gleicher Client, nicht abgelaufen, Verbindung aktiv, kein Nachfolger benutzt) und liefert ein
-            weiteres Paar; die erste Benutzung eines Nachfolgers entwertet dessen Geschwister. Seit 1.12.0 höchstens 5 Wiederholungen je Token; die sechste gilt als Replay.
+            Cache-Control no-store. Refresh rotiert mit neuer 90-Tage-Frist (seit 1.16.0, vorher 30). Das verbrauchte Refresh-Token darf
+            erneut kommen, solange kein Nachfolger benutzt wurde (gleicher Client, nicht abgelaufen, Verbindung aktiv; seit 1.16.0 ohne
+            Zeitgrenze, 1.11.0 bis 1.15.0: 300 s) und liefert ein weiteres Paar; die erste Benutzung eines Nachfolgers entwertet dessen
+            Geschwister. Höchstens 50 Wiederholungen je Token (bis 1.15.0: 5); die nächste gilt als Replay.
         '400':
-          description: invalid_grant; Replay verbrauchter Codes und Refresh-Tokens (außerhalb des Nachlauffensters) widerruft den Grant (revoked_reason replay).
+          description: invalid_grant; Replay verbrauchter Codes und Refresh-Tokens (Nachfolger schon benutzt, entwertetes Geschwister, zu viele Wiederholungen) widerruft den Grant (revoked_reason replay).
   /oauth/grants:
     get:
       security: [{userSession: []}]

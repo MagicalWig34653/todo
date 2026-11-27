@@ -58,7 +58,7 @@ public struct AppSettings: Sendable {
         relyingPartyOrigin: String = "http://localhost:25173",
         passwordLoginEnabled: Bool = false,
         bootstrapToken: String? = nil,
-        sessionLifetime: TimeInterval = 30 * 24 * 3600,
+        sessionLifetime: TimeInterval = 90 * 24 * 3600,
         challengeLifetime: TimeInterval = 300,
         secureCookies: Bool = false,
         appleAppIDs: [String] = [],

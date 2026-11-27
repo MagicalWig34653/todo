@@ -7,7 +7,7 @@ Das Brain (Orchestrator) und weitere Agenten wie Codex dürfen Reviews entscheid
 1. Für das Brain einen eigenen MCP-Eintrag anlegen, nicht die gemeinsame Projekt-Verbindung wiederverwenden (sonst entscheiden alle Sitzungen mit): `claude mcp add --transport http --scope user todolino-brain https://todo.linolaske.de/mcp`.
 2. Beim Consent mindestens die Rechte `tasks:read`, `tasks:write` und `comments:write` geben. `tasks:read` wird für `wait_for_events` gebraucht (der Wächterdienst des Brains ruft damit per Long-Poll auf), `tasks:write` für `decide_review`/`answer_question`, `comments:write` für Empfehlungs-Kommentare.
 3. Projektliste der Verbindung: alle Projekte, in denen das Brain entscheiden soll (Entscheidungen gelten nur in der Schnittmenge aus Grant-Projekten und Mandat-Projekten).
-4. Das Refresh-Token rotiert: es gilt 30 Tage, jedes Refresh liefert ein neues und entwertet das alte. Ein Dienst muss das neue Token atomar speichern (in eine temporäre Datei schreiben, dann umbenennen), sonst ist die Verbindung nach einem Absturz mitten im Refresh verloren und muss neu angemeldet werden.
+4. Das Refresh-Token rotiert: es gilt 90 Tage ab dem letzten Refresh (ADR 0040), jedes Refresh liefert ein neues und entwertet das alte, sobald das neue benutzt wird. Ein Dienst muss das neue Token atomar speichern (in eine temporäre Datei schreiben, dann umbenennen), sonst ist die Verbindung nach einem Absturz mitten im Refresh verloren und muss neu angemeldet werden.
 5. Der Name der Verbindung (Einstellungen, Verbindungen) sollte eindeutig sein, zum Beispiel "Brain".
 
 ## 2. Vollmacht erteilen

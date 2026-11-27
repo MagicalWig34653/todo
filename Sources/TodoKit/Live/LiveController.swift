@@ -61,7 +61,7 @@ struct LiveController: RouteCollection {
 
     /// Long poll: returns as soon as the token differs from `since`, or after `timeout` seconds unchanged.
     @Sendable func wait(_ req: Request) async throws -> Response {
-        let user = try await req.requireUser()
+        let user = try await req.requireUser(renewing: false)
         try requireEnabled(req)
         let userID = try user.requireID()
         let settings = req.application.liveSettings

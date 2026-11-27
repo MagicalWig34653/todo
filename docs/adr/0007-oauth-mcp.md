@@ -43,3 +43,7 @@ Testnachweise und die reale Claude-Code-Prüfung stehen in docs/STATUS.md (Absch
 
 Die Regel „Wiederverwendung widerruft den gesamten Grant“ hat seit ADR 0036 eine enge Ausnahme für das gerade rotierte Refresh-Token, und eine Neuanmeldung kann Projekte und Vollmacht übernehmen: [0036-oauth-nachlauffenster-uebernahme.md](0036-oauth-nachlauffenster-uebernahme.md).
 
+## Nachtrag 27.11.2026 – Laufzeiten (Karte `FFF3C6AB`)
+
+Refresh-Tokens gelten 90 Tage ab der Rotation, und ein verbrauchtes Token bleibt annehmbar, solange kein Nachfolger benutzt wurde:
+ADR 0040.
