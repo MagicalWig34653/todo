@@ -233,6 +233,12 @@ describe('prices and thresholds', () => {
 			body: { prices: [{ model: 'x', input: 1.5, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0.15, output: 12 }], thresholds: { opusTargetPercent: 40 } }
 		});
 	});
+	it('reads German thousands separators in token thresholds ("60.000" is sixty thousand)', () => {
+		const d = settingsDraft({ prices: [], thresholds: {} });
+		d.thresholds.contextGoodTokens = '60.000';
+		d.thresholds.contextBadTokens = '1.200.000';
+		expect(buildSettingsUpdate(d)).toEqual({ ok: true, body: { prices: [], thresholds: { contextGoodTokens: 60000, contextBadTokens: 1200000 } } });
+	});
 	it('refuses incomplete, invalid and duplicate prices and invalid thresholds with a sentence', () => {
 		const row = { model: 'x', input: '1', cacheWrite: '1', cacheWrite1h: '1', cacheRead: '1', output: '1' };
 		const error = (prices: (typeof row)[], thresholds: Record<string, string> = {}) => {

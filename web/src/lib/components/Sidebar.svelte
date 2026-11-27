@@ -16,6 +16,7 @@ export type View =
 	| 'teams'
 	| 'agents'
 	| 'brain'
+	| 'costs'
 	| 'activity'
 	| 'account'
 	| 'help';
@@ -37,6 +38,7 @@ export type View =
 	import Popover from './app/Popover.svelte';
 	import ProjectItem from './ProjectItem.svelte';
 	import Bell from '@lucide/svelte/icons/bell';
+	import ChartColumn from '@lucide/svelte/icons/chart-column';
 	import CalendarCheck from '@lucide/svelte/icons/calendar-check';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
@@ -253,6 +255,7 @@ export type View =
 			{@render navRow('search', Search, t('nav.search'))}
 			{@render navRow('overview', Gauge, t('nav.overview'), workspace.attentionCount)}
 			{@render navRow('now', Radio, t('nav.now'))}
+			{@render navRow('costs', ChartColumn, t('nav.costs'))}
 			{@render navRow('inbox', Inbox, t('nav.inbox'), workspace.inboxCount)}
 			{@render navRow('today', CalendarCheck, t('nav.today'), workspace.todayCount)}
 			{@render navRow('upcoming', CalendarClock, t('nav.upcoming'))}

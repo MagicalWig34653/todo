@@ -370,7 +370,7 @@
 					</EmptyState>
 				</div>
 			{:else}
-				<div class={['mx-auto', view === 'overview' || view === 'calendar' ? 'max-w-none' : 'max-w-4xl']}>
+				<div class={['mx-auto', view === 'overview' || view === 'calendar' ? 'max-w-none' : view === 'costs' ? 'max-w-5xl' : 'max-w-4xl']}>
 					{#if view === 'forYou'}
 						<ForYouView onnow={() => go('now')} />
 					{:else if view === 'today' || view === 'upcoming' || view === 'upNext'}
@@ -381,6 +381,8 @@
 						<CommandCenter />
 					{:else if view === 'now'}
 						{#await import('./NowView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
+					{:else if view === 'costs'}
+						{#await import('./CostsView.svelte')}{@render viewSkeleton()}{:then m}<m.default />{/await}
 					{:else if view === 'inbox'}
 						<InboxView onopen={openProject} />
 					{:else if view === 'search'}
