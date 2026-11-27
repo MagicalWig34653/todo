@@ -1,5 +1,12 @@
 # Status
 
+## Nachtrag 27.11.2026 (04:40): Dependabot @sveltejs/kit, adapter-static, yaml (Karte `9608B355`; kein Deploy)
+
+- web: `@sveltejs/kit` 3.1.0 -> 3.4.1, `@sveltejs/adapter-static` 4.0.0 -> 4.0.1; docs-site: `yaml` 2.8.1 -> 2.9.1. Alerts #1, #2, #4, #5, #6, #7.
+- `npm audit` vorher: web 2 (1 hoch, 1 mittel), docs-site 1 (mittel); nachher je 0. check 0/0, vitest 860/860, build ok; docs-site `dist/` bytegleich.
+- Playwright Chromium gegen natives Backend (frische SQLite je Spec) mit Kit 3.4.1: passkey-flow 21, live-wait-reload 1, live-refresh 1, now 15, overview-pages 1, costs 9, menus-and-modes 11, card-detail 15 grün. Hinweis: `card-detail` braucht auf anderem Port `E2E_BASE_URL` (ORIGIN steht sonst auf 25173). Der erste Lauf gegen ein frisch gestartetes Vite scheitert auf `main` und auf dem Branch gleich (Vite lädt beim ersten Kompilieren neu), der zweite ist 15/15.
+- Commit `a115ec8`, Beleg `docs/belege/9608B355-dependabot-sveltekit.md`.
+
 ## Nachtrag 27.11.2026 (04:10): 429 auf `/v1/sync/wait` bei schnellem Seitenwechsel behoben (Karte `A1A4690B`, Erwartung f-0caacb34; kein Deploy)
 
 - Ursache (belegt): Jede volle Seitenladung bricht den laufenden Long-Poll im Browser ab. Vapor meldet dem Handler den Verbindungsabbruch nicht, der Server hielt die Anfrage bis zum Timeout (bis 25 s) als Wartende und zählte sie gegen das Limit 8 je Konto. Die 9. Ladung binnen 25 s bekam 429. Kein Fehler im SPA-Wechsel per `pushState` (Workspace bleibt montiert); betroffen sind Neuladen, volle Navigation und Sichtbarkeitswechsel.
