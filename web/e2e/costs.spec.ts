@@ -87,7 +87,9 @@ async function pictures(name: 'filled' | 'empty') {
 			await page.emulateMedia({ colorScheme: scheme });
 			await openPage();
 			await expectNoOverflow(`${name} ${device} ${scheme}`);
-			if (SHOTS) await page.screenshot({ path: `${SHOT_DIR}/${name}-${device}-${suffix}.png`, fullPage: true, animations: 'disabled' });
+			// The phone's fixed tab bar would sit in the middle of a full page picture: it is placed at the end for the picture only.
+			const style = 'nav[aria-label="Hauptnavigation"] { position: static !important; }';
+			if (SHOTS) await page.screenshot({ path: `${SHOT_DIR}/${name}-${device}-${suffix}.png`, fullPage: true, animations: 'disabled', style });
 		}
 	}
 	await page.emulateMedia({ colorScheme: 'light' });

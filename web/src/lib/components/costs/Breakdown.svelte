@@ -51,8 +51,7 @@
 					</div>
 					{@render shareBar(project.share)}
 					<p class="text-muted-foreground mt-0.5 text-xs">
-						{formatShare(project.share)} · {cards(project.doneCards)}{#if project.costPerDoneCard !== undefined}
-							· {t('usage.projects.perCard', { amount: formatUSD(project.costPerDoneCard) })}{/if}
+						{[formatShare(project.share), cards(project.doneCards), ...(project.costPerDoneCard === undefined ? [] : [t('usage.projects.perCard', { amount: formatUSD(project.costPerDoneCard) })])].join(' · ')}
 					</p>
 				</li>
 			{/each}
