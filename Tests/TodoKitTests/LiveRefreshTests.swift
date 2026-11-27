@@ -203,21 +203,54 @@ final class LiveRefreshTests: XCTestCase {
 /// pending long poll, but the server cannot see that and kept the abandoned waiter registered until its deadline (up to 25 s),
 /// counted against the per-account limit of 8. A client key (`client=`, one per tab) lets a newer wait replace the older one.
 final class LiveRefreshDisconnectTests: XCTestCase {
+    /// One raw HTTP/1.1 request over its own TCP connection (Linux has no URLSession without FoundationNetworking).
+    /// `cancel()` closes the connection like a browser that leaves the page; `value` is the status (-1: no response).
+    final class RawRequest: @unchecked Sendable {
+        private final class Collect: ChannelInboundHandler, @unchecked Sendable {
+            typealias InboundIn = ByteBuffer
+            let done: EventLoopPromise<String>
+            var text = ""
+            init(_ done: EventLoopPromise<String>) { self.done = done }
+            func channelRead(context: ChannelHandlerContext, data: NIOAny) { text += String(buffer: unwrapInboundIn(data)) }
+            func channelInactive(context: ChannelHandlerContext) { done.succeed(text) }
+            func errorCaught(context: ChannelHandlerContext, error: Error) { context.close(promise: nil) }
+        }
+        private let channel: Channel
+        private let done: EventLoopFuture<String>
+
+        init(port: Int, path: String, bearer: String) async throws {
+            let loop = MultiThreadedEventLoopGroup.singleton.next()
+            let promise = loop.makePromise(of: String.self)
+            channel = try await ClientBootstrap(group: loop)
+                .channelInitializer { $0.pipeline.addHandler(Collect(promise)) }
+                .connect(host: "127.0.0.1", port: port).get()
+            done = promise.futureResult
+            let head = "GET \(path) HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer \(bearer)\r\nConnection: close\r\n\r\n"
+            try await channel.writeAndFlush(channel.allocator.buffer(string: head)).get()
+        }
+
+        func cancel() { channel.close(promise: nil) }
+
+        var value: Int {
+            get async {
+                let text = (try? await done.get()) ?? ""
+                let parts = text.split(separator: " ", maxSplits: 2)
+                return parts.count > 1 ? Int(parts[1]) ?? -1 : -1
+            }
+        }
+    }
+
     private struct Fixture {
         let t: TestApp
         let session: String
         let current: String
         let port: Int
-        let urlSession = URLSession(configuration: .ephemeral)
 
-        /// Starts a wait over real HTTP; the task ends with the HTTP status (-1: aborted or failed).
-        func wait(client: String?, timeout: Int = 3) -> Task<Int, Never> {
-            var url = "http://127.0.0.1:\(port)/v1/sync/wait?since=\(current)&timeout=\(timeout)"
-            if let client { url += "&client=\(client)" }
-            var req = URLRequest(url: URL(string: url)!)
-            req.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
-            let s = urlSession
-            return Task { (try? await s.data(for: req)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode } ?? -1 }
+        /// Starts a wait over real HTTP.
+        func wait(client: String?, timeout: Int = 3) async throws -> RawRequest {
+            var path = "/v1/sync/wait?since=\(current)&timeout=\(timeout)"
+            if let client { path += "&client=\(client)" }
+            return try await RawRequest(port: port, path: path, bearer: session)
         }
 
         func waiters(_ n: Int) async throws {
@@ -255,15 +288,15 @@ final class LiveRefreshDisconnectTests: XCTestCase {
         try await withFixture { f in
             // Each round is one page load: the browser aborts its pending wait and the new page waits again, far more
             // often than the limit of 3 allows for abandoned requests.
-            var older: [Task<Int, Never>] = []
+            var older: [RawRequest] = []
             for _ in 0..<8 {
-                let w = f.wait(client: "tab-0123456789")
+                let w = try await f.wait(client: "tab-0123456789")
                 older.append(w)
                 try await f.waiters(1)
                 w.cancel() // the browser let go; the server still holds the request
             }
             // The newest request is accepted (not 429) and is the only waiter left; every abandoned one ended at once.
-            let last = f.wait(client: "tab-0123456789", timeout: 1)
+            let last = try await f.wait(client: "tab-0123456789", timeout: 1)
             let status = await last.value
             XCTAssertEqual(status, 200)
             for w in older { let s = await w.value; XCTAssertNotEqual(s, 429) }
@@ -273,12 +306,14 @@ final class LiveRefreshDisconnectTests: XCTestCase {
 
     func testOtherTabsKeepTheirOwnWaitAndLimitStillApplies() async throws {
         try await withFixture { f in
-            let a = f.wait(client: "tab-aaaaaaaa", timeout: 4), b = f.wait(client: "tab-bbbbbbbb", timeout: 4), c = f.wait(client: "tab-cccccccc", timeout: 4)
+            let a = try await f.wait(client: "tab-aaaaaaaa", timeout: 4)
+            let b = try await f.wait(client: "tab-bbbbbbbb", timeout: 4)
+            let c = try await f.wait(client: "tab-cccccccc", timeout: 4)
             try await f.waiters(3)
-            let d = await f.wait(client: "tab-dddddddd", timeout: 1).value
+            let d = await (try await f.wait(client: "tab-dddddddd", timeout: 1)).value
             XCTAssertEqual(d, 429, "a fourth tab is still limited")
             // Without a client key (old clients) every request counts on its own, as before.
-            let anonymous = await f.wait(client: nil, timeout: 1).value
+            let anonymous = await (try await f.wait(client: nil, timeout: 1)).value
             XCTAssertEqual(anonymous, 429)
             // They end by their own deadline: the server must be idle again before the test app shuts down.
             for w in [a, b, c] { let s = await w.value; XCTAssertEqual(s, 200) }
