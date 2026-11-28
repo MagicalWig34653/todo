@@ -1,4 +1,8 @@
-# Zuständigkeit Teil 2: Ansichten in PWA und iOS (Beschreibung, noch nicht gebaut)
+# Zuständigkeit Teil 2: Ansichten in PWA und iOS 
+
+Stand 28.11.2026 (Karte `E9300901`): „PWA“ und die Server-Ergänzungen (ohne Kommentare und Review mit Folge) sind gebaut, siehe
+`docs/STATUS.md`. Offen: „iOS“, Kommentar-Erwähnung, Review mit Folge. Die zwei Entscheidungen am Ende sind nach Empfehlung gebaut
+(Frage `DF09FF47`, von Lino am 28.11. bestätigt).
 
 Karte `8B4BAC2E`. Teil 1 (Server, Verträge, MCP) steht: [ADR 0043](adr/0043-zustaendigkeit.md),
 [`contracts/assignments.yaml`](../contracts/assignments.yaml). Teil 2 ändert nur Oberflächen. Abgestimmt mit

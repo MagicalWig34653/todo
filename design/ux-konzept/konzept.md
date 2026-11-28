@@ -131,7 +131,12 @@ Ergänzung 28.11.2026 (Karte `A42C423B`, Lino): Der Hauptknopf „Aufgabe erstel
 Kopfzeile am Telefon) öffnet das große Kartenfenster als Entwurf mit allen Feldern (Titel, Beschreibung in Markdown mit
 Vorschau, Projekt, Spalte, Priorität, Fälligkeit, Etiketten, Anhänge). „Anlegen“ speichert und zeigt im selben Fenster die
 gespeicherte Karte; „Abbrechen“, Esc oder „×“ verwerfen ohne Rest. Schnell-Anlegen aus Zeile 1 bleibt, aber nicht hinter dem
-Hauptknopf: Taste `q` (Dialog) und Enter in der Eingabezeile der Liste bzw. Spalte. Zuständigkeit folgt mit Karte `8B4BAC2E`.
+Hauptknopf: Taste `q` (Dialog) und Enter in der Eingabezeile der Liste bzw. Spalte. Das Feld „Zuständig“
+steht seit Karte `E9300901` in Karte und Entwurf.
+
+Ergänzung 28.11.2026 (Karte `E9300901`): „Braucht dich“ hat den Umschalter „Für mich“ (Standard, wenn nicht leer) · „Alle“;
+der Filter „Meine“ der Projektansicht sitzt im bestehenden Anzeige-Menü (später im Popover „Filtern“). „Zuweisen“ heißt an Frage
+und Review „Weitergeben“. Die Zusammenlegung aus Schritt 4 bleibt offen.
 
 | Orte und Bedienelemente | vorher | nachher |
 |---|---:|---:|

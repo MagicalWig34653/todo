@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 28.11.2026 (Vormittag): Zuständigkeit Teil 2, PWA und Server (Karte `E9300901`)
+
+- PWA-Abschnitt und die Server-Ergänzungen aus `docs/PLAN-ZUSTAENDIGKEIT-TEIL-2.md` gebaut (ohne Kommentar-Erwähnung, Review-Folge, iOS); Server rot `292a636`, grün `b87ec47`; PWA rot `283e0ca`, grün `6de2263`. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Nächster Schritt: iOS-Abschnitt des Plans im Apple-Repository; danach Kommentar-Zuweisung und Review mit Folge. Deploy (Lino).
+
 ## Checkpoint 28.11.2026 (05:30): Zuständigkeit Teil 1 (Karte `8B4BAC2E`)
 
 - Server, Verträge, MCP für Zuständigkeit an Karte, Frage, Review, „Für mich“ und gezielten Push (ADR 0043); rot `412b936`, grün `f312400`, Gegenlesen `ad9c69e`. Belege: `docs/STATUS.md` (oberster Nachtrag).
