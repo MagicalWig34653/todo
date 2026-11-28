@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signedInPage } from './support/session';
+import { clearMocks, installMocks, setMocks } from './support/fetchMock';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -168,18 +169,13 @@ test('changes without a comment explain what is missing and send nothing', async
 });
 
 test('a plan rewritten before the click is not approved: reload, message, comment kept', async () => {
+	// Freeze what the browser reads until it sends the decision, so the click really is based on the old version. Inside the page:
+	// `page.route` does not reliably see the PWA's requests in WebKit, and a live refresh would then show the new version too early.
+	await installMocks(page);
 	await open(ids.main);
 	await expect(plan()).toContainText('Version 1');
 	await comment().fill('Mein halb fertiger Kommentar');
-	// Freeze what the browser reads until it sends the decision, so the click really is based on the old version.
-	const url = `**/v1/tasks/${ids.main}/pipeline`;
-	const stale = await read(ids.main);
-	let frozen = true;
-	await page.route(url, (r) => (frozen ? r.fulfill({ json: stale }) : r.continue()));
-	await page.route('**/plan/decision', (r) => {
-		frozen = false;
-		return r.continue();
-	});
+	await setMocks(page, [{ url: `/v1/tasks/${ids.main}/pipeline`, method: 'GET', json: await read(ids.main), until: '/plan/decision' }]);
 	await writePlan(ids.main, `${PLAN_1}\n- Nachtrag`);
 	const sent = await decisionsSent(() => approve().click());
 	expect(sent).toBe(1);
@@ -187,8 +183,7 @@ test('a plan rewritten before the click is not approved: reload, message, commen
 	await expect(plan()).toContainText('Version 2');
 	await expect(comment()).toHaveValue('Mein halb fertiger Kommentar');
 	expect((await read(ids.main)).plan).toMatchObject({ version: 2, state: 'proposed' });
-	await page.unroute(url);
-	await page.unroute('**/plan/decision');
+	await clearMocks(page);
 });
 
 test('a live refresh keeps the typed comment and announces the new version', async () => {
