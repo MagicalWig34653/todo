@@ -750,7 +750,7 @@ final class PipelineExecutionTests: XCTestCase {
         }
         XCTAssertTrue(read("contracts/oauth-mcp.yaml").contains("version: 1.19.0"))
         XCTAssertTrue(read("contracts/oauth-mcp.yaml").contains("start_pipeline_execution"))
-        XCTAssertEqual(AgentManual.version, "1.57.0")
+        XCTAssertEqual(AgentManual.version, "1.58.0")
         XCTAssertTrue(AgentManual.markdown.contains("`start_pipeline_execution`"))
         XCTAssertTrue(read("docs/MCP-PARITAET.md").contains("start_pipeline_execution"))
     }

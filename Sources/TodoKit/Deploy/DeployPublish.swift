@@ -1,4 +1,5 @@
 import Crypto
+import Fluent
 import Foundation
 import Vapor
 
@@ -155,23 +156,40 @@ extension DeployService {
         case .invalid: return refused("deploy_github_config_invalid")
         case .enabled(let c): config = c
         }
-        // Only repositories the operator allowed for exactly this project: the installation may reach more.
-        let allowed = config.repositories[t.projectID] ?? []
-        let repository: String
+        // Only repositories that were allowed for exactly this project: by the operator (old variables) or by a person who connected
+        // their own installation and mapped it here. The installation may reach more.
+        struct Route { let repository: String; let mapping: GitHubProjectRepository?; let connection: GitHubConnection? }
+        var allowed: [Route] = config.installationID == nil ? [] : (config.repositories[t.projectID] ?? []).map { Route(repository: $0, mapping: nil, connection: nil) }
+        for mapping in try await GitHubProjectRepository.query(on: db).filter(\.$projectID == t.projectID).sort(\.$createdAt).sort(\.$id).all() {
+            // One repository is one entry; the operator's entry for the same one keeps working as before.
+            guard !allowed.contains(where: { $0.repository.lowercased() == mapping.repository.lowercased() }),
+                  let connection = try await GitHubConnection.find(mapping.connectionID, on: db) else { continue }
+            allowed.append(Route(repository: mapping.repository, mapping: mapping, connection: connection))
+        }
+        let route: Route
         if let wanted = request.repository {
-            guard let match = allowed.first(where: { $0.lowercased() == wanted.lowercased() }) else { return refused("deploy_github_repository_not_allowed") }
-            repository = match
+            guard let match = allowed.first(where: { $0.repository.lowercased() == wanted.lowercased() }) else { return refused("deploy_github_repository_not_allowed") }
+            route = match
         } else {
             guard let first = allowed.first else { return refused("deploy_github_repository_not_allowed") }
             guard allowed.count == 1 else { return refused("deploy_github_repository_required") }
-            repository = first
+            route = first
         }
+        let repository = route.repository
         guard t.protocolName != DeployProtocol.sftp.rawValue || t.hostKey != nil else { return refused("deploy_host_key_unconfirmed") }
 
         var result = DeployPublishResult(repository: repository)
         do {
-            let client = try await GitHubRepoClient.open(config: config, repository: repository, transport: app.githubTransport)
-            let remote = try await client.info()
+            let client: GitHubRepoClient
+            let remote: (defaultBranch: String, isPrivate: Bool, id: Int?, fullName: String?)
+            if let mapping = route.mapping, let connection = route.connection {
+                // A person's own installation: GitHub and Todolino are asked again, every time (installation, repository, GitHub rights, project rights).
+                (client, remote) = try await GitHubAccess.open(config: config, connection: connection, repository: repository, expectedRepositoryID: mapping.repositoryID,
+                                                               project: t.projectID, assignedBy: mapping.assignedBy, app: app)
+            } else {
+                client = try await GitHubRepoClient.open(config: config, repository: repository, transport: app.githubTransport)
+                remote = try await client.info()
+            }
             // In a public repository whatever the secret heuristic misses would be published at once.
             guard remote.isPrivate else { return refused("deploy_github_repository_public") }
             let baseBranch = remote.defaultBranch

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a bis 2b (Zielserver nur lesen)
-  version: 1.2.0
+  version: 1.3.0
   description: |
     Karte 354ADE12, ADR 0039, Konzept im Orchestrator docs/konzept-deploy-sftp.md (Abschnitt 8 vor 1–7).
 
@@ -74,6 +74,31 @@ info:
     steht (blocked_path); Dateien, die im baseCommit schon so sind, fallen weg. Höchstens 500 Dateien, davon 50 Binärdateien je Lauf
     (Rest in remaining); maxBytes Vorgabe 4 MB (REST und MCP). Ohne Konfiguration ok=false deploy_github_not_configured. Schlüssel,
     JWT und Installations-Token der App stehen in keiner Antwort und keinem Log.
+
+    GitHub je Person (1.3.0, Karte E51E8B8C, ADR 0042 Nachtrag): Der Betreiber hat EINE App ("Any account"); am Server stehen nur
+    GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY[_FILE], GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET[_FILE] (optional
+    GITHUB_WEB_URL, GITHUB_API_URL). GITHUB_APP_INSTALLATION_ID + GITHUB_APP_REPOSITORIES gelten als Übergang weiter (allein oder
+    daneben; in der Liste unten source operator). Alle /v1/github- und github-repositories-Aufrufe nur mit Personen-Sitzung
+    (OAuth-Zugriffstoken = 401), kein MCP-Werkzeug.
+
+    Verbinden: POST /v1/github/connect {mode} liefert die GitHub-Adresse mit einmaligem state (10 Minuten, an die Person gebunden,
+    nur als Hash gespeichert). mode install: Installationsseite der App; mode existing: Nutzer-Autorisierung für schon bestehende
+    Installationen. Rückweg: Callback-URL der App ist <RP_ORIGIN>/github/callback (mit "Request user authorization during
+    installation": installation_id und code kommen zusammen -> POST /v1/github/setup {state, installationID, code}); eine Setup-URL
+    <RP_ORIGIN>/github/setup geht auch (setup ohne code antwortet mit der Autorisierungsadresse, danach callback). Die Installations-ID
+    aus der Adresse zählt nur, wenn GitHub sie für genau diese Person nennt (GET /user/installations mit dem Nutzer-Token; sonst 403
+    github_installation_not_yours). Nutzer-Token, Codes und states werden nicht gespeichert; gespeichert werden Installations-ID,
+    Konto, GitHub-Nutzer-ID und -Login.
+
+    Zuordnen: Wer manage am Projekt hat, ordnet ein privates Repository aus einer EIGENEN Verbindung zu, in dem das eigene
+    GitHub-Konto schreiben darf. Alle mit Leserecht am Projekt sehen Repository und Name der zuordnenden Person, nie deren
+    Verbindung. Die Zuordnung gibt allen mit edit am Projekt den Weg POST .../pull-request in dieses Repository.
+
+    Bei JEDER Nutzung (pull-request) wird neu geprüft: zuordnende Person nicht gesperrt und weiter manage
+    (deploy_github_assignment_revoked, ohne Aufruf an GitHub), Installation vorhanden (deploy_github_installation_removed) und nicht
+    ausgesetzt (deploy_github_installation_suspended), Repository noch ausgewählt (deploy_github_repository_removed), dieselbe
+    Repository-ID (deploy_github_repository_changed), Schreibrecht derselben GitHub-Nutzer-ID (deploy_github_repository_access_lost).
+    Der Zielserver wird erst danach gelesen. Ein Webhook ist nicht nötig. Konto löschen entfernt Verbindungen und Zuordnungen.
 
     Fehlercodes der Verbindung: deploy_host_key_unconfirmed, deploy_host_key_mismatch, deploy_tls_untrusted, deploy_auth_failed,
     deploy_base_path_missing, deploy_unreachable, deploy_target_blocked, deploy_transport_unavailable (rclone fehlt),
@@ -182,14 +207,113 @@ paths:
         '401': {description: Keine Personen-Sitzung}
         '403': {description: Nur lesen am Projekt}
         '404': {description: Ziel unbekannt oder nicht sichtbar}
+  /v1/github:
+    get:
+      summary: Eigene GitHub-Verbindungen (Person)
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: object, required: [available, connections], properties: {available: {type: boolean, description: Betreiber-App mit Verbindungsweg eingerichtet}, connections: {type: array, items: {$ref: '#/components/schemas/GitHubConnection'}}}}}}}
+        '401': {description: Keine Personen-Sitzung}
+  /v1/github/connect:
+    post:
+      summary: Verbinden beginnen (Person)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [mode], properties: {mode: {type: string, enum: [install, existing]}}}}}}
+      responses:
+        '200': {description: Adresse bei GitHub, content: {application/json: {schema: {$ref: '#/components/schemas/GitHubUrl'}}}}
+        '400': {description: github_mode_invalid}
+        '409': {description: github_not_configured}
+  /v1/github/setup:
+    post:
+      summary: Rückkehr von der Installation (Person)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [state, installationID], properties: {state: {type: string}, installationID: {type: string, pattern: '^[0-9]{1,20}$'}, code: {type: string, description: wenn GitHub den Code schon mitschickt}}}}}}
+      responses:
+        '200': {description: 'ohne code {url} (Autorisierung), mit code {connections}', content: {application/json: {schema: {oneOf: [{$ref: '#/components/schemas/GitHubUrl'}, {$ref: '#/components/schemas/GitHubConnections'}]}}}}
+        '400': {description: 'github_state_invalid, github_installation_invalid, github_authorization_failed, github_connection_limit'}
+        '403': {description: github_installation_not_yours}
+        '409': {description: github_not_configured}
+        '502': {description: deploy_github_unavailable}
+  /v1/github/callback:
+    post:
+      summary: Rückkehr von der Nutzer-Autorisierung (Person)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [state, code], properties: {state: {type: string}, code: {type: string, maxLength: 200}}}}}}
+      responses:
+        '200': {description: Alle eigenen Verbindungen, content: {application/json: {schema: {$ref: '#/components/schemas/GitHubConnections'}}}}
+        '400': {description: 'github_state_invalid, github_authorization_failed, github_connection_limit'}
+        '403': {description: github_installation_not_yours}
+        '404': {description: github_no_installation}
+        '409': {description: github_not_configured}
+        '502': {description: deploy_github_unavailable}
+  /v1/github/connections/{connectionID}:
+    parameters: [{name: connectionID, in: path, required: true, schema: {type: string, format: uuid}}]
+    delete:
+      summary: Eigene Verbindung samt ihren Zuordnungen entfernen (die Installation bei GitHub bleibt)
+      responses:
+        '204': {description: Entfernt}
+        '404': {description: Unbekannt oder nicht die eigene}
+  /v1/github/connections/{connectionID}/repositories:
+    parameters: [{name: connectionID, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      summary: Repositorys der Installation, in die das eigene GitHub-Konto schreiben darf (höchstens 100 geprüft)
+      responses:
+        '200': {description: 'Ergebnis; ok=false mit code (deploy_github_installation_removed, _suspended, deploy_github_not_configured, deploy_github_unavailable, ...)', content: {application/json: {schema: {type: object, required: [ok, items, truncated], properties: {ok: {type: boolean}, code: {type: string}, truncated: {type: boolean}, items: {type: array, items: {type: object, required: [repository, id, private], properties: {repository: {type: string}, id: {type: integer, format: int64}, private: {type: boolean}}}}}}}}}
+        '404': {description: Unbekannt oder nicht die eigene}
+  /v1/projects/{id}/github-repositories:
+    parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      summary: Zugeordnete Repositorys (read)
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/GitHubAssignment'}}}}}}}
+        '404': {description: Projekt unbekannt oder nicht sichtbar}
+    post:
+      summary: Repository zuordnen (Person, manage, eigene Verbindung)
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [connectionID, repository], properties: {connectionID: {type: string, format: uuid}, repository: {type: string, example: owner/repo}}}}}}
+      responses:
+        '201': {description: Zugeordnet, content: {application/json: {schema: {$ref: '#/components/schemas/GitHubAssignment'}}}}
+        '400': {description: 'github_repository_invalid, github_connection_required, github_repository_limit (20), deploy_github_repository_public'}
+        '403': {description: 'nur read/edit am Projekt, oder deploy_github_repository_not_allowed (nicht in der Installation oder kein Schreibrecht)'}
+        '404': {description: Projekt oder Verbindung unbekannt bzw. nicht die eigene}
+        '409': {description: 'github_repository_assigned, github_not_configured, deploy_github_installation_removed, deploy_github_installation_suspended'}
+        '502': {description: deploy_github_unavailable}
+  /v1/projects/{id}/github-repositories/{mappingID}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: mappingID, in: path, required: true, schema: {type: string, format: uuid}}
+    delete:
+      summary: Zuordnung entfernen (Person, manage; auch fremde)
+      responses:
+        '204': {description: Entfernt}
+        '403': {description: Kein manage}
+        '404': {description: Unbekannt}
 components:
   schemas:
+    GitHubUrl: {type: object, required: [url], properties: {url: {type: string}}}
+    GitHubConnections: {type: object, required: [connections], properties: {connections: {type: array, items: {$ref: '#/components/schemas/GitHubConnection'}}}}
+    GitHubConnection:
+      type: object
+      required: [id, accountLogin, accountType, githubLogin, manageURL, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        accountLogin: {type: string, description: Konto oder Organisation der Installation}
+        accountType: {type: string, enum: [User, Organization]}
+        githubLogin: {type: string, description: eigenes GitHub-Konto der Person}
+        manageURL: {type: string, description: Installation bei GitHub ändern oder entfernen}
+        createdAt: {type: string, format: date-time}
+    GitHubAssignment:
+      type: object
+      required: [repository, source, mine, active]
+      properties:
+        id: {type: string, format: uuid, description: fehlt bei Einträgen des Betreibers}
+        repository: {type: string}
+        source: {type: string, enum: [user, operator]}
+        assignedBy: {type: string, description: Anzeigename}
+        mine: {type: boolean}
+        active: {type: boolean, description: false = zuordnende Person hat kein manage mehr; darüber wird nichts geschrieben}
+        createdAt: {type: string, format: date-time}
     DeployPublishResult:
       type: object
       required: [ok]
       properties:
         ok: {type: boolean}
-        code: {type: string, description: 'deploy_github_not_configured, deploy_github_config_invalid, deploy_github_repository_not_allowed, deploy_github_repository_required, deploy_github_repository_public, deploy_github_base_unknown, deploy_pull_nothing, deploy_github_auth_failed, deploy_github_forbidden, deploy_github_not_found, deploy_github_unavailable, deploy_github_failed, deploy_github_branch_exists, deploy_github_pr_failed (branch und commit sind gesetzt) oder ein Fehlercode der Verbindung'}
+        code: {type: string, description: 'deploy_github_not_configured, deploy_github_config_invalid, deploy_github_repository_not_allowed, deploy_github_repository_required, deploy_github_repository_public, deploy_github_assignment_revoked, deploy_github_installation_removed, deploy_github_installation_suspended, deploy_github_repository_removed, deploy_github_repository_changed, deploy_github_repository_access_lost, deploy_github_base_unknown, deploy_pull_nothing, deploy_github_auth_failed, deploy_github_forbidden, deploy_github_not_found, deploy_github_unavailable, deploy_github_failed, deploy_github_branch_exists, deploy_github_pr_failed (branch und commit sind gesetzt) oder ein Fehlercode der Verbindung'}
         repository: {type: string, example: owner/repo}
         branch: {type: string, example: server/kubus-test-2026-11-28}
         baseBranch: {type: string}

@@ -245,6 +245,7 @@ struct CreateDeployTargets: AsyncMigration {
 
 func configureDeploy(_ app: Application) {
     app.migrations.add(CreateDeployTargets())
+    configureGitHubConnect(app)
     // GitHub App for pull requests (ADR 0042, environment or Docker secret only). A wrong configuration switches the write path
     // off and is named here without values; the server starts anyway.
     app.githubApp = GitHubAppSetup.fromEnvironment { Environment.get($0) }

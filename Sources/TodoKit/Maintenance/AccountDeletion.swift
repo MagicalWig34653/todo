@@ -127,6 +127,12 @@ struct AccountDeletion: Sendable {
                 r.reviewerID = nil; r.version += 1
                 try await r.save(on: db)
             }
+            // GitHub: the connections of the account and everything mapped through them (also in other people's projects).
+            let connectionIDs = try await GitHubConnection.query(on: db).filter(\.$userID == userID).all().compactMap(\.id)
+            if !connectionIDs.isEmpty { try await GitHubProjectRepository.query(on: db).filter(\.$connectionID ~~ connectionIDs).delete() }
+            try await GitHubProjectRepository.query(on: db).filter(\.$assignedBy == userID).delete()
+            try await GitHubConnection.query(on: db).filter(\.$userID == userID).delete()
+            try await GitHubConnectState.query(on: db).filter(\.$userID == userID).delete()
             try await TaskComment.query(on: db).filter(\.$authorID == userID).delete()
             try await ProjectComment.query(on: db).filter(\.$authorID == userID).delete()
             let grants = try await ProjectGrant.query(on: db).filter(\.$principalType == "person")

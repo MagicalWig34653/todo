@@ -700,7 +700,7 @@ final class PipelineTests: XCTestCase {
                        "cannot_decide_own_plan", "brain_mandate_required", "invalid_step", "step_managed", "invalid_state", "plan_not_approved", "invalid_note"] {
             XCTAssertTrue(contract.contains(reason), reason)
         }
-        XCTAssertEqual(AgentManual.version, "1.57.0")
+        XCTAssertEqual(AgentManual.version, "1.58.0")
         for tool in ["get_task_pipeline", "set_task_plan", "decide_plan", "set_pipeline_step"] {
             XCTAssertTrue(AgentManual.markdown.contains("`\(tool)`"), tool)
         }
