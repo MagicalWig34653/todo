@@ -10,7 +10,7 @@ extension MCPController {
              description: "Who can be made responsible in one project: userID, displayName, assignableTo (task, question, review) and isMe (the person of this connection). Needs edit rights. Use the ids as assigneeID; no other personal data is returned.",
              properties: ["projectID": Schema.uuid("Project id.")], required: ["projectID"]),
         Tool(name: "set_assignee", scope: "tasks:write",
-             description: "Make one person responsible for a card, an open question or a pending review, or remove it (assigneeID null). Pass exactly one of taskID, questionID, reviewID. A review that already names somebody can only be redirected by that person or a project manager (not_the_reviewer). Setting a card's assignee also directs its questions, reviews, plans and reminders that name nobody else.",
+             description: "Make one person responsible for a card, an open question or a pending review, or remove it (assigneeID null). Pass exactly one of taskID, questionID, reviewID. A review that already names somebody can only be redirected by that person or a project manager (not_the_reviewer), and over MCP only on a review this connection requested (not_review_requester). Setting a card's assignee also directs its questions, reviews, plans and reminders that name nobody else.",
              properties: ["taskID": Schema.uuid("Card to assign."), "questionID": Schema.uuid("Open question to assign."),
                           "reviewID": Schema.uuid("Pending review to assign."),
                           "assigneeID": Schema.nullable("string", "User id from list_assignees, or null to remove the assignment.")],

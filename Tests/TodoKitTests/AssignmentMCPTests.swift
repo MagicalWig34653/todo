@@ -75,6 +75,28 @@ final class AssignmentMCPTests: XCTestCase {
         }
     }
 
+    /// A connection may name somebody on an open review, but it redirects or clears a named one only on its own request:
+    /// otherwise an agent without the brain mandate could lift the binding a person relies on.
+    func testConnectionCannotLiftTheNamedReviewerOfAForeignRequest() async throws {
+        try await with { f, access, designer, task in
+            let me = try f.user.requireID().uuidString, other = try designer.requireID().uuidString
+            let named = try await f.test.json(.POST, "/v1/tasks/\(task)/review", ["summary": "by the person", "assigneeID": other], token: f.session)
+            let rid = try XCTUnwrap(named.body?["id"] as? String, "\(named.body ?? [:])")
+            for value: Any in [NSNull(), me] {
+                let r = try await call(f, "set_assignee", ["reviewID": rid, "assigneeID": value], access)
+                XCTAssertTrue(r.isError, r.text)
+                XCTAssertEqual(r.text, "not_review_requester")
+            }
+            // Naming somebody on a review nobody is named for stays possible; changing it afterwards does not.
+            let cleared = try await f.test.json(.PUT, "/v1/reviews/\(rid)/assignee", ["assigneeID": NSNull()], token: f.session)
+            XCTAssertEqual(cleared.status, .ok, "\(cleared.body ?? [:])")
+            let first = try await call(f, "set_assignee", ["reviewID": rid, "assigneeID": other], access)
+            XCTAssertFalse(first.isError, first.text)
+            let again = try await call(f, "set_assignee", ["reviewID": rid, "assigneeID": NSNull()], access)
+            XCTAssertEqual(again.text, "not_review_requester")
+        }
+    }
+
     func testStrangerOutsideGrantAndAmbiguousTargetsAreRefused() async throws {
         try await with { f, access, designer, task in
             let stranger = User(displayName: "Stranger", isAdmin: false)

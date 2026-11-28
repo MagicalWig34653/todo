@@ -78,7 +78,7 @@ extension WorkflowService {
             guard q.agentQuestionID == nil else { throw Abort(.conflict, reason: "runner_item") }
             if let assignee { try await Self.requireAssignable(assignee, to: .question, projectID: task.projectID, on: tx) }
             guard q.assigneeID != assignee else { return try QuestionDTO(q) }
-            q.assigneeID = assignee; q.assignedAt = Date(); q.version += 1
+            q.assigneeID = assignee; q.assignedAt = assignee == nil ? nil : Date(); q.version += 1
             try await q.save(on: tx)
             try await appendActivity(taskID: q.taskID, actorType: actor.type, actorID: actor.id, kind: "question.assigned", subjectID: q.id, on: tx)
             return try QuestionDTO(q)
@@ -92,10 +92,15 @@ extension WorkflowService {
             guard let r = try await TaskReview.find(reviewID, on: tx) else { throw Abort(.notFound) }
             guard r.state == "pending" else { throw Abort(.conflict, reason: "no_pending_review") }
             guard r.agentJobID == nil else { throw Abort(.conflict, reason: "runner_item") }
+            // A connection never lifts a binding somebody else relies on (it holds no brain mandate for that): it redirects
+            // or clears a named review only on its own request.
+            if actor.type == .integration, r.reviewerID != nil, r.reviewerID != assignee, !r.isOwnRequest(of: actor.type, actor.id) {
+                throw Abort(.forbidden, reason: "not_review_requester")
+            }
             try await Self.requireReviewHandover(r.reviewerID, projectID: task.projectID, user: user, on: tx)
             if let assignee { try await Self.requireAssignable(assignee, to: .review, projectID: task.projectID, on: tx) }
             guard r.reviewerID != assignee else { return try ReviewDTO(r) }
-            r.reviewerID = assignee; r.assignedAt = Date(); r.version += 1
+            r.reviewerID = assignee; r.assignedAt = assignee == nil ? nil : Date(); r.version += 1
             try await r.save(on: tx)
             try await appendActivity(taskID: r.taskID, actorType: actor.type, actorID: actor.id, kind: "review.assigned", subjectID: r.id, on: tx)
             return try ReviewDTO(r)

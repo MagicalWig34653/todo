@@ -141,6 +141,53 @@ final class AssignmentPushTests: XCTestCase {
         XCTAssertEqual(try p.recipients("review", subject: v), ["Designer"])
     }
 
+    /// Handing an item back and forth, or clearing it, must not flood anybody: one notification per person and item.
+    func testRepeatedReassignmentNotifiesEachPersonOnce() async throws {
+        let p = try await Push.make(); defer { Task { await p.f.t.shutdown() } }
+        let card = try await p.f.task()
+        let q = try id(try await p.f.ask(card, assignee: p.f.commenter.id))
+        _ = await p.worker.runIfDue()
+        func move(_ to: UUID?) async throws {
+            let r = try await p.f.t.json(.PUT, "/v1/questions/\(q)/assignee", ["assigneeID": to.map { $0.uuidString as Any } ?? NSNull()], token: p.f.owner.token)
+            XCTAssertEqual(r.status, .ok, "\(r.body ?? [:])")
+            // Dedupe keys must not depend on the clock: wait for a new second between two hand-overs.
+            try await Task.sleep(nanoseconds: 1_100_000_000)
+            _ = await p.worker.runIfDue()
+        }
+        try await move(p.f.designer.id)
+        let afterFirst = p.mock.requests.count
+        try await move(p.f.commenter.id)
+        try await move(p.f.designer.id)
+        try await move(p.f.commenter.id)
+        XCTAssertEqual(p.mock.requests.count, afterFirst + 1, "the commenter hears once about getting it back, nobody again")
+        // Clearing tells the people who have not heard of it yet, once.
+        try await move(nil)
+        let afterClear = p.mock.requests.count
+        try await move(p.f.designer.id)
+        try await move(nil)
+        XCTAssertEqual(p.mock.requests.count, afterClear)
+    }
+
+    /// A notification dropped because the item had moved on is sent after all when the item comes back.
+    func testDroppedNotificationIsSentWhenTheItemComesBack() async throws {
+        let p = try await Push.make(); defer { Task { await p.f.t.shutdown() } }
+        let card = try await p.f.task()
+        let q = try id(try await p.f.ask(card, assignee: p.f.owner.id, by: p.f.editor))
+        let db = p.f.t.app.db
+        func move(_ to: UUID) async throws {
+            let r = try await p.f.t.json(.PUT, "/v1/questions/\(q)/assignee", ["assigneeID": to.uuidString], token: p.f.owner.token)
+            XCTAssertEqual(r.status, .ok, "\(r.body ?? [:])")
+        }
+        try await move(p.f.designer.id)
+        _ = try await PushTriggers(db: db, candidates: try await Candidate.load(on: db), since: Date().addingTimeInterval(-3600), now: Date()).run()
+        try await move(p.f.commenter.id)
+        _ = await p.worker.runIfDue()
+        XCTAssertEqual(try p.recipients("question", subject: q), ["Commenter"])
+        try await move(p.f.designer.id)
+        _ = await p.worker.runIfDue()
+        XCTAssertEqual(try p.recipients("question", subject: q), ["Commenter", "Designer"])
+    }
+
     func testRemindersGoToTheCardAssignee() async throws {
         let p = try await Push.make(); defer { Task { await p.f.t.shutdown() } }
         let at = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-600))

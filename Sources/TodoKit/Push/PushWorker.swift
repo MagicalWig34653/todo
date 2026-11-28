@@ -207,23 +207,30 @@ struct PushTriggers: Sendable {
 
     func enabled(_ category: PushCategory) -> [Candidate] { candidates.filter { $0.prefs.categories[category.rawValue] == true } }
 
-    /// An item announced again after it was handed to somebody gets its own key, so the new person hears about it even if
-    /// the account was told about the item before.
-    static func key(_ base: String, assignedAt: Date?) -> String {
-        assignedAt.map { "\(base):a\(Int($0.timeIntervalSince1970))" } ?? base
+    /// An item handed to somebody later gets its own key per person: that person hears about it even if the account was
+    /// told about the item before, and handing it back and forth announces it only once to each.
+    static func key(_ base: String, assignedAt: Date?, to assignee: UUID?) -> String {
+        guard assignedAt != nil, let assignee else { return base }
+        return "\(base):to:\(assignee)"
     }
 
     func canRead(_ user: User, _ taskID: UUID, role: ProjectRole) async -> TodoTask? {
         try? await ProjectAccess(user: user, db: db).task(taskID, role: role)
     }
 
-    /// Inserts the row unless the dedupe key exists for this account; returns whether it was new.
-    func enqueue(_ userID: UUID, _ category: PushCategory, _ event: PushEvent, key: String) async throws -> Bool {
-        try await enqueueRaw(userID, category, String(decoding: try JSONEncoder().encode(event), as: UTF8.self), key: key)
+    /// Inserts the row unless the dedupe key exists for this account; returns whether it was new. With `revive`, a row that
+    /// was dropped unsent because the item concerned somebody else at that moment is queued again.
+    func enqueue(_ userID: UUID, _ category: PushCategory, _ event: PushEvent, key: String, revive: Bool = false) async throws -> Bool {
+        try await enqueueRaw(userID, category, String(decoding: try JSONEncoder().encode(event), as: UTF8.self), key: key, revive: revive)
     }
 
-    func enqueueRaw(_ userID: UUID, _ category: PushCategory, _ payload: String, key: String) async throws -> Bool {
-        if try await PushOutbox.query(on: db).filter(\.$userID == userID).filter(\.$dedupeKey == key).count() > 0 { return false }
+    func enqueueRaw(_ userID: UUID, _ category: PushCategory, _ payload: String, key: String, revive: Bool = false) async throws -> Bool {
+        if let known = try await PushOutbox.query(on: db).filter(\.$userID == userID).filter(\.$dedupeKey == key).first() {
+            guard revive, known.state == "skipped", known.lastError == "no_longer_relevant" else { return false }
+            known.state = "pending"; known.attempts = 0; known.lastError = nil; known.nextAttemptAt = now; known.dueAt = now
+            try await known.save(on: db)
+            return true
+        }
         let row = PushOutbox()
         row.userID = userID; row.category = category.rawValue; row.dedupeKey = key
         row.payload = payload
@@ -280,7 +287,7 @@ struct PushTriggers: Sendable {
                 guard await canRead(c.user, taskID, role: .comment) != nil,
                       try await resolver.concerns(audience, userID: c.id, projectID: task.projectID) else { continue }
                 let event = PushEvent(kind: "question", taskID: taskID, projectID: task.projectID, subjectID: qid, at: nil)
-                if try await enqueue(c.id, .agentQuestions, event, key: Self.key("question:\(qid)", assignedAt: q.assignedAt)) { count += 1 }
+                if try await enqueue(c.id, .agentQuestions, event, key: Self.key("question:\(qid)", assignedAt: q.assignedAt, to: q.assigneeID), revive: true) { count += 1 }
             }
         }
         return count
@@ -302,7 +309,7 @@ struct PushTriggers: Sendable {
                 guard await canRead(c.user, taskID, role: .edit) != nil,
                       try await resolver.concerns(audience, userID: c.id, projectID: task.projectID) else { continue }
                 let event = PushEvent(kind: "review", taskID: taskID, projectID: task.projectID, subjectID: rid, at: nil)
-                if try await enqueue(c.id, .agentReviews, event, key: Self.key("review:\(rid)", assignedAt: r.assignedAt)) { count += 1 }
+                if try await enqueue(c.id, .agentReviews, event, key: Self.key("review:\(rid)", assignedAt: r.assignedAt, to: r.reviewerID), revive: true) { count += 1 }
             }
         }
         return count

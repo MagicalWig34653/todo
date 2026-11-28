@@ -67,12 +67,14 @@ paths:
     put:
       operationId: setReviewAssignee
       summary: Ausstehende Review zuweisen oder die Zuweisung entfernen (edit)
-      description: 'Nennt die Review schon eine Person, darf nur diese oder wer manage hat sie umlenken oder entfernen.'
+      description: 'Nennt die Review schon eine Person, darf nur diese oder wer manage hat sie umlenken oder entfernen. Über MCP
+        zusätzlich nur bei einer Review, die diese Verbindung selbst angefragt hat. Die Bindung gilt dem Entscheiden dieser Review,
+        nicht der Karte (Erledigen, Verschieben und Zurückziehen folgen ihren bisherigen Rechten).'
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssigneeRequest'}}}}
       responses:
         '200': {description: ReviewDTO}
         '400': {description: 'assignee_required, invalid_assignee'}
-        '403': {description: 'not_the_reviewer oder Recht edit fehlt'}
+        '403': {description: 'not_the_reviewer, not_review_requester (MCP: benannte Review einer fremden Anfrage) oder Recht edit fehlt'}
         '404': {description: Review fehlt oder unsichtbar}
         '409': {description: 'no_pending_review, runner_item'}
 components:

@@ -76,10 +76,10 @@ Since 1.56.0 a card, an open question and a pending review can name **one** resp
 - Only people with access to the project can be named: a card needs read, a question comment, a review edit rights. Everything else is `invalid_assignee` (unknown, locked and unrelated accounts alike).
 - **Who is told.** With a responsible person only that person gets the push. A question, review or waiting plan that names nobody follows the card's assignee (if that person has the needed right and is not the author); reminders go to the card's assignee instead of the creator. Without any assignment everything is as before: everybody who may answer or decide.
 - **So:** on a card assigned to somebody else, pass `assigneeID` when your question is for another person, otherwise it reaches only the card's person.
-- A review that names somebody is decided only by that person or a project manager, and only they may redirect or clear it (`not_the_reviewer`). Requesting the same review again without a person keeps the named one.
+- A review that names somebody is decided only by that person or a project manager, and only they may redirect or clear it (`not_the_reviewer`). Requesting the same review again without a person keeps the named one. Your connection redirects or clears a named review only if it requested that review itself (`not_review_requester`).
 - `list_for_me {projectID, scope?}` answers `{currentProject, hint?, tasks, questions, reviews, truncated}`: unfinished cards, open questions and pending reviews the person of your connection is responsible for. Unassigned items are not in it; keep using `list_open_questions` and `list_pending_reviews`.
 - An assignee who loses access has no effect any more (a question falls back to the card's assignee or to everybody; a named reviewer without edit rights leaves the decision to the project management, who are then told). Moving a card clears its assignee if that person cannot see the target.
-- Errors: `invalid_assignee`, `invalid_reviewer` (older field name), `conflicting_assignee`, `invalid_target`, `not_the_reviewer`, `question_not_open`, `no_pending_review`, `runner_item` (questions and reviews of local runner jobs cannot be handed over).
+- Errors: `invalid_assignee`, `invalid_reviewer` (older field name), `conflicting_assignee`, `invalid_target`, `not_the_reviewer`, `not_review_requester`, `question_not_open`, `no_pending_review`, `runner_item` (questions and reviews of local runner jobs cannot be handed over).
 
 ## Progress and features
 
