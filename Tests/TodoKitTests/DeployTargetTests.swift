@@ -499,7 +499,12 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
         lock.withLock { _writes.append(files.map(\.path)) }
         for (index, file) in files.enumerated() {
             if let failAfterWrites, index >= failAfterWrites {
-                if let leftoverSuffix { lock.withLock { _files[file.path + leftoverSuffix] = file.data } }
+                if let leftoverSuffix {
+                    // Like rclone: a name longer than 100 bytes loses its end to the suffix instead of growing.
+                    let leaf = file.path.split(separator: "/").last.map(String.init) ?? file.path
+                    let name = leaf.utf8.count > 100 ? String(file.path.dropLast(leftoverSuffix.count)) + leftoverSuffix : file.path + leftoverSuffix
+                    lock.withLock { _files[name] = file.data }
+                }
                 throw DeployTransportError(code: "deploy_unreachable")
             }
             lock.withLock { _files[file.path] = file.data }

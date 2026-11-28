@@ -324,8 +324,11 @@ export interface DeployPlanResult {
 
 export const isOpenPlan = (p: DeployPlan): boolean => p.state === 'planned' || p.state === 'requested';
 
-/** A person may approve: still open, and every lock (if any) can be overridden. */
-export const canApprove = (p: DeployPlan): boolean => isOpenPlan(p) && (!p.blocked || p.overridable);
+/** Asked for, or a way back the person plans and decides right here. */
+export const isDecidable = (p: DeployPlan): boolean => p.state === 'requested' || (p.state === 'planned' && p.kind === 'rollback');
+
+/** A person may approve: decidable, and every lock (if any) can be overridden. */
+export const canApprove = (p: DeployPlan): boolean => isDecidable(p) && (!p.blocked || p.overridable);
 
 /** The way back of this run is already waiting for a decision. */
 export const hasOpenRollback = (plans: DeployPlan[], run: DeployPlan): boolean => plans.some((p) => p.kind === 'rollback' && p.sourcePlanID === run.id && isOpenPlan(p));

@@ -30,6 +30,18 @@ enum DeployPlanner {
     /// Leftovers of an interrupted upload; never part of a repo state and never shown as server files.
     static func isTemporary(_ path: String) -> Bool { path.hasSuffix(temporarySuffix) }
 
+    /// A temporary file that a broken upload of `path` left behind: `<path>.<8 characters><suffix>`. For a name above 100 bytes
+    /// rclone cuts the end of the name by that much instead of making it longer.
+    static func isLeftover(_ file: String, of path: String) -> Bool {
+        let tail = 1 + 8 + temporarySuffix.utf8.count
+        let name = Array(file.utf8), wanted = Array(path.utf8)
+        guard name.count > tail, name[name.count - tail] == UInt8(ascii: ".") else { return false }
+        let stem = name.dropLast(tail)
+        if stem.elementsEqual(wanted) { return true }
+        let leaf = wanted.split(separator: UInt8(ascii: "/")).last?.count ?? 0
+        return leaf > 100 && stem.count == wanted.count - tail && wanted.starts(with: stem)
+    }
+
     /// Repo files that may go to the server (server path -> repo file); the rest is named as finding.
     static func wanted(repo: [String: DeployManifestEntry], rules: DeployRules)
         -> (files: [String: (path: String, entry: DeployManifestEntry)], findings: [DeployPullFinding]) {

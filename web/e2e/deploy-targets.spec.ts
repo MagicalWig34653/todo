@@ -375,6 +375,15 @@ test('real SFTP server: a person sees the request, overrides the lock, uploads, 
 	expect(onServer('about.php')).toBe('neu aus dem Repo\n');
 	expect(onServer('kontakt.php')).toBe('<?php echo 1;\n');
 
+	// A plan nobody asked for cannot be approved here.
+	const unasked = await planUpload(target, { ...files, 'about.php': 'noch nicht beantragt\n' }, 'Nur geplant', false);
+	await plans().getByTestId('deploy-plans-reload').click();
+	await expect(planCard(unasked).getByTestId('deploy-plan-state')).toHaveText('geplant');
+	await expect(planCard(unasked).getByTestId('deploy-plan-approve')).toHaveCount(0);
+	await expect(planCard(unasked).getByTestId('deploy-plan-unasked')).toBeVisible();
+	await planCard(unasked).getByTestId('deploy-plan-reject').click();
+	await expect(planCard(unasked).getByTestId('deploy-plan-state')).toHaveText('abgelehnt');
+
 	// A second request is rejected: nothing changes.
 	const second = await planUpload(target, { ...files, 'about.php': 'unerwünscht\n' }, 'Bitte nicht');
 	await plans().getByTestId('deploy-plans-reload').click();

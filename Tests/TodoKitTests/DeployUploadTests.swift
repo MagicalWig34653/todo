@@ -535,7 +535,7 @@ extension DeployTargetTests {
             while await gate.count < 2 { try await Task.sleep(nanoseconds: 20_000_000) }
             f.transport.beforeLinkCheck = nil
             let third = try await call(f, .POST, "/v1/deploy-targets/\(t)/plans", ["files": [Self.upload("y.txt", "y\n")]])
-            XCTAssertEqual(third.body["reason"] as? String, "deploy_target_busy", third.text)
+            XCTAssertEqual(third.body["reason"] as? String, "deploy_planning_busy", third.text)
             await gate.open()
             var texts: [String] = []
             for c in calls { texts.append(try await c.value.text) }
@@ -572,12 +572,51 @@ extension DeployTargetTests {
         }
     }
 
+    /// Re-check N4: rclone shortens a long name before it appends the temporary suffix.
+    func testABrokenUploadRemovesTheTemporaryFileOfALongName() async throws {
+        try await fixture { f in
+            let t = try await target(f)
+            f.transport.files = [:]
+            let long = "ordner/" + String(repeating: "a", count: 130) + ".txt"
+            let made = try await plan(f, t, [Self.upload(long, "x\n")])
+            f.transport.failAfterWrites = 0
+            f.transport.leftoverSuffix = ".9f8e7d6c.todolino.tmp"
+            let run = try await requestAndApprove(f, made)
+            XCTAssertEqual(run["state"] as? String, "failed", "\(run)")
+            XCTAssertEqual(Array(f.transport.files.keys), [])
+        }
+    }
+
+    /// Re-check N3: a way back has the same backup limit as an upload, and only one planned way back per run waits.
+    func testAWayBackIsBoundedAndReplacesTheEarlierPlannedOne() async throws {
+        try await fixture { f in
+            let t = try await target(f)
+            f.transport.files = [:]
+            let paths = (0..<8).map { "f\($0).txt" }
+            let made = try await plan(f, t, paths.map { Self.upload($0, "\($0)\n") })
+            let done = try await requestAndApprove(f, made)
+            let first = try await call(f, .POST, "/v1/deploy-plans/\(id(done))/rollback", [:])
+            let second = try await call(f, .POST, "/v1/deploy-plans/\(id(done))/rollback", [:])
+            XCTAssertEqual(second.body["ok"] as? Bool, true, second.text)
+            let waiting = try await DeployPlan.query(on: f.app.db).filter(\.$state == "planned").all()
+            XCTAssertEqual(waiting.map { $0.id?.uuidString }, [(second.body["plan"] as? Obj).map { id($0) }])
+            XCTAssertNotEqual((first.body["plan"] as? Obj).map { id($0) }, (second.body["plan"] as? Obj).map { id($0) })
+            // The files grew on the server far beyond what a run backs up.
+            for path in paths { f.transport.files[path] = Data(count: 9 * 1024 * 1024) }
+            let big = try await call(f, .POST, "/v1/deploy-plans/\(id(done))/rollback", [:])
+            XCTAssertEqual(big.status, .badRequest, String(big.text.prefix(300)))
+            XCTAssertEqual(big.body["reason"] as? String, "deploy_plan_too_large")
+        }
+    }
+
     /// M5: a listing that is not in the Unix format cannot be checked for links, so nothing is written below it.
     func testAnFTPListingThatCannotBeCheckedIsRefusedForWriting() throws {
         let unix = "total 4\r\ndrwxr-xr-x 2 u g 4096 Nov 28 10:00 css\r\n-rw-r--r-- 1 u g 3 Nov 28 10:00 a.txt\r\n"
         XCTAssertEqual(try RcloneDeployTransport.symlinkNames(inList: unix, strict: true), [])
         let dos = "11-28-26  10:00AM       <DIR>          site\r\n"
         XCTAssertThrowsError(try RcloneDeployTransport.symlinkNames(inList: dos, strict: true))
+        // Re-check N5: nothing at all is no answer either (a server that takes `-a` for a file name).
+        XCTAssertThrowsError(try RcloneDeployTransport.symlinkNames(inList: "", strict: true))
         XCTAssertEqual(try RcloneDeployTransport.symlinkNames(inList: dos), [])
     }
 }

@@ -45,7 +45,7 @@ Bis Phase 2 liest Todolino die Zielserver nur. Phase 3 schreibt zum ersten Mal, 
 | je Datei / Inhalt je Plan / Sicherung je Lauf | 8 MB / 16 MB / 64 MB |
 | wartende Pläne je Ziel | 10 |
 | behaltene Pläne ohne Lauf je Ziel | 20 |
-| gleichzeitige Planungen je Prozess | 2 (`deploy_target_busy`) |
+| gleichzeitige Planungen je Prozess | 2 (`deploy_planning_busy`) |
 | Gültigkeit eines Plans | 24 Stunden |
 | Läufe mit Sicherung je Ziel | 5 |
 
@@ -53,6 +53,7 @@ Bis Phase 2 liest Todolino die Zielserver nur. Phase 3 schreibt zum ersten Mal, 
 
 - Zwischen dem letzten Lesen und dem Schreiben bleibt ein kurzes Fenster. Wer genau dann auf dem Server ändert, wird überschrieben,
   ohne dass diese Fassung in der Sicherung liegt.
+- Zwei Planungen gegen sehr langsame Server belegen beide Plätze eines Prozesses; andere bekommen so lange `deploy_planning_busy`.
 - Die Sperre gilt je Ziel. Zwei Ziele auf denselben Serverpfad sperren sich nicht gegenseitig (das spätere sieht aber Drift).
 - Ein FTP-Server, der `LIST -a` nicht versteht und Punktnamen verbirgt, kann versteckte Links verbergen. Dort schützt nur seine chroot.
 - Die Inhaltsprüfung ist eine Heuristik: ein Passwort in einer Datei ohne Konfigurationsnamen wird nicht erkannt.

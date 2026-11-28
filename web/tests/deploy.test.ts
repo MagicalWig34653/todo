@@ -138,6 +138,9 @@ describe('deploy upload plans', () => {
 	it('offers approval only for open plans whose locks can be overridden', () => {
 		expect(['planned', 'requested', 'rejected', 'expired', 'running', 'succeeded', 'failed'].filter((state) => isOpenPlan(plan({ state })))).toEqual(['planned', 'requested']);
 		expect(canApprove(plan())).toBe(true);
+		// Nobody asked for it yet: only a way back (planned by the person here) may be approved without a request.
+		expect(canApprove(plan({ state: 'planned' }))).toBe(false);
+		expect(canApprove(plan({ state: 'planned', kind: 'rollback' }))).toBe(true);
 		expect(canApprove(plan({ blocked: true, overridable: true }))).toBe(true);
 		expect(canApprove(plan({ blocked: true, overridable: false }))).toBe(false);
 		expect(canApprove(plan({ state: 'succeeded' }))).toBe(false);
@@ -149,6 +152,11 @@ describe('deploy upload plans', () => {
 		expect(sortPlans([run, back, plan({ id: 'ask' })]).map((p) => p.id)).toEqual(['ask', 'run', 'back']);
 		expect(hasOpenRollback([run, back], run)).toBe(true);
 		expect(hasOpenRollback([run, { ...back, state: 'rejected' }], run)).toBe(false);
+	});
+
+	it('tells busy planning apart from a running upload', () => {
+		expect(deployErrorText('deploy_planning_busy')).not.toBe(deployErrorText('deploy_target_busy'));
+		expect(deployErrorText('deploy_planning_busy')).not.toBe(deployErrorText('something_else'));
 	});
 
 	it('has a text for every reason a person can meet when deciding', () => {

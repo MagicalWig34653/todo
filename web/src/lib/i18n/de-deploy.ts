@@ -162,6 +162,9 @@ export const deDeploy = {
 	'deploy.error.deploy_symlink_in_path': 'Auf dem Weg liegt ein Verweis (Symlink). Todolino schreibt nicht hindurch.',
 	'deploy.error.deploy_content_unreadable': 'Die gespeicherten Dateiinhalte sind nicht mehr lesbar.',
 
+	'deploy.error.deploy_planning_busy': 'Gerade werden andere Pläne gelesen. Bitte gleich noch einmal.',
+
+	'deploy.plans.unasked': 'Noch nicht beantragt. Freigeben geht erst nach dem Antrag.',
 	'deploy.plans.open': 'Uploads',
 	'deploy.plans.title': 'Uploads: {name}',
 	'deploy.plans.intro': 'Agenten planen und beantragen Uploads. Hochgeladen wird erst, wenn du hier freigibst. Vorher sichert Todolino jede Datei, die überschrieben wird.',

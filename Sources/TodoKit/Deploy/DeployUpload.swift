@@ -236,7 +236,7 @@ struct DeployUploadService: Sendable {
 
     /// Only a few plans are read from servers at once; further calls are told to come back.
     private func withPlanningSlot<T: Sendable>(_ body: () async throws -> T) async throws -> T {
-        guard await DeployPlanningSlots.shared.take() else { throw Abort(.conflict, reason: "deploy_target_busy") }
+        guard await DeployPlanningSlots.shared.take() else { throw Abort(.conflict, reason: "deploy_planning_busy") }
         do {
             let result = try await body()
             await DeployPlanningSlots.shared.give()
@@ -414,6 +414,8 @@ struct DeployUploadService: Sendable {
             let states = try await DeployPlanner.states(of: sourceData.items.map(\.serverPath), listed: listed) {
                 try await app.deployTransport.read(conn, paths: $0) }.states
             var (out, backups) = DeployPlanner.rollback(source: sourceData.items, written: Set(sourceData.written), known: known, previous: previous, states: states)
+            // The same bound as for an upload on what the run has to back up (the restored content itself comes from a backup).
+            guard out.items.reduce(0, { $0 + ($1.baseSize ?? 0) }) <= DeployUploadLimits.maxBackup else { throw Abort(.badRequest, reason: "deploy_plan_too_large") }
             try await addLinkBlockers(&out, conn)
             var contents: [Int: Data] = [:]
             let store = try blobs()
@@ -422,6 +424,12 @@ struct DeployUploadService: Sendable {
                 guard let bytes = try await store.get(plan: planID, role: "backup", item: from, serverPath: item.serverPath, on: db),
                       DeployService.sha256(bytes) == item.newSha else { throw Abort(.conflict, reason: "deploy_backup_missing") }
                 contents[index] = bytes
+            }
+            // One planned way back per run: a newer look at the server replaces the earlier one (a requested one stays).
+            for old in try await DeployPlan.query(on: db).filter(\.$sourcePlanID == planID).filter(\.$state == "planned").all() {
+                let id = try old.requireID()
+                try await DeployPlan.query(on: db).filter(\.$id == id).filter(\.$state == "planned").set(\.$state, to: "rejected").update()
+                if try await DeployPlan.find(id, on: db)?.state == "rejected" { try await DeployBlobStore.delete(plan: id, role: "content", on: db) }
             }
             let p = try await self.store(t, kind: "rollback", outcome: out, contents: contents, baseRun: baseRun, source: planID, ref: source.ref)
             return DeployPlanResult(ok: true, code: nil, missing: nil, plan: try await dto(p, target: t))
@@ -566,20 +574,23 @@ struct DeployUploadService: Sendable {
                 }
             }
             // 3. From here on the run counts as writing (also if the server goes down).
-            // Only while the run still holds its target: one closed as interrupted writes nothing.
-            let writes = !data.items.isEmpty, baseRun = data.baseRun
-            try await db.transaction { tx in
+            // Only while the run still holds its target: one closed as interrupted writes nothing. The plan row stays locked until
+            // the commit, so closing it cannot slip in between the check and the record that this run writes.
+            let writes = !data.items.isEmpty, baseRun = data.baseRun, lease = app.deployLease
+            let number = try await db.transaction { tx -> Int in
                 try await lockRow(table: DeployTarget.schema, id: targetID, on: tx)
+                try await lockRow(table: DeployPlan.schema, id: planID, on: tx)
                 let held = try await DeployPlan.query(on: tx).filter(\.$id == planID).filter(\.$state == "running").count()
                 let latest = try await DeployPlan.query(on: tx).filter(\.$targetID == targetID).filter(\.$runNumber > 0)
                     .sort(\.$runNumber, .descending).first()?.runNumber ?? 0
                 guard held == 1, latest == baseRun else { throw DeployRunSuperseded() }
-                p.runNumber = 1 + (try await DeployPlan.query(on: tx).filter(\.$targetID == targetID).filter(\.$runNumber > 0)
-                    .sort(\.$runNumber, .descending).first()?.runNumber ?? 0)
-                p.wrote = writes
-                p.lockUntil = Date().addingTimeInterval(app.deployLease)
-                try await p.save(on: tx)
+                try await DeployPlan.query(on: tx).filter(\.$id == planID).set(\.$runNumber, to: latest + 1).set(\.$wrote, to: writes)
+                    .set(\.$lockUntil, to: Date().addingTimeInterval(lease)).update()
+                return latest + 1
             }
+            // Taken over only after the commit: a run that never got this far is not recorded as writing.
+            p.runNumber = number
+            p.wrote = writes
             var failure: DeployTransportError?
             do {
                 if !uploads.isEmpty { try await app.deployTransport.upload(conn, files: uploads) }
@@ -632,7 +643,7 @@ struct DeployUploadService: Sendable {
     /// Half files of this run that a broken upload left under their temporary names (in the web root they could be fetched).
     private func removeLeftovers(of paths: [String], _ conn: DeployConnection) async throws {
         let left = try await app.deployTransport.list(conn).map(\.path).filter { file in
-            DeployPlanner.isTemporary(file) && paths.contains { file.hasPrefix($0 + ".") }
+            DeployPlanner.isTemporary(file) && paths.contains { DeployPlanner.isLeftover(file, of: $0) }
         }
         if !left.isEmpty { try await app.deployTransport.delete(conn, paths: left) }
     }

@@ -225,6 +225,8 @@ struct RcloneDeployTransport: DeployTransport {
     /// An `l` line that cannot be read fails the whole check (fail closed).
     static func symlinkNames(inList text: String, strict: Bool = false) throws -> Set<String> {
         var names = Set<String>()
+        // Nothing at all is no answer (a Unix listing with `-a` always names `.` and `..`).
+        if strict, text.unicodeScalars.allSatisfy({ $0 == "\n" || $0 == "\r" }) { throw DeployTransportError(code: "deploy_failed") }
         // "\r\n" is one Character in Swift: work on the scalars.
         for scalars in text.unicodeScalars.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
             // `strict` (before writing): only the Unix format shows links, so any other line makes the listing unusable.

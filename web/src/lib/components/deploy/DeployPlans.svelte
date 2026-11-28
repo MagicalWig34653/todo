@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { api } from '#lib/api.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
-	import { canApprove, deployErrorText, hasOpenRollback, isOpenPlan, sortPlans, stageLabel, type DeployPlan, type DeployTarget } from '#lib/deploy.js';
+	import { canApprove, deployErrorText, hasOpenRollback, isDecidable, isOpenPlan, sortPlans, stageLabel, type DeployPlan, type DeployTarget } from '#lib/deploy.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -50,7 +50,7 @@
 				if (!r.ok) errors = { ...errors, [plan.id]: deployErrorText(r.code ?? 'deploy_failed') };
 				else message = t('deploy.plans.rollbackPlanned');
 			} else {
-				// A plan nobody asked for yet (a way back planned here): the person asks and decides in one step.
+				// A way back planned here has no request yet: the person asks and decides in one step.
 				if (plan.state === 'planned') await api.requestDeployPlan(plan.id);
 				await api.approveDeployPlan(plan.id, plan.blocked && !!override[plan.id]);
 			}
@@ -150,14 +150,19 @@
 					{:else if plan.state === 'failed'}
 						<p class="text-destructive font-medium [overflow-wrap:anywhere]" data-testid="deploy-plan-result">{deployErrorText(plan.code ?? 'deploy_failed')}{plan.written.length > 0 ? ` ${t('deploy.plans.failedWritten', { n: plan.written.length })}` : ''}</p>
 					{/if}
+					{#if plan.state === 'planned' && !isDecidable(plan)}
+						<p class="text-muted-foreground text-xs" data-testid="deploy-plan-unasked">{t('deploy.plans.unasked')}</p>
+					{/if}
 					<p role="alert" class="text-destructive font-medium [overflow-wrap:anywhere] empty:hidden" data-testid="deploy-plan-error">{errors[plan.id] ?? ''}</p>
 
 					{#if (canManage && isOpenPlan(plan) && target.stage === 'test') || (plan.canRollback && !hasOpenRollback(plans, plan))}
 						<div class="flex flex-wrap gap-2">
 							{#if canManage && isOpenPlan(plan) && target.stage === 'test'}
-								<Button size="sm" data-testid="deploy-plan-approve" disabled={!canApprove(plan) || (plan.blocked && !override[plan.id]) || busy !== null} onclick={() => void act(plan, 'approve')}>
-									{busy?.id === plan.id && busy.action === 'approve' ? t('deploy.plans.running') : plan.kind === 'rollback' ? t('deploy.plans.approveRollback') : t('deploy.plans.approve')}
-								</Button>
+								{#if isDecidable(plan)}
+									<Button size="sm" data-testid="deploy-plan-approve" disabled={!canApprove(plan) || (plan.blocked && !override[plan.id]) || busy !== null} onclick={() => void act(plan, 'approve')}>
+										{busy?.id === plan.id && busy.action === 'approve' ? t('deploy.plans.running') : plan.kind === 'rollback' ? t('deploy.plans.approveRollback') : t('deploy.plans.approve')}
+									</Button>
+								{/if}
 								<Button size="sm" variant="outline" data-testid="deploy-plan-reject" disabled={busy !== null} onclick={() => void act(plan, 'reject')}>{t('deploy.plans.reject')}</Button>
 							{/if}
 							{#if plan.canRollback && !hasOpenRollback(plans, plan) && target.stage === 'test'}

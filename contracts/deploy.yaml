@@ -112,7 +112,7 @@ info:
     Geheimnisse, .git/.github und *.todolino.tmp stehen nur in findings. blockers sperren: unknown_server_state, server_changed,
     server_deleted sind mit overrideDrift=true übergehbar, symlink und unverified nicht. Uploads löschen nie. Der Lauf liest den
     Server erneut (jede Abweichung: deploy_plan_stale), sichert vor dem Schreiben und liest danach nach. Grenzen: 500 Dateien, 8 MB je
-    Datei, 16 MB Inhalt, 64 MB Sicherung, 10 wartende Pläne je Ziel, 2 Planungen gleichzeitig (409 deploy_target_busy), 24 Stunden
+    Datei, 16 MB Inhalt, 64 MB Sicherung, 10 wartende Pläne je Ziel, 2 Planungen gleichzeitig (409 deploy_planning_busy), 24 Stunden
     Gültigkeit, Sicherungen der letzten 5 Läufe. Pfade, in denen Unicode ein "/" mit dem Nachbarzeichen verbindet, sind ungültig
     (deploy_manifest_invalid, auch bei Abgleich, Holen und Pull Request). FTP-Links werden mit LIST -a geprüft.
 servers:
@@ -149,7 +149,7 @@ paths:
         '401': {description: Keine Personen-Sitzung}
         '403': {description: Nur lesen am Projekt}
         '404': {description: Ziel unbekannt oder nicht sichtbar}
-        '409': {description: 'deploy_plan_limit, deploy_target_busy'}
+        '409': {description: 'deploy_plan_limit, deploy_planning_busy'}
   /v1/deploy-plans/{planID}:
     parameters: [{name: planID, in: path, required: true, schema: {type: string, format: uuid}}]
     get:
@@ -188,9 +188,9 @@ paths:
     post:
       summary: Rückweg des letzten schreibenden Laufs planen (Person, edit); schreibt nichts
       responses:
-        '200': {description: 'Ergebnis; ok=false mit Fehlercode der Verbindung', content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlanResult'}}}}
-        '400': {description: deploy_stage_not_supported}
-        '409': {description: 'deploy_rollback_not_latest, deploy_backup_missing, deploy_plan_stale, deploy_plan_limit, deploy_target_busy'}
+        '200': {description: 'Ergebnis; ok=false mit Fehlercode der Verbindung. Ein neuer Rückweg ersetzt den früher geplanten desselben Laufs (nicht einen beantragten).', content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlanResult'}}}}
+        '400': {description: 'deploy_stage_not_supported, deploy_plan_too_large'}
+        '409': {description: 'deploy_rollback_not_latest, deploy_backup_missing, deploy_plan_stale, deploy_plan_limit, deploy_target_busy, deploy_planning_busy'}
   /v1/projects/{id}/deploy-targets:
     parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
     get:

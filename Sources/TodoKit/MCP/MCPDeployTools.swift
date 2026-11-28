@@ -92,7 +92,7 @@ extension MCPController {
              description: "One plan or run with its state (planned | requested | rejected | expired | running | succeeded | failed), files, blockers, written files, code and canRollback (pass planID), or the latest 50 of a target (pass targetID): {items: [...]}. Never host, user, path of the base directory or credentials.",
              properties: ["planID": Schema.uuid("Plan id."), "targetID": Schema.uuid("Deploy target id, to list its plans.")]),
         Tool(name: "plan_deploy_rollback", scope: "projects:write",
-             description: "Plan the way back of the latest run of a target (needs edit rights): files the run overwrote come back from the backup, files it created are removed. Like every plan it writes nothing; request it with request_deploy, a person approves. Answer {ok, code?, plan?}. Errors: deploy_rollback_not_latest, deploy_backup_missing (backups of the last 5 runs are kept), deploy_plan_stale (the target was changed), deploy_target_busy.",
+             description: "Plan the way back of the latest run of a target (needs edit rights): files the run overwrote come back from the backup, files it created are removed. Like every plan it writes nothing; request it with request_deploy, a person approves. Answer {ok, code?, plan?}. Errors: deploy_rollback_not_latest, deploy_backup_missing (backups of the last 5 runs are kept), deploy_plan_stale (the target was changed), deploy_target_busy, deploy_planning_busy (try again later).",
              properties: ["planID": Schema.uuid("The run to undo (canRollback true).")], required: ["planID"]),
     ]
 
