@@ -222,6 +222,28 @@ final class DeployServerTests: XCTestCase {
             let secrets = try await transport.read(conn, paths: [".well-known/in-dir.txt", ".versteckt.txt"])
             XCTAssertEqual(secrets, [:])
 
+            // A server that takes `-a` for a file name answers with an empty listing: that is refused, never read as "no links".
+            let real = ProcessInfo.processInfo.environment["DEPLOY_CURL_PATH"] ?? "/usr/bin/curl"
+            let fake = f.work.appendingPathComponent("curl-without-list-a")
+            try FileManager.default.createDirectory(at: f.work, withIntermediateDirectories: true)
+            try Data("""
+                #!/bin/sh
+                case " $* " in *" LIST -a "*)
+                  while [ $# -gt 0 ]; do if [ "$1" = -o ]; then shift; : > "$1"; fi; shift; done; exit 0 ;;
+                esac
+                exec "\(real)" "$@"
+
+                """.utf8).write(to: fake)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fake.path)
+            setenv("DEPLOY_CURL_PATH", fake.path, 1)
+            defer { unsetenv("DEPLOY_CURL_PATH") }
+            do {
+                let found = try await transport.linkedPaths(conn, paths: ["twin.txt", "plain.txt"])
+                XCTFail("an empty listing was taken as an answer: \(found)")
+            } catch let e as DeployTransportError { XCTAssertEqual(e.code, "deploy_failed") }
+            unsetenv("DEPLOY_CURL_PATH")
+            try FileManager.default.removeItem(at: fake)
+
             // The link check itself refuses an untrusted certificate (it logs in on its own).
             let wrong = DeployConnection(protocolName: conn.protocolName, host: conn.host, port: conn.port, basePath: conn.basePath,
                                          username: conn.username, password: conn.password, privateKey: nil, passphrase: nil,
