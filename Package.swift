@@ -24,6 +24,8 @@ let package = Package(
             .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
             .product(name: "WebAuthn", package: "webauthn-swift"),
             .product(name: "Crypto", package: "swift-crypto"),
+            // RS256 for the GitHub App (ADR 0042).
+            .product(name: "_CryptoExtras", package: "swift-crypto"),
             .product(name: "NIOCore", package: "swift-nio"),
             .product(name: "NIOPosix", package: "swift-nio"),
             .product(name: "NIOSSL", package: "swift-nio-ssl"),
@@ -32,6 +34,7 @@ let package = Package(
         .testTarget(name: "TodoKitTests", dependencies: [
             "TodoKit", .product(name: "XCTVapor", package: "vapor"),
             .product(name: "Crypto", package: "swift-crypto"),
+            .product(name: "_CryptoExtras", package: "swift-crypto"),
             .product(name: "NIOCore", package: "swift-nio"),
             .product(name: "NIOPosix", package: "swift-nio"),
         ]),

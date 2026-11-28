@@ -2,7 +2,9 @@
 """End-to-end check of deploy targets, phase 1a (ADR 0039) against a running backend, a real database and real SFTP/FTPS servers.
 
 Real HTTP, a real OAuth token for /mcp, SQLite or MariaDB (accounts are seeded with SQL, everything else goes through the API).
-Usage: deploy-e2e.py BASE_URL sqlite|mariadb blocked|full SCRATCH   (environment as set by deploy-e2e.sh / test-deploy-servers.sh)
+Usage: deploy-e2e.py BASE_URL sqlite|mariadb blocked|full|github SCRATCH   (environment as set by deploy-e2e.sh / test-deploy-servers.sh)
+"full" writes state.json (session, project); "github" runs against the same database after the backend was restarted with the
+GitHub App configuration and the fake GitHub API (phase 2b, ADR 0042).
 """
 import base64, glob, hashlib, json, os, secrets, subprocess, sys, tempfile, urllib.error, urllib.parse, urllib.request, uuid
 from datetime import datetime, timedelta, timezone
@@ -64,8 +66,12 @@ def http(method, path, body=None, token=None, headers=None):
     except Exception: return status, out
 
 
-session = account("Deploy A " + mode)
-st, p = http("POST", "/v1/projects", {"name": "Deploy E2E " + mode}, session); project = p["id"]
+state_file = os.path.join(scratch, "state.json")
+if mode == "github":
+    state = json.load(open(state_file)); session, project = state["session"], state["project"]
+else:
+    session = account("Deploy A " + mode)
+    st, p = http("POST", "/v1/projects", {"name": "Deploy E2E " + mode}, session); project = p["id"]
 
 
 def target(name, protocol, port, password, **extra):
@@ -76,6 +82,36 @@ def target(name, protocol, port, password, **extra):
 if mode == "blocked":
     st, r = http("POST", f"/v1/projects/{project}/deploy-targets", target("SFTP", "sftp", SFTP_PORT, SFTP_PASSWORD), session)
     check("default server refuses a loopback target", st == 400 and r["reason"] == "deploy_target_blocked", r)
+    sys.exit(1 if failures else 0)
+
+
+def oauth_token(scope):
+    st, b = http("POST", "/oauth/register", {"client_name": "Deploy E2E", "redirect_uris": ["http://127.0.0.1:54321/callback"]})
+    client = b["client_id"]
+    verifier = "a" * 64
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    resource = http("GET", "/.well-known/oauth-protected-resource/mcp")[1]["resource"]
+    q = urllib.parse.urlencode({"response_type": "code", "client_id": client, "redirect_uri": "http://127.0.0.1:54321/callback", "scope": scope,
+                                "state": "s", "resource": resource, "code_challenge": challenge, "code_challenge_method": "S256"})
+    st, b = http("GET", "/oauth/authorize?" + q, token=session, headers={"Accept": "application/json"})
+    if st != 200: raise SystemExit(f"authorize failed: {st} {b}")
+    st, b = http("POST", "/oauth/consent", {"consent_token": b["consent_token"], "approve": True, "project_ids": [project]}, session)
+    code = urllib.parse.parse_qs(urllib.parse.urlparse(b["redirect_uri"]).query)["code"][0]
+    st, b = http("POST", "/oauth/token", {"grant_type": "authorization_code", "client_id": client, "resource": resource, "code": code,
+                                          "redirect_uri": "http://127.0.0.1:54321/callback", "code_verifier": verifier})
+    return b["access_token"]
+
+
+def tool(tok, name, args):
+    st, b = http("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}, tok)
+    res = b["result"]; text = res["content"][0]["text"]
+    try: parsed = json.loads(text)
+    except Exception: parsed = None
+    return res.get("isError", False), text, parsed
+
+
+if mode == "github":
+    exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy-github-e2e.py")).read(), "deploy-github-e2e.py", "exec"))
     sys.exit(1 if failures else 0)
 
 
@@ -133,31 +169,6 @@ statuses_ftps = statuses(r)
 check("FTPS compare statuses", r.get("ok") is True and all(statuses_ftps.get(k) == v for k, v in expected.items()), r)
 
 # --- MCP ----------------------------------------------------------------------------------------------------------------
-
-
-def oauth_token(scope):
-    st, b = http("POST", "/oauth/register", {"client_name": "Deploy E2E", "redirect_uris": ["http://127.0.0.1:54321/callback"]})
-    client = b["client_id"]
-    verifier = "a" * 64
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
-    resource = http("GET", "/.well-known/oauth-protected-resource/mcp")[1]["resource"]
-    q = urllib.parse.urlencode({"response_type": "code", "client_id": client, "redirect_uri": "http://127.0.0.1:54321/callback", "scope": scope,
-                                "state": "s", "resource": resource, "code_challenge": challenge, "code_challenge_method": "S256"})
-    st, b = http("GET", "/oauth/authorize?" + q, token=session, headers={"Accept": "application/json"})
-    if st != 200: raise SystemExit(f"authorize failed: {st} {b}")
-    st, b = http("POST", "/oauth/consent", {"consent_token": b["consent_token"], "approve": True, "project_ids": [project]}, session)
-    code = urllib.parse.parse_qs(urllib.parse.urlparse(b["redirect_uri"]).query)["code"][0]
-    st, b = http("POST", "/oauth/token", {"grant_type": "authorization_code", "client_id": client, "resource": resource, "code": code,
-                                          "redirect_uri": "http://127.0.0.1:54321/callback", "code_verifier": verifier})
-    return b["access_token"]
-
-
-def tool(tok, name, args):
-    st, b = http("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}, tok)
-    res = b["result"]; text = res["content"][0]["text"]
-    try: parsed = json.loads(text)
-    except Exception: parsed = None
-    return res.get("isError", False), text, parsed
 
 
 agent = oauth_token("projects:read tasks:read")
@@ -305,6 +316,12 @@ check("another account cannot pull", st == 404, (st, r))
 st, r = http("POST", f"/v1/deploy-targets/{sid}/pull", {"files": tracked}, agent)
 check("agent token cannot use the person route", st == 401, (st, r))
 
+# Without a GitHub App the write path is cleanly switched off (phase 2b).
+st, r = http("POST", f"/v1/deploy-targets/{sid}/pull-request", {"files": tracked, "baseCommit": base_commit}, session)
+check("without a GitHub App the pull request is switched off", st == 200 and r.get("ok") is False and r.get("code") == "deploy_github_not_configured"
+      and "branch" not in r, (st, r))
+err, text, r = tool(oauth_token("projects:read projects:write"), "open_server_changes_pr", {"targetID": sid, "files": tracked, "baseCommit": base_commit})
+check("agent: switched off as well", not err and r["code"] == "deploy_github_not_configured", text)
 check("servers unchanged after test, compare and pull (read only)", server_state() == before)
 
 # --- Refusals -----------------------------------------------------------------------------------------------------------
@@ -336,5 +353,6 @@ check("no temporary run directory left", left == [], left)
 st, r = http("DELETE", f"/v1/deploy-targets/{sid}", token=session)
 check("delete target", st == 204, (st, r))
 
+json.dump({"session": session, "project": project}, open(state_file, "w"))
 print(f"deploy e2e ({db}): {len(failures)} failure(s)")
 sys.exit(1 if failures else 0)
