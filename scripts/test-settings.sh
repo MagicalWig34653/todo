@@ -452,6 +452,93 @@ check "no whiptail/dialog: clear message, exit 1" bash -c "[ $rc -eq 1 ] && grep
 out="$( cd "$DIR" && PATH="$nowt" "$nowt/bash" ./settings.sh --env "$ENVF" --list 2>&1 )"; rc=$?
 check "no whiptail/dialog: the CLI still works" eq "$rc" 0
 
+# ------------------------------------------------------------- --secret-file (GitHub App: private key and client secret)
+PEMBODY="TESTPEMBODY$(printf 'B%.0s' $(seq 1 40))"
+PEM="$WORK/app.private-key.pem"
+printf -- '-----BEGIN RSA PRIVATE KEY-----\n%s\n-----END RSA PRIVATE KEY-----\n' "$PEMBODY" > "$PEM"
+CLIENTVALUE="clientsecret0123456789abcdef0123456789ab"
+printf '%s\n' "$CLIENTVALUE" > "$WORK/client-secret.txt"
+fresh; before="$(sha)"
+out="$(S --secret-file "GITHUB_APP_PRIVATE_KEY=$PEM" 2>&1)"; rc=$?
+check "secret-file key: exit 0" eq "$rc" 0
+check "secret-file key: the Swarm secret todo_github_app_key holds the file byte for byte" cmp -s "$WORK/secrets/todo_github_app_key" "$PEM"
+check "secret-file key: docker secret create reads stdin ('-')" grep -qx 'docker secret create todo_github_app_key -' "$WORK/log.docker"
+check "secret-file key: the key is neither in the output nor in a docker argument" bash -c "! grep -qF '$PEMBODY' <<< \"\$1\" && ! grep -qF '$PEMBODY' '$WORK/log.docker'" _ "$out"
+check "secret-file key: the env file is unchanged and nothing holds the key" bash -c "[ '$(sha)' = '$before' ] && ! grep -rqF '$PEMBODY' '$WORK/envdir'"
+check "secret-file key: says to delete the file, nothing rolled out" bash -c "grep -q 'löschen' <<< \"\$1\" && [ ! -s '$WORK/log.rollout' ] && [ -f '$PEM' ]" _ "$out"
+: > "$WORK/log.docker"; printf -- '-----BEGIN PRIVATE KEY-----\nother\n-----END PRIVATE KEY-----\n' > "$WORK/other.pem"
+out="$(S --secret-file "GITHUB_APP_PRIVATE_KEY=$WORK/other.pem" 2>&1)"; rc=$?
+check "secret-file again: an existing secret is never replaced" bash -c "[ $rc -ne 0 ] && grep -q 'existiert schon' <<< \"\$1\" && grep -q 'GITHUB_APP_KEY_SECRET' <<< \"\$1\" && cmp -s '$WORK/secrets/todo_github_app_key' '$PEM' && ! grep -q 'secret create' '$WORK/log.docker'" _ "$out"
+out="$(S --set GITHUB_APP_KEY_SECRET=gh_key_v2 --secret-file "GITHUB_APP_PRIVATE_KEY=$WORK/other.pem" 2>&1)"; rc=$?
+check "secret-file with a new name in the same call: secret created and name saved" bash -c "[ $rc -eq 0 ] && cmp -s '$WORK/secrets/gh_key_v2' '$WORK/other.pem' && grep -qx 'GITHUB_APP_KEY_SECRET=gh_key_v2' '$ENVF'"
+fresh
+out="$(S --secret-file "GITHUB_APP_CLIENT_SECRET=$WORK/client-secret.txt" 2>&1)"; rc=$?
+check "secret-file client secret: stored without the line break" bash -c "[ $rc -eq 0 ] && [ \"\$(cat '$WORK/secrets/todo_github_app_client_secret')\" = '$CLIENTVALUE' ] && [ \$(wc -c < '$WORK/secrets/todo_github_app_client_secret') -eq ${#CLIENTVALUE} ]"
+check "secret-file client secret: never printed or passed as argument" bash -c "! grep -qF '$CLIENTVALUE' <<< \"\$1\" && ! grep -qF '$CLIENTVALUE' '$WORK/log.docker'" _ "$out"
+fresh
+cp "$PEM" "$WORK/repo/rel.pem"
+( cd "$WORK/repo" && $TMO deploy/swarm/settings.sh --env "$ENVF" --secret-file "GITHUB_APP_PRIVATE_KEY=rel.pem" ) >"$WORK/out" 2>&1; rc=$?
+check "secret-file: a relative path is read from the caller's directory" bash -c "[ $rc -eq 0 ] && cmp -s '$WORK/secrets/todo_github_app_key' '$PEM'"
+fresh; before="$(sha)"
+printf -- '-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----\n' > "$WORK/public.pem"
+: > "$WORK/empty"; printf 'line one\nline two\n' > "$WORK/two-lines"; printf 'with a space in the value here\n' > "$WORK/spaced"
+{ cat "$PEM"; head -c 20000 /dev/zero | tr '\0' x; } > "$WORK/huge.pem"; mkdir -p "$WORK/adir"
+for bad in public.pem empty two-lines huge.pem nothing-here adir client-secret.txt; do
+  S --secret-file "GITHUB_APP_PRIVATE_KEY=$WORK/$bad" >"$WORK/out" 2>&1; rc=$?
+  check "secret-file key: $bad is refused, nothing created, file unchanged, content not echoed" bash -c "[ $rc -ne 0 ] && [ -z \"\$(ls '$WORK/secrets')\" ] && [ '$(sha)' = '$before' ] && ! grep -qF -e 'line two' -e '$CLIENTVALUE' -e '$PEMBODY' '$WORK/out'"
+done
+for bad in "$PEM" "$WORK/two-lines" "$WORK/spaced" "$WORK/empty"; do
+  S --secret-file "GITHUB_APP_CLIENT_SECRET=$bad" >"$WORK/out" 2>&1; rc=$?
+  check "secret-file client secret: ${bad##*/} is refused" bash -c "[ $rc -ne 0 ] && [ -z \"\$(ls '$WORK/secrets')\" ]"
+done
+S --secret-file "DB_PASSWORD=$WORK/client-secret.txt" >"$WORK/out" 2>&1; rc=$?
+check "secret-file: other keys are refused" bash -c "[ $rc -ne 0 ] && [ -z \"\$(ls '$WORK/secrets')\" ] && grep -q 'GITHUB_APP_PRIVATE_KEY' '$WORK/out'"
+STUB_SWARM=worker S --secret-file "GITHUB_APP_PRIVATE_KEY=$PEM" >"$WORK/out" 2>&1; rc=$?
+check "secret-file: not a swarm manager: error, nothing created" bash -c "[ $rc -ne 0 ] && [ -z \"\$(ls '$WORK/secrets')\" ] && grep -qi 'manager' '$WORK/out'"
+STUB_CREATE_FAIL=1 S --secret-file "GITHUB_APP_PRIVATE_KEY=$PEM" >"$WORK/out" 2>&1; rc=$?
+check "secret-file: docker secret create fails: error without the key" bash -c "[ $rc -ne 0 ] && ! grep -qF '$PEMBODY' '$WORK/out'"
+check "secret-file: help and the secret hint name it" bash -c "grep -q -- '--secret-file' <<< \"\$1\" && grep -q -- '--secret-file GITHUB_APP_PRIVATE_KEY' <<< \"\$2\"" _ "$(S --help 2>&1)" "$(S --set GITHUB_APP_PRIVATE_KEY=x 2>&1)"
+fresh
+menu "0|GitHubSchluessel" "0|GITHUB_APP_PRIVATE_KEY" "0|$PEM" "0|" "0|" "1|"
+check "menu: the GitHub key is created from the file" cmp -s "$WORK/secrets/todo_github_app_key" "$PEM"
+check "menu: the key is never shown" bash -c "! grep -qF '$PEMBODY' '$WORK/log' && ! grep -qF '$PEMBODY' '$WORK/menu.out'"
+
+# ------------------------------------------------------------- setup.sh keeps what settings.sh set
+cp "$SRC/setup.sh" "$SRC/lib.sh" "$DIR/"
+fresh
+cat > "$ENVF" <<'EOF'
+TODO_STACK=todo
+TODO_IMAGE_TAG=sha-abc1234
+PUBLIC_DOMAIN=todo.example.org
+RP_ID=todo.example.org
+RP_ORIGIN=https://todo.example.org
+DB_HOST=db.prod.internal
+DB_PORT=3306
+DB_NAME=todo
+DB_USER=todo
+GITHUB_APP_ENABLED=true
+GITHUB_APP_ID=123456
+GITHUB_APP_SLUG=todolino-deploy
+GITHUB_APP_CLIENT_ID=Iv23liAAAAAAAAAAAAAA
+GITHUB_APP_KEY_SECRET=gh_key_v2
+GITHUB_APP_CLIENT_SECRET_SECRET=gh_client_v2
+GITHUB_APP_INSTALLATION_ID=7654321
+GITHUB_APP_REPOSITORIES=00000000-0000-0000-0000-000000000000=owner/repo,11111111-1111-1111-1111-111111111111=owner/zwei
+EOF
+chmod 600 "$ENVF"; cp "$ENVF" "$WORK/setup-before.env"
+# The real openssl (setup.sh draws a bootstrap token); the dry run calls no Docker.
+setup_dry() { ( cd "$DIR" && PATH="${PATH#"$WORK/bin:"}" $TMO ./setup.sh --env-file "$ENVF" --non-interactive --dry-run 2>&1 < /dev/null ); }
+out="$(setup_dry)"; rc=$?
+written="$(sed -n 's/.*Env-Datei geschrieben: \(.*\) (Modus 600)$/\1/p' <<< "$out" | tail -1)"
+check "setup: dry run succeeds" eq "$rc" 0
+for k in GITHUB_APP_ENABLED GITHUB_APP_ID GITHUB_APP_SLUG GITHUB_APP_CLIENT_ID GITHUB_APP_KEY_SECRET GITHUB_APP_CLIENT_SECRET_SECRET GITHUB_APP_INSTALLATION_ID GITHUB_APP_REPOSITORIES; do
+  check "setup: a re-run keeps $k" bash -c "[ -n '$written' ] && [ \"\$(grep '^$k=' '$written')\" = \"\$(grep '^$k=' '$WORK/setup-before.env')\" ]"
+done
+grep -v '^GITHUB_APP' "$WORK/setup-before.env" > "$ENVF"
+out="$(setup_dry)"
+written="$(sed -n 's/.*Env-Datei geschrieben: \(.*\) (Modus 600)$/\1/p' <<< "$out" | tail -1)"
+check "setup: without GitHub values none appear" bash -c "[ -n '$written' ] && ! grep -q '^GITHUB' '$written'"
+
 # ------------------------------------------------------------- Bash version
 out="$(cd "$DIR" && SETTINGS_TEST_BASH_VERSION=4.3.48 ./settings.sh --env "$ENVF" --list 2>&1)"; rc=$?
 check "bash: version 4.3 is refused (exit 1) with a message" bash -c "[ $rc -eq 1 ] && grep -q 'Bash 4.4' <<< \"\$1\"" _ "$out"
