@@ -156,6 +156,16 @@ describe('nowEntry (shortcut from the start page)', () => {
 		expect(nowEntry(undefined)).toEqual({ running: null, waiting: null });
 		expect(nowEntry(block({ counts: { running: 2, waiting: 1, recentlyDone: 0, silent: 3 } }))).toEqual({ running: 2, waiting: 1 });
 	});
+	it('counts as waiting only what concerns the account when the summary says so', () => {
+		const b = block({ counts: { running: 2, waiting: 4, recentlyDone: 0, silent: 0 } });
+		const summary = { concerningQuestions: 1, concerningReviews: 2 };
+		expect(nowEntry(b, summary)).toEqual({ running: 2, waiting: 3 });
+		expect(nowEntry(b, { concerningQuestions: 0, concerningReviews: 0 })).toEqual({ running: 2, waiting: 0 });
+		// Older servers (no such counters, or not loaded yet) keep the number of the block.
+		expect(nowEntry(b, {})).toEqual({ running: 2, waiting: 4 });
+		expect(nowEntry(b, null)).toEqual({ running: 2, waiting: 4 });
+		expect(nowEntry(undefined, summary)).toEqual({ running: null, waiting: null });
+	});
 	it('labels running entries, singular and zero', () => {
 		expect(nowEntryLabel({ running: null, waiting: null })).toBe('');
 		expect(nowEntryLabel({ running: 0, waiting: 0 })).toBe('nichts läuft');

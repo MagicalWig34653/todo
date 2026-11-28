@@ -3,7 +3,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { api, ApiError, type ForMe, type Question, type Review } from '#lib/api.js';
 	import { roleOf } from '#lib/access.js';
-	import { defaultSegment, mayDecideReview, type Segment } from '#lib/assignment.js';
+	import { defaultSegment, forMeCount, MAX_LIST_LIMIT, mayDecideReview, minePlans, needResponsibility, settleForMe, type Segment } from '#lib/assignment.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { cardOfConfirmation, cardOfNeed, cardOfPost, cardTabOfNeed, cardTabOfPost, uniqueCards, type CardRef } from '#lib/cardRef.js';
@@ -45,7 +45,9 @@
 	let posts = $state<ForYouPost[]>([]);
 	/** "Für mich" (`GET /v1/for-me`); null on servers without it, then only "Alle" exists. */
 	let mine = $state<ForMe | null>(null);
-	const mineCount = $derived(mine ? mine.questions.length + mine.reviews.length + mine.tasks.length : 0);
+	/** Waiting plans of own cards: the feed entry itself, `GET /v1/for-me` has no plans. */
+	const myPlans = $derived(minePlans(needs, mine));
+	const mineCount = $derived(forMeCount(mine, myPlans));
 	/** Chosen once the first answer is there and only changed by the person afterwards. */
 	let chosen = $state<Segment | null>(null);
 	const segment = $derived<Segment>(mine ? (chosen ?? 'all') : 'all');
@@ -53,7 +55,7 @@
 	let questions = $state<Question[]>([]);
 	let reviews = $state<Review[]>([]);
 	const mineCards = $derived<CardRef[]>(
-		mine ? [...mine.questions.map((q) => ({ type: 'question' as const, id: q.id })), ...mine.reviews.map((r) => ({ type: 'review' as const, id: r.taskID })), ...mine.tasks.map((x) => ({ type: 'task' as const, id: x.id }))] : []
+		mine ? [...mine.questions.map((q) => ({ type: 'question' as const, id: q.id })), ...mine.reviews.map((r) => ({ type: 'review' as const, id: r.taskID })), ...myPlans.map(cardOfNeed), ...mine.tasks.map((x) => ({ type: 'task' as const, id: x.id }))] : []
 	);
 	/** The cards in display order: what the window's up/down arrows step through. */
 	const orderedCards = $derived(uniqueCards([...confirmationCards.map((c) => cardOfConfirmation(c.item)), ...(segment === 'mine' ? mineCards : needs.map(cardOfNeed)), ...posts.map(cardOfPost)]));
@@ -61,8 +63,7 @@
 		const project = workspace.projects.find((p) => p.id === projectID);
 		return project ? roleOf(project) : 'read';
 	};
-	const reviewOfNeed = (n: ForYouNeed) => (n.kind === 'review' ? reviews.find((r) => r.id === n.reviewID) : undefined);
-	const questionOfNeed = (n: ForYouNeed) => (n.kind === 'question' ? questions.find((q) => q.id === n.questionID) : undefined);
+	const responsibilityOf = (n: ForYouNeed) => needResponsibility(n, questions.find((q) => q.id === n.questionID), reviews.find((r) => r.id === n.reviewID));
 	const contextOf = (x: { taskTitle?: string | null; projectName?: string | null }) => t('cc.question.in', { task: x.taskTitle ?? '', project: x.projectName ?? '' });
 	const projectName = (id: string) => workspace.projects.find((p) => p.id === id)?.name ?? '';
 	let next = $state<string | null>(null);
@@ -93,26 +94,22 @@
 	async function load() {
 		const my = ++seq;
 		try {
-			const [page, own] = await Promise.all([
-				api.forYou({ limit: 30 }),
-				api.forMe().catch((e) => {
-					if (e instanceof ApiError && e.status === 404) return null;
-					throw e;
-				})
-			]);
+			const [page, { own, failure }] = await Promise.all([api.forYou({ limit: 30 }), settleForMe(api.forMe())]);
 			const needsKind = (kind: string) => page.needsYou.some((n) => n.kind === kind);
 			// Loaded before the cards are shown, so a decision somebody else has to take never flashes up.
 			const [qs, rs] = await Promise.all([
-				needsKind('question') ? api.listQuestions({ state: 'open' }).catch(() => questions) : [],
-				needsKind('review') ? api.listReviews({ state: 'pending' }).catch(() => reviews) : []
+				needsKind('question') ? api.listQuestions({ state: 'open', limit: MAX_LIST_LIMIT }).catch(() => questions) : [],
+				needsKind('review') ? api.listReviews({ state: 'pending', limit: MAX_LIST_LIMIT }).catch(() => reviews) : []
 			]);
 			if (my !== seq) return;
 			if (!sameList(questions, qs)) questions = qs;
 			if (!sameList(reviews, rs)) reviews = rs;
-			if (JSON.stringify(own && { ...own, generatedAt: '' }) !== JSON.stringify(mine && { ...mine, generatedAt: '' })) mine = own;
-			if (own) chosen ??= defaultSegment(own.questions.length + own.reviews.length + own.tasks.length);
+			if (own !== undefined && JSON.stringify(own && { ...own, generatedAt: '' }) !== JSON.stringify(mine && { ...mine, generatedAt: '' })) mine = own;
+			if (own) chosen ??= defaultSegment(forMeCount(own, minePlans(page.needsYou, own)));
 			adopt(page);
 			unsupported = false;
+			// Reported by the caller, after the feed is shown.
+			if (failure) throw failure;
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 404) unsupported = true;
 			else throw e;
@@ -217,6 +214,60 @@
 	}
 </script>
 
+{#snippet needCard(item: ForYouNeed)}
+	<!-- Agents write Markdown: a short plain preview here (headline + clamped rest), the card window renders the original. -->
+	{@const preview = previewParts(item.title)}
+	{@const detail = item.detail ? previewText(needDetailText(item)) : ''}
+	{@const who = responsibilityOf(item)}
+	<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
+		<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-r-{item.id} need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards, cardTabOfNeed(item))}>
+			<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(needKindKey(item.kind))}</span>
+			<span id="need-t-{item.id}" class="line-clamp-2 text-sm font-semibold" data-testid="need-title">{preview.lead}</span>
+			<span id="need-r-{item.id}" class={['text-muted-foreground line-clamp-3 text-sm', !preview.rest && !detail && 'hidden']} data-testid="need-preview">{[preview.rest, detail].filter(Boolean).join(' ')}</span>
+			<span id="need-d-{item.id}" class="text-muted-foreground text-xs">
+				{[item.projectName, item.kind === 'question' || item.kind === 'review' ? item.taskTitle : '', item.dueAt ? formatWhen(item.dueAt) : ''].filter(Boolean).join(' · ')}
+			</span>
+			<span class="text-muted-foreground h-4 w-full truncate text-xs" data-tabular><Timestamp value={item.createdAt} label={item.kind === 'question' ? 'time.asked' : item.kind === 'review' ? 'time.requested' : 'time.created'} /></span>
+		</button>
+		{#if who}
+			<Responsibility kind={who.kind} id={who.id} projectID={item.projectID} assigneeID={who.assigneeID} assigneeName={who.assigneeName} runner={who.runner} onchanged={changed} />
+		{/if}
+		{#if item.actions.length > 0 && (who?.kind !== 'review' || mayDecideReview(who.assigneeID, auth.user?.id, roleIn(item.projectID)))}
+			{@const free = item.actions.length === 1 && item.actions[0].requiresInput && item.actions[0].inputField === 'answer'}
+			{#if item.kind === 'question' && item.questionID && item.options.length > 0}
+				<QuestionAnswer bare id={item.questionID} prompt={item.title} options={item.options} onanswered={() => answered(item)} />
+			{:else if free}
+				<form class="flex gap-2" onsubmit={(e) => { e.preventDefault(); void run(item, item.actions[0]); }}>
+					<Input class="min-w-0 flex-1" placeholder={t('forYou.answerPlaceholder')} aria-label={t('forYou.answerPlaceholder')} bind:value={texts[item.id]} />
+					<Button type="submit" disabled={busy.has(item.id) || !(texts[item.id] ?? '').trim()}>{t('forYou.send')}</Button>
+				</form>
+			{:else}
+				<OptionButtons
+					class="gap-2"
+					items={item.actions.map((a, i) => ({ key: String(i), label: a.label }))}
+					disabled={busy.has(item.id)}
+					onpick={(i) => click(item, item.actions[Number(i)])}
+				/>
+				{#if noteFor === item.id}
+					{@const comment = asksComment(item)}
+					<Input
+						id="need-i-{item.id}"
+						placeholder={t(comment ? 'forYou.planCommentPlaceholder' : 'forYou.notePlaceholder')}
+						aria-label={t(comment ? 'forYou.planCommentPlaceholder' : 'forYou.notePlaceholder')}
+						aria-invalid={comment && missing.has(item.id) && !(texts[item.id] ?? '').trim() ? 'true' : undefined}
+						aria-describedby={comment && missing.has(item.id) ? `need-p-${item.id}` : undefined}
+						oninput={() => { if (missing.has(item.id)) { const m = new Set(missing); m.delete(item.id); missing = m; } }}
+						bind:value={texts[item.id]}
+					/>
+					{#if comment && missing.has(item.id)}
+						<p class="text-destructive text-xs font-medium" role="alert" id="need-p-{item.id}">{t('forYou.planCommentRequired')}</p>
+					{/if}
+				{/if}
+			{/if}
+		{/if}
+	</article>
+{/snippet}
+
 <section class="flex flex-col gap-4" data-testid="for-you">
 	<PageHeader title={t('forYou.title')} description={t('forYou.hint')} testid="view-heading" />
 	{#if onnow}<NowEntry onopen={onnow} />{/if}
@@ -268,6 +319,9 @@
 								<ReviewDecision createdAt={r.createdAt} taskID={r.taskID} summary={r.summary} requestedBy={r.requestedByLabel} brainRecommended={r.brainRecommended} variants={r.variants} reviewID={r.id} projectID={r.projectID} reviewerID={r.reviewerID} assigneeName={r.assigneeName} runner={!!r.agentJobID} context={contextOf(r)} onopen={() => cardDetail.open({ type: 'review', id: r.taskID }, orderedCards)} ondecided={changed} />
 							</div>
 						{/each}
+						{#each myPlans as item (item.id)}
+							{@render needCard(item)}
+						{/each}
 						{#each mine.tasks as task (task.id)}
 							<article class="bg-card flex min-w-0 flex-col rounded-xl border p-3" data-testid="for-me-card" data-kind="task">
 								<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" onclick={() => cardDetail.open({ type: 'task', id: task.id }, orderedCards)}>
@@ -281,60 +335,7 @@
 					</div>
 				{/if}
 				{#each segment === 'all' ? needs : [] as item (item.id)}
-					<!-- Agents write Markdown: a short plain preview here (headline + clamped rest), the card window renders the original. -->
-					{@const preview = previewParts(item.title)}
-					{@const detail = item.detail ? previewText(needDetailText(item)) : ''}
-					{@const review = reviewOfNeed(item)}
-					{@const question = questionOfNeed(item)}
-					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
-						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-r-{item.id} need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards, cardTabOfNeed(item))}>
-							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(needKindKey(item.kind))}</span>
-							<span id="need-t-{item.id}" class="line-clamp-2 text-sm font-semibold" data-testid="need-title">{preview.lead}</span>
-							<span id="need-r-{item.id}" class={['text-muted-foreground line-clamp-3 text-sm', !preview.rest && !detail && 'hidden']} data-testid="need-preview">{[preview.rest, detail].filter(Boolean).join(' ')}</span>
-							<span id="need-d-{item.id}" class="text-muted-foreground text-xs">
-								{[item.projectName, item.kind === 'question' || item.kind === 'review' ? item.taskTitle : '', item.dueAt ? formatWhen(item.dueAt) : ''].filter(Boolean).join(' · ')}
-							</span>
-							<span class="text-muted-foreground h-4 w-full truncate text-xs" data-tabular><Timestamp value={item.createdAt} label={item.kind === 'question' ? 'time.asked' : item.kind === 'review' ? 'time.requested' : 'time.created'} /></span>
-						</button>
-						{#if review}
-							<Responsibility kind="review" id={review.id} projectID={item.projectID} assigneeID={review.reviewerID} assigneeName={review.assigneeName ?? item.assigneeName} runner={!!review.agentJobID} onchanged={changed} />
-						{:else if question}
-							<Responsibility kind="question" id={question.id} projectID={item.projectID} assigneeID={question.assigneeID} assigneeName={question.assigneeName ?? item.assigneeName} runner={!!question.agentQuestionID} onchanged={changed} />
-						{/if}
-						{#if item.actions.length > 0 && (!review || mayDecideReview(review.reviewerID, auth.user?.id, roleIn(item.projectID)))}
-							{@const free = item.actions.length === 1 && item.actions[0].requiresInput && item.actions[0].inputField === 'answer'}
-							{#if item.kind === 'question' && item.questionID && item.options.length > 0}
-								<QuestionAnswer bare id={item.questionID} prompt={item.title} options={item.options} onanswered={() => answered(item)} />
-							{:else if free}
-								<form class="flex gap-2" onsubmit={(e) => { e.preventDefault(); void run(item, item.actions[0]); }}>
-									<Input class="min-w-0 flex-1" placeholder={t('forYou.answerPlaceholder')} aria-label={t('forYou.answerPlaceholder')} bind:value={texts[item.id]} />
-									<Button type="submit" disabled={busy.has(item.id) || !(texts[item.id] ?? '').trim()}>{t('forYou.send')}</Button>
-								</form>
-							{:else}
-								<OptionButtons
-									class="gap-2"
-									items={item.actions.map((a, i) => ({ key: String(i), label: a.label }))}
-									disabled={busy.has(item.id)}
-									onpick={(i) => click(item, item.actions[Number(i)])}
-								/>
-								{#if noteFor === item.id}
-									{@const comment = asksComment(item)}
-									<Input
-										id="need-i-{item.id}"
-										placeholder={t(comment ? 'forYou.planCommentPlaceholder' : 'forYou.notePlaceholder')}
-										aria-label={t(comment ? 'forYou.planCommentPlaceholder' : 'forYou.notePlaceholder')}
-										aria-invalid={comment && missing.has(item.id) && !(texts[item.id] ?? '').trim() ? 'true' : undefined}
-										aria-describedby={comment && missing.has(item.id) ? `need-p-${item.id}` : undefined}
-										oninput={() => { if (missing.has(item.id)) { const m = new Set(missing); m.delete(item.id); missing = m; } }}
-										bind:value={texts[item.id]}
-									/>
-									{#if comment && missing.has(item.id)}
-										<p class="text-destructive text-xs font-medium" role="alert" id="need-p-{item.id}">{t('forYou.planCommentRequired')}</p>
-									{/if}
-								{/if}
-							{/if}
-						{/if}
-					</article>
+					{@render needCard(item)}
 				{/each}
 			</div>
 		{/if}

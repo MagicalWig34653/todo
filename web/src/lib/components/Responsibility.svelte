@@ -31,7 +31,7 @@
 	const role = $derived(project ? roleOf(project) : 'read');
 	const others = $derived(kind === 'review' && !mayDecideReview(assigneeID, auth.user?.id, role));
 	const allowed = $derived(
-		!!project && (kind === 'question' ? mayHandOverQuestion(role, runner) : mayHandOverReview({ reviewerID: assigneeID, meID: auth.user?.id, role, runner }))
+		directory.supported && !!project && (kind === 'question' ? mayHandOverQuestion(role, runner) : mayHandOverReview({ reviewerID: assigneeID, meID: auth.user?.id, role, runner }))
 	);
 	const people = $derived(candidatesFor(directory.people(projectID), kind).filter((p) => p.userID !== assigneeID));
 	const name = $derived(assigneeID ? directory.label(projectID, assigneeID, assigneeName) : null);
@@ -39,8 +39,9 @@
 	let open = $state(false);
 	let busy = $state(false);
 
+	// Also when only "Weitergeben" is offered: that finds out early whether the server knows responsibility at all.
 	$effect(() => {
-		if (assigneeID && !assigneeName) void directory.load(projectID);
+		if (allowed || (assigneeID && !assigneeName)) void directory.load(projectID);
 	});
 
 	function toggle() {

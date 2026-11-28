@@ -21,7 +21,7 @@ const task: Record<'card' | 'question' | 'annaReview' | 'benReview' | 'benReview
 	card: '', question: '', annaReview: '', benReview: '', benReview2: '', loose: ''
 };
 
-async function call<T>(page: Page, method: 'post' | 'put' | 'get', url: string, data?: unknown): Promise<T> {
+async function call<T>(page: Page, method: 'post' | 'put' | 'patch' | 'get', url: string, data?: unknown): Promise<T> {
 	const r = await page.request[method](url, method === 'get' ? undefined : { ...json, data: data ?? {} });
 	expect(r.ok(), `${method} ${url}: ${r.status()} ${await r.text()}`).toBeTruthy();
 	return (r.status() === 204 ? null : await r.json()) as T;
@@ -35,6 +35,9 @@ const row = (p: Page, title: string) => p.getByTestId('task-item').filter({ hasT
 const boardCard = (p: Page, title: string) => p.getByTestId('board-card').filter({ hasText: title });
 const forMe = (p: Page) => p.getByTestId('for-me');
 const forMeCard = (p: Page, title: string) => forMe(p).getByTestId('for-me-card').filter({ hasText: title });
+const needsCard = (p: Page, title: string) => p.getByTestId('needs-card').filter({ hasText: title });
+const navCount = (p: Page) => p.getByRole('navigation', { name: 'Seitenleiste' }).getByTestId('nav-count-forYou');
+const createTask = async (title: string) => (await call<{ id: string }>(anna, 'post', '/v1/tasks', { projectID, title })).id;
 
 async function account(browser: Browser, name: string, token: string): Promise<{ page: Page; id: string }> {
 	const page = await signedInPage(browser, name, token);
@@ -272,4 +275,141 @@ test('phone: segments and handover fit without horizontal scrolling', async () =
 	await expect(side(anna)).toBeVisible();
 	expect(await anna.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 	await anna.setViewportSize({ width: 1280, height: 860 });
+});
+
+test('the shortcut "Jetzt" counts like the navigation: only what concerns the account', async () => {
+	const own = await createTask('Frage nur an Ben');
+	const question = await call<{ id: string }>(anna, 'post', `/v1/tasks/${own}/questions`, { prompt: 'Passt der Termin?', options: ['Ja', 'Nein'] });
+	await call(anna, 'put', `/v1/questions/${question.id}/assignee`, { assigneeID: benID });
+	// Three things wait in the project: two reviews Anna decides and one question for Ben.
+	await anna.goto('/for-you');
+	await expect(navCount(anna)).toHaveText('2');
+	await expect(anna.getByTestId('now-entry-waiting')).toHaveText('· 2 warten auf dich');
+	await ben.goto('/for-you');
+	await expect(navCount(ben)).toHaveText('1');
+	await expect(ben.getByTestId('now-entry-waiting')).toHaveText('· 1 wartet auf dich');
+	// The page "Jetzt" itself keeps showing everything.
+	await anna.goto('/now');
+	await expect(anna.getByTestId('now-block').getByTestId('now-waiting-item')).toHaveCount(3);
+});
+
+test('an entry the capped lists do not reach still says who it is for', async () => {
+	const limits: string[] = [];
+	// As if both entries were older than the newest ones the lists return.
+	for (const path of ['questions', 'reviews']) {
+		await anna.route(`**/v1/${path}?**`, (r) => {
+			limits.push(`${path} ${new URL(r.request().url()).searchParams.get('limit')}`);
+			return r.fulfill({ json: [] });
+		});
+	}
+	await anna.goto('/for-you');
+	await anna.getByTestId('for-you-all').click();
+	const question = needsCard(anna, 'Passt der Termin?');
+	await expect(question.getByTestId('handover-line')).toHaveText(`Für ${BEN}`);
+	await expect(question.getByRole('button', { name: 'Weitergeben' })).toBeVisible();
+	const review = needsCard(anna, 'Review von Anna');
+	await expect(review.getByTestId('handover-line')).toHaveText(`Für ${ANNA}`);
+	await expect(review.getByRole('button', { name: 'Weitergeben' })).toBeVisible();
+	expect(limits).toContain('questions 200');
+	expect(limits).toContain('reviews 200');
+	await anna.unroute('**/v1/questions?**');
+	await anna.unroute('**/v1/reviews?**');
+});
+
+test('a waiting plan of an own card is also under "Für mich"', async () => {
+	const settings = await call<{ revision: number }>(anna, 'get', `/v1/projects/${projectID}/pipeline-settings`);
+	await call(anna, 'patch', `/v1/projects/${projectID}/pipeline-settings`, { revision: settings.revision, notifyOnWaitingApproval: true });
+	const own = await createTask('Plan fuer Ben');
+	await call(anna, 'put', `/v1/tasks/${own}/assignee`, { assigneeID: benID });
+	await call(anna, 'put', `/v1/tasks/${own}/plan`, { body: 'Erst die Tests, dann der Umbau.', agentName: 'claude-code' });
+
+	await ben.goto('/for-you');
+	await expect(ben.getByTestId('for-you-mine')).toHaveAttribute('aria-pressed', 'true');
+	const plan = forMe(ben).locator('[data-testid="needs-card"][data-kind="plan"]');
+	await expect(plan).toHaveCount(1);
+	await expect(plan).toContainText('Plan fuer Ben');
+	await ben.getByTestId('for-you-all').click();
+	await expect(ben.locator('[data-testid="needs-card"][data-kind="plan"]')).toHaveCount(1);
+	// The card belongs to Ben, so the plan is not among Anna's own things.
+	await anna.goto('/for-you');
+	await anna.getByTestId('for-you-mine').click();
+	await expect(forMeCard(anna, 'Review von Anna')).toBeVisible();
+	await expect(forMe(anna)).not.toContainText('Plan fuer Ben');
+});
+
+test('a failing "Für mich" does not take the feed with it', async () => {
+	const broken = '**/v1/for-me';
+	const fail = () => ben.route(broken, (r) => r.fulfill({ status: 500, json: { error: true, reason: 'boom' } }));
+	await fail();
+	await ben.goto('/for-you');
+	await expect(needsCard(ben, 'Passt der Termin?')).toBeVisible();
+	await expect(ben.getByTestId('notice')).toBeVisible();
+	await expect(ben.getByTestId('for-you-mine')).toHaveCount(0);
+	await ben.unroute(broken);
+
+	// Once shown, a later failure keeps "Für mich" as it was and still takes over the new feed.
+	await ben.goto('/for-you');
+	await expect(ben.getByTestId('for-you-mine')).toHaveAttribute('aria-pressed', 'true');
+	await fail();
+	await forMeCard(ben, 'Passt der Termin?').getByTestId('question-option').filter({ hasText: 'Ja' }).click();
+	await expect(ben.getByTestId('notice')).toBeVisible();
+	await expect(forMeCard(ben, 'Karte zuweisen')).toBeVisible();
+	await ben.getByTestId('for-you-all').click();
+	await expect(needsCard(ben, 'Passt der Termin?')).toHaveCount(0);
+	await expect(forMe(ben)).toHaveCount(0);
+	await ben.unroute(broken);
+});
+
+test('"Meine": a card added through a quick-add line stays visible until the filter is toggled', async () => {
+	await ben.goto(`/project/${projectID}`);
+	await view(ben, 'Liste');
+	await toggleMine(ben);
+	const inList = ben.getByRole('textbox', { name: 'Neue Aufgabe, Enter zum Anlegen' });
+	await inList.fill('Schnell in der Liste');
+	await inList.press('Enter');
+	await expect(inList).toHaveValue('');
+	await expect(row(ben, 'Schnell in der Liste')).toBeVisible();
+	await expect(row(ben, 'Ohne Zustaendigkeit')).toHaveCount(0);
+	// Visible, but not assigned to anybody.
+	await expect(row(ben, 'Schnell in der Liste').getByTestId('assignee-chip')).toHaveCount(0);
+
+	await view(ben, 'Board');
+	await expect(boardCard(ben, 'Schnell in der Liste')).toBeVisible();
+	const inBoard = ben.getByRole('textbox', { name: /^Aufgabe hinzufügen in / }).first();
+	await inBoard.fill('Schnell im Board');
+	await inBoard.press('Enter');
+	await expect(inBoard).toHaveValue('');
+	await expect(boardCard(ben, 'Schnell im Board')).toBeVisible();
+	await expect(boardCard(ben, 'Ohne Zustaendigkeit')).toHaveCount(0);
+
+	await toggleMine(ben);
+	await expect(boardCard(ben, 'Ohne Zustaendigkeit')).toBeVisible();
+	await toggleMine(ben);
+	await expect(boardCard(ben, 'Karte zuweisen')).toBeVisible();
+	await expect(boardCard(ben, 'Schnell im Board')).toHaveCount(0);
+	await expect(boardCard(ben, 'Schnell in der Liste')).toHaveCount(0);
+	await toggleMine(ben);
+	await view(ben, 'Liste');
+});
+
+test('older server without responsibility: no empty choices; a 404 for one project alone hides nothing', async () => {
+	const gone = (pattern: string) => anna.route(pattern, (r) => r.fulfill({ status: 404, json: { error: true, reason: 'Not Found' } }));
+	await gone('**/v1/for-me');
+	await gone('**/v1/projects/*/assignees');
+	const probed = anna.waitForResponse('**/v1/for-me', { timeout: 10_000 });
+	await openCard(anna, task.annaReview);
+	await probed;
+	await expect(dialog(anna).getByTestId('review-accept')).toBeVisible();
+	await expect(side(anna)).toHaveCount(0);
+	await expect(dialog(anna).getByRole('button', { name: 'Weitergeben' })).toHaveCount(0);
+	await anna.goto('/for-you');
+	await expect(needsCard(anna, 'Review von Anna').getByTestId('handover-line')).toBeVisible();
+	await expect(anna.getByRole('button', { name: 'Weitergeben' })).toHaveCount(0);
+
+	// `/for-me` answers again: the missing list now only means this project is gone.
+	await anna.unroute('**/v1/for-me');
+	await openCard(anna, task.annaReview);
+	await expect(side(anna).getByRole('combobox', { name: 'Zuständig' })).toBeVisible();
+	await expect(dialog(anna).getByRole('button', { name: 'Weitergeben' })).toBeVisible();
+	await anna.unroute('**/v1/projects/*/assignees');
 });
