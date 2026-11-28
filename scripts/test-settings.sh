@@ -196,6 +196,14 @@ check "conflict: the whole mail set in one run is accepted" bash -c "[ $rc -eq 0
 fresh
 S --set APNS_ENABLED=true >/dev/null 2>&1; rc=$?
 check "conflict: APNS_ENABLED=true without key ID and team ID is refused" eq "$rc" 3
+S --set GITHUB_APP_ENABLED=true >/dev/null 2>&1; rc=$?
+check "conflict: GITHUB_APP_ENABLED=true without app ID, installation ID and repositories is refused" eq "$rc" 3
+S --set GITHUB_APP_ENABLED=true --set GITHUB_APP_ID=424242 --set GITHUB_APP_INSTALLATION_ID=777 \
+  --set GITHUB_APP_REPOSITORIES=A53494A1-2866-449C-970D-B978BE4D5816=acme/site >/dev/null 2>&1; rc=$?
+check "github: the whole app set in one run is accepted" bash -c "[ $rc -eq 0 ] && grep -qx 'GITHUB_APP_ID=424242' '$ENVF'"
+out="$(S --set GITHUB_APP_PRIVATE_KEY=KEYMATERIAL 2>&1)"; rc=$?
+check "github: the private key is never written to the file; the hint names the secret" bash -c "[ $rc -eq 2 ] && ! grep -q KEYMATERIAL '$ENVF' && grep -q todo_github_app_key <<< \"\$1\"" _ "$out"
+fresh
 out="$(S --set ATTACHMENT_STORAGE=s3 2>&1)"; rc=$?
 check "conflict: ATTACHMENT_STORAGE=s3 without S3_ENDPOINT is only a warning (the endpoint may live in the PWA)" bash -c "[ $rc -eq 0 ] && grep -q 'WARNUNG.*S3_ENDPOINT' <<< \"\$1\"" _ "$out"
 S --set RP_ID=other.example >/dev/null 2>&1; rc=$?

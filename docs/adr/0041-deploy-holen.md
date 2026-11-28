@@ -55,6 +55,7 @@ GitHub und keine neuen Zugangsdaten**; er ändert auf dem Zielserver nichts.
   der Schreibweg (App-Anmeldung, Branch und Commit über die GitHub-API, PR mit der Zusammenfassung, Autor aus 8.10) gehört in Phase 2b.
   Beim Bau beachten: Schlüssel der App wie die Deploy-Zugangsdaten verschlüsselt (`SETTINGS_ENCRYPTION_KEY`), nie in Antwort oder Log;
   Branch-Namen nur `server/*` serverseitig erzwingen; Dateien gehen durch denselben Geheimnis-Schutz wie beim Holen.
+  **Umgesetzt am 28.11.2026: ADR 0042** (Schlüssel nur aus Umgebung bzw. Docker-Secret, deshalb ohne Speicherung).
 - GitHub-Konto der Person als Commit-Autor (8.10).
 - PWA-Knopf „Holen“ und Diff je Datei (Sync-Ansicht).
 - Hochladen (Phase 3).

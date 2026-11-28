@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
-  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a und 2a, nur lesen
-  version: 1.1.0
+  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a bis 2b (Zielserver nur lesen)
+  version: 1.2.0
   description: |
     Karte 354ADE12, ADR 0039, Konzept im Orchestrator docs/konzept-deploy-sftp.md (Abschnitt 8 vor 1–7).
 
@@ -61,8 +61,19 @@ info:
     Restrisiko: Der Inhaltsschutz ist eine Heuristik (Zuweisungen in einer Zeile, Konfigurationsdateien bis 2 MiB; Werte über mehrere
     Zeilen, ungewöhnliche Schlüsselnamen in Dateien ohne Konfigurationsnamen werden nicht erkannt). Gehalten wird eher zu viel als zu wenig.
     Symlinks: SFTP listet und liest sie nicht; FTP/FTPS listen sie wie Dateien, deshalb wird vor dem Lesen jedes Verzeichnis auf dem
-    Weg mit LIST geprüft (curl) und alles hinter einem Link verworfen. Der Server legt keinen Branch an und hat keinen Zugriff auf
-    GitHub: Branch und Commit entstehen beim Aufrufer (scripts/deploy-pull-apply.py). Auf dem Server wird nichts geändert.
+    Weg mit LIST geprüft (curl) und alles hinter einem Link verworfen. Bei pull entstehen Branch und Commit beim
+    Aufrufer (scripts/deploy-pull-apply.py). Auf dem Server wird nichts geändert.
+
+    Pull Request (1.2.0, Phase 2b, ADR 0042, docs/GITHUB-APP-EINRICHTUNG.md): POST .../pull-request legt dieselben Dateien als einen
+    Commit auf baseCommit (Commit des Standard-Branches, zu dem das Manifest gehört) in einem NEUEN Branch server/<a-z, 0-9, -> an
+    (Vorgabe server/<ziel>-JJJJ-MM-TT, belegt: -2 bis -20) und öffnet einen Pull Request gegen den Standard-Branch, über die GitHub-App
+    des Betreibers (GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY[_FILE], GITHUB_APP_REPOSITORIES =
+    Projekt-ID=owner/repo). Nie main oder andere Refs (400 deploy_branch_forbidden, vor jedem Aufruf an GitHub oder den Zielserver); kein
+    Ref wird verschoben oder gelöscht, nichts gemergt. Nur private Repositorys, nur für das Projekt freigegebene. Nie geschrieben werden
+    Pipeline-Dateien (Jenkinsfile, .circleci/ u. a.) und Pfade, an denen im Repository ein Symlink, Submodul oder Datei/Ordner-Konflikt
+    steht (blocked_path); Dateien, die im baseCommit schon so sind, fallen weg. Höchstens 500 Dateien, davon 50 Binärdateien je Lauf
+    (Rest in remaining); maxBytes Vorgabe 4 MB (REST und MCP). Ohne Konfiguration ok=false deploy_github_not_configured. Schlüssel,
+    JWT und Installations-Token der App stehen in keiner Antwort und keinem Log.
 
     Fehlercodes der Verbindung: deploy_host_key_unconfirmed, deploy_host_key_mismatch, deploy_tls_untrusted, deploy_auth_failed,
     deploy_base_path_missing, deploy_unreachable, deploy_target_blocked, deploy_transport_unavailable (rclone fehlt),
@@ -146,8 +157,51 @@ paths:
         '401': {description: Keine Personen-Sitzung}
         '403': {description: Nur lesen am Projekt}
         '404': {description: Ziel unbekannt oder nicht sichtbar}
+  /v1/deploy-targets/{targetID}/pull-request:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Pull Request mit den Server-Änderungen öffnen (Person, edit; Body bis 16 MB). MCP open_server_changes_pr hat dieselben Argumente und dieselbe Antwort.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files, baseCommit]
+              properties:
+                files: {type: array, maxItems: 50000, items: {$ref: '#/components/schemas/ManifestEntry'}, description: Manifest des Repo-Stands bei baseCommit}
+                baseCommit: {type: string, description: 'volle Commit-ID (40 oder 64 Hex) auf dem Standard-Branch'}
+                paths: {type: array, maxItems: 5000, items: {type: string}}
+                maxBytes: {type: integer, minimum: 1, maximum: 16777216, description: Vorgabe 4194304}
+                eol: {type: string, enum: [lf, keep]}
+                branch: {type: string, maxLength: 87, pattern: '^server/[a-z0-9][a-z0-9-]*$'}
+                repository: {type: string, description: 'owner/repo; nötig, wenn für das Projekt mehrere freigegeben sind'}
+      responses:
+        '200': {description: Ergebnis (auch Fehler von GitHub oder Zielserver als ok=false mit code), content: {application/json: {schema: {$ref: '#/components/schemas/DeployPublishResult'}}}}
+        '400': {description: 'deploy_branch_forbidden, deploy_manifest_invalid, deploy_pull_invalid (auch fehlender oder falscher baseCommit)'}
+        '401': {description: Keine Personen-Sitzung}
+        '403': {description: Nur lesen am Projekt}
+        '404': {description: Ziel unbekannt oder nicht sichtbar}
 components:
   schemas:
+    DeployPublishResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+        code: {type: string, description: 'deploy_github_not_configured, deploy_github_config_invalid, deploy_github_repository_not_allowed, deploy_github_repository_required, deploy_github_repository_public, deploy_github_base_unknown, deploy_pull_nothing, deploy_github_auth_failed, deploy_github_forbidden, deploy_github_not_found, deploy_github_unavailable, deploy_github_failed, deploy_github_branch_exists, deploy_github_pr_failed (branch und commit sind gesetzt) oder ein Fehlercode der Verbindung'}
+        repository: {type: string, example: owner/repo}
+        branch: {type: string, example: server/kubus-test-2026-11-28}
+        baseBranch: {type: string}
+        baseCommit: {type: string}
+        commit: {type: string}
+        pullRequest: {type: object, required: [number, url], properties: {number: {type: integer}, url: {type: string}}}
+        summary: {type: object, properties: {changed: {type: integer}, serverOnly: {type: integer}, onlyInRepo: {type: integer}, same: {type: integer}, withheld: {type: integer}, unverified: {type: integer}}}
+        files: {type: array, items: {type: object, required: [path, serverPath, status, size, sha256], properties: {path: {type: string}, serverPath: {type: string}, status: {type: string, enum: [changed, serverOnly]}, size: {type: integer}, sha256: {type: string}}}}
+        findings: {type: array, items: {type: object, required: [path, serverPath, reason], properties: {path: {type: string}, serverPath: {type: string}, reason: {type: string, enum: [secret_name, blocked_path, secret_content, excluded, too_large, unreadable, unverified]}}}}
+        findingsTotal: {type: integer}
+        remaining: {type: array, maxItems: 5000, items: {type: string}}
+        remainingTotal: {type: integer}
     DeployPullResult:
       type: object
       required: [ok]

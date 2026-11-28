@@ -35,6 +35,8 @@ if [[ -n "${S3_ENDPOINT:-}" ]]; then add_overlay stack.s3.yaml; fi
 if [[ "${APNS_ENABLED:-false}" == true ]]; then add_overlay stack.push.yaml; fi
 # Optional outgoing mail: only when MAIL_ENABLED=true (needs the smtp_password secret, see stack.mail.yaml).
 if [[ "${MAIL_ENABLED:-false}" == true ]]; then add_overlay stack.mail.yaml; fi
+# Optional GitHub App for pull requests with server changes: only when GITHUB_APP_ENABLED=true (secret github_app_key, see stack.github.yaml).
+if [[ "${GITHUB_APP_ENABLED:-false}" == true ]]; then add_overlay stack.github.yaml; fi
 # Optional key for secrets stored in the PWA (ADR 0025): only when SETTINGS_KEY_ENABLED=true (secret settings_key, see stack.settings.yaml).
 if [[ "${SETTINGS_KEY_ENABLED:-false}" == true ]]; then add_overlay stack.settings.yaml; fi
 # During a key rotation the previous key stays readable (stack.settings-previous.yaml).

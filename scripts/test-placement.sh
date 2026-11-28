@@ -40,7 +40,7 @@ run "bad label" 2 EXCLUDE_LABEL='a b'
 run "bad node" 2 PINNED_NODE='n 1'
 run "bad replicas" 2 PINNED_NODE=n1 PINNED_REPLICAS=x
 # Overlay copies: without PINNED_NODE the feature overlays lose their backend-pinned lines.
-for f in stack.s3.yaml stack.push.yaml stack.mail.yaml stack.settings.yaml stack.settings-previous.yaml; do
+for f in stack.s3.yaml stack.push.yaml stack.mail.yaml stack.github.yaml stack.settings.yaml stack.settings-previous.yaml; do
   ( env -i PATH="$PATH" bash -c '. ./placement.sh; placement_overlay_copy "$0" "$1"' "$f" "$tmp/c" )
   { ! grep -q 'backend-pinned' "$tmp/c" && grep -q 'backend: ' "$tmp/c"; } && ok "$f copy: no backend-pinned without PINNED_NODE" || bad "$f copy without node"
   ( env -i PATH="$PATH" PINNED_NODE=n1 bash -c '. ./placement.sh; placement_overlay_copy "$0" "$1"' "$f" "$tmp/c" )

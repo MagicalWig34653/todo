@@ -69,11 +69,12 @@ In `stack.env`: `SETTINGS_KEY_ENABLED=true` (optional `SETTINGS_KEY_SECRET=<ande
 
 **Backup-Hinweis:** Der Schlüssel gehört **nicht** in dasselbe Backup wie die Datenbank (sonst schützt die Verschlüsselung nichts). Sichere ihn getrennt (Passwortmanager, getrennter Tresor). Datenbank-Backups ohne Schlüssel sind für Geheimnisse wertlos, aber vollständig für alles andere; nach einer Wiederherstellung ohne Schlüssel gibst du die Geheimnisse neu ein.
 
-## Deploy-Ziele (ADR 0039, nur lesen)
+## Deploy-Ziele (ADR 0039)
 
 - Zugangsdaten der Deploy-Ziele werden mit `SETTINGS_ENCRYPTION_KEY` verschlüsselt; ohne Schlüssel lässt sich kein Ziel anlegen. `settings rotate-key` verschlüsselt sie noch **nicht** neu: den alten Schlüssel als `SETTINGS_ENCRYPTION_KEY_PREVIOUS` behalten oder die Zugangsdaten neu eintragen.
 - Das Image enthält `rclone`, `ssh-keyscan` und `curl` (prüft beim Holen über FTP/FTPS, ob eine Datei ein Symlink ist). Andere Pfade: `DEPLOY_RCLONE_PATH`, `DEPLOY_SSH_KEYSCAN_PATH`, `DEPLOY_CURL_PATH` (nur Umgebung).
 - Private und Loopback-Adressen als Ziel sind gesperrt. `DEPLOY_ALLOW_PRIVATE_HOSTS=1` (nur Umgebung) erlaubt sie, z. B. für einen Server im eigenen Netz.
+- Pull Requests mit Server-Änderungen (ADR 0042) brauchen eine GitHub-App: `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY[_FILE]`, `GITHUB_APP_REPOSITORIES` (`<Projekt-ID>=owner/repo`, kommagetrennt), nur Umgebung bzw. Docker-Secret, nicht in der PWA. `GITHUB_API_URL` nur für Tests oder GitHub Enterprise (HTTPS). Ohne Angaben abgeschaltet. Anleitung: [GITHUB-APP-EINRICHTUNG.md](GITHUB-APP-EINRICHTUNG.md).
 
 ## Einstellungsprogramm `settings.sh` (Env-Datei per Menü oder Kommandozeile)
 

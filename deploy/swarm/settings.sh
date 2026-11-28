@@ -138,6 +138,7 @@ secret_ref() { # KEY -> Variable, die den Secret-Namen trägt
     S3_ACCESS_KEY) echo S3_ACCESS_KEY_SECRET ;; S3_SECRET_KEY) echo S3_SECRET_KEY_SECRET ;;
     DB_PASSWORD) echo DB_PASSWORD_SECRET ;; BOOTSTRAP_TOKEN) echo BOOTSTRAP_TOKEN_SECRET ;;
     SETTINGS_ENCRYPTION_KEY|SETTINGS_KEY) echo SETTINGS_KEY_SECRET ;;
+    GITHUB_APP_PRIVATE_KEY) echo GITHUB_APP_KEY_SECRET ;;
     *) echo "" ;;
   esac
 }
@@ -385,6 +386,11 @@ check_all() {
     missing=""
     for k in APNS_KEY_ID APNS_TEAM_ID; do [ -n "$(file_val "$k")" ] || missing+="${missing:+, }$k"; done
     [ -z "$missing" ] || chk_err "APNS_ENABLED=true braucht APNS_KEY_ID und APNS_TEAM_ID in der Datei (stack.push.yaml); es fehlt: $missing."
+  fi
+  if [ "$(file_val GITHUB_APP_ENABLED)" = true ]; then
+    missing=""
+    for k in GITHUB_APP_ID GITHUB_APP_INSTALLATION_ID GITHUB_APP_REPOSITORIES; do [ -n "$(file_val "$k")" ] || missing+="${missing:+, }$k"; done
+    [ -z "$missing" ] || chk_err "GITHUB_APP_ENABLED=true braucht GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID und GITHUB_APP_REPOSITORIES in der Datei (stack.github.yaml); es fehlt: $missing."
   fi
   if [ "$(file_val ATTACHMENT_STORAGE)" = s3 ] && [ -z "$(file_val S3_ENDPOINT)" ]; then
     chk_warn "ATTACHMENT_STORAGE=s3 ohne S3_ENDPOINT in der Datei: der Endpunkt muss dann in der PWA stehen, sonst startet der Server nicht."
