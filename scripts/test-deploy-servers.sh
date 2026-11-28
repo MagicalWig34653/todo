@@ -49,7 +49,8 @@ for _ in $(seq 1 30); do docker exec "$FTP" test -f /etc/pure-ftpd/pureftpd.pdb 
 # Pull cage over FTP (ADR 0041): symlinks out of the base path "links"; FTP lists them like files and the server follows them.
 links='L=/home/deploy/links; mkdir -p $L/sub /home/deploy/elsewhere; printf "plain\n" > $L/plain.txt; printf "deep\n" > "$L/sub/deep file #1.txt";
   printf "STRENG-GEHEIM1" > /home/deploy/secret14.tx; ln -sf ../secret14.tx $L/twin.txt;
-  printf "STRENG-GEHEIM-2\n" > /home/deploy/elsewhere/in-dir.txt; ln -sf ../elsewhere $L/dirlink'
+  printf "STRENG-GEHEIM-2\n" > /home/deploy/elsewhere/in-dir.txt; ln -sf ../elsewhere $L/dirlink;
+  ln -sfn ../elsewhere $L/.well-known; ln -sf ../secret14.tx $L/.versteckt.txt'
 docker exec "$FTP" sh -c "$fill; $links; chown -R -h ftpuser:ftpgroup /home/deploy"
 docker exec "$FTP" cat /etc/ssl/private/pure-ftpd.pem | openssl x509 > "$DIR/ftp-cert.pem"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout "$DIR/other.key" -out "$DIR/other-cert.pem" 2>/dev/null

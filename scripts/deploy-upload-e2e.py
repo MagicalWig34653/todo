@@ -239,9 +239,10 @@ for kind in ("sftp", "ftps"):
     # 5. Links on the way out of the base path: never written through, not even with override.
     server(kind, "set -e; mkdir -p /home/deploy/away && chmod 777 /home/deploy/away; printf 'aussen\\n' > /home/deploy/away.txt; "
                  "cd /home/deploy/site; ln -sfn ../away assets; ln -sfn ../away.txt file-link.txt; ln -sfn ../nirgends dangling-dir; "
-                 "ln -sfn ../nirgends.txt dangling.txt; mkdir -p deep; ln -sfn ../../away deep/inner")
+                 "ln -sfn ../nirgends.txt dangling.txt; mkdir -p deep; ln -sfn ../../away deep/inner; "
+                 "ln -sfn ../away .well-known; ln -sfn ../away.txt .versteckt.txt")
     before = snapshot(kind)
-    for victim in ("assets/x.txt", "file-link.txt", "deep/inner/x.txt", "dangling.txt", "dangling-dir/x.txt"):
+    for victim in ("assets/x.txt", "file-link.txt", "deep/inner/x.txt", "dangling.txt", "dangling-dir/x.txt", ".well-known/x.txt", ".versteckt.txt"):
         st, r = http("POST", f"/v1/deploy-targets/{target}/plans", {"files": files_of({victim: "boese\n"}, None)}, session)
         made = r.get("plan") or {}
         if made:
@@ -257,7 +258,23 @@ for kind in ("sftp", "ftps"):
         check(f"{kind}: no write through link {victim}", refused and outside == {k: v for k, v in before.items() if not k.startswith("site/")},
               (reasons(made, "blockers"), st2, done, set(now.items()) ^ set(before.items())))
         before = now
-    server(kind, "cd /home/deploy/site && rm -rf assets file-link.txt dangling-dir dangling.txt deep; rm -rf /home/deploy/away /home/deploy/away.txt")
+    server(kind, "cd /home/deploy/site && rm -rf assets file-link.txt dangling-dir dangling.txt deep .well-known .versteckt.txt; "
+                 "rm -rf /home/deploy/away /home/deploy/away.txt")
+
+    # Content like a secret never goes up; a path that hides ".." inside a Unicode grapheme is refused (nothing is staged).
+    before = snapshot(kind)
+    secret = {"inc/db-config.php": "<?php return ['password' => 'E2E-GEHEIM-UPLOAD'];\n", "frei.txt": "frei\n"}
+    err, text, r = tool(agent, "plan_deploy", {"targetID": target, "files": files_of(secret, None)}); agent_texts.append(text)
+    made = (r or {}).get("plan", {})
+    check(f"{kind}: content like a secret is named, not planned", not err and reasons(made) == {"frei.txt": "new"}
+          and reasons(made, "findings").get("inc/db-config.php") == "secret_content", text)
+    st, done = decide(session, made["id"], override=made["blocked"])
+    check(f"{kind}: only the harmless file goes up", done.get("state") == "succeeded"
+          and snapshot(kind) == dict(before, **{"site/frei.txt": sha(b"frei\n")}), (done, set(snapshot(kind).items()) ^ set(before.items())))
+    before = snapshot(kind)
+    escape = "p\u0600/../../\u0301q\u0600/../escaped.txt"
+    st, r = http("POST", f"/v1/deploy-targets/{target}/plans", {"files": files_of({escape: "raus\n"}, None)}, session)
+    check(f"{kind}: a hidden '..' in a path is refused", st == 400 and r.get("reason") == "deploy_manifest_invalid" and snapshot(kind) == before, (st, r))
 
     # 6. Production is refused.
     st, r = http("PATCH", f"/v1/deploy-targets/{target}", {"stage": "prod"}, session)
@@ -277,7 +294,7 @@ with sqlite3.connect(os.environ["DB_NAME"]) as db:
     stored = b"".join(bytes(v) if isinstance(v, bytes) else str(v).encode() for table in ("deploy_plans", "deploy_blobs")
                       for row in db.execute(f"SELECT * FROM {table}") for v in row)
     check("backups are stored", db.execute("SELECT COUNT(*) FROM deploy_blobs WHERE role = 'backup'").fetchone()[0] > 0)
-for secret in (*PASSWORDS.values(), "DESIGNER-INHALT-77", "zweite Fassung", "E2E-GEHEIM-ENV"):
+for secret in (*PASSWORDS.values(), "DESIGNER-INHALT-77", "zweite Fassung", "E2E-GEHEIM-ENV", "E2E-GEHEIM-UPLOAD"):
     check(f"'{secret}' is in no answer, log line or stored row", secret not in everything and secret not in log and secret.encode() not in stored)
 check("agent answers carry no host, user or secret", not any(w in t for t in agent_texts for w in ("127.0.0.1", '"username"', "basePath", *PASSWORDS.values())))
 check("backend log has no fatal error", "Fatal error" not in log)

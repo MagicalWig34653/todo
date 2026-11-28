@@ -38,14 +38,24 @@ struct DeployMapping: Codable, Sendable, Equatable { let local: String; let remo
 
 /// A relative path without `..`, `.`, empty segments, backslashes or control characters. `""` is allowed (root).
 enum DeployPath {
+    /// The segments as a file system sees them: split at the byte `/`. Swift's split works on characters and misses a `/` that
+    /// Unicode joins with a neighbour (U+0600 before it, a combining mark after it).
+    static func segments(_ path: String, omittingEmptySubsequences: Bool = true) -> [String] {
+        path.utf8.split(separator: UInt8(ascii: "/"), omittingEmptySubsequences: omittingEmptySubsequences).map { String(decoding: $0, as: UTF8.self) }
+    }
+    /// Every `/` stands alone for character based code too (globs, mappings, name guards); anything else is refused.
+    private static func plainSlashes(_ path: String) -> Bool {
+        path.reduce(0, { $1 == "/" ? $0 + 1 : $0 }) == path.utf8.reduce(0, { $1 == UInt8(ascii: "/") ? $0 + 1 : $0 })
+    }
     static func isSafeRelative(_ path: String, allowEmpty: Bool = true, max: Int = DeployLimits.maxRepoPath) -> Bool {
         if path.isEmpty { return allowEmpty }
-        guard path.utf8.count <= max, !path.hasPrefix("/"), !path.contains("\\"),
-              !path.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) else { return false }
-        return path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+        guard path.utf8.count <= max, path.unicodeScalars.first != "/", plainSlashes(path),
+              !path.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f || $0 == "\\" }) else { return false }
+        return segments(path, omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
     /// Base path: relative to the login directory or absolute; same segment rules.
     static func isSafeBase(_ path: String) -> Bool {
+        guard plainSlashes(path) else { return false }
         var p = path
         if p.hasPrefix("/") { p.removeFirst() }
         if p.hasSuffix("/") { p.removeLast() }

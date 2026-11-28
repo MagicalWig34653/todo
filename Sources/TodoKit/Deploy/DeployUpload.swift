@@ -115,8 +115,25 @@ struct DeployUploadService: Sendable {
     private func closeInterrupted(_ targetID: UUID, on db: any Database) async throws {
         let running = try await DeployPlan.query(on: db).filter(\.$targetID == targetID).filter(\.$state == "running").all()
         for p in running where (p.lockUntil ?? .distantPast) <= Date() {
-            p.state = "failed"; p.code = "deploy_interrupted"; p.finishedAt = Date(); p.lockUntil = nil
-            try await p.save(on: db)
+            let id = try p.requireID(), now = Date()
+            // Conditional: a run that renewed its lease or finished in the meantime stays as it is.
+            try await DeployPlan.query(on: db).filter(\.$id == id).filter(\.$state == "running").filter(\.$lockUntil <= now)
+                .set(\.$state, to: "failed").set(\.$code, to: "deploy_interrupted").set(\.$finishedAt, to: now).update()
+            guard let after = try await DeployPlan.find(id, on: db), after.code == "deploy_interrupted" else { continue }
+            try await DeployBlobStore.delete(plan: id, role: "content", on: db)
+            if !after.wrote { try await DeployBlobStore.delete(plan: id, role: "backup", on: db) }
+        }
+    }
+
+    /// Renews the lease while this process works on the run: only a run whose process is gone expires.
+    private func keepAlive(_ planID: UUID) -> Task<Void, Never> {
+        let db = db, lease = app.deployLease
+        return Task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: UInt64(lease / 3 * 1_000_000_000)) } catch { return }
+                try? await DeployPlan.query(on: db).filter(\.$id == planID).filter(\.$state == "running")
+                    .set(\.$lockUntil, to: Date().addingTimeInterval(lease)).update()
+            }
         }
     }
 
@@ -194,12 +211,40 @@ struct DeployUploadService: Sendable {
         let open = try await DeployPlan.query(on: db).filter(\.$targetID == targetID).filter(\.$state ~~ ["planned", "requested"]).all()
         var waiting = 0
         for p in open {
-            if Self.isExpired(p) {
-                p.state = "expired"; try await p.save(on: db)
-                try await DeployBlobStore.delete(plan: try p.requireID(), role: "content", on: db)
-            } else { waiting += 1 }
+            if Self.isExpired(p) { try await expire(try p.requireID()) } else { waiting += 1 }
         }
         guard waiting < DeployUploadLimits.maxOpenPlans else { throw Abort(.conflict, reason: "deploy_plan_limit") }
+    }
+
+    /// Conditional, so a decision taken at the same moment is never overwritten.
+    private func expire(_ planID: UUID) async throws {
+        try await DeployPlan.query(on: db).filter(\.$id == planID).filter(\.$state ~~ ["planned", "requested"]).filter(\.$expiresAt <= Date())
+            .set(\.$state, to: "expired").update()
+        guard try await DeployPlan.find(planID, on: db)?.state == "expired" else { return }
+        try await DeployBlobStore.delete(plan: planID, role: "content", on: db)
+    }
+
+    private func prune(_ targetID: UUID) async throws {
+        let old = try await DeployPlan.query(on: db).filter(\.$targetID == targetID).filter(\.$runNumber == 0)
+            .filter(\.$state ~~ ["rejected", "expired", "failed"]).sort(\.$createdAt, .descending).offset(DeployUploadLimits.keptClosed).limit(100).all()
+        for p in old {
+            let id = try p.requireID()
+            try await DeployBlob.query(on: db).filter(\.$planID == id).delete()
+            try await p.delete(on: db)
+        }
+    }
+
+    /// Only a few plans are read from servers at once; further calls are told to come back.
+    private func withPlanningSlot<T: Sendable>(_ body: () async throws -> T) async throws -> T {
+        guard await DeployPlanningSlots.shared.take() else { throw Abort(.conflict, reason: "deploy_target_busy") }
+        do {
+            let result = try await body()
+            await DeployPlanningSlots.shared.give()
+            return result
+        } catch {
+            await DeployPlanningSlots.shared.give()
+            throw error
+        }
     }
 
     private static func text(_ s: String?, max: Int, reason: String) throws -> String? {
@@ -244,12 +289,19 @@ struct DeployUploadService: Sendable {
         p.createdBy = try user.requireID(); p.createdLabel = label; p.createdAt = Date()
         p.expiresAt = p.createdAt.addingTimeInterval(DeployUploadLimits.lifetime)
         let store = try blobs()
+        let targetID = p.targetID
         try await db.transaction { tx in
+            // Counted again under the target's lock: parallel calls read from the server for a while.
+            try await lockRow(table: DeployTarget.schema, id: targetID, on: tx)
+            let waiting = try await DeployPlan.query(on: tx).filter(\.$targetID == targetID).filter(\.$state ~~ ["planned", "requested"])
+                .filter(\.$expiresAt > Date()).count()
+            guard waiting < DeployUploadLimits.maxOpenPlans else { throw Abort(.conflict, reason: "deploy_plan_limit") }
             try await p.create(on: tx)
             for (index, bytes) in contents {
                 try await store.put(bytes, plan: try p.requireID(), role: "content", item: index, serverPath: outcome.items[index].serverPath, on: tx)
             }
         }
+        try await prune(targetID)
         app.logger.info("deploy plan created", metadata: ["target": .string(p.targetID.uuidString), "plan": .string(p.id!.uuidString),
                                                           "files": .stringConvertible(outcome.items.count), "blocked": .stringConvertible(outcome.blockers.count)])
         return p
@@ -270,6 +322,12 @@ struct DeployUploadService: Sendable {
         guard t.protocolName != DeployProtocol.sftp.rawValue || t.hostKey != nil else { return .failure("deploy_host_key_unconfirmed") }
         try await requireRoom(targetID)
         try await closeInterrupted(targetID, on: db)
+        return try await withPlanningSlot { try await readAndStore(t, targetID: targetID, request: request, repo: repo, rules: rules,
+                                                                     ref: ref, note: note, taskIDs: taskIDs) }
+    }
+
+    private func readAndStore(_ t: DeployTarget, targetID: UUID, request: DeployPlanRequest, repo: [String: DeployManifestEntry],
+                              rules: DeployRules, ref: String?, note: String?, taskIDs: [UUID]) async throws -> DeployPlanResult {
         do {
             let conn = try targets.connection(t, address: try await targets.connectAddress(t))
             let baseRun = try await latestRun(targetID, on: db)?.runNumber ?? 0
@@ -298,14 +356,25 @@ struct DeployUploadService: Sendable {
             for f in request.files { if let c = f.content { sent[f.path] = c } }
             var contents: [Int: Data] = [:]
             var missing: [String] = []
-            for (index, item) in out.items.enumerated() {
+            var kept: [DeployPlanItem] = []
+            for item in out.items {
                 guard let encoded = sent[item.path] else { missing.append(item.path); continue }
                 guard let bytes = Data(base64Encoded: encoded), bytes.count == item.newSize, DeployService.sha256(bytes) == item.newSha else {
                     throw Abort(.badRequest, reason: "deploy_plan_content_invalid")
                 }
-                contents[index] = bytes
+                // Content like a secret never goes up; it is named, like in a pull.
+                if DeploySecretGuard.containsSecret(path: item.serverPath, data: bytes) || DeploySecretGuard.containsSecret(path: item.path, data: bytes) {
+                    out.findings.append(DeployPullFinding(path: item.path, serverPath: item.serverPath, reason: "secret_content"))
+                    out.blockers.removeAll { $0.serverPath == item.serverPath }
+                    continue
+                }
+                contents[kept.count] = bytes
+                kept.append(item)
             }
             guard missing.isEmpty else { return .failure("deploy_plan_content_missing", missing: missing.sorted()) }
+            out.items = kept
+            out.summary.upload = kept.count
+            out.summary.skipped = out.findings.count
             let p = try await store(t, kind: "upload", outcome: out, contents: contents, baseRun: baseRun, ref: ref, note: note, taskIDs: taskIDs)
             return DeployPlanResult(ok: true, code: nil, missing: nil, plan: try await dto(p, target: t))
         } catch let e as DeployTransportError {
@@ -330,6 +399,12 @@ struct DeployUploadService: Sendable {
         guard sourceData.endpointDigest == endpoint else { throw Abort(.conflict, reason: "deploy_plan_stale") }
         guard t.protocolName != DeployProtocol.sftp.rawValue || t.hostKey != nil else { return .failure("deploy_host_key_unconfirmed") }
         try await requireRoom(targetID)
+        return try await withPlanningSlot { try await readAndStoreRollback(source, current: current, t, targetID: targetID, data: sourceData, endpoint: endpoint) }
+    }
+
+    private func readAndStoreRollback(_ source: DeployPlan, current: DeployPlan, _ t: DeployTarget, targetID: UUID, data sourceData: DeployPlanData,
+                                      endpoint: String) async throws -> DeployPlanResult {
+        let planID = try source.requireID()
         do {
             let conn = try targets.connection(t, address: try await targets.connectAddress(t))
             let baseRun = try await latestRun(targetID, on: db)?.runNumber ?? 0
@@ -338,7 +413,7 @@ struct DeployUploadService: Sendable {
             let listed = try await app.deployTransport.list(conn)
             let states = try await DeployPlanner.states(of: sourceData.items.map(\.serverPath), listed: listed) {
                 try await app.deployTransport.read(conn, paths: $0) }.states
-            var (out, backups) = DeployPlanner.rollback(source: sourceData.items, known: known, previous: previous, states: states)
+            var (out, backups) = DeployPlanner.rollback(source: sourceData.items, written: Set(sourceData.written), known: known, previous: previous, states: states)
             try await addLinkBlockers(&out, conn)
             var contents: [Int: Data] = [:]
             let store = try blobs()
@@ -370,11 +445,7 @@ struct DeployUploadService: Sendable {
 
     private func requireNotExpired(_ p: DeployPlan) async throws {
         guard Self.isExpired(p) || p.state == "expired" else { return }
-        if p.state != "expired" {
-            p.state = "expired"
-            try await p.save(on: db)
-            try await DeployBlobStore.delete(plan: try p.requireID(), role: "content", on: db)
-        }
+        if p.state != "expired" { try await expire(try p.requireID()) }
         throw Abort(.gone, reason: "deploy_plan_expired")
     }
 
@@ -423,12 +494,14 @@ struct DeployUploadService: Sendable {
         try await requireNotExpired(found)
         let targetID = try t.requireID(), userID = try user.requireID()
         try await closeInterrupted(targetID, on: db)
+        let lease = app.deployLease
         let claimed: DeployPlan = try await locked(planID, targetID: targetID) { p, tx in
             switch p.state {
             case "requested": break
             case "planned": throw Abort(.conflict, reason: "deploy_plan_not_requested")
             default: throw Abort(.conflict, reason: "deploy_plan_decided")
             }
+            guard !Self.isExpired(p) else { throw Abort(.gone, reason: "deploy_plan_expired") }
             let data = try p.planData()
             // The target as it is now, read under the lock.
             guard let target = try await DeployTarget.find(targetID, on: tx), target.stage == "test",
@@ -443,7 +516,7 @@ struct DeployUploadService: Sendable {
                 .sort(\.$runNumber, .descending).first()?.runNumber ?? 0
             guard latest == data.baseRun else { throw Abort(.conflict, reason: "deploy_plan_stale") }
             p.state = "running"; p.decidedBy = userID; p.decidedAt = Date(); p.overrideDrift = overrideDrift && !data.blockers.isEmpty
-            p.lockUntil = Date().addingTimeInterval(DeployUploadLimits.lease)
+            p.lockUntil = Date().addingTimeInterval(lease)
             try await p.save(on: tx)
             return p
         }
@@ -461,6 +534,8 @@ struct DeployUploadService: Sendable {
         var applied: [DeployPlanItem] = []
         var code: String?
         var connection: DeployConnection?
+        let alive = keepAlive(planID)
+        defer { alive.cancel() }
         do {
             guard let t = try await DeployTarget.find(targetID, on: db), Self.targetDigest(t) == data.targetDigest else {
                 throw DeployTransportError(code: "deploy_plan_stale")
@@ -491,13 +566,18 @@ struct DeployUploadService: Sendable {
                 }
             }
             // 3. From here on the run counts as writing (also if the server goes down).
-            let writes = !data.items.isEmpty
+            // Only while the run still holds its target: one closed as interrupted writes nothing.
+            let writes = !data.items.isEmpty, baseRun = data.baseRun
             try await db.transaction { tx in
                 try await lockRow(table: DeployTarget.schema, id: targetID, on: tx)
+                let held = try await DeployPlan.query(on: tx).filter(\.$id == planID).filter(\.$state == "running").count()
+                let latest = try await DeployPlan.query(on: tx).filter(\.$targetID == targetID).filter(\.$runNumber > 0)
+                    .sort(\.$runNumber, .descending).first()?.runNumber ?? 0
+                guard held == 1, latest == baseRun else { throw DeployRunSuperseded() }
                 p.runNumber = 1 + (try await DeployPlan.query(on: tx).filter(\.$targetID == targetID).filter(\.$runNumber > 0)
                     .sort(\.$runNumber, .descending).first()?.runNumber ?? 0)
                 p.wrote = writes
-                p.lockUntil = Date().addingTimeInterval(DeployUploadLimits.lease)
+                p.lockUntil = Date().addingTimeInterval(app.deployLease)
                 try await p.save(on: tx)
             }
             var failure: DeployTransportError?
@@ -506,10 +586,13 @@ struct DeployUploadService: Sendable {
                 let deletes = data.items.filter { $0.action == "delete" }.map(\.serverPath)
                 if !deletes.isEmpty { try await app.deployTransport.delete(conn, paths: deletes) }
             } catch let e as DeployTransportError { failure = e }
+            if failure != nil { try? await removeLeftovers(of: uploads.map(\.path), conn) }
             // 4. What is really on the server now.
             applied = try await verify(data.items, conn)
             if let failure { throw failure }
             guard applied.count == data.items.count else { throw DeployTransportError(code: "deploy_verify_failed") }
+        } catch is DeployRunSuperseded {
+            code = "deploy_interrupted"
         } catch let e as DeployTransportError {
             code = e.code
         } catch let e as any AbortError where e.reason == "deploy_target_blocked" || e.reason == "encryption_key_missing" {
@@ -520,6 +603,14 @@ struct DeployUploadService: Sendable {
         }
         if code != nil, p.wrote, applied.isEmpty, let connection { applied = (try? await verify(data.items, connection)) ?? [] }
 
+        alive.cancel()
+        await alive.value
+        // Closed as interrupted before it wrote anything: that record stays, whatever failed here afterwards.
+        if !p.wrote, try await DeployPlan.query(on: db).filter(\.$id == planID).filter(\.$state == "running").count() == 0 {
+            try await DeployBlobStore.delete(plan: planID, role: "content", on: db)
+            try await DeployBlobStore.delete(plan: planID, role: "backup", on: db)
+            return
+        }
         // 5. Record: state, what was written, and what Todolino now knows about the server.
         data.written = applied.map(\.serverPath).sorted()
         var files = data.manifest
@@ -538,6 +629,14 @@ struct DeployUploadService: Sendable {
                                                           "code": .string(code ?? "-"), "written": .stringConvertible(applied.count)])
     }
 
+    /// Half files of this run that a broken upload left under their temporary names (in the web root they could be fetched).
+    private func removeLeftovers(of paths: [String], _ conn: DeployConnection) async throws {
+        let left = try await app.deployTransport.list(conn).map(\.path).filter { file in
+            DeployPlanner.isTemporary(file) && paths.contains { file.hasPrefix($0 + ".") }
+        }
+        if !left.isEmpty { try await app.deployTransport.delete(conn, paths: left) }
+    }
+
     /// The items whose file on the server is now what the plan wanted.
     private func verify(_ items: [DeployPlanItem], _ conn: DeployConnection) async throws -> [DeployPlanItem] {
         guard !items.isEmpty else { return [] }
@@ -550,6 +649,29 @@ struct DeployUploadService: Sendable {
         let old = try await DeployPlan.query(on: db).filter(\.$targetID == targetID).filter(\.$wrote == true)
             .sort(\.$runNumber, .descending).offset(DeployUploadLimits.keptBackups).limit(20).all()
         for p in old { try await DeployBlobStore.delete(plan: try p.requireID(), role: "backup", on: db) }
+    }
+}
+
+/// The run lost its target (closed as interrupted) before it wrote anything.
+private struct DeployRunSuperseded: Error {}
+
+actor DeployPlanningSlots {
+    static let shared = DeployPlanningSlots()
+    private var used = 0
+    func take() -> Bool {
+        guard used < DeployUploadLimits.concurrentPlanning else { return false }
+        used += 1
+        return true
+    }
+    func give() { used -= 1 }
+}
+
+extension Application {
+    private struct DeployLeaseKey: StorageKey { typealias Value = TimeInterval }
+    /// How long a run holds its target without a sign of life (tests shorten it).
+    var deployLease: TimeInterval {
+        get { storage[DeployLeaseKey.self] ?? DeployUploadLimits.lease }
+        set { storage[DeployLeaseKey.self] = newValue }
     }
 }
 

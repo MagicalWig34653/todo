@@ -112,9 +112,10 @@ enum DeployPlanner {
     }
 
     /// The way back of one run: every file it touched returns to what it was before (backup or absent). `known` = the knowledge
-    /// now, `previous` = the knowledge before that run.
-    static func rollback(source: [DeployPlanItem], known: [String: DeployManifestState], previous: [String: DeployManifestState],
-                         states: [String: DeployServerFileState]) -> (outcome: DeployPlanOutcome, backups: [Int]) {
+    /// now, `previous` = the knowledge before that run, `written` = the files the run provably wrote.
+    static func rollback(source: [DeployPlanItem], written: Set<String>, known: [String: DeployManifestState],
+                         previous: [String: DeployManifestState], states: [String: DeployServerFileState])
+        -> (outcome: DeployPlanOutcome, backups: [Int]) {
         var out = DeployPlanOutcome()
         out.manifest = known
         var backups: [Int] = []   // for each upload item of the outcome: the index of the source item whose backup it restores
@@ -127,7 +128,16 @@ enum DeployPlanner {
                 out.summary.unchanged += 1
                 continue
             }
-            if state.unchecked { out.blockers.append(DeployBlocker(path: item.path, serverPath: item.serverPath, reason: "unverified")) }
+            // A file the run was to create but never provably wrote is not Todolino's to delete: a different one stays, one that
+            // looks like it (the check after the run may have failed) needs a person.
+            let unproven = item.baseSha == nil && !written.contains(item.serverPath)
+            if unproven, state.sha256 != item.newSha {
+                out.manifest[item.serverPath] = previous[item.serverPath]
+                if !state.absent { out.summary.serverOnly += 1 }
+                continue
+            }
+            if unproven { out.blockers.append(DeployBlocker(path: item.path, serverPath: item.serverPath, reason: "unknown_server_state")) }
+            else if state.unchecked { out.blockers.append(DeployBlocker(path: item.path, serverPath: item.serverPath, reason: "unverified")) }
             else if state.sha256 != (item.newSha ?? "") {
                 out.blockers.append(DeployBlocker(path: item.path, serverPath: item.serverPath, reason: state.absent ? "server_deleted" : "server_changed"))
             }

@@ -12,14 +12,14 @@ extension DeployTargetTests {
         var e = entry(path, text); e["content"] = Data(text.utf8).base64EncodedString(); return e
     }
 
-    private func target(_ f: Fixture, _ body: Obj = [:]) async throws -> String {
+    fileprivate func target(_ f: Fixture, _ body: Obj = [:]) async throws -> String {
         var b: Obj = ["protocol": "ftps", "port": 21]
         for (k, v) in body { b[k] = v }
         let made = try await f.created(b)
         return try XCTUnwrap(made["id"] as? String)
     }
 
-    private func call(_ f: Fixture, _ method: HTTPMethod, _ path: String, _ body: Obj? = nil, session: String? = nil) async throws
+    fileprivate func call(_ f: Fixture, _ method: HTTPMethod, _ path: String, _ body: Obj? = nil, session: String? = nil) async throws
         -> (status: HTTPStatus, body: Obj, text: String) {
         let r = try await f.test.json(method, path, body, token: session ?? f.session)
         let out = r.body ?? [:]
@@ -27,16 +27,16 @@ extension DeployTargetTests {
     }
 
     /// A plan that must succeed.
-    private func plan(_ f: Fixture, _ target: String, _ files: [Obj], file: StaticString = #filePath, line: UInt = #line) async throws -> Obj {
+    fileprivate func plan(_ f: Fixture, _ target: String, _ files: [Obj], file: StaticString = #filePath, line: UInt = #line) async throws -> Obj {
         let r = try await call(f, .POST, "/v1/deploy-targets/\(target)/plans", ["files": files])
         XCTAssertEqual(r.body["ok"] as? Bool, true, r.text, file: file, line: line)
         return try XCTUnwrap(r.body["plan"] as? Obj, r.text, file: file, line: line)
     }
 
-    private func id(_ plan: Obj) -> String { plan["id"] as? String ?? "?" }
+    fileprivate func id(_ plan: Obj) -> String { plan["id"] as? String ?? "?" }
 
     @discardableResult
-    private func requestAndApprove(_ f: Fixture, _ plan: Obj, override: Bool = false, file: StaticString = #filePath, line: UInt = #line) async throws -> Obj {
+    fileprivate func requestAndApprove(_ f: Fixture, _ plan: Obj, override: Bool = false, file: StaticString = #filePath, line: UInt = #line) async throws -> Obj {
         let requested = try await call(f, .POST, "/v1/deploy-plans/\(id(plan))/request", [:])
         XCTAssertEqual(requested.status, .ok, requested.text, file: file, line: line)
         let approved = try await call(f, .POST, "/v1/deploy-plans/\(id(plan))/approve", ["overrideDrift": override])
@@ -44,14 +44,14 @@ extension DeployTargetTests {
         return approved.body
     }
 
-    private func reasons(_ plan: Obj, _ key: String = "files") -> [String: String] {
+    fileprivate func reasons(_ plan: Obj, _ key: String = "files") -> [String: String] {
         Dictionary((plan[key] as? [Obj] ?? []).map { ($0["serverPath"] as? String ?? "?", $0["reason"] as? String ?? "?") }, uniquingKeysWith: { a, _ in a })
     }
 
-    private func text(_ f: Fixture) -> [String: String] { f.transport.files.mapValues { String(decoding: $0, as: UTF8.self) } }
+    fileprivate func text(_ f: Fixture) -> [String: String] { f.transport.files.mapValues { String(decoding: $0, as: UTF8.self) } }
 
     /// A target whose server state Todolino knows: one approved upload of `files` onto an empty server.
-    private func baseline(_ f: Fixture, _ files: [String: String]) async throws -> String {
+    fileprivate func baseline(_ f: Fixture, _ files: [String: String]) async throws -> String {
         let t = try await target(f)
         f.transport.files = [:]
         let made = try await plan(f, t, files.sorted { $0.key < $1.key }.map { Self.upload($0.key, $0.value) })
@@ -409,11 +409,185 @@ extension DeployTargetTests {
 }
 
 /// Holds a run inside its first write until the test has looked at the lock.
+
+// MARK: - Findings of the security review of the write path (28.11.2026)
+
+extension DeployTargetTests {
+    /// H1: "/" merged into one grapheme with a neighbour must not hide a ".." segment.
+    func testPathsThatHideSegmentsInsideGraphemesAreRefused() async throws {
+        let escape = "p\u{600}/../../\u{301}q\u{600}/../escaped.txt"
+        for bad in [escape, "a\u{600}/b.txt", "a/\u{301}b.txt", "a\\\u{301}b.txt", "/\u{301}x", "x\u{600}/.git/config"] {
+            XCTAssertFalse(DeployPath.isSafeRelative(bad), String(reflecting: bad))
+        }
+        XCTAssertFalse(DeployPath.isSafeBase("/\u{301}x"))
+        for good in ["u\u{308}ber/Ärger.txt", "über/ß straße.php", ".well-known/a", "a/..b/c.."] {
+            XCTAssertTrue(DeployPath.isSafeRelative(good), good)
+        }
+        XCTAssertEqual(DeploySecretGuard.pathReason("x\u{600}/secrets.json"), "secret_name")
+        XCTAssertEqual(DeploySecretGuard.pathReason("x\u{600}/.git/config"), "blocked_path")
+        try await fixture { f in
+            let t = try await target(f)
+            let r = try await call(f, .POST, "/v1/deploy-targets/\(t)/plans", ["files": [Self.upload(escape, "x\n")]])
+            XCTAssertEqual(r.status, .badRequest, r.text)
+            XCTAssertEqual(r.body["reason"] as? String, "deploy_manifest_invalid", r.text)
+        }
+    }
+
+    /// M1: a run that lost its lease (closed as interrupted) must not start to write any more.
+    func testARunWhoseLeaseRanOutBeforeTheFirstWriteWritesNothing() async throws {
+        try await fixture { f in
+            let t = try await baseline(f, ["a.txt": "a1\n"])
+            let made = try await plan(f, t, [Self.upload("a.txt", "a2\n")])
+            _ = try await call(f, .POST, "/v1/deploy-plans/\(id(made))/request", [:])
+            let writes = f.transport.writes.count
+            let gate = DeployGate()
+            f.transport.beforeLinkCheck = { await gate.arrive() }
+            let app = f.test, session = f.session, path = "/v1/deploy-plans/\(id(made))/approve"
+            let run = Task { try await app.rawReply(.POST, path, body: Data("{\"overrideDrift\":false}".utf8), token: session) }
+            await gate.waitForArrival()
+            f.transport.beforeLinkCheck = nil
+            let found = try await DeployPlan.find(UUID(uuidString: id(made)), on: f.app.db)
+            let row = try XCTUnwrap(found)
+            row.lockUntil = Date().addingTimeInterval(-1)
+            try await row.save(on: f.app.db)
+            let seen = try await call(f, .GET, "/v1/deploy-plans/\(id(made))")
+            XCTAssertEqual(seen.body["code"] as? String, "deploy_interrupted", seen.text)
+            await gate.open()
+            _ = try await run.value
+            XCTAssertEqual(f.transport.writes.count, writes, "a closed run wrote to the server")
+            let after = try await call(f, .GET, "/v1/deploy-plans/\(id(made))")
+            XCTAssertEqual(after.body["state"] as? String, "failed", after.text)
+            XCTAssertEqual(after.body["code"] as? String, "deploy_interrupted", after.text)
+            let blobs = try await DeployBlob.query(on: f.app.db).filter(\.$planID == row.requireID()).count()
+            XCTAssertEqual(blobs, 0, "an interrupted run that never wrote keeps no content and no backup")
+        }
+    }
+
+    /// M1: while the process is alive the lease is renewed, however long the server takes.
+    func testALongRunKeepsItsLease() async throws {
+        try await fixture { f in
+            f.app.deployLease = 0.6
+            let t = try await target(f)
+            let made = try await plan(f, t, [Self.upload("a.txt", "a\n")])
+            _ = try await call(f, .POST, "/v1/deploy-plans/\(id(made))/request", [:])
+            let gate = DeployGate()
+            f.transport.beforeWrite = { await gate.arrive() }
+            let app = f.test, session = f.session, path = "/v1/deploy-plans/\(id(made))/approve"
+            let run = Task { try await app.rawReply(.POST, path, body: Data("{\"overrideDrift\":false}".utf8), token: session) }
+            await gate.waitForArrival()
+            f.transport.beforeWrite = nil
+            try await Task.sleep(nanoseconds: 1_600_000_000)
+            let during = try await call(f, .GET, "/v1/deploy-plans/\(id(made))")
+            XCTAssertEqual(during.body["state"] as? String, "running", during.text)
+            await gate.open()
+            let done = try await run.value
+            XCTAssertTrue(done.text.contains("\"state\":\"succeeded\""), done.text)
+        }
+    }
+
+    /// M2: content that looks like a secret is named and never uploaded.
+    func testUploadNeverSendsContentThatLooksLikeASecret() async throws {
+        try await fixture { f in
+            let t = try await target(f)
+            let made = try await plan(f, t, [Self.upload("ok.php", "<?php echo 1;\n"),
+                                             Self.upload("inc/config.php", "<?php return ['password' => 'Geheim-4711'];\n"),
+                                             Self.upload("notes.txt", "-----BEGIN RSA PRIVATE KEY-----\nabc\n")])
+            XCTAssertEqual(Array(reasons(made).keys), ["ok.php"], "\(made)")
+            XCTAssertEqual(reasons(made, "findings"), ["inc/config.php": "secret_content", "notes.txt": "secret_content"])
+            try await requestAndApprove(f, made)
+            XCTAssertEqual(f.transport.writes, [["ok.php"]])
+        }
+    }
+
+    /// M3: the way back removes only files the run really created.
+    func testRollbackNeverDeletesAFileTheRunDidNotCreate() async throws {
+        for (foreign, blockers) in [("fremd\n", [String: String]()), ("neu\n", ["neu.txt": "unknown_server_state"])] {
+            try await fixture { f in
+                let t = try await target(f)
+                let made = try await plan(f, t, [Self.upload("a.txt", "a\n"), Self.upload("neu.txt", "neu\n")])
+                f.transport.failAfterWrites = 1
+                let run = try await requestAndApprove(f, made)
+                XCTAssertEqual(run["written"] as? [String], ["a.txt"], "\(run)")
+                f.transport.failAfterWrites = nil
+                f.transport.files["neu.txt"] = Data(foreign.utf8)   // somebody else puts a file there afterwards
+                let back = try await call(f, .POST, "/v1/deploy-plans/\(id(run))/rollback", [:])
+                let rollback = try XCTUnwrap(back.body["plan"] as? Obj, back.text)
+                XCTAssertEqual(reasons(rollback, "blockers"), blockers, foreign)
+                if blockers.isEmpty {
+                    XCTAssertEqual(reasons(rollback), ["a.txt": "remove"])
+                    try await requestAndApprove(f, rollback)
+                    XCTAssertEqual(text(f), ["neu.txt": foreign])
+                }
+            }
+        }
+    }
+
+    /// M4: parallel planning cannot exceed the limit of waiting plans, and only a few plans are read from servers at once.
+    func testTheLimitOfWaitingPlansHoldsUnderParallelCalls() async throws {
+        try await fixture { f in
+            let t = try await target(f)
+            for i in 0..<9 { _ = try await plan(f, t, [Self.upload("f\(i).txt", "\(i)\n")]) }
+            let gate = DeployGate()
+            f.transport.beforeLinkCheck = { await gate.arrive() }
+            let app = f.test, session = f.session, path = "/v1/deploy-targets/\(t)/plans"
+            let body = try JSONSerialization.data(withJSONObject: ["files": [Self.upload("x.txt", "x\n")]])
+            let calls = (0..<2).map { _ in Task { try await app.rawReply(.POST, path, body: body, token: session) } }
+            while await gate.count < 2 { try await Task.sleep(nanoseconds: 20_000_000) }
+            f.transport.beforeLinkCheck = nil
+            let third = try await call(f, .POST, "/v1/deploy-targets/\(t)/plans", ["files": [Self.upload("y.txt", "y\n")]])
+            XCTAssertEqual(third.body["reason"] as? String, "deploy_target_busy", third.text)
+            await gate.open()
+            var texts: [String] = []
+            for c in calls { texts.append(try await c.value.text) }
+            XCTAssertEqual(texts.filter { $0.contains("deploy_plan_limit") }.count, 1, "\(texts)")
+            let waiting = try await DeployPlan.query(on: f.app.db).filter(\.$state == "planned").count()
+            XCTAssertEqual(waiting, 10)
+        }
+    }
+
+    /// M4: closed plans that never ran do not pile up.
+    func testClosedPlansThatNeverRanArePruned() async throws {
+        try await fixture { f in
+            let t = try await target(f)
+            for i in 0..<24 {
+                let made = try await plan(f, t, [Self.upload("a.txt", "\(i)\n")])
+                _ = try await call(f, .POST, "/v1/deploy-plans/\(id(made))/reject", [:])
+            }
+            let rows = try await DeployPlan.query(on: f.app.db).count()
+            XCTAssertLessThanOrEqual(rows, 21)
+        }
+    }
+
+    /// Low: a broken upload leaves no half file with a temporary name in the web root.
+    func testABrokenUploadRemovesItsTemporaryFiles() async throws {
+        try await fixture { f in
+            let t = try await target(f)
+            f.transport.files = ["fremd.1a2b3c4d.todolino.tmp": Data("nicht von diesem Lauf\n".utf8)]
+            let made = try await plan(f, t, [Self.upload("a.txt", "a\n")])
+            f.transport.failAfterWrites = 0
+            f.transport.leftoverSuffix = ".9f8e7d6c.todolino.tmp"
+            let run = try await requestAndApprove(f, made)
+            XCTAssertEqual(run["state"] as? String, "failed", "\(run)")
+            XCTAssertEqual(Array(f.transport.files.keys), ["fremd.1a2b3c4d.todolino.tmp"])
+        }
+    }
+
+    /// M5: a listing that is not in the Unix format cannot be checked for links, so nothing is written below it.
+    func testAnFTPListingThatCannotBeCheckedIsRefusedForWriting() throws {
+        let unix = "total 4\r\ndrwxr-xr-x 2 u g 4096 Nov 28 10:00 css\r\n-rw-r--r-- 1 u g 3 Nov 28 10:00 a.txt\r\n"
+        XCTAssertEqual(try RcloneDeployTransport.symlinkNames(inList: unix, strict: true), [])
+        let dos = "11-28-26  10:00AM       <DIR>          site\r\n"
+        XCTAssertThrowsError(try RcloneDeployTransport.symlinkNames(inList: dos, strict: true))
+        XCTAssertEqual(try RcloneDeployTransport.symlinkNames(inList: dos), [])
+    }
+}
+
 actor DeployGate {
     private var arrived = false, opened = false
+    private(set) var count = 0
     private var arrivals: [CheckedContinuation<Void, Never>] = [], holds: [CheckedContinuation<Void, Never>] = []
     func arrive() async {
-        arrived = true; arrivals.forEach { $0.resume() }; arrivals = []
+        arrived = true; count += 1; arrivals.forEach { $0.resume() }; arrivals = []
         if !opened { await withCheckedContinuation { holds.append($0) } }
     }
     func waitForArrival() async { if !arrived { await withCheckedContinuation { arrivals.append($0) } } }

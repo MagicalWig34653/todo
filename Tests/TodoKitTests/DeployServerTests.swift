@@ -216,6 +216,12 @@ final class DeployServerTests: XCTestCase {
             let read = try await transport.read(conn, paths: ["plain.txt", "twin.txt", "dirlink/in-dir.txt", "sub/deep file #1.txt"])
             XCTAssertEqual(read.keys.sorted(), ["plain.txt", "sub/deep file #1.txt"])
 
+            // pure-ftpd hides dot files in a plain LIST: links with such names must be found as well, or a write would follow them.
+            let hidden = try await transport.linkedPaths(conn, paths: [".well-known/in-dir.txt", ".versteckt.txt", "plain.txt", "sub/neu.txt"])
+            XCTAssertEqual(hidden, [".well-known/in-dir.txt", ".versteckt.txt"])
+            let secrets = try await transport.read(conn, paths: [".well-known/in-dir.txt", ".versteckt.txt"])
+            XCTAssertEqual(secrets, [:])
+
             // The link check itself refuses an untrusted certificate (it logs in on its own).
             let wrong = DeployConnection(protocolName: conn.protocolName, host: conn.host, port: conn.port, basePath: conn.basePath,
                                          username: conn.username, password: conn.password, privateKey: nil, passphrase: nil,

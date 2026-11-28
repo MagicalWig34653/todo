@@ -223,10 +223,16 @@ struct RcloneDeployTransport: DeployTransport {
     /// Names of the symlinks in a unix LIST answer. The line cannot say where the name ends (`name -> target`, and a name may hold
     /// ` -> ` itself), so every prefix before an arrow counts, with and without surrounding blanks: more than needed, never less.
     /// An `l` line that cannot be read fails the whole check (fail closed).
-    static func symlinkNames(inList text: String) throws -> Set<String> {
+    static func symlinkNames(inList text: String, strict: Bool = false) throws -> Set<String> {
         var names = Set<String>()
         // "\r\n" is one Character in Swift: work on the scalars.
-        for scalars in text.unicodeScalars.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) where scalars.first == "l" {
+        for scalars in text.unicodeScalars.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
+            // `strict` (before writing): only the Unix format shows links, so any other line makes the listing unusable.
+            if strict, !(scalars.first.map { "-dlbcps".unicodeScalars.contains($0) } == true && scalars.dropFirst().first.map { "r-".unicodeScalars.contains($0) } == true),
+               !scalars.starts(with: "total ".unicodeScalars) {
+                throw DeployTransportError(code: "deploy_failed")
+            }
+            guard scalars.first == "l" else { continue }
             let line = String(String.UnicodeScalarView(scalars))
             // Skip eight columns, then exactly one blank: the rest is `name -> target`, untrimmed.
             var rest = line[...]
@@ -262,19 +268,19 @@ struct RcloneDeployTransport: DeployTransport {
         guard let curl = Self.binary("DEPLOY_CURL_PATH", "curl") else { throw DeployTransportError(code: "deploy_transport_unavailable") }
         var directories = Set<String>()
         for p in paths {
-            let parts = p.split(separator: "/").map(String.init)
+            let parts = DeployPath.segments(p)
             for i in 0..<parts.count { directories.insert(parts[0..<i].joined(separator: "/")) }
         }
         guard directories.count <= 5000 else { throw DeployTransportError(code: "deploy_failed") }
         let links = try await ftpLinkNames(c, proto: proto, curl: curl, directories: directories, dir: dir)
         return paths.filter { p in
-            let parts = p.split(separator: "/").map(String.init)
+            let parts = DeployPath.segments(p)
             return !parts.indices.contains { links[parts[0..<$0].joined(separator: "/")]?.contains(parts[$0]) == true }
         }
     }
 
     /// The symlink names of each directory (relative to the base path), from `curl` LIST runs.
-    private func ftpLinkNames(_ c: DeployConnection, proto: DeployProtocol, curl: String, directories: Set<String>, dir: URL) async throws
+    private func ftpLinkNames(_ c: DeployConnection, proto: DeployProtocol, curl: String, directories: Set<String>, dir: URL, strict: Bool = false) async throws
         -> [String: Set<String>] {
         let conf = dir.appendingPathComponent("curl.conf")
         FileManager.default.createFile(atPath: conf.path, contents: Data("user = \"\(Self.curlConfigValue(c.username)):\(Self.curlConfigValue(c.password ?? ""))\"\n".utf8),
@@ -290,7 +296,9 @@ struct RcloneDeployTransport: DeployTransport {
         let sorted = directories.sorted()
         for start in stride(from: 0, to: sorted.count, by: 50) {
             let batch = Array(sorted[start..<min(start + 50, sorted.count)])
-            var arguments = ["-q", "-sS", "--globoff", "--connect-timeout", "15", "--max-time", "300", "--ftp-skip-pasv-ip", "-K", conf.path] + tls
+            // `-a`: servers like pure-ftpd leave names starting with a dot out of a plain LIST, and a hidden link is followed too.
+            var arguments = ["-q", "-sS", "--globoff", "--connect-timeout", "15", "--max-time", "300", "--ftp-skip-pasv-ip", "--request", "LIST -a",
+                             "-K", conf.path] + tls
             var outFiles: [URL] = []
             for d in batch {
                 let out = dir.appendingPathComponent("list-\(UUID().uuidString)")
@@ -305,7 +313,7 @@ struct RcloneDeployTransport: DeployTransport {
                 guard let handle = try? FileHandle(forReadingFrom: file), let data = try? handle.read(upToCount: 4 * 1024 * 1024 + 1), data.count <= 4 * 1024 * 1024 else {
                     throw DeployTransportError(code: "deploy_failed")
                 }
-                links[d] = try Self.symlinkNames(inList: String(decoding: data, as: UTF8.self))
+                links[d] = try Self.symlinkNames(inList: String(decoding: data, as: UTF8.self), strict: strict)
             }
         }
         return links
@@ -373,18 +381,19 @@ struct RcloneDeployTransport: DeployTransport {
             let plain = try await names(rclone, args, target, dir: dir)
             for e in plain { if e.IsDir { found.directories.insert(e.Name) } else { found.files.insert(e.Name) } }
             if proto == .sftp {
-                let seen = Set(plain.map(\.Name))
-                found.links = Set(try await names(rclone, follow, target, dir: dir).map(\.Name)).subtracting(seen)
+                // Compared as bytes: a link may differ from a plain name only in its Unicode form.
+                let seen = Set(plain.map { Data($0.Name.utf8) })
+                found.links = Set(try await names(rclone, follow, target, dir: dir).map(\.Name).filter { !seen.contains(Data($0.utf8)) })
             } else {
                 guard let curl = Self.binary("DEPLOY_CURL_PATH", "curl") else { throw DeployTransportError(code: "deploy_transport_unavailable") }
-                found.links = try await ftpLinkNames(c, proto: proto, curl: curl, directories: [directory], dir: dir)[directory] ?? []
+                found.links = try await ftpLinkNames(c, proto: proto, curl: curl, directories: [directory], dir: dir, strict: true)[directory] ?? []
             }
             levels[directory] = found
             return found
         }
         var refused = Set<String>()
         for path in paths.sorted() {
-            let parts = path.split(separator: "/").map(String.init)
+            let parts = DeployPath.segments(path)
             var directory = ""
             for (index, part) in parts.enumerated() {
                 let here = try await level(directory)
@@ -418,6 +427,8 @@ struct RcloneDeployTransport: DeployTransport {
         let staging = dir.appendingPathComponent("up")
         for file in files {
             let url = staging.appendingPathComponent(file.path)
+            // Second line of defence: nothing is staged outside the staging directory.
+            guard url.standardizedFileURL.path.hasPrefix(staging.standardizedFileURL.path + "/") else { throw DeployTransportError(code: "deploy_failed") }
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             guard FileManager.default.createFile(atPath: url.path, contents: file.data) else { throw DeployTransportError(code: "deploy_failed") }
         }

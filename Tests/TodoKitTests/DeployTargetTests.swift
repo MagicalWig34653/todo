@@ -480,8 +480,13 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
     /// The upload breaks off with `deploy_unreachable` after this many files.
     var failAfterWrites: Int? { get { lock.withLock { _failAfter } } set { lock.withLock { _failAfter = newValue } } }
     var beforeWrite: (@Sendable () async -> Void)? { get { lock.withLock { _beforeWrite } } set { lock.withLock { _beforeWrite = newValue } } }
+    private var _beforeLinkCheck: (@Sendable () async -> Void)?, _leftover: String?
+    var beforeLinkCheck: (@Sendable () async -> Void)? { get { lock.withLock { _beforeLinkCheck } } set { lock.withLock { _beforeLinkCheck = newValue } } }
+    /// An upload that breaks off leaves this suffix behind, like an interrupted rclone transfer.
+    var leftoverSuffix: String? { get { lock.withLock { _leftover } } set { lock.withLock { _leftover = newValue } } }
 
     func linkedPaths(_ connection: DeployConnection, paths: [String]) async throws -> Set<String> {
+        if let beforeLinkCheck { await beforeLinkCheck() }
         let links = self.links
         return Set(paths.filter { p in
             let parts = p.split(separator: "/")
@@ -493,7 +498,10 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
         if let failure { throw DeployTransportError(code: failure) }
         lock.withLock { _writes.append(files.map(\.path)) }
         for (index, file) in files.enumerated() {
-            if let failAfterWrites, index >= failAfterWrites { throw DeployTransportError(code: "deploy_unreachable") }
+            if let failAfterWrites, index >= failAfterWrites {
+                if let leftoverSuffix { lock.withLock { _files[file.path + leftoverSuffix] = file.data } }
+                throw DeployTransportError(code: "deploy_unreachable")
+            }
             lock.withLock { _files[file.path] = file.data }
         }
     }

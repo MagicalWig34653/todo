@@ -16,6 +16,10 @@ enum DeployUploadLimits {
     static let maxBackup = 64 * 1024 * 1024
     /// Plans of a target that still wait (planned or requested): bounds what a caller can store.
     static let maxOpenPlans = 10
+    /// Plans of a target that never ran (rejected, expired, stopped before writing) kept for the history.
+    static let keptClosed = 20
+    /// Plans a process reads from servers at the same time (each holds up to `DeployLimits.maxReadTotal` in memory).
+    static let concurrentPlanning = 2
     static let lifetime: TimeInterval = 24 * 3600
     /// A run that is still `running` after this time was interrupted (the server went down).
     static let lease: TimeInterval = 30 * 60

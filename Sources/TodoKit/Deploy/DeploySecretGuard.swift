@@ -7,7 +7,7 @@ import Foundation
 enum DeploySecretGuard {
     /// `secret_name`, `blocked_path` or `nil`. Works on a repo or server path, `/`-separated, case-insensitive.
     static func pathReason(_ path: String) -> String? {
-        let parts = path.lowercased().split(separator: "/").map(String.init)
+        let parts = DeployPath.segments(path.lowercased())
         guard !parts.isEmpty else { return nil }
         // The name rules apply to every segment: a directory called `.env` or `credentials` is as secret as a file.
         for part in parts where secretDirectories.contains(part) || secretNames.contains(part) || looksLikeSecretName(part) { return "secret_name" }
@@ -63,7 +63,7 @@ enum DeploySecretGuard {
     /// A file whose path looks like configuration: the keyword heuristics apply to it.
     static func isConfigLike(_ path: String) -> Bool {
         let lower = path.lowercased()
-        let parts = lower.split(separator: "/").map(String.init)
+        let parts = DeployPath.segments(lower)
         if parts.contains(where: { $0.contains("config") || $0.contains("settings") || $0.contains("secret") || $0.contains("credential") }) { return true }
         guard let name = parts.last, let dot = name.lastIndex(of: ".") else { return false }
         return ["ini", "conf", "cnf", "toml", "properties", "yml", "yaml", "env"].contains(String(name[name.index(after: dot)...]))
