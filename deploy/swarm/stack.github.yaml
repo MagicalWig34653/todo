@@ -1,0 +1,21 @@
+version: '3.8'
+# Optional overlay: GitHub App for pull requests with server changes of deploy targets (ADR 0042, docs/GITHUB-APP-EINRICHTUNG.md).
+# scripts/swarm-deploy.sh adds this file automatically when GITHUB_APP_ENABLED=true is set in the env file.
+# Needs the external Swarm secret todo_github_app_key (the private key .pem of the app; name via GITHUB_APP_KEY_SECRET):
+#   docker secret create todo_github_app_key ./todolino-app.private-key.pem
+# The key is mounted as a file (/run/secrets/github_app_key) and never appears in the image, the env file or the repository.
+x-github: &github
+  environment:
+    GITHUB_APP_ID: ${GITHUB_APP_ID:?GITHUB_APP_ID required}
+    GITHUB_APP_INSTALLATION_ID: ${GITHUB_APP_INSTALLATION_ID:?GITHUB_APP_INSTALLATION_ID required}
+    GITHUB_APP_REPOSITORIES: ${GITHUB_APP_REPOSITORIES:?GITHUB_APP_REPOSITORIES required}
+    GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/github_app_key
+  secrets: [github_app_key]
+services:
+  migrate: *github
+  backend: *github
+  backend-pinned: *github
+secrets:
+  github_app_key:
+    external: true
+    name: ${GITHUB_APP_KEY_SECRET:-todo_github_app_key}
