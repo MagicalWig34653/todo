@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { Task } from '../src/lib/api';
-import { candidatesFor, defaultSegment, mayDecideReview, mayHandOverQuestion, mayHandOverReview, mineOnly, responsibleName } from '../src/lib/assignment';
+import { ApiError, type ForMe, type Question, type Review, type Task } from '../src/lib/api';
+import {
+	candidatesFor, defaultSegment, forMeCount, lacksResponsibility, mayDecideReview, mayHandOverQuestion, mayHandOverReview, minePlans, mineOnly,
+	needResponsibility, responsibleName, settleForMe
+} from '../src/lib/assignment';
 import { createDraftTask, type CardDraft } from '../src/lib/cardDraft';
 import { attentionCount } from '../src/lib/commandCenter';
+import type { ForYouNeed } from '../src/lib/forYou';
+import { t } from '../src/lib/i18n/index';
 
 const people = [
 	{ userID: 'a', displayName: 'Anna', assignableTo: ['task', 'question', 'review'] as const, isMe: false },
@@ -59,6 +64,13 @@ describe('"Meine" and "Für mich"', () => {
 		expect(mineOnly(tasks, 'me').map((x) => x.id)).toEqual(['1']);
 		expect(mineOnly(tasks, undefined)).toEqual([]);
 	});
+	it('keeps cards added while the filter is on, whoever is responsible', () => {
+		expect(mineOnly(tasks, 'me', new Set(['3'])).map((x) => x.id)).toEqual(['1', '3']);
+		expect(mineOnly(tasks, 'me', new Set(['unknown'])).map((x) => x.id)).toEqual(['1']);
+	});
+	it('does not claim that something older is missing when the list is cut off', () => {
+		expect(t('forYou.mineTruncated')).toBe('Nicht alle Einträge werden angezeigt.');
+	});
 	it('preselects "Für mich" only when it is not empty', () => {
 		expect(defaultSegment(2)).toBe('mine');
 		expect(defaultSegment(0)).toBe('all');
@@ -102,5 +114,75 @@ describe('draft', () => {
 		expect(none.calls).toEqual(['create']);
 		const out = await createDraftTask(fake(true).api, draft, async () => undefined);
 		expect(out.failed).toEqual(['assignee']);
+	});
+});
+
+const need = (over: Partial<ForYouNeed>): ForYouNeed => ({
+	id: 'n', kind: 'plan', projectID: 'p', projectName: 'P', taskID: 't1', taskTitle: 'T', taskVersion: 1, title: 'x', options: [], blocking: false, actions: [], ...over
+});
+const forMe = { generatedAt: '', tasks: [{ id: 't1' }], questions: [{ id: 'q' }], reviews: [], truncated: false } as unknown as ForMe;
+
+describe('"Für mich" beside the feed', () => {
+	it('passes the answer on', async () => {
+		expect(await settleForMe(Promise.resolve(forMe))).toEqual({ own: forMe });
+	});
+	it('knows a server without it', async () => {
+		expect(await settleForMe(Promise.reject(new ApiError(404)))).toEqual({ own: null });
+	});
+	it('reports any other failure and says nothing about the content, so the shown one stays', async () => {
+		for (const failure of [new ApiError(500), new TypeError('Failed to fetch')]) {
+			const result = await settleForMe(Promise.reject(failure));
+			expect(result.own).toBeUndefined();
+			expect(result.failure).toBe(failure);
+		}
+	});
+	it('takes the waiting plans of own cards that concern the account, and counts them', () => {
+		const needs = [
+			need({ id: 'own', concernsMe: true }),
+			need({ id: 'others', concernsMe: false }),
+			need({ id: 'foreignCard', taskID: 't2', concernsMe: true }),
+			need({ id: 'oldServer' }),
+			need({ id: 'blocked', kind: 'blocked', concernsMe: true })
+		];
+		expect(minePlans(needs, forMe).map((n) => n.id)).toEqual(['own']);
+		expect(minePlans(needs, null)).toEqual([]);
+		expect(forMeCount(forMe, minePlans(needs, forMe))).toBe(3);
+		expect(forMeCount(null, [])).toBe(0);
+	});
+});
+
+describe('responsibility of a feed entry', () => {
+	const review = { id: 'r', reviewerID: 'a', assigneeName: 'Anna', agentJobID: 'job' } as unknown as Review;
+	const question = { id: 'q', assigneeID: 'b', agentQuestionID: null } as unknown as Question;
+
+	it('uses the listed review or question', () => {
+		expect(needResponsibility(need({ kind: 'review', reviewID: 'r' }), undefined, review)).toEqual({ kind: 'review', id: 'r', assigneeID: 'a', assigneeName: 'Anna', runner: true });
+		expect(needResponsibility(need({ kind: 'question', questionID: 'q', assigneeName: 'Ben' }), question)).toEqual({ kind: 'question', id: 'q', assigneeID: 'b', assigneeName: 'Ben', runner: false });
+	});
+	it('falls back to the feed when the capped list does not reach an old entry', () => {
+		const old = need({ kind: 'review', reviewID: 'old', concernsMe: false, assigneeID: 'a', assigneeName: 'Anna', actor: { type: 'Integration', id: 'i' } });
+		expect(needResponsibility(old)).toEqual({ kind: 'review', id: 'old', assigneeID: 'a', assigneeName: 'Anna', runner: false });
+		const run = need({ kind: 'question', questionID: 'rq', concernsMe: true, actor: { type: 'Run', id: 'r' } });
+		expect(needResponsibility(run)).toEqual({ kind: 'question', id: 'rq', assigneeID: undefined, assigneeName: undefined, runner: true });
+	});
+	it('knows nothing from the feed of an older server, and nothing about other kinds', () => {
+		expect(needResponsibility(need({ kind: 'review', reviewID: 'r' }))).toBeNull();
+		expect(needResponsibility(need({ kind: 'plan', concernsMe: true }))).toBeNull();
+	});
+});
+
+describe('server without responsibility', () => {
+	const missing = () => Promise.reject(new ApiError(404));
+	it('needs both routes to be missing', async () => {
+		expect(await lacksResponsibility(new ApiError(404), missing)).toBe(true);
+	});
+	it('takes a 404 of the people list alone as an invisible project', async () => {
+		expect(await lacksResponsibility(new ApiError(404), async () => forMe)).toBe(false);
+	});
+	it('draws no conclusion from other failures', async () => {
+		let asked = 0;
+		expect(await lacksResponsibility(new ApiError(500), () => (asked++, missing()))).toBe(false);
+		expect(asked).toBe(0);
+		expect(await lacksResponsibility(new ApiError(404), () => Promise.reject(new ApiError(500)))).toBe(false);
 	});
 });
