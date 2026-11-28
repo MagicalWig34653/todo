@@ -1,5 +1,11 @@
 # Arbeitsplan
 
+## Checkpoint 28.11.2026 (03:20): Deploy-Ziele Phase 2b „Pull Request über GitHub-App“ (Karte `354ADE12`)
+
+- REST `pull-request` und MCP `open_server_changes_pr` (ADR 0042); rot `d77701d`, grün `cac5e86`, Gegenlesen rot `3422092`, grün `49ce8ee`, Anleitung und Verträge `348c748`, volle Suite grün auf `9d1332f`. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Lino: App anlegen nach `docs/GITHUB-APP-EINRICHTUNG.md` (Frage `CE1DAD7D`), Deploy. Erster echter Lauf belegt die Annahmen zur GitHub-API.
+- Offen Phase 2: tägliche Drift-Karte, GitHub-Konto als Autor, PWA-Knopf „Holen“/„PR“. Danach Phase 3 Hochladen.
+
 ## Checkpoint 28.11.2026 (02:00): „Aufgabe erstellen“ als volle Karte, PWA (Karte `A42C423B`)
 
 - Hauptknopf öffnet das Kartenfenster als Entwurf; Anlegen bleibt in der Karte, Abbrechen ohne Rest; Schnell-Anlegen über `q` und Enter in der Liste. Belege: `docs/STATUS.md` (oberster Nachtrag).
