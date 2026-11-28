@@ -1,5 +1,15 @@
 # Status
 
+## Nachtrag 28.11.2026 (02:00): „Aufgabe erstellen“ öffnet die volle Karte als Entwurf, PWA (Karte `A42C423B`, Erwartung f-d6f857ca; kein Deploy)
+
+- **Neu:** Der Hauptknopf „Aufgabe erstellen“ (Seitenleiste oben links, Testkennung `create-task-open`; am Telefon das „+“ `fab`) öffnet das große Kartenfenster als Entwurf: Titel, Beschreibung (Markdown, Reiter „Vorschau“), Projekt (das offene Projekt vorgewählt, sonst „Eingang“), Spalte (erste echte Spalte vorgewählt, nur bei Projekten mit eigenen Spalten), Priorität, Fälligkeit (Datum, lokale Mitternacht), Etiketten, Anhänge (PNG, JPEG, WebP, PDF; vor dem Anlegen nur gemerkt).
+- **Anlegen** speichert die Aufgabe, danach Planung, Etiketten und Dateien (Best Effort, Hinweis bei Teilfehlern); das Fenster bleibt offen und zeigt die gespeicherte Karte mit eigener URL `?card=task:<id>`. Schlägt schon das Anlegen fehl, bleiben alle Eingaben stehen. **Abbrechen**, Esc, „×“ oder Klick auf den Hintergrund verwerfen den Entwurf; vor „Anlegen“ geht keine Anfrage an den Server.
+- **Schnell-Anlegen bleibt:** Taste `q` öffnet weiter den Schnell-Dialog, Enter in der Eingabezeile der Liste/Spalte legt direkt an. Kürzelhilfe und Knopf-Tooltip nennen das.
+- Code: `web/src/lib/cardDetail.svelte.ts` (`drafting`, `openDraft`, `created`), `web/src/lib/cardDraft.ts` (`createDraftTask`), `web/src/lib/components/card/CardDraft.svelte`, Einbindung in `CardDetailDialog.svelte`, `Sidebar.svelte`, `Workspace.svelte`. Kein Backend, keine Migration. Abgestimmt in `design/ux-konzept/konzept.md` (Ergänzung unter der Klicktabelle).
+- **Nicht enthalten:** Zuständigkeit (Karte `8B4BAC2E` gibt es in der PWA noch nicht), iOS (eigener Folgeschritt), Neuanlegen von Etiketten im Entwurf (geht danach in der Karte).
+- Tests: E2E `web/e2e/card-draft.spec.ts` (6 Tests: Entwurf hell/dunkel mit Speichern und API-Prüfung, Abbrechen hell/dunkel ohne Rest, Telefon-„+“, Schnell-Anlegen per Enter und `q`). Rot gegen Backend-Image `sha-da4983b` (Knopf öffnet kein Kartenfenster), Schnell-Anlegen-Test schon vorher grün; danach 6/6 grün.
+- Bilder hell/dunkel (angesehen): `docs/screenshots/karte-anlegen/` (1 vor Klick, 2 Entwurf offen, 3 nach Anlegen, 4 nach Abbrechen).
+
 ## Nachtrag 27.11.2026 (23:40): Deploy-Ziele Phase 2a – Holen von Server-Änderungen (Karte `354ADE12`, Erwartung f-a9d3e135; kein Deploy)
 
 - **Neu:** `POST /v1/deploy-targets/{id}/pull` (Person, `edit`) und MCP `pull_server_changes` liefern die Dateien, die auf dem Server geändert wurden oder nur dort liegen, mit den Zeilenenden des Repos (Manifest-Eintrag `eol`: `lf`, `crlf`, `keep`; Binärdateien unberührt), dazu Branch-Name `server/<ziel>-JJJJ-MM-TT` und eine Commit-Nachricht. ADR 0041, `contracts/deploy.yaml` 1.1.0, `oauth-mcp.yaml` 1.17.0, Handbuch 1.54.0. Keine Migration, keine neuen Scopes.

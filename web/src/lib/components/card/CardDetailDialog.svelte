@@ -5,10 +5,20 @@
 	import { attemptLoad } from '#lib/notice.svelte.js';
 	import Dialog from '../app/Dialog.svelte';
 	import CardDetailBody from './CardDetailBody.svelte';
+	import CardDraft from './CardDraft.svelte';
 	import CardHeader from './CardHeader.svelte';
 
 	/** The one large, blurred card detail window of the app (rendered by the Workspace). */
-	let { onopentask, onopenproject }: { onopentask: (projectID: string, taskID: string) => void; onopenproject: (projectID: string) => void } = $props();
+	let {
+		onopentask,
+		onopenproject,
+		currentProjectID = null
+	}: {
+		onopentask: (projectID: string, taskID: string) => void;
+		onopenproject: (projectID: string) => void;
+		/** Preselected project of a new draft card (the open project page). */
+		currentProjectID?: string | null;
+	} = $props();
 
 	let title = $state('');
 	const ref = $derived(cardDetail.ref);
@@ -26,10 +36,12 @@
 <Dialog
 	bind:open={() => cardDetail.visible, (v) => { if (!v) cardDetail.close(); }}
 	large
-	title={cardDetail.invalid ? t('card.invalid.title') : title || t('card.loadingTitle')}
+	title={cardDetail.drafting ? t('draft.windowTitle') : cardDetail.invalid ? t('card.invalid.title') : title || t('card.loadingTitle')}
 	testid="card-dialog"
 >
-	{#if ref}
+	{#if cardDetail.drafting}
+		<CardDraft {currentProjectID} />
+	{:else if ref}
 		<CardDetailBody
 			card={ref}
 			bind:title

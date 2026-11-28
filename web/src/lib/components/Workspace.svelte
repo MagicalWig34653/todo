@@ -310,9 +310,9 @@
 				<button
 					type="button"
 					class="bg-ui-accent text-ui-accent-foreground focus-visible:ring-ring/60 inline-flex size-10 items-center justify-center rounded-full outline-none focus-visible:ring-2 menu:hidden"
-					aria-label={t('quickAdd.open')}
+					aria-label={t('draft.open')}
 					data-testid="fab"
-					onclick={() => (ui.quickAdd = true)}
+					onclick={() => cardDetail.openDraft()}
 				>
 					<Plus class="size-5" aria-hidden="true" />
 				</button>
@@ -433,7 +433,7 @@
 <QuickAdd currentProjectID={view === 'project' ? selectedID : null} {view} />
 
 <ReviewUndoToast />
-<CardDetailDialog onopentask={openTask} onopenproject={openProject} />
+<CardDetailDialog onopentask={openTask} onopenproject={openProject} currentProjectID={view === 'project' ? selectedID : null} />
 
 <Dialog bind:open={shortcutsOpen} title={t('help.keys.overlay')} testid="shortcuts-overlay">
 	<ShortcutList />

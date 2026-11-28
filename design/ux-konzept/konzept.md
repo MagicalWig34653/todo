@@ -127,6 +127,12 @@ Ohne Tippen und Scrollen; „vorher“ aus der Ist-Aufnahme, „nachher“ aus d
 | 5 Brain-Vollmacht öffnen | 3 → **2** | 3 → **2** (ohne Scrollen) |
 | Zusatz: Liste ↔ Board | 2 → **1** | 2 → **1** |
 
+Ergänzung 28.11.2026 (Karte `A42C423B`, Lino): Der Hauptknopf „Aufgabe erstellen“ (Seitenleiste oben links, „+“ in der
+Kopfzeile am Telefon) öffnet das große Kartenfenster als Entwurf mit allen Feldern (Titel, Beschreibung in Markdown mit
+Vorschau, Projekt, Spalte, Priorität, Fälligkeit, Etiketten, Anhänge). „Anlegen“ speichert und zeigt im selben Fenster die
+gespeicherte Karte; „Abbrechen“, Esc oder „×“ verwerfen ohne Rest. Schnell-Anlegen aus Zeile 1 bleibt, aber nicht hinter dem
+Hauptknopf: Taste `q` (Dialog) und Enter in der Eingabezeile der Liste bzw. Spalte. Zuständigkeit folgt mit Karte `8B4BAC2E`.
+
 | Orte und Bedienelemente | vorher | nachher |
 |---|---:|---:|
 | Menüziele der Seitenleiste (ohne Projekte) | 15 (10 sichtbar + 5 unter „Mehr“) | 5 (+ Einstellungen unten) |

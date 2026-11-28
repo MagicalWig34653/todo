@@ -14,11 +14,28 @@ class CardDetailState {
 	tab = $state<CardTab>(DEFAULT_TAB);
 	/** The cards of the list or column the window was opened from, in display order (for the up/down navigation). */
 	siblings = $state<CardRef[]>([]);
+	/**
+	 * A new, not yet stored card is shown (card A42C423B): the window opens without a URL entry; "Anlegen" turns it into
+	 * the stored task card (`created`), closing discards it without a trace.
+	 */
+	drafting = $state(false);
 	/** True when this window pushed its own history entry (so closing can go back instead of rewriting the URL). */
 	private pushed = false;
 
 	get visible(): boolean {
-		return this.ref !== null || this.invalid;
+		return this.ref !== null || this.invalid || this.drafting;
+	}
+
+	/** Opens the window with an empty draft card (main "Aufgabe erstellen" button). */
+	openDraft(): void {
+		if (this.ref || this.invalid) return;
+		this.drafting = true;
+	}
+
+	/** The draft was stored: the same window now shows the task card (with its own URL, so back/Escape close it). */
+	created(taskID: string): void {
+		this.drafting = false;
+		this.open({ type: 'task', id: taskID });
 	}
 
 	get neighbors() {
@@ -27,6 +44,7 @@ class CardDetailState {
 
 	open(ref: CardRef, siblings: readonly CardRef[] = [], tab: CardTab = DEFAULT_TAB): void {
 		if (sameCard(this.ref, ref)) return;
+		this.drafting = false;
 		this.ref = ref;
 		this.siblings = [...siblings];
 		this.invalid = false;
@@ -70,17 +88,22 @@ class CardDetailState {
 		if (!ref || !this.siblings.some((c) => sameCard(c, ref))) this.siblings = [];
 	}
 
-	/** Closed by the user (button, Escape, backdrop): back to the entry before the window, or just drop the parameter. */
 	/** Drops the open card without touching the history (the account changed; the route no longer applies). */
 	reset(): void {
+		this.drafting = false;
 		this.ref = null;
 		this.invalid = false;
 		this.siblings = [];
 		this.pushed = false;
 	}
 
+	/** Closed by the user (button, Escape, backdrop): back to the entry before the window, or just drop the parameter. */
 	close(): void {
 		if (!this.visible) return;
+		if (this.drafting) {
+			this.drafting = false;
+			return;
+		}
 		const wasPushed = this.pushed;
 		this.ref = null;
 		this.siblings = [];
@@ -101,6 +124,7 @@ class CardDetailState {
 
 	/** Leaves for another page (link inside the window): no history step back, the navigation pushes its own entry. */
 	leave(): void {
+		this.drafting = false;
 		this.tab = DEFAULT_TAB;
 		this.ref = null;
 		this.siblings = [];

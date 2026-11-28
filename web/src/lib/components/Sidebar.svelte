@@ -29,6 +29,7 @@ export type View =
 	import { attempt } from '#lib/notice.svelte.js';
 	import { buildTree, flatten, type DropPlan } from '#lib/projectTree.js';
 	import { isOwner } from '#lib/access.js';
+	import { cardDetail } from '#lib/cardDetail.svelte.js';
 	import { ui } from '#lib/ui.svelte.js';
 	import { workspace } from '#lib/workspace.svelte.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -243,11 +244,11 @@ export type View =
 		<button
 			type="button"
 			class="text-ui-accent-ink hover:bg-ui-accent-soft flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-semibold"
-			data-testid="quick-add-open"
-			title={t('quickAdd.shortcut')}
-			onclick={() => (ui.quickAdd = true)}
+			data-testid="create-task-open"
+			title={t('draft.openHint')}
+			onclick={() => cardDetail.openDraft()}
 		>
-			<CirclePlus class="size-6 shrink-0" aria-hidden="true" />{t('quickAdd.open')}
+			<CirclePlus class="size-6 shrink-0" aria-hidden="true" />{t('draft.open')}
 		</button>
 
 		<ul class="flex flex-col gap-0.5" aria-label={t('nav.views')}>

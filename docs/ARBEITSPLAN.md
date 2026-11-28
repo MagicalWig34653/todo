@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 28.11.2026 (02:00): „Aufgabe erstellen“ als volle Karte, PWA (Karte `A42C423B`)
+
+- Hauptknopf öffnet das Kartenfenster als Entwurf; Anlegen bleibt in der Karte, Abbrechen ohne Rest; Schnell-Anlegen über `q` und Enter in der Liste. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Offen: iOS-Gegenstück (eigene Karte), Zuständigkeit im Entwurf nach `8B4BAC2E`. Deploy (Lino).
+
 ## Checkpoint 27.11.2026 (23:40): Deploy-Ziele Phase 2a „Holen“ (Karte `354ADE12`)
 
 - REST `pull` und MCP `pull_server_changes` (ADR 0041); rot `24731d3`, grün `8b1029c`, Gegenlesen rot `cdeaeb9`, grün `2d37d1c`. Belege: `docs/STATUS.md` (oberster Nachtrag).
