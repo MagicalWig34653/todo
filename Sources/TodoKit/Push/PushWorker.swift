@@ -275,26 +275,42 @@ struct PushTriggers: Sendable {
         return count
     }
 
+    static let assignmentPageSize = 200
+
     /// Being made responsible for a card (category `assignments`, default off): only the new person, never for taking the
-    /// card oneself, at most once per person and card. The newest `task.assigned` event of a card tells who set the
-    /// current person; a connection is not that person, so an agent handing work to its owner is announced.
+    /// card oneself, at most once per person and card while the outbox row lives (see `purge`). The newest `task.assigned`
+    /// event of a card tells who set the current person; a connection is not that person, so an agent handing work to its
+    /// owner is announced.
     private func assignments() async throws -> Int {
         let who = enabled(.assignments)
         guard !who.isEmpty else { return 0 }
         var count = 0
         let resolver = ResponsibilityResolver(db: db)
-        let recent = try await ActivityEvent.query(on: db).filter(\.$kind == "task.assigned").filter(\.$createdAt >= since)
-            .sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(200).all()
+        let recipients = who.map { Optional($0.id) }
         var seen = Set<UUID>()
-        for e in recent where seen.insert(e.taskID).inserted {
-            guard let task = try await TodoTask.find(e.taskID, on: db), let taskID = task.id, task.status != "done",
-                  let assignee = task.assigneeID, !(e.actorType == .person && e.actorID == assignee),
-                  let c = who.first(where: { $0.id == assignee }),
-                  try await resolver.isAssignable(assignee, to: .task, projectID: task.projectID) else { continue }
-            let event = PushEvent(kind: "assignment", taskID: taskID, projectID: task.projectID, subjectID: nil, at: nil)
-            if try await enqueue(c.id, .assignments, event, key: "assignment:\(taskID):to:\(assignee)", revive: true) { count += 1 }
+        var offset = 0
+        // Only open cards of possible recipients, read to the end page by page: events that concern nobody here, or cards
+        // announced earlier, must not push an assignment out of a fixed window. Events shifting between two pages are
+        // caught by `seen` or by the next run.
+        while true {
+            let page = try await ActivityEvent.query(on: db)
+                .join(TodoTask.self, on: \ActivityEvent.$taskID == \TodoTask.$id)
+                .filter(\.$kind == "task.assigned").filter(\.$createdAt >= since)
+                .filter(TodoTask.self, \.$assigneeID ~~ recipients).filter(TodoTask.self, \.$status != "done")
+                .sort(\.$createdAt, .descending).sort(\.$id, .descending)
+                .range(offset..<(offset + Self.assignmentPageSize)).all()
+            let newest = try page.filter { seen.insert($0.taskID).inserted }.map { (event: $0, task: try $0.joined(TodoTask.self)) }
+            try await resolver.load(projects: Set(newest.map(\.task.projectID)))
+            for (e, task) in newest {
+                guard let assignee = task.assigneeID, !(e.actorType == .person && e.actorID == assignee),
+                      let c = who.first(where: { $0.id == assignee }),
+                      try await resolver.isAssignable(assignee, to: .task, projectID: task.projectID) else { continue }
+                let event = PushEvent(kind: "assignment", taskID: e.taskID, projectID: task.projectID, subjectID: nil, at: nil)
+                if try await enqueue(c.id, .assignments, event, key: "assignment:\(e.taskID):to:\(assignee)", revive: true) { count += 1 }
+            }
+            guard page.count == Self.assignmentPageSize else { return count }
+            offset += Self.assignmentPageSize
         }
-        return count
     }
 
     private func questions() async throws -> Int {

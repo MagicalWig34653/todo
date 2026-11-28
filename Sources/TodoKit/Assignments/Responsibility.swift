@@ -25,32 +25,80 @@ enum Audience: Equatable, Sendable {
 }
 
 /// Effective responsibility, resolved on every read and again before sending: a stored assignee who lost access (or is
-/// locked) has no effect, nothing has to be cleaned up when rights change. Results are cached for one run.
+/// locked) has no effect, nothing has to be cleaned up when rights change. Cached for one run: each account (with its teams)
+/// and each project (with its sharing row and grants) is read once; the rule itself is `SharingSnapshot.visibility`.
 actor ResponsibilityResolver {
+    private struct Account {
+        let name: String
+        let teamIDs: Set<UUID>
+        let admins: Set<UUID>
+    }
+
     private let db: any Database
-    private var roles: [String: ProjectRole?] = [:]
-    private var names: [UUID: String] = [:]
+    /// A stored nil stands for an unknown or locked account.
+    private var accounts: [UUID: Account?] = [:]
+    /// Projects already asked for, found or not.
+    private var loaded: Set<UUID> = []
+    private var projects: [UUID: Project] = [:]
+    private var sharing: [UUID: ProjectSharing] = [:]
+    private var grants: [UUID: [ProjectGrant]] = [:]
 
     init(db: any Database) { self.db = db }
 
+    /// Reads these projects and their ancestors with sharing rows and grants, one batch per tree level. Callers with many
+    /// items pass all their projects first, so that the number of queries does not grow with the number of projects.
+    func load(projects ids: Set<UUID>) async throws {
+        var wanted = ids.subtracting(loaded)
+        guard !wanted.isEmpty else { return }
+        var asked = Set<UUID>()
+        var rows: [Project] = [], sharingRows: [ProjectSharing] = [], grantRows: [ProjectGrant] = []
+        while !wanted.isEmpty {
+            asked.formUnion(wanted)
+            var parents = Set<UUID>()
+            let level = Array(wanted)
+            for start in stride(from: 0, to: level.count, by: 500) {
+                let chunk = Array(level[start..<min(start + 500, level.count)])
+                let found = try await Project.query(on: db).filter(\.$id ~~ chunk).all()
+                rows += found
+                parents.formUnion(found.compactMap(\.parentID))
+                sharingRows += try await ProjectSharing.query(on: db).filter(\.$projectID ~~ chunk).all()
+                grantRows += try await ProjectGrant.query(on: db).filter(\.$projectID ~~ chunk).all()
+            }
+            wanted = parents.subtracting(asked).subtracting(loaded)
+        }
+        // Merged without suspension: a concurrent caller never sees a project without its ancestors or grants.
+        for project in rows { projects[try project.requireID()] = project }
+        for row in sharingRows { sharing[row.projectID] = row }
+        grants.merge(Dictionary(grouping: grantRows, by: \.projectID)) { _, new in new }
+        loaded.formUnion(asked)
+    }
+
+    private func account(_ userID: UUID) async throws -> Account? {
+        if let known = accounts[userID] { return known }
+        var result: Account?
+        if let user = try await User.find(userID, on: db), !user.isLocked {
+            let teams = try await SharingAccess(user: user, db: db).memberships()
+            result = Account(name: user.displayName, teamIDs: Set(teams.map(\.teamID)), admins: Set(teams.filter(\.isAdmin).map(\.teamID)))
+        }
+        accounts[userID] = .some(result)
+        return result
+    }
+
     /// Effective role of an account in a project; nil for unknown, locked or without access.
     func role(of userID: UUID, projectID: UUID) async throws -> ProjectRole? {
-        let key = "\(userID)|\(projectID)"
-        if let cached = roles[key] { return cached }
-        var result: ProjectRole?
-        if let user = try await User.find(userID, on: db), !user.isLocked, let project = try await Project.find(projectID, on: db) {
-            names[userID] = user.displayName
-            result = try await SharingAccess(user: user, db: db).visibility(project).role
-        }
-        roles[key] = .some(result)
-        return result
+        guard let account = try await account(userID) else { return nil }
+        try await load(projects: [projectID])
+        guard let project = projects[projectID] else { return nil }
+        let snapshot = SharingSnapshot(uid: userID, teamIDs: account.teamIDs, admins: account.admins,
+                                       projects: projects, sharing: sharing, grants: grants)
+        return try snapshot.visibility(project).role
     }
 
     /// Display name of a stored assignee for whoever may read the item; nil once the account lost access to the project or
     /// is locked. Never a login name.
     func visibleName(of userID: UUID?, projectID: UUID) async throws -> String? {
         guard let userID, try await role(of: userID, projectID: projectID) != nil else { return nil }
-        return names[userID]
+        return try await account(userID)?.name
     }
 
     func isAssignable(_ userID: UUID, to kind: AssignmentKind, projectID: UUID) async throws -> Bool {

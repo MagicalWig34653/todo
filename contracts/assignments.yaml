@@ -17,8 +17,9 @@ info:
     das Feld; nie Anmeldename oder E-Mail. Nur in REST-Antworten: GET /v1/tasks/{id}/context (task, subtasks, questions, review; auch claim
     und release), GET /v1/for-me, GET /v1/questions, /v1/questions/{id}, /v1/tasks/{id}/questions, GET /v1/reviews, GET /v1/feed, die Frage-
     und Review-Kurzfassungen der Steuerzentrale und die Antworten von Fragen, Antworten, Review anfordern, entscheiden (auch Sammelfreigabe),
-    zurücknehmen und der drei assignee-Routen. Nicht im Sync-Feed, in Aufgabenlisten oder über MCP. Karte zuweisen kann jetzt benachrichtigen
-    (push.yaml 1.4.0).
+    zurücknehmen und der drei assignee-Routen. Nicht im Sync-Feed, in Aufgabenlisten oder über MCP; einzige Ausnahme ist MCP
+    get_command_center, dessen Frage- und Review-Kurzfassungen der Karten assigneeName wie REST liefern (Agenten sehen laut ADR 0043 ID
+    und Name; command-center.yaml 1.12.0). Karte zuweisen kann jetzt benachrichtigen (push.yaml 1.4.0).
     MCP (oauth-mcp.yaml 1.19.0): list_assignees, set_assignee (tasks:write), list_for_me
     (tasks:read), assigneeID bei ask_question und request_review. Push: push.yaml 1.4.0. Die Abschnitte x-draft beschreiben geplante,
     noch nicht gebaute Verträge.'

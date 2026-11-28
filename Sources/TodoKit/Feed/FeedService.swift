@@ -95,6 +95,7 @@ struct FeedService: Sendable {
     private func responsibility(_ items: [FeedNeedsYouDTO], sources: [String: NeedSource]) async throws -> [FeedNeedsYouDTO] {
         let resolver = ResponsibilityResolver(db: db)
         let userID = try user.requireID()
+        try await resolver.load(projects: Set(items.filter { sources[$0.id] != nil }.map(\.projectID)))
         var result = items
         for index in result.indices {
             guard let source = sources[result[index].id] else { continue }

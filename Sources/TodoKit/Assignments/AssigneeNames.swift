@@ -44,6 +44,7 @@ struct AssigneeNames {
         if !unknown.isEmpty {
             for task in try await TodoTask.query(on: db).filter(\.$id ~~ Array(unknown)).all() { projects[try task.requireID()] = task.projectID }
         }
+        try await resolver.load(projects: Set(items.filter { $0.assigneeID != nil }.compactMap { $0.cardProjectID ?? projects[$0.cardID] }))
         var result = items
         for index in result.indices {
             guard result[index].assigneeID != nil, let project = result[index].cardProjectID ?? projects[result[index].cardID] else { continue }

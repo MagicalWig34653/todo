@@ -439,10 +439,12 @@ struct CommandCenterService: Sendable {
             if let best = candidates.min(by: { (Self.urgency[$0] ?? 9) < (Self.urgency[$1] ?? 9) }) { return best }
             return own == "backlog" ? (kids.allSatisfy { $0.status == "done" } ? "ready" : "backlog") : own
         }
-        // Responsibility (ADR 0043): one resolver for the whole answer, so rights and names are read once per person and project.
+        // Responsibility (ADR 0043): one resolver for the whole answer, so each account and project is read once.
         let resolver = ResponsibilityResolver(db: db)
         let me = try user.requireID()
         let tasksByID = Dictionary((loaded + childTasks).map { ($0.id!, $0) }, uniquingKeysWith: { first, _ in first })
+        let responsibleTaskIDs = questions.map(\.taskID) + reviews.map(\.taskID) + waitingPlans.map(\.taskID)
+        try await resolver.load(projects: Set(responsibleTaskIDs.compactMap { tasksByID[$0]?.projectID }))
         var questionNames: [UUID: String] = [:]
         var reviewNames: [UUID: String] = [:]
         var concerningQuestions = 0, concerningReviews = 0

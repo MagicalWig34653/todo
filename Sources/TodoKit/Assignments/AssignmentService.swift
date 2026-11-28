@@ -154,6 +154,7 @@ extension WorkflowService {
         let cardIDs = try cards.map { try $0.requireID() }
         let resolver = ResponsibilityResolver(db: db)
 
+        try await resolver.load(projects: Set(cards.map(\.projectID)))
         var open: [TodoTask] = []
         for card in cards where card.status != "done" {
             guard try await resolver.isAssignable(me, to: .task, projectID: card.projectID) else { continue }
@@ -179,6 +180,7 @@ extension WorkflowService {
         if !taskIDs.isEmpty {
             for task in try await TodoTask.query(on: db).filter(\.$id ~~ taskIDs).filter(\.$projectID ~~ inScope).all() { tasks[try task.requireID()] = task }
         }
+        try await resolver.load(projects: Set(tasks.values.map(\.projectID)))
         let askers = try await displayNames(questions.compactMap { $0.askedByType == .person ? $0.askedByID : nil }, on: db)
         for q in questions {
             guard let task = tasks[q.taskID], try await resolver.audience(of: q, task: task) == .only(me) else { continue }
