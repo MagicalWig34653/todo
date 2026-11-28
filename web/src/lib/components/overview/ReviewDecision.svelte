@@ -1,6 +1,11 @@
 <script lang="ts">
 	import Timestamp from '../Timestamp.svelte';
 	import { api, type Review } from '#lib/api.js';
+	import { roleOf } from '#lib/access.js';
+	import { mayDecideReview } from '#lib/assignment.js';
+	import { auth } from '#lib/auth.svelte.js';
+	import { workspace } from '#lib/workspace.svelte.js';
+	import Responsibility from '../Responsibility.svelte';
 	import { decisionNeedsNote, type ReviewDecision } from '#lib/commandCenter.js';
 	import { t } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -30,15 +35,27 @@
 		onopen?: () => void;
 		/** Offered variants (card 1D9C8B0C): "Freigeben" is replaced by one "Wählen" per variant. Absent or malformed = a plain review. */
 		variants?: unknown;
+		/** The pending review's ID, project and named person: who may decide and whom it can be handed to. */
+		reviewID?: string;
+		projectID?: string | null;
+		reviewerID?: string | null;
+		assigneeName?: string | null;
+		/** A review of a local runner job: it cannot be handed over. */
+		runner?: boolean;
 		ondecided: () => void | Promise<void>;
 	}
-	let { createdAt, decidedAt, taskID, summary, requestedBy, context, brainRecommended = false, markdown = false, onopen, variants: rawVariants, ondecided }: Props = $props();
+	let { createdAt, decidedAt, taskID, summary, requestedBy, context, brainRecommended = false, markdown = false, onopen, variants: rawVariants, reviewID, projectID, reviewerID, assigneeName, runner = false, ondecided }: Props = $props();
 
 	let note = $state('');
 	let busy = $state(false);
 	let needNote = $state(false);
 	let choosing = $state<string | null>(null);
 	const variants = $derived(variantsOf({ variants: rawVariants }));
+	/** A named review belongs to that person (and the project management): others only see who decides. */
+	const mayDecide = $derived.by(() => {
+		const project = workspace.projects.find((p) => p.id === projectID);
+		return mayDecideReview(reviewerID, auth.user?.id, project ? roleOf(project) : 'read');
+	});
 
 	async function decide(decision: ReviewDecision, variantID?: string) {
 		if (busy) return;
@@ -81,9 +98,13 @@
 			{/if}
 		</div>
 	</div>
-	{#if variants.length > 0}
-		<ReviewVariants {variants} {busy} {choosing} onchoose={(id) => decide('accept', id)} />
+	{#if reviewID}
+		<Responsibility kind="review" id={reviewID} {projectID} assigneeID={reviewerID} {assigneeName} {runner} onchanged={ondecided} />
 	{/if}
+	{#if variants.length > 0}
+		<ReviewVariants {variants} {busy} {choosing} readonly={!mayDecide} onchoose={(id) => decide('accept', id)} />
+	{/if}
+	{#if mayDecide}
 	<form
 		class="flex min-w-0 flex-col gap-1.5"
 		onsubmit={(e) => {
@@ -112,6 +133,7 @@
 			{/if}
 		</div>
 	</form>
+	{/if}
 	{#if onopen}
 		<div class="-mx-2.5 -mb-2.5 flex border-t px-1.5 py-1">
 			<Button variant="ghost" size="sm" class="text-ui-accent-ink ml-auto max-sm:w-full max-sm:justify-between" data-testid="card-open" onclick={onopen}>{t('cc.card.open')}<ChevronRight class="size-4" aria-hidden="true" /></Button>

@@ -6,6 +6,7 @@
 	import { STATUSES, moveWithin } from '#lib/planning.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import TaskChips from './TaskChips.svelte';
+	import AssigneeChip from './AssigneeChip.svelte';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
@@ -51,7 +52,7 @@
 					<li class="bg-card rounded-lg border p-2.5 text-sm shadow-card" data-testid="board-card">
 						<p>{pt.task.title}</p>
 						<p class="text-muted-foreground h-4 min-w-0 truncate text-xs" data-tabular><Timestamp value={pt.task.createdAt} label="time.created" /></p>
-						<div class="mt-1.5 flex flex-wrap gap-1"><TaskChips {pt} status={pt.task.status} /></div>
+						<div class="mt-1.5 flex flex-wrap items-center gap-1"><AssigneeChip task={pt.task} /><TaskChips {pt} status={pt.task.status} /></div>
 						<div class="mt-1 flex flex-wrap items-center gap-1">
 							<Button size="xs" variant="outline" aria-label={t('board.moveUp')} onclick={() => move(status, pt.task.id, -1)}><ArrowUp aria-hidden="true" /></Button>
 							<Button size="xs" variant="outline" aria-label={t('board.moveDown')} onclick={() => move(status, pt.task.id, 1)}><ArrowDown aria-hidden="true" /></Button>

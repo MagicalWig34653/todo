@@ -71,6 +71,10 @@ export interface Task {
 	/** Board column of the project (`null`/missing = no column) and 0-based position inside it. */
 	columnID?: string | null;
 	boardPosition?: number;
+	/** Responsible person (contracts/assignments.yaml); absent when nobody is. */
+	assigneeID?: string | null;
+	/** Display name of that person; only in some responses (card context, "Für mich") and absent on older servers. */
+	assigneeName?: string | null;
 	/** Only present in task lists. */
 	planning?: TaskPlanningSummary;
 	/** Only with `listTasks(projectID, true)`: names of the caller's own labels. */
@@ -592,6 +596,10 @@ export interface QuestionBrief {
 	askedByType: ActorType;
 	askedByLabel?: string | null;
 	createdAt?: string | null;
+	assigneeID?: string | null;
+	assigneeName?: string | null;
+	/** Set for a question of a local runner job: it cannot be handed over. */
+	agentQuestionID?: string | null;
 }
 export interface ReviewBrief {
 	id: string;
@@ -599,6 +607,7 @@ export interface ReviewBrief {
 	requestedByType: ActorType;
 	requestedByLabel?: string | null;
 	reviewerID?: string | null;
+	assigneeName?: string | null;
 	agentJobID?: string | null;
 	createdAt?: string | null;
 	/** 2 to 4 offered variants (contract command-center 1.8.0); absent = a plain review. Read it through `variantsOf`. */
@@ -694,6 +703,10 @@ export interface CommandSummary {
 	pendingAccessRequests?: number;
 	/** Plans waiting for approval (pipeline stage 2); absent on older servers. */
 	plansWaiting?: number;
+	/** Like the counters above, but only what concerns this account (own and not assigned); absent on older servers. */
+	concerningQuestions?: number;
+	concerningReviews?: number;
+	concerningPlans?: number;
 }
 /** contracts/project-sync.yaml */
 export type SyncState = 'fresh' | 'stale' | 'never';
@@ -801,6 +814,8 @@ export interface Question {
 	answeredAt?: string | null;
 	createdAt?: string | null;
 	agentQuestionID?: string | null;
+	assigneeID?: string | null;
+	assigneeName?: string | null;
 	version: number;
 }
 export interface Review {
@@ -813,6 +828,9 @@ export interface Review {
 	requestedByType: ActorType;
 	requestedByLabel?: string | null;
 	reviewerID?: string | null;
+	assigneeName?: string | null;
+	/** Set for a review of a local runner job: it cannot be handed over. */
+	agentJobID?: string | null;
 	summary: string;
 	decidedAt?: string | null;
 	decisionNote?: string | null;
@@ -853,6 +871,20 @@ export interface TaskContext {
 	questions: Question[];
 	review?: Review | null;
 	builds: BuildArtifact[];
+}
+/** contracts/assignments.yaml: a person who can be made responsible in a project. */
+export interface Assignee {
+	userID: string;
+	displayName: string;
+	assignableTo: ('task' | 'question' | 'review')[];
+	isMe: boolean;
+}
+export interface ForMe {
+	generatedAt: string;
+	tasks: Task[];
+	questions: Question[];
+	reviews: Review[];
+	truncated: boolean;
 }
 export interface ProjectStructure {
 	project: { id: string; name: string };
@@ -1162,6 +1194,13 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 				'GET',
 				`/agents/jobs${query({ state: params.state, projectID: params.projectID, before: params.before, limit: params.limit })}`
 			),
+
+		// Responsibility (contracts/assignments.yaml); older servers answer 404.
+		forMe: () => request<ForMe>('GET', '/for-me'),
+		listAssignees: (projectID: string) => request<Assignee[]>('GET', `/projects/${projectID}/assignees`),
+		setTaskAssignee: (taskID: string, assigneeID: string | null) => request<Task>('PUT', `/tasks/${taskID}/assignee`, { assigneeID }),
+		setQuestionAssignee: (questionID: string, assigneeID: string | null) => request<Question>('PUT', `/questions/${questionID}/assignee`, { assigneeID }),
+		setReviewAssignee: (reviewID: string, assigneeID: string | null) => request<Review>('PUT', `/reviews/${reviewID}/assignee`, { assigneeID }),
 
 		// Planning (contracts/planning-ext.yaml)
 		getPlanning: (taskID: string) => request<PlanningTask>('GET', `/planning/tasks/${taskID}`),

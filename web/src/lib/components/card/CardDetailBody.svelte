@@ -49,6 +49,7 @@
 	import Markdown from './Markdown.svelte';
 	import SideSection from './SideSection.svelte';
 	import TaskMilestone from './TaskMilestone.svelte';
+	import AssigneeField from './AssigneeField.svelte';
 
 	/**
 	 * Content of the large card detail window for one card (task, question, review, confirmation): top bar, main column
@@ -410,11 +411,11 @@
 					{#if openQuestions.length > 0 || (review && review.state === 'pending')}
 						<section class="flex flex-col gap-3" data-testid="card-decide">
 							{#each openQuestions as q (q.id)}
-								<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel} size="default" onanswered={changed} />
+								<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel} size="default" projectID={task.projectID} assigneeID={q.assigneeID} assigneeName={q.assigneeName} runner={!!q.agentQuestionID} onanswered={changed} />
 								<CardConversation taskID={task.id} thread={{ questionID: q.id }} title={t('card.chat.question')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/each}
 							{#if review && review.state === 'pending'}
-								<ReviewDecision createdAt={review.createdAt} decidedAt={review.decidedAt} taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} variants={review.variants} markdown ondecided={changed} />
+								<ReviewDecision createdAt={review.createdAt} decidedAt={review.decidedAt} taskID={task.id} summary={review.summary} requestedBy={review.requestedByLabel} variants={review.variants} markdown reviewID={review.id} projectID={task.projectID} reviewerID={review.reviewerID} assigneeName={review.assigneeName} runner={!!review.agentJobID} ondecided={changed} />
 								<CardConversation taskID={task.id} thread={{ reviewID: review.id }} title={t('card.chat.review')} onchanged={() => onchanged?.()} onattached={changed} />
 							{/if}
 						</section>
@@ -548,6 +549,7 @@
 							</button>
 						{/if}
 					</SideSection>
+					<AssigneeField {task} onchanged={changed} />
 					<TaskPlanning taskID={task.id} side onsaved={changed}>
 						{#snippet between()}
 							<SideSection title={t('card.side.labels')} addLabel={t('card.side.labelsAdd')} onadd={() => (pickLabel = !pickLabel)} active={pickLabel} testid="side-labels">

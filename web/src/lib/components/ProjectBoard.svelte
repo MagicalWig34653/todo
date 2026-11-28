@@ -11,12 +11,15 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { can, roleOf } from '#lib/access.js';
+	import { mineOnly } from '#lib/assignment.js';
+	import { auth } from '#lib/auth.svelte.js';
 	import Dialog from './app/Dialog.svelte';
 	import MenuItem from './app/MenuItem.svelte';
 	import { parseQuickAdd } from '#lib/quickAdd.js';
 	import { createQuickTask } from '#lib/quickAddCreate.js';
 	import Popover from './app/Popover.svelte';
 	import IdChip from './IdChip.svelte';
+	import AssigneeChip from './AssigneeChip.svelte';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Check from '@lucide/svelte/icons/check';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
@@ -32,10 +35,12 @@
 		tasks: Task[];
 		labelsByTask: Record<string, string[]>;
 		showDone: boolean;
+		/** Filter "Meine": only cards the own account is responsible for. */
+		onlyMine?: boolean;
 		reload: () => Promise<void>;
 		onopen: (task: Task, siblings?: Task[]) => void;
 	}
-	let { project, board, tasks, labelsByTask, showDone, reload, onopen }: Props = $props();
+	let { project, board, tasks, labelsByTask, showDone, onlyMine = false, reload, onopen }: Props = $props();
 	const canEdit = $derived(can(roleOf(project), 'addTask'));
 	const needEdit = $derived(canEdit ? undefined : t('access.need', { role: t('sharing.role.edit') }));
 
@@ -47,7 +52,10 @@
 	const real = $derived(board.mode === 'columns');
 	const realLanes = $derived(lanes.filter((l) => l.id));
 	const planningOf = (task: Task) => tasks.find((x) => x.id === task.id)?.planning ?? task.planning;
-	const visible = (lane: Lane) => (showDone ? lane.tasks : lane.tasks.filter((x) => x.status !== 'done'));
+	const visible = (lane: Lane) => {
+		const open = showDone ? lane.tasks : lane.tasks.filter((x) => x.status !== 'done');
+		return onlyMine ? mineOnly(open, auth.user?.id) : open;
+	};
 	const laneTitle = (lane: Lane) => (lane.laneKey === 'none' ? t('board.noColumn') : lane.name);
 	const laneAdd = (lane: Lane) => real || lane.key === 'open';
 
@@ -320,6 +328,7 @@
 				{/if}
 				<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 					<IdChip id={task.id} subtle testid="board-card-id" />
+					<AssigneeChip {task} />
 					{#if pl?.dueAt}
 						<span class={['inline-flex items-center gap-1', dueTone(pl.dueAt, task.status === 'done')]} data-testid="card-due"><CalendarDays class="size-3.5" aria-hidden="true" />{formatWhen(pl.dueAt)}</span>
 					{/if}

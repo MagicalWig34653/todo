@@ -22,8 +22,10 @@
 		/** Id of the variant being saved. */
 		choosing?: string | null;
 		onchoose: (variantID: string) => void;
+		/** Somebody else decides (named review, ADR 0043): the variants are shown without "Wählen". */
+		readonly?: boolean;
 	}
-	let { variants, busy = false, choosing = null, onchoose }: Props = $props();
+	let { variants, busy = false, choosing = null, onchoose, readonly = false }: Props = $props();
 
 	const uid = $props.id();
 	let failed = $state<Record<string, boolean>>({});
@@ -53,13 +55,13 @@
 	class="@container flex min-w-0 flex-col gap-2"
 	role="group"
 	aria-labelledby="{uid}-title"
-	aria-describedby="{uid}-hint"
+	aria-describedby={readonly ? undefined : `${uid}-hint`}
 	data-testid="review-variants"
 	{onkeydown}
 >
 	<div>
 		<h3 id="{uid}-title" class="text-sm font-semibold">{t('cc.review.variants.title')}</h3>
-		<p id="{uid}-hint" class="text-muted-foreground text-xs" data-testid="review-variants-hint">{t('cc.review.variants.hint', { minutes: REVIEW_UNDO_MINUTES })}</p>
+		{#if !readonly}<p id="{uid}-hint" class="text-muted-foreground text-xs" data-testid="review-variants-hint">{t('cc.review.variants.hint', { minutes: REVIEW_UNDO_MINUTES })}</p>{/if}
 	</div>
 	<ul class="grid grid-cols-1 gap-3 {columns}">
 		{#each variants as v, i (v.id)}
@@ -87,7 +89,7 @@
 						</h4>
 					</div>
 					{#if v.description}<p class="text-muted-foreground flex-1 text-[0.8125rem] leading-snug break-words whitespace-pre-wrap">{v.description}</p>{:else}<span class="flex-1"></span>{/if}
-					<Button
+					{#if !readonly}<Button
 						type="button"
 						class="h-11 w-full text-sm focus-visible:outline-solid max-sm:text-base"
 						disabled={busy}
@@ -98,7 +100,7 @@
 						tabindex={i === current ? 0 : -1}
 						onfocus={() => (active = i)}
 						onclick={() => onchoose(v.id)}>{choosing === v.id ? t('cc.review.variants.saving') : t('cc.review.variants.button')}</Button
-					>
+					>{/if}
 				</article>
 			</li>
 		{/each}

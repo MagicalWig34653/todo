@@ -1,0 +1,26 @@
+/** Responsibility (card E9300901, ADR 0043): merged into `de`. */
+export const deAssign = {
+	'assign.field': 'Zuständig',
+	'assign.nobody': 'Niemand',
+	'assign.otherPerson': 'eine andere Person',
+	'assign.for': 'Für {name}',
+	'assign.decides': 'Entscheidet: {name}',
+	'assign.handover': 'Weitergeben',
+	'assign.handoverTo': 'Weitergeben an',
+	'assign.choose': 'Person wählen',
+	'assign.chip': 'Zuständig: {name}',
+	'assign.chipUnknown': 'Zugewiesen',
+	'assign.mine': 'Meine',
+	'assign.emptyMine': 'Keine Karte ist dir zugewiesen.',
+	'forYou.segment': 'Auswahl',
+	'forYou.segment.mine': 'Für mich',
+	'forYou.segment.all': 'Alle',
+	'forYou.mineEmpty': 'Nichts wartet auf dich',
+	'forYou.kind.task': 'Karte',
+	'forYou.mineTruncated': 'Nicht alles geladen: erledige zuerst die ältesten Einträge.',
+	'cc.review.bulk.selectOthers': 'Review „{title}“ entscheidet eine andere Person',
+	'error.invalid_assignee': 'Diese Person kann hier nicht zuständig sein.',
+	'error.not_the_reviewer': 'Diese Review entscheidet eine andere Person.',
+	'error.runner_item': 'Rückfragen und Reviews lokaler Runner lassen sich nicht weitergeben.',
+	'error.question_not_open': 'Diese Frage ist nicht mehr offen.'
+} as const;
