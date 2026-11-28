@@ -68,6 +68,7 @@ export const deGitHub = {
 	'github.error.github_installation_not_yours': 'Diese Installation gehört laut GitHub nicht zu deinem Konto.',
 	'github.error.github_no_installation': 'Bei GitHub ist für dein Konto noch keine Installation der App vorhanden. Nutze „Mit GitHub verbinden“.',
 	'github.error.github_connection_limit': 'Mehr Verbindungen sind nicht möglich. Entferne zuerst eine.',
+	'github.error.github_connection_busy': 'Die Verbindung wird gerade von einer anderen Anfrage abgeschlossen. Bitte gleich noch einmal öffnen.',
 	'github.error.github_address_invalid': 'Der Server hat eine unerwartete Adresse genannt. Nichts wurde geöffnet.',
 	'github.error.github_repository_invalid': 'Dieses Repository ist nicht gültig.',
 	'github.error.github_repository_assigned': 'Dieses Repository ist dem Projekt schon zugeordnet.',

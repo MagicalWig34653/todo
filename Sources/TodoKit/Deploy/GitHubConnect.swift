@@ -303,7 +303,7 @@ struct GitHubConnectService: Sendable {
             app.logger.warning("github connect failed", metadata: ["operation": .string(e.operation), "status": .stringConvertible(e.status), "code": .string(e.code)])
             throw Abort(e.code == "deploy_github_unavailable" ? .badGateway : .badRequest, reason: e.code == "deploy_github_unavailable" ? e.code : "github_authorization_failed")
         }
-        let mine = installations.filter { ($0.app_id == nil || String($0.app_id!) == config.appID) && GitHubRepositoryName.isLogin($0.account.login) }
+        let mine = installations.filter { $0.app_id.map { String($0) == config.appID } == true && GitHubRepositoryName.isLogin($0.account.login) }
         let chosen: [InstallationEntry]
         if let installationID {
             // The id came in through a URL anybody can edit: it counts only if GitHub lists it for this very person.
@@ -314,19 +314,25 @@ struct GitHubConnectService: Sendable {
             chosen = mine
         }
         let uid = try user.requireID(), now = Date()
+        // The limit is checked before anything is stored: a refused request leaves nothing behind.
+        let known = Set(try await GitHubConnection.query(on: db).filter(\.$userID == uid).all().map(\.installationID))
+        let added = chosen.filter { !known.contains(String($0.id)) }.count
+        guard known.count + added <= GitHubConnectLimits.connectionsPerPerson else { throw Abort(.badRequest, reason: "github_connection_limit") }
         for entry in chosen {
             let id = String(entry.id)
             let existing = try await GitHubConnection.query(on: db).filter(\.$userID == uid).filter(\.$installationID == id).first()
-            if existing == nil {
-                guard try await GitHubConnection.query(on: db).filter(\.$userID == uid).count() < GitHubConnectLimits.connectionsPerPerson else {
-                    throw Abort(.badRequest, reason: "github_connection_limit")
-                }
-            }
             let c = existing ?? GitHubConnection()
             if existing == nil { c.id = UUID(); c.userID = uid; c.installationID = id; c.createdAt = now }
+            // Another GitHub account took over this connection: what was mapped under the old one does not carry over.
+            if let existing, existing.githubUserID != me.id {
+                try await GitHubProjectRepository.query(on: db).filter(\.$connectionID == existing.requireID()).delete()
+            }
             c.accountLogin = entry.account.login; c.accountType = entry.account.type == "Organization" ? "Organization" : "User"
             c.githubUserID = me.id; c.githubLogin = me.login; c.updatedAt = now
-            try await c.save(on: db)
+            do { try await c.save(on: db) } catch {
+                // A parallel completion saved the same installation first (unique index on person and installation).
+                throw Abort(.conflict, reason: "github_connection_busy")
+            }
         }
         app.logger.info("github installation connected", metadata: ["user": .string(uid.uuidString), "installations": .stringConvertible(chosen.count)])
         return try await connections()
@@ -416,7 +422,7 @@ struct GitHubConnectService: Sendable {
         row.repository = info.fullName.flatMap { GitHubRepositoryName.isValid($0) ? $0 : nil } ?? repository
         row.repositoryID = repositoryID; row.assignedBy = try user.requireID(); row.createdAt = Date()
         do { try await row.create(on: db) } catch { throw Abort(.conflict, reason: "github_repository_assigned") }
-        app.logger.info("github repository assigned", metadata: ["project": .string(projectID.uuidString), "repository": .string(row.repository)])
+        app.logger.info("github repository assigned", metadata: ["project": .string(projectID.uuidString)])
         return try await assignmentDTO(row, project: project)
     }
 

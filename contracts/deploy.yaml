@@ -229,7 +229,7 @@ paths:
         '200': {description: 'ohne code {url} (Autorisierung), mit code {connections}', content: {application/json: {schema: {oneOf: [{$ref: '#/components/schemas/GitHubUrl'}, {$ref: '#/components/schemas/GitHubConnections'}]}}}}
         '400': {description: 'github_state_invalid, github_installation_invalid, github_authorization_failed, github_connection_limit'}
         '403': {description: github_installation_not_yours}
-        '409': {description: github_not_configured}
+        '409': {description: 'github_not_configured, github_connection_busy'}
         '502': {description: deploy_github_unavailable}
   /v1/github/callback:
     post:
@@ -240,7 +240,7 @@ paths:
         '400': {description: 'github_state_invalid, github_authorization_failed, github_connection_limit'}
         '403': {description: github_installation_not_yours}
         '404': {description: github_no_installation}
-        '409': {description: github_not_configured}
+        '409': {description: 'github_not_configured, github_connection_busy'}
         '502': {description: deploy_github_unavailable}
   /v1/github/connections/{connectionID}:
     parameters: [{name: connectionID, in: path, required: true, schema: {type: string, format: uuid}}]

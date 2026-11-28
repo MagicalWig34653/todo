@@ -71,6 +71,16 @@ Entscheidung 4 und 5 oben (eine Installation je Instanz, Zuordnung nur durch den
    Zugriff genügt und ist nie veraltet); die Nutzer-Anmeldung über GitHub als Zugang zu Todolino (der Ablauf nutzt GitHub nur als
    Nachweis, wem eine Installation gehört); ein eigener Zwischenspeicher der Repository-Listen.
 
+7. **Gegenlesen (security-auditor, 0 hoch/mittel, 9 niedrig; rot `a5b4e93`).** Behoben: Eine Verbindung, die mit einem anderen
+   GitHub-Konto erneut abgeschlossen wird, verliert ihre Zuordnungen (sie liefen sonst unter der neuen Identität weiter); das
+   Verbindungslimit wird vor dem Speichern geprüft, ein Doppelabschluss ergibt 409 `github_connection_busy` statt 500; eine
+   Installation ohne `app_id` gilt nicht als die eigene; Repository-Namen stehen nicht mehr im Log. Bewusst so gelassen und hier
+   festgehalten: Wer am Projekt lesen darf, sieht den Namen des zugeordneten privaten Repositorys und die zuordnende Person
+   (Entscheidung 3); wer `edit` hat, öffnet Pull Requests mit den GitHub-Rechten der zuordnenden Person, solange diese `manage`
+   hat (so ist Teilen gedacht); die Repository-Liste fragt bis zu 100 Rechte einzeln ab und teilt sich das GitHub-Limit der
+   Installation mit der Person (kein eigenes Limit, erst bei Bedarf); das Zeitfenster von Sekunden zwischen Prüfung und
+   Schreibaufrufen bleibt, der Token ist auf ein Repository begrenzt.
+
 ### Grenzen des Nachtrags
 
 - Der Betreiber besitzt den Schlüssel einer App, die auf Konten **aller** Nutzer installiert ist: technisch erreicht er jedes
