@@ -20,10 +20,12 @@ PUBLIC_BASE_URL	Anwendung	text:httpurl?				255		envOnly	0	Adresse für den Berei
 SETTINGS_KEY_ENABLED	Konfigurationsschlüssel	bool	false					envOnly	0	true bindet das Overlay stack.settings.yaml ein; ohne Schlüssel kann die PWA keine Geheimnisse speichern. Anlegen: settings.sh --generate SETTINGS_ENCRYPTION_KEY.
 SETTINGS_KEY_SECRET	Konfigurationsschlüssel	text:secretname	todo_settings_key			64		envOnly	0	Name des Swarm-Secrets mit dem Konfigurationsschlüssel (nicht der Schlüssel selbst).
 SETTINGS_KEY_PREVIOUS_SECRET	Konfigurationsschlüssel	text:secretname?				64		envOnly	0	Nur während einer Schlüssel-Rotation: Name des Secrets mit dem alten Schlüssel (Overlay stack.settings-previous.yaml).
-GITHUB_APP_ENABLED	GitHub-App	bool	false					envOnly	0	true bindet das Overlay stack.github.yaml ein: Todolino darf dann Server-Änderungen als Pull Request öffnen (nur Branches server/*). Anleitung: docs/GITHUB-APP-EINRICHTUNG.md.
-GITHUB_APP_ID	GitHub-App	text:free?				20		envOnly	0	App-ID der GitHub-App (Zahl, auf der Seite der App).
-GITHUB_APP_INSTALLATION_ID	GitHub-App	text:free?				20		envOnly	0	Installations-ID (Zahl am Ende der Adresse der Installation).
-GITHUB_APP_REPOSITORIES	GitHub-App	text:free?				2000		envOnly	0	Welches Todolino-Projekt in welches Repository schreiben darf: <Projekt-ID>=owner/repo, kommagetrennt.
+GITHUB_APP_ENABLED	GitHub-App	bool	false					envOnly	0	true bindet das Overlay stack.github.yaml ein: Todolino darf dann Server-Änderungen als Pull Request öffnen (nur Branches server/*), in Repositorys, die Nutzer in der PWA verbinden. Anleitung: docs/GITHUB-APP-EINRICHTUNG.md.
+GITHUB_APP_ID	GitHub-App	text:free?				20		envOnly	0	App-ID der GitHub-App des Betreibers (Zahl, auf der Seite der App).
+GITHUB_APP_INSTALLATION_ID	GitHub-App	text:free?				20		envOnly	0	Nur Übergang: Installations-ID des Betreibers für GITHUB_APP_REPOSITORIES (Zahl am Ende der Adresse der Installation). Nutzer verbinden ihre eigene Installation in der PWA.
+GITHUB_APP_REPOSITORIES	GitHub-App	text:free?				2000		envOnly	0	Nur Übergang: welches Todolino-Projekt in welches Repository des Betreibers schreiben darf: <Projekt-ID>=owner/repo, kommagetrennt (zusammen mit GITHUB_APP_INSTALLATION_ID).
+GITHUB_APP_SLUG	GitHub-App	text:free?				100		envOnly	0	Name der App in der Adresse bei GitHub (github.com/apps/<Name>), für „Mit GitHub verbinden“.
+GITHUB_APP_CLIENT_ID	GitHub-App	text:free?				100		envOnly	0	Client-ID der App (Seite der App bei GitHub); damit weist GitHub nach, wem eine Installation gehört.
 DB_PASSWORD_SECRET	Secret-Namen	text:secretname	todo_db_password			64		envOnly	0	Name des Swarm-Secrets mit dem DB-Passwort (nicht das Passwort).
 BOOTSTRAP_TOKEN_SECRET	Secret-Namen	text:secretname	todo_bootstrap_token			64		envOnly	0	Name des Swarm-Secrets mit dem Bootstrap-Token.
 SMTP_PASSWORD_SECRET	Secret-Namen	text:secretname	todo_smtp_password			64		envOnly	0	Name des Swarm-Secrets mit dem SMTP-Passwort (nur mit MAIL_ENABLED=true).
@@ -31,6 +33,7 @@ APNS_KEY_SECRET	Secret-Namen	text:secretname	todo_apns_key			64		envOnly	0	Name 
 S3_ACCESS_KEY_SECRET	Secret-Namen	text:secretname	todo_s3_access_key			64		envOnly	0	Name des Swarm-Secrets mit dem S3-Access-Key (nur mit S3_ENDPOINT).
 S3_SECRET_KEY_SECRET	Secret-Namen	text:secretname	todo_s3_secret_key			64		envOnly	0	Name des Swarm-Secrets mit dem S3-Secret-Key (nur mit S3_ENDPOINT).
 GITHUB_APP_KEY_SECRET	Secret-Namen	text:secretname	todo_github_app_key			64		envOnly	0	Name des Swarm-Secrets mit dem privaten Schlüssel der GitHub-App (.pem; nur mit GITHUB_APP_ENABLED=true).
+GITHUB_APP_CLIENT_SECRET_SECRET	Secret-Namen	text:secretname	todo_github_app_client_secret			64		envOnly	0	Name des Swarm-Secrets mit dem Client-Secret der GitHub-App (nur mit GITHUB_APP_ENABLED=true).
 PLACEMENT_CONSTRAINTS	Platzierung	text:free?				500		envOnly	0	Swarm-Constraints für backend und migrate, kommagetrennt, z. B. node.role==worker,node.labels.zone!=dev.
 PLACEMENT_PREFERENCES	Platzierung	text:free?				500		envOnly	0	Labels, über deren Werte die Replikate gleichmäßig verteilt werden, z. B. node.labels.zone.
 EXCLUDE_LABEL	Platzierung	text:free?				64		envOnly	0	Knoten mit <Label>=true bekommen keine backend/migrate-Tasks (gilt nicht für backend-pinned).

@@ -628,6 +628,11 @@ write_env() {
     for pv in PLACEMENT_CONSTRAINTS PLACEMENT_PREFERENCES EXCLUDE_LABEL PINNED_NODE PINNED_REPLICAS BACKEND_PINNED_PORT; do
       [ -z "$(get "$pv" '')" ] || echo "$pv=$(get "$pv" '')"
     done
+    # GitHub App (ADR 0042): set with settings.sh, not asked here; carried over unchanged so a re-run does not drop it.
+    for pv in GITHUB_APP_ENABLED GITHUB_APP_ID GITHUB_APP_SLUG GITHUB_APP_CLIENT_ID GITHUB_APP_INSTALLATION_ID \
+              GITHUB_APP_REPOSITORIES GITHUB_APP_KEY_SECRET GITHUB_APP_CLIENT_SECRET_SECRET; do
+      [ -z "$(get "$pv" '')" ] || echo "$pv=$(get "$pv" '')"
+    done
     if [ "$MAIL_ENABLED" = true ]; then
       echo "MAIL_ENABLED=true"
       echo "SMTP_HOST=$SMTP_HOST"
