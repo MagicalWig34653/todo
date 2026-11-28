@@ -95,8 +95,9 @@ extension DeployTargetTests {
         let done = try await call(f, .POST, "/v1/github/callback", ["state": second, "code": hub.code(for: login)], as: p)
         XCTAssertEqual(done.status, .ok, done.text, line: line)
         let items = done.body["connections"] as? [Obj] ?? []
-        XCTAssertEqual(items.count, 1, done.text, line: line)
-        return items.first?["id"] as? String ?? ""
+        let made = items.first { ($0["manageURL"] as? String)?.hasSuffix("/\(installation)") == true }
+        XCTAssertNotNil(made, done.text, line: line)
+        return made?["id"] as? String ?? ""
     }
 
     private func connections(_ f: Fixture, _ p: Person) async throws -> [Obj] {
@@ -245,8 +246,7 @@ extension DeployTargetTests {
 
             // Expired.
             let old = try await state(alice)
-            let sql = try XCTUnwrap(f.app.db as? any SQLDatabase)
-            try await sql.update("github_connect_states").set("expires_at", to: SQLBind(Date().addingTimeInterval(-60))).run()
+            try await GitHubConnectState.query(on: f.app.db).set(\.$expiresAt, to: Date().addingTimeInterval(-60)).update()
             try await refused("/v1/github/setup", ["state": old, "installationID": "111"], as: alice, .badRequest, "github_state_invalid")
 
             let stored = try await connections(f, alice)
@@ -306,6 +306,44 @@ extension DeployTargetTests {
                                        ["state": Self.query(none.body["url"] as? String ?? "", "state"), "code": hub.code(for: "dora")], as: bob)
             XCTAssertEqual(empty.status, .notFound, empty.text)
             XCTAssertEqual(empty.body["reason"] as? String, "github_no_installation")
+        }
+    }
+
+    /// The app may ask for the authorization during the installation: GitHub then comes back with code and installation id at once.
+    func testSetupWithACodeFinishesInOneStep() async throws {
+        try await hubFixture { f, hub, alice, _ in
+            func state() async throws -> String {
+                let r = try await call(f, .POST, "/v1/github/connect", ["mode": "install"], as: alice)
+                return Self.query(r.body["url"] as? String ?? "", "state")
+            }
+            let forged = try await call(f, .POST, "/v1/github/setup", ["state": try await state(), "installationID": "222", "code": hub.code(for: "alice")], as: alice)
+            XCTAssertEqual(forged.status, .forbidden, forged.text)
+            XCTAssertEqual(forged.body["reason"] as? String, "github_installation_not_yours")
+            let none = try await connections(f, alice)
+            XCTAssertTrue(none.isEmpty)
+            let done = try await call(f, .POST, "/v1/github/setup", ["state": try await state(), "installationID": "111", "code": hub.code(for: "alice")], as: alice)
+            XCTAssertEqual(done.status, .ok, done.text)
+            XCTAssertNil(done.body["url"], done.text)
+            XCTAssertEqual((done.body["connections"] as? [Obj] ?? []).compactMap { $0["accountLogin"] as? String }, ["alice"], done.text)
+        }
+    }
+
+    /// GitHub being down is said; it must not look like "you may write nowhere". And one repository is one entry, even if the operator
+    /// listed it too.
+    func testListingSaysWhenGitHubFailsAndOneRepositoryCountsOnce() async throws {
+        try await hubFixture { f, hub, alice, _ in
+            let a = try await connect(f, hub, alice, as: "alice", installation: 111)
+            hub.failPermissions = 500
+            let down = try await call(f, .GET, "/v1/github/connections/\(a)/repositories", as: alice)
+            XCTAssertEqual(down.body["ok"] as? Bool, false, down.text)
+            XCTAssertEqual(down.body["code"] as? String, "deploy_github_unavailable", down.text)
+            hub.failPermissions = nil
+            hub.install(777, account: "alice", accountID: 1001, type: "User")
+            hub.select(777, "alice/site")
+            f.app.githubApp = Self.operatorSetup(["GITHUB_APP_INSTALLATION_ID": "777", "GITHUB_APP_REPOSITORIES": "\(alice.projectID)=alice/site"])
+            try await assign(f, alice, a, "alice/site")
+            let r = try await publish(f, hub, alice, target: alice.targetID)
+            XCTAssertEqual(r.body["ok"] as? Bool, true, r.text)
         }
     }
 
@@ -651,6 +689,8 @@ final class FakeGitHubHub: GitHubTransport, @unchecked Sendable {
     func repositoryID(_ repository: String, _ id: Int) { lock.withLock { repositories[repository]!.id = id } }
     func deselect(_ installation: Int, _ name: String) { lock.withLock { installations[installation]!.repositories.removeAll { $0 == name } } }
     func select(_ installation: Int, _ name: String) { lock.withLock { installations[installation]!.repositories.append(name) } }
+    private var _failPermissions: Int?
+    var failPermissions: Int? { get { lock.withLock { _failPermissions } } set { lock.withLock { _failPermissions = newValue } } }
     func suspend(_ installation: Int, _ value: Bool) { lock.withLock { installations[installation]!.suspended = value } }
     func uninstall(_ installation: Int) { lock.withLock { installations[installation] = nil; tokens = tokens.filter { $0.value.installation != installation } } }
     func code(for login: String) -> String {
@@ -763,6 +803,7 @@ final class FakeGitHubHub: GitHubTransport, @unchecked Sendable {
             return .done(Self.answer(200, ["id": repo.id, "full_name": name, "private": repo.isPrivate, "default_branch": "main", "owner": ["id": repo.ownerID]]))
         }
         if parts.count == 6, parts[3] == "collaborators", parts[5] == "permission", method == "GET" {
+            if let status = _failPermissions { return .done(Self.answer(status, ["message": "boom"])) }
             guard let userID = users[parts[4]] else { return missing }
             return .done(Self.answer(200, ["permission": repo.permissions[parts[4]] ?? "none", "user": ["id": userID, "login": parts[4]]]))
         }
