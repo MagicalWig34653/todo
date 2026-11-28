@@ -9,6 +9,7 @@ import { deBrainMandate } from './de-brain-mandate.js';
 import { deProjectGroups } from './de-project-groups.js';
 import { deWebhook } from './de-webhook.js';
 import { deDeploy } from './de-deploy.js';
+import { deGitHub } from './de-github.js';
 import { deVoicePrivacy } from './de-voice-privacy.js';
 import { dePipeline } from './de-pipeline.js';
 import { deUsage } from './de-usage.js';
@@ -25,6 +26,7 @@ export const de = {
 	...deProjectGroups,
 	...deWebhook,
 	...deDeploy,
+	...deGitHub,
 	...dePipeline,
 	...deUsage,
 	'app.name': 'Todolino',

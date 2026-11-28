@@ -18,6 +18,7 @@
 	import BrainMandatePage from './settings/BrainMandatePage.svelte';
 	import ProjectGroupsPage from './settings/ProjectGroupsPage.svelte';
 	import WebhookPage from './settings/WebhookPage.svelte';
+	import GitHubPage from './settings/GitHubPage.svelte';
 	import RunnerPage from './settings/RunnerPage.svelte';
 	import DataPage from './settings/DataPage.svelte';
 	import AdminAccounts from './settings/AdminAccounts.svelte';
@@ -142,6 +143,8 @@
 				<ProjectGroupsPage />
 			{:else if id === 'brain-vollmacht'}
 				<BrainMandatePage onopen={onarea} />
+			{:else if id === 'github'}
+				<GitHubPage />
 			{:else if id === 'webhook'}
 				<WebhookPage />
 			{:else if id === 'runner'}

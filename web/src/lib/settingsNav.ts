@@ -64,6 +64,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			{ id: 'verbindungen', label: 'settings.verbindungen', description: 'settings.verbindungen.description', keywords: 'oauth claude chatgpt mcp apps zugriff widerrufen' },
 			{ id: 'projektgruppen', label: 'settings.projektgruppen', description: 'settings.projektgruppen.description', keywords: 'projektgruppen gruppen tags auswahl alle außer vollmacht verbindungen bündeln' },
 			{ id: 'brain-vollmacht', label: 'settings.brain-vollmacht', description: 'settings.brain-vollmacht.description', keywords: 'brain vollmacht mandat orchestrator entscheiden review frage plan freigabe widerrufen codex' },
+			{ id: 'github', label: 'settings.github', description: 'settings.github.description', keywords: 'github app repository repo pull request installation organisation deploy verbinden' },
 			{ id: 'webhook', label: 'settings.webhook', description: 'settings.webhook.description', keywords: 'webhook weckruf wecken aufruf url adresse brain orchestrator t3 relay signatur ausschluss ausgeschlossene projekte zustellung protokoll test' },
 			{ id: 'runner', label: 'settings.runner', description: 'settings.runner.description', keywords: 'runner mac agent gerät koppeln claude code' },
 			{ id: 'mcp', label: 'settings.mcp', description: 'settings.mcp.description', keywords: 'mcp claude code verbinden plugin befehl' }

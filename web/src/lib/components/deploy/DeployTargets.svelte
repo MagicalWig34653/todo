@@ -26,6 +26,7 @@
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import DeploySync from './DeploySync.svelte';
+	import GitHubRepositories from './GitHubRepositories.svelte';
 	import Server from '@lucide/svelte/icons/server';
 	import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
@@ -396,6 +397,7 @@
 		{#if canManage}
 			<div><Button data-testid="deploy-add" class="max-sm:w-full" onclick={() => void openForm()}>{t('deploy.add')}</Button></div>
 		{/if}
+		<GitHubRepositories {project} />
 	{/if}
 	<p role="status" aria-live="polite" class="text-success text-sm font-medium empty:hidden" data-testid="deploy-status">{viewing || editing ? '' : message}</p>
 </div>

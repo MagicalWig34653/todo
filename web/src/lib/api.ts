@@ -9,6 +9,14 @@ import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
 import type { ContinueInput, StartInput } from './pipelineExecution.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
 import type { DeployCompareResult, DeployTarget, DeployTargetWrite, DeployTestResult, ManifestEntry } from './deploy.js';
+import type {
+	GitHubAssignment,
+	GitHubConnectMode,
+	GitHubConnection,
+	GitHubOverview,
+	GitHubRepositoryList,
+	GitHubSetupAnswer
+} from './github.js';
 import type { SettingsUpdate, UsageDays, UsageSettings, UsageSummary } from './usage.js';
 import { selectionBody, type ProjectGroup, type Selection, type SelectionChange, type SelectionDTO, type SelectionPreview } from './projectGroups.js';
 
@@ -1530,6 +1538,18 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		/** Missing fields stay; an endpoint change needs a new secret in the same call (400 deploy_credentials_required). */
 		updateDeployTarget: (id: string, body: DeployTargetWrite) => request<DeployTarget>('PATCH', `/deploy-targets/${encodeURIComponent(id)}`, body),
 		deleteDeployTarget: (id: string) => request<void>('DELETE', `/deploy-targets/${encodeURIComponent(id)}`),
+		// GitHub per person (contracts/deploy.yaml 1.3.0): own installations of the operator's app and the repository of a project.
+		githubOverview: () => request<GitHubOverview>('GET', '/github'),
+		githubConnect: (mode: GitHubConnectMode) => request<{ url: string }>('POST', '/github/connect', { mode }),
+		githubSetup: (state: string, installationID: string, code?: string) => request<GitHubSetupAnswer>('POST', '/github/setup', { state, installationID, code }),
+		githubCallback: (state: string, code: string) => request<{ connections: GitHubConnection[] }>('POST', '/github/callback', { state, code }),
+		githubRepositories: (id: string) => request<GitHubRepositoryList>('GET', `/github/connections/${encodeURIComponent(id)}/repositories`),
+		removeGitHubConnection: (id: string) => request<void>('DELETE', `/github/connections/${encodeURIComponent(id)}`),
+		githubAssignments: (projectID: string) => request<{ items: GitHubAssignment[] }>('GET', `/projects/${encodeURIComponent(projectID)}/github-repositories`),
+		assignGitHubRepository: (projectID: string, connectionID: string, repository: string) =>
+			request<GitHubAssignment>('POST', `/projects/${encodeURIComponent(projectID)}/github-repositories`, { connectionID, repository }),
+		unassignGitHubRepository: (projectID: string, id: string) =>
+			request<void>('DELETE', `/projects/${encodeURIComponent(projectID)}/github-repositories/${encodeURIComponent(id)}`),
 		/** Connection test (read only). Unconfirmed SFTP: code deploy_host_key_unconfirmed plus offeredHostKey. */
 		testDeployTarget: (id: string) => request<DeployTestResult>('POST', `/deploy-targets/${encodeURIComponent(id)}/test`, {}),
 		/** The server scans again and stores the key only when the fingerprint still matches (409 deploy_host_key_changed). */
