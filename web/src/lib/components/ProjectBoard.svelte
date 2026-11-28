@@ -37,10 +37,14 @@
 		showDone: boolean;
 		/** Filter "Meine": only cards the own account is responsible for. */
 		onlyMine?: boolean;
+		/** Cards "Meine" shows anyway (just added here). */
+		added?: ReadonlySet<string>;
+		/** A card was added through a quick-add line (told before the reload). */
+		oncreated?: (taskID: string) => void;
 		reload: () => Promise<void>;
 		onopen: (task: Task, siblings?: Task[]) => void;
 	}
-	let { project, board, tasks, labelsByTask, showDone, onlyMine = false, reload, onopen }: Props = $props();
+	let { project, board, tasks, labelsByTask, showDone, onlyMine = false, added, oncreated, reload, onopen }: Props = $props();
 	const canEdit = $derived(can(roleOf(project), 'addTask'));
 	const needEdit = $derived(canEdit ? undefined : t('access.need', { role: t('sharing.role.edit') }));
 
@@ -54,7 +58,7 @@
 	const planningOf = (task: Task) => tasks.find((x) => x.id === task.id)?.planning ?? task.planning;
 	const visible = (lane: Lane) => {
 		const open = showDone ? lane.tasks : lane.tasks.filter((x) => x.status !== 'done');
-		return onlyMine ? mineOnly(open, auth.user?.id) : open;
+		return onlyMine ? mineOnly(open, auth.user?.id, added) : open;
 	};
 	const laneTitle = (lane: Lane) => (lane.laneKey === 'none' ? t('board.noColumn') : lane.name);
 	const laneAdd = (lane: Lane) => real || lane.key === 'open';
@@ -186,7 +190,10 @@
 		e.preventDefault();
 		const title = (addTitles[lane.laneKey] ?? '').trim();
 		if (!title) return;
-		const ok = await attempt(() => createQuickTask(api, parseQuickAdd(title), { projects: workspace.projects, labels: workspace.labels, defaultProjectID: project.id, columnID: lane.id }));
+		const ok = await attempt(async () => {
+			const out = await createQuickTask(api, parseQuickAdd(title), { projects: workspace.projects, labels: workspace.labels, defaultProjectID: project.id, columnID: lane.id });
+			oncreated?.(out.task.id);
+		});
 		if (ok) {
 			addTitles[lane.laneKey] = '';
 			await reload();

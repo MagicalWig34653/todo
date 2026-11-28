@@ -1,16 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '#lib/api.js';
+	import { api, type NowBlock } from '#lib/api.js';
 	import { t } from '#lib/i18n/index.js';
 	import { startLiveRefresh } from '#lib/liveRefresh.js';
-	import { nowEntry, nowEntryLabel, type NowEntry } from '#lib/now.js';
+	import { nowEntry, nowEntryLabel } from '#lib/now.js';
+	import { workspace } from '#lib/workspace.svelte.js';
 	import Radio from '@lucide/svelte/icons/radio';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 
 	/** Slim shortcut from the start page to "Jetzt". One small request (compact, one entry per list) on load and on live hints. */
 	let { onopen }: { onopen: () => void } = $props();
 
-	let entry = $state<NowEntry>({ running: null, waiting: null });
+	let block = $state<NowBlock | null>(null);
+	const entry = $derived(nowEntry(block, workspace.attention));
 	const label = $derived(nowEntryLabel(entry));
 	const waitingLabel = $derived(
 		entry.waiting ? (entry.waiting === 1 ? t('now.entry.waitingOne') : t('now.entry.waiting', { count: entry.waiting })) : ''
@@ -18,7 +20,7 @@
 
 	async function load() {
 		try {
-			entry = nowEntry((await api.overviewNow({ compact: true, limit: 1 })).now);
+			block = (await api.overviewNow({ compact: true, limit: 1 })).now ?? null;
 		} catch {
 			/* the shortcut stays usable without counters */
 		}

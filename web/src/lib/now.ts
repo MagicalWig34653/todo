@@ -2,7 +2,7 @@
 import type { MessageKey } from './i18n/de.js';
 import { t } from './i18n/index.js';
 import type { CardRef } from './cardRef.js';
-import type { BuildStatus, NowActive, NowBlock, NowDone, NowWaiting, OverviewBuild, OverviewNow, OverviewProject, OverviewRunningTask, OverviewSession } from './api.js';
+import type { BuildStatus, CommandSummary, NowActive, NowBlock, NowDone, NowWaiting, OverviewBuild, OverviewNow, OverviewProject, OverviewRunningTask, OverviewSession } from './api.js';
 
 export const QUIET_AFTER_MS = 24 * 3600 * 1000;
 export const ORPHAN_AFTER_SECONDS = 30 * 60;
@@ -292,9 +292,14 @@ export function waitingCard(w: Pick<NowWaiting, 'kind' | 'id' | 'taskID'>): Card
 }
 
 export interface NowEntry { running: number | null; waiting: number | null }
-/** Counters for the shortcut on the start page; null while unknown (old server, not loaded). */
-export function nowEntry(block: NowBlock | undefined | null): NowEntry {
-	return block ? { running: block.counts.running, waiting: block.counts.waiting } : { running: null, waiting: null };
+/**
+ * Counters for the shortcut on the start page; null while unknown (old server, not loaded). "Waiting for you" counts what
+ * concerns this account, like the navigation counter, when the command center summary says so (the page itself shows all).
+ */
+export function nowEntry(block: NowBlock | undefined | null, summary?: Pick<CommandSummary, 'concerningQuestions' | 'concerningReviews'> | null): NowEntry {
+	if (!block) return { running: null, waiting: null };
+	const { concerningQuestions: questions, concerningReviews: reviews } = summary ?? {};
+	return { running: block.counts.running, waiting: questions !== undefined && reviews !== undefined ? questions + reviews : block.counts.waiting };
 }
 export function nowEntryLabel(e: NowEntry): string {
 	if (e.running === null) return '';

@@ -17,7 +17,7 @@ export const deAssign = {
 	'forYou.segment.all': 'Alle',
 	'forYou.mineEmpty': 'Nichts wartet auf dich',
 	'forYou.kind.task': 'Karte',
-	'forYou.mineTruncated': 'Nicht alles geladen: erledige zuerst die ältesten Einträge.',
+	'forYou.mineTruncated': 'Nicht alle Einträge werden angezeigt.',
 	'cc.review.bulk.selectOthers': 'Review „{title}“ entscheidet eine andere Person',
 	'error.invalid_assignee': 'Diese Person kann hier nicht zuständig sein.',
 	'error.not_the_reviewer': 'Diese Review entscheidet eine andere Person.',

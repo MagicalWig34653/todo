@@ -126,12 +126,19 @@
 		labelsByTask = {};
 		detail = null;
 		editingTitle = false;
-		onlyMine = false;
+		setOnlyMine(false);
 	});
 	/** Filter "Meine" (this page only, not stored): offered as soon as a card of the project has a responsible person. */
 	let onlyMine = $state(false);
+	/** Cards added through a quick-add line since the filter was last switched: shown despite "Meine", assigned to nobody. */
+	let added = $state<ReadonlySet<string>>(new Set());
+	function setOnlyMine(on: boolean) {
+		onlyMine = on;
+		added = new Set();
+	}
+	const keepVisible = (id: string) => (added = new Set(added).add(id));
 	const mineOffered = $derived(onlyMine || tasks.some((x) => !!x.assigneeID));
-	const listTasks = $derived(onlyMine ? mineOnly(tasks, auth.user?.id) : tasks);
+	const listTasks = $derived(onlyMine ? mineOnly(tasks, auth.user?.id, added) : tasks);
 
 	// ---- display (per project and account, server-side via /v1/me/project-prefs) --------------------------------
 	const display = $derived<Display>(workspace.displayOf(project.id));
@@ -330,7 +337,7 @@
 					{/if}
 					{#if mineOffered && !graphOpen}
 						<label class="flex items-center gap-2">
-							<Checkbox checked={onlyMine} onchange={(e) => { onlyMine = e.currentTarget.checked; tab = 'tasks'; }} data-testid="filter-mine" />
+							<Checkbox checked={onlyMine} onchange={(e) => { setOnlyMine(e.currentTarget.checked); tab = 'tasks'; }} data-testid="filter-mine" />
 							{t('assign.mine')}
 						</label>
 					{/if}
@@ -439,10 +446,10 @@
 		<TaskGraph {project} />
 	{:else if display.view === 'board'}
 		{#if board}
-			<ProjectBoard {project} {board} {tasks} {onlyMine} {labelsByTask} showDone={display.showDone} {reload} onopen={(task, siblings) => cardDetail.open({ type: 'task', id: task.id }, (siblings ?? [task]).map((x) => ({ type: 'task' as const, id: x.id })))} />
+			<ProjectBoard {project} {board} {tasks} {onlyMine} {added} oncreated={keepVisible} {labelsByTask} showDone={display.showDone} {reload} onopen={(task, siblings) => cardDetail.open({ type: 'task', id: task.id }, (siblings ?? [task]).map((x) => ({ type: 'task' as const, id: x.id })))} />
 		{/if}
 	{:else}
-		<TaskPanel {project} tasks={listTasks} {board} {display} {loaded} {reload} emptyTitle={onlyMine ? t('assign.emptyMine') : undefined} />
+		<TaskPanel {project} tasks={listTasks} {board} {display} {loaded} {reload} oncreated={keepVisible} emptyTitle={onlyMine ? t('assign.emptyMine') : undefined} />
 	{/if}
 </div>
 

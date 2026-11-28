@@ -33,8 +33,10 @@
 		reload: () => Promise<void>;
 		/** Replaces the empty-list message while a filter is active (shown with own columns too). */
 		emptyTitle?: string;
+		/** A card was added through a quick-add line (told before the reload). */
+		oncreated?: (taskID: string) => void;
 	}
-	let { project, tasks, board, display, loaded, reload, emptyTitle }: Props = $props();
+	let { project, tasks, board, display, loaded, reload, emptyTitle, oncreated }: Props = $props();
 
 	const STATUSES: TaskStatus[] = ['open', 'in_progress', 'in_review', 'done'];
 
@@ -75,7 +77,11 @@
 		e.preventDefault();
 		const title = (addTitles[key] ?? '').trim();
 		if (!title) return;
-		if (await after(() => createQuickTask(api, parseQuickAdd(title), { projects: workspace.projects, labels: workspace.labels, defaultProjectID: project.id, columnID }))) addTitles[key] = '';
+		const create = async () => {
+			const out = await createQuickTask(api, parseQuickAdd(title), { projects: workspace.projects, labels: workspace.labels, defaultProjectID: project.id, columnID });
+			oncreated?.(out.task.id);
+		};
+		if (await after(create)) addTitles[key] = '';
 	}
 	const toggle = (task: Task) => after(() => api.updateTask(task, { status: task.status === 'done' ? 'open' : 'done' }));
 	const setStatus = (task: Task, status: TaskStatus) => after(() => api.updateTask(task, { status }));

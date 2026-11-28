@@ -1,7 +1,7 @@
 import { can, roleOf } from './access.js';
 import { api, type Assignee } from './api.js';
 import { auth } from './auth.svelte.js';
-import { responsibleName } from './assignment.js';
+import { lacksResponsibility, responsibleName } from './assignment.js';
 import { t } from './i18n/index.js';
 import { workspace } from './workspace.svelte.js';
 
@@ -16,11 +16,14 @@ class Directory {
 	private lists = $state<Record<string, Assignee[]>>({});
 	private asked = new Map<string, number>();
 	private gen = 0;
+	/** False once the server proved to know nothing about responsibility: then there is nothing to choose or hand over. */
+	supported = $state(true);
 
 	reset(): void {
 		this.gen++;
 		this.lists = {};
 		this.asked.clear();
+		this.supported = true;
 	}
 
 	people(projectID: string | null | undefined): Assignee[] {
@@ -30,7 +33,7 @@ class Directory {
 	/** May this account read the list (and therefore assign) in the project? */
 	mayAssign(projectID: string | null | undefined): boolean {
 		const project = workspace.projects.find((p) => p.id === projectID);
-		return !!project && can(roleOf(project), 'editTask');
+		return this.supported && !!project && can(roleOf(project), 'editTask');
 	}
 
 	/** Fetches the list when allowed and not fresh. Failures (older server) leave the names unknown. */
@@ -42,8 +45,11 @@ class Directory {
 		try {
 			const list = await api.listAssignees(projectID);
 			if (gen === this.gen) this.lists[projectID] = list;
-		} catch {
-			if (gen === this.gen) this.asked.delete(projectID);
+		} catch (e) {
+			const old = await lacksResponsibility(e, () => api.forMe());
+			if (gen !== this.gen) return;
+			if (old) this.supported = false;
+			else this.asked.delete(projectID);
 		}
 	}
 

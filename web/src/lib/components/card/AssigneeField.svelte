@@ -42,15 +42,17 @@
 	}
 </script>
 
-<SideSection title={t('assign.field')} testid="side-assignee">
-	{#if editable}
-		<Select class="w-full" bind:value aria-label={t('assign.field')} disabled={busy} onchange={save}>
-			<option value="">{t('assign.nobody')}</option>
-			<!-- The stored person stays selectable while the list loads, or after losing access to the project. -->
-			{#if current && !people.some((p) => p.userID === current)}<option value={current}>{name}</option>{/if}
-			{#each people as p (p.userID)}<option value={p.userID}>{p.displayName}</option>{/each}
-		</Select>
-	{:else}
-		<p class="[overflow-wrap:anywhere]" data-testid="assignee-name">{name}</p>
-	{/if}
-</SideSection>
+{#if directory.supported}
+	<SideSection title={t('assign.field')} testid="side-assignee">
+		{#if editable}
+			<Select class="w-full" bind:value aria-label={t('assign.field')} disabled={busy} onchange={save}>
+				<option value="">{t('assign.nobody')}</option>
+				<!-- The stored person stays selectable while the list loads, or after losing access to the project. -->
+				{#if current && !people.some((p) => p.userID === current)}<option value={current}>{name}</option>{/if}
+				{#each people as p (p.userID)}<option value={p.userID}>{p.displayName}</option>{/each}
+			</Select>
+		{:else}
+			<p class="[overflow-wrap:anywhere]" data-testid="assignee-name">{name}</p>
+		{/if}
+	</SideSection>
+{/if}
