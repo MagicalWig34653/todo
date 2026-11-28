@@ -11,6 +11,8 @@
 #   --info KEY        ausführliche Erklärung einer Variablen
 #   --generate KEY    nur SETTINGS_ENCRYPTION_KEY: legt das Swarm-Secret mit einem Zufallsschlüssel an, wenn es fehlt, und setzt
 #                     SETTINGS_KEY_ENABLED=true (ein vorhandenes Secret bleibt unverändert; der Wert wird nie angezeigt)
+#   --secret-file KEY=PFAD  GitHub-App: Swarm-Secret für GITHUB_APP_PRIVATE_KEY (.pem) oder GITHUB_APP_CLIENT_SECRET (eine Zeile)
+#                     aus der Datei anlegen, wenn es fehlt; Name aus GITHUB_APP_KEY_SECRET bzw. GITHUB_APP_CLIENT_SECRET_SECRET
 #   --check           gesamte Datei prüfen (Typ, Grenzen, Konflikte, unbekannte Variablen, Geheimnisse)
 #   -h, --help        diese Hilfe
 #
@@ -20,7 +22,7 @@
 # Geheimnisse (DB-Passwort, Bootstrap-Token, Konfigurationsschlüssel, SMTP-/APNs-/S3-Werte) werden nie angezeigt und nie in die
 # Datei geschrieben. Gespeichert wird atomar (temporäre Datei im selben Verzeichnis, dann mv) mit Modus 0600; vorher entsteht eine
 # Sicherung <Datei>.bak.JJJJMMTT-HHMMSS. Ausgerollt wird nur im Menü ("Anwenden") nach Bestätigung (update.sh);
-# --set, --unset und --generate rollen nie aus.
+# --set, --unset, --generate und --secret-file rollen nie aus.
 
 set -euo pipefail
 
@@ -149,6 +151,9 @@ secret_hint() {
   printf '%s ist ein Geheimnis und steht nie in der Env-Datei.\n\n' "$k"
   if [ "$k" = SETTINGS_ENCRYPTION_KEY ] || [ "$k" = SETTINGS_KEY ]; then
     printf 'Den Konfigurationsschlüssel legt settings.sh --generate SETTINGS_ENCRYPTION_KEY an (Menü: Schluessel). Er entsteht zufällig als Swarm-Secret und wird nie angezeigt.'
+  elif [ "$k" = GITHUB_APP_PRIVATE_KEY ] || [ "$k" = GITHUB_APP_CLIENT_SECRET ]; then
+    name="$(eff_value "$ref")"
+    printf 'Quelle ist das Swarm-Secret "%s". Aus einer Datei anlegen: settings.sh --secret-file %s=<Pfad> (Menü: GitHubSchluessel).\nEin Secret lässt sich nicht ändern: zum Ersetzen unter neuem Namen anlegen (%s) und ausrollen.' "$name" "$k" "$ref"
   elif [ -n "$ref" ]; then
     name="$(eff_value "$ref")"
     printf 'Quelle ist das Swarm-Secret "%s": docker secret create %s -   (Wert über stdin, nie als Argument).\nEin Secret lässt sich nicht ändern: zum Ersetzen unter neuem Namen anlegen (%s) und ausrollen.' "$name" "$name" "$ref"
@@ -535,6 +540,48 @@ secret_state() { # Name -> SS_STATE=exists|missing|error (SS_ERR bei error); än
   else SS_STATE=error; SS_ERR="Dieser Knoten ist kein Swarm-Manager; Secrets lassen sich nur auf einem Manager anlegen."; fi
   return 0
 }
+# GitHub-App (ADR 0042): Swarm-Secret aus einer Datei. Die Datei geht per stdin an docker; ihr Inhalt steht nie in Argumenten,
+# in der Env-Datei oder in Ausgaben. Ein vorhandenes Secret wird nie ersetzt.
+secret_from_file() { # KEY PFAD
+  local k="$1" path="$2" name size first last value="" lines err rc=0
+  GEN_MSG=""; GEN_ERR=""
+  case "$k" in
+    GITHUB_APP_PRIVATE_KEY|GITHUB_APP_CLIENT_SECRET) ;;
+    *) GEN_ERR="Aus einer Datei gehen nur GITHUB_APP_PRIVATE_KEY und GITHUB_APP_CLIENT_SECRET (nicht $k). Es wurde nichts angelegt."; return 2 ;;
+  esac
+  [ "$path" = "${path#"~/"}" ] || path="$HOME/${path#"~/"}"
+  if [ ! -f "$path" ] || [ ! -r "$path" ]; then GEN_ERR="Datei '$path' fehlt oder ist nicht lesbar. Es wurde nichts angelegt."; return 2; fi
+  size="$(wc -c < "$path" | tr -d ' ')"
+  if [ "$size" -lt 1 ] || [ "$size" -gt 16384 ]; then GEN_ERR="'$path' ist leer oder größer als 16 kB. Es wurde nichts angelegt."; return 2; fi
+  if [ "$k" = GITHUB_APP_PRIVATE_KEY ]; then
+    first="$(head -n 1 "$path" | tr -d '\r')"; last="$(grep -v '^[[:space:]]*$' "$path" | tail -n 1 | tr -d '\r')"
+    if ! [[ $first =~ ^-----BEGIN\ (RSA\ )?PRIVATE\ KEY-----$ && $last =~ ^-----END\ (RSA\ )?PRIVATE\ KEY-----$ ]]; then
+      GEN_ERR="'$path' ist kein privater Schlüssel (.pem von GitHub: BEGIN/END RSA PRIVATE KEY). Es wurde nichts angelegt."; return 2
+    fi
+  else
+    lines="$(grep -c '' "$path")"
+    IFS= read -r value < "$path" || true
+    value="${value%$'\r'}"
+    if [ "$lines" != 1 ] || ! [[ $value =~ ^[A-Za-z0-9_-]{16,200}$ ]]; then
+      value=""; GEN_ERR="'$path' enthält kein Client-Secret (genau eine Zeile, 16 bis 200 Buchstaben und Ziffern). Es wurde nichts angelegt."; return 2
+    fi
+  fi
+  name="$(eff_value "$(secret_ref "$k")")"
+  if ! validate "$(secret_ref "$k")" "$name"; then value=""; GEN_ERR="$(secret_ref "$k") ($name): $V_ERR"; return 2; fi
+  command -v docker >/dev/null 2>&1 || { value=""; GEN_ERR="docker fehlt; auf einem Swarm-Manager ausführen. Es wurde nichts angelegt."; return 2; }
+  secret_state "$name"
+  case "$SS_STATE" in
+    error) value=""; GEN_ERR="$SS_ERR Es wurde nichts angelegt."; return 2 ;;
+    exists) value=""
+      GEN_ERR="Secret '$name' existiert schon und bleibt unverändert. Zum Ersetzen einen neuen Namen wählen: --set $(secret_ref "$k")=<neuer Name> zusammen mit --secret-file, danach ausrollen."; return 2 ;;
+  esac
+  if [ "$k" = GITHUB_APP_PRIVATE_KEY ]; then err="$(docker secret create "$name" - 2>&1 >/dev/null < "$path")" || rc=$?
+  else err="$(printf '%s' "$value" | docker secret create "$name" - 2>&1 >/dev/null)" || rc=$?; fi
+  value=""
+  if [ "$rc" != 0 ]; then GEN_ERR="docker secret create '$name' schlug fehl (${err%%$'\n'*})."; return 2; fi
+  GEN_MSG="Secret '$name' angelegt. Der Inhalt wird nicht angezeigt. Jetzt die Datei löschen: $path"
+  return 0
+}
 # Legt das Secret nur an, wenn es fehlt, und setzt SETTINGS_KEY_ENABLED=true (vorgemerkt, geschrieben wird vom Aufrufer).
 # Der Wert steht nur in einer lokalen Variable und geht per stdin an docker: nie in Argumente, Dateien oder Ausgaben.
 generate_settings_key() {
@@ -573,7 +620,8 @@ ui_init() {
   else
     cat >&2 <<'EOF'
 whiptail (oder dialog) fehlt; das Menü ist nicht verfügbar. Installieren mit: apt install whiptail
-Ohne Menü funktionieren: --list, --get KEY, --set KEY=VALUE, --unset KEY, --info KEY, --generate SETTINGS_ENCRYPTION_KEY, --check, --help
+Ohne Menü funktionieren: --list, --get KEY, --set KEY=VALUE, --unset KEY, --info KEY, --generate SETTINGS_ENCRYPTION_KEY,
+--secret-file KEY=PFAD, --check, --help
 EOF
     exit 1
   fi
@@ -897,6 +945,18 @@ SETTINGS_KEY_ENABLED=true steht in der Datei. Wirksam nach 'Anwenden'."
   fi
   return 0
 }
+github_key_flow() { # Menü "GitHubSchluessel": Swarm-Secret der GitHub-App aus einer Datei
+  local k path
+  wt --title "$(crumb "GitHub-Schlüssel")" --menu "Welches Secret der GitHub-App aus einer Datei anlegen?" @H @W 2 \
+    GITHUB_APP_PRIVATE_KEY "Privater Schlüssel (.pem)" GITHUB_APP_CLIENT_SECRET "Client-Secret (Datei mit einer Zeile)" || return 0
+  k="$WT_OUT"
+  ui_input "$(crumb "GitHub-Schlüssel")" "Pfad der Datei (voller Pfad):" "" || return 0
+  path="$WT_OUT"
+  [ -n "$path" ] || return 0
+  if secret_from_file "$k" "$path"; then ui_msg "$(crumb "GitHub-Schlüssel")" "$GEN_MSG"
+  else ui_msg "$(crumb "GitHub-Schlüssel")" "$GEN_ERR"; fi
+  return 0
+}
 apply_now() {
   local choice tag
   if [ "$(pending_count)" -gt 0 ]; then
@@ -957,7 +1017,7 @@ main_menu() {
       items+=("${MENU_TITLES[$i]}" "${d:0:dw}")
     done
     d="Prüfen, speichern ($(pending_count) offen)"
-    items+=("Suchen" "Filtern nach Text" "Hinweise" "live / Neustart / nur ENV" "Schluessel" "Konfigurationsschlüssel anlegen" \
+    items+=("Suchen" "Filtern nach Text" "Hinweise" "live / Neustart / nur ENV" "Schluessel" "Konfigurationsschlüssel anlegen" "GitHubSchluessel" "GitHub-App-Secret aus Datei" \
             "Speichern" "${d:0:dw}" "Anwenden" "Ausrollen (mit Bestätigung)")
     t="Gruppe wählen (Enter), Esc beendet."
     if [ "$ROWS" -lt 24 ] || [ "$COLS" -lt 80 ]; then t+=$'\n'"Terminal ${COLS}x${ROWS}: empfohlen 80x24 oder größer."; fi
@@ -968,6 +1028,7 @@ main_menu() {
         Suchen) search_menu ;;
         Hinweise) show_notes ;;
         Schluessel) key_flow ;;
+        GitHubSchluessel) github_key_flow ;;
         Speichern) save_flow || true ;;
         Anwenden) apply_now ;;
         *) for i in "${!MENU_TITLES[@]}"; do if [ "${MENU_TITLES[$i]}" = "$sel" ]; then group_menu "$i"; break; fi; done ;;
@@ -1010,6 +1071,14 @@ cli_generate() {
   if [ "$rc" != 0 ]; then echo "$GEN_ERR" >&2; return "$rc"; fi
   echo "$GEN_MSG"
   echo "SETTINGS_KEY_ENABLED=true wird in die Env-Datei geschrieben."
+  return 0
+}
+cli_secret_file() { # KEY=PFAD
+  local pair="$1" rc=0
+  if ! [[ $pair == ?*=?* ]]; then echo "Format: --secret-file KEY=PFAD" >&2; return 64; fi
+  secret_from_file "${pair%%=*}" "${pair#*=}" || rc=$?
+  if [ "$rc" != 0 ]; then echo "$GEN_ERR" >&2; return "$rc"; fi
+  echo "$GEN_MSG"
   return 0
 }
 cli_info() {
@@ -1065,6 +1134,7 @@ main() {
       --unset) actions+=("unset:${2:?--unset braucht einen Namen}"); want_menu=0; shift 2 ;;
       --info) actions+=("info:${2:?--info braucht einen Namen}"); want_menu=0; shift 2 ;;
       --generate) actions+=("generate:${2:?--generate braucht SETTINGS_ENCRYPTION_KEY}"); want_menu=0; shift 2 ;;
+      --secret-file) actions+=("secretfile:${2:?--secret-file braucht KEY=PFAD}"); want_menu=0; shift 2 ;;
       --check) actions+=("check"); want_menu=0; shift ;;
       -h|--help) usage; exit 0 ;;
       *) echo "Unbekannte Option: $1 (siehe --help)" >&2; exit 64 ;;
@@ -1086,13 +1156,14 @@ main() {
     return 0
   fi
 
-  for act in "${actions[@]}"; do case "$act" in set:*|unset:*|generate:*) mutate=1 ;; esac; done
+  for act in "${actions[@]}"; do case "$act" in set:*|unset:*|generate:*|secretfile:*) mutate=1 ;; esac; done
   if [ "$mutate" = 1 ]; then check_all; before="$(print_check || true)"; fi
   for act in "${actions[@]}"; do
     case "$act" in
       list) cli_list ;;
       get:*) cli_get "${act#get:}" || rc=$? ;;
       generate:*) cli_generate "${act#generate:}" || { rc=$?; break; } ;;
+      secretfile:*) cli_secret_file "${act#secretfile:}" || { rc=$?; break; } ;;
       info:*) cli_info "${act#info:}" || rc=$? ;;
       set:*) cli_set "${act#set:}" || { rc=$?; break; } ;;
       unset:*) cli_unset "${act#unset:}" || { rc=$?; break; } ;;

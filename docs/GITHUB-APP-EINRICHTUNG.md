@@ -53,12 +53,12 @@ Datei danach aus den Downloads.
 
 ### 3. Am Server hinterlegen (Docker Swarm)
 
-Auf dem Manager (die `.pem` dorthin kopieren, danach löschen):
+Auf dem Manager (die `.pem` und eine Datei mit dem Client-Secret, eine Zeile, dorthin kopieren; danach beide löschen):
 
 ```bash
-docker secret create todo_github_app_key ./todolino-deploy.private-key.pem
-rm ./todolino-deploy.private-key.pem
-printf '%s' '<Client-Secret>' | docker secret create todo_github_app_client_secret -
+deploy/swarm/settings.sh --secret-file GITHUB_APP_PRIVATE_KEY=./todolino-deploy.private-key.pem
+deploy/swarm/settings.sh --secret-file GITHUB_APP_CLIENT_SECRET=./client-secret.txt
+rm ./todolino-deploy.private-key.pem ./client-secret.txt
 
 deploy/swarm/settings.sh \
   --set GITHUB_APP_ENABLED=true \
@@ -69,7 +69,9 @@ deploy/swarm/settings.sh \
 
 - Pro Nutzer ist **nichts** einzutragen. Danach wie gewohnt ausrollen (`deploy/swarm/update.sh`, siehe [BETRIEB.md](BETRIEB.md)).
   Die Programmdateien auf dem Manager müssen aktuell sein (`stack.github.yaml` hat sich geändert). Läuft `setup.sh` später noch
-  einmal, die Werte erneut setzen.
+  einmal, bleiben die `GITHUB_APP_*`-Werte der Env-Datei erhalten.
+- Im Menü von `settings.sh` legt **GitHubSchluessel** dieselben Secrets aus einer Datei an. Ein vorhandenes Secret wird nie
+  ersetzt; Wechsel: neuer Name mit `--set GITHUB_APP_KEY_SECRET=<Name>` im selben Aufruf.
 - Andere Secret-Namen: zusätzlich `--set GITHUB_APP_KEY_SECRET=<Name>` und `--set GITHUB_APP_CLIENT_SECRET_SECRET=<Name>`.
 - Ohne Swarm: dieselben Variablen als Umgebung, Schlüssel und Client-Secret als Dateien über `GITHUB_APP_PRIVATE_KEY_FILE` und
   `GITHUB_APP_CLIENT_SECRET_FILE`. GitHub Enterprise: `GITHUB_API_URL` (`https://<host>/api/v3`) und `GITHUB_WEB_URL`
