@@ -139,6 +139,7 @@ secret_ref() { # KEY -> Variable, die den Secret-Namen trägt
     DB_PASSWORD) echo DB_PASSWORD_SECRET ;; BOOTSTRAP_TOKEN) echo BOOTSTRAP_TOKEN_SECRET ;;
     SETTINGS_ENCRYPTION_KEY|SETTINGS_KEY) echo SETTINGS_KEY_SECRET ;;
     GITHUB_APP_PRIVATE_KEY) echo GITHUB_APP_KEY_SECRET ;;
+    GITHUB_APP_CLIENT_SECRET) echo GITHUB_APP_CLIENT_SECRET_SECRET ;;
     *) echo "" ;;
   esac
 }
@@ -389,8 +390,13 @@ check_all() {
   fi
   if [ "$(file_val GITHUB_APP_ENABLED)" = true ]; then
     missing=""
-    for k in GITHUB_APP_ID GITHUB_APP_INSTALLATION_ID GITHUB_APP_REPOSITORIES; do [ -n "$(file_val "$k")" ] || missing+="${missing:+, }$k"; done
-    [ -z "$missing" ] || chk_err "GITHUB_APP_ENABLED=true braucht GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID und GITHUB_APP_REPOSITORIES in der Datei (stack.github.yaml); es fehlt: $missing."
+    for k in GITHUB_APP_ID GITHUB_APP_SLUG GITHUB_APP_CLIENT_ID; do [ -n "$(file_val "$k")" ] || missing+="${missing:+, }$k"; done
+    [ -z "$missing" ] || chk_err "GITHUB_APP_ENABLED=true braucht GITHUB_APP_ID, GITHUB_APP_SLUG und GITHUB_APP_CLIENT_ID in der Datei (stack.github.yaml); es fehlt: $missing."
+    if [ -n "$(file_val GITHUB_APP_INSTALLATION_ID)" ] && [ -z "$(file_val GITHUB_APP_REPOSITORIES)" ]; then old_pair=broken
+    elif [ -z "$(file_val GITHUB_APP_INSTALLATION_ID)" ] && [ -n "$(file_val GITHUB_APP_REPOSITORIES)" ]; then old_pair=broken; else old_pair=ok; fi
+    if [ "$old_pair" = broken ]; then
+      chk_err "GITHUB_APP_INSTALLATION_ID und GITHUB_APP_REPOSITORIES gehören zusammen (nur Übergang); setze beide oder keines."
+    fi
   fi
   if [ "$(file_val ATTACHMENT_STORAGE)" = s3 ] && [ -z "$(file_val S3_ENDPOINT)" ]; then
     chk_warn "ATTACHMENT_STORAGE=s3 ohne S3_ENDPOINT in der Datei: der Endpunkt muss dann in der PWA stehen, sonst startet der Server nicht."

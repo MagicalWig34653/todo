@@ -39,6 +39,51 @@ an und öffnet PRs“). Aufbauend auf ADR 0041 (Holen). Einrichtung: `docs/GITHU
    - höchstens 500 Dateien, davon 50 Binärdateien je Lauf (`remaining`).
 8. `pull` bleibt unverändert; `deploy-pull-apply.py` bleibt der Weg ohne App.
 
+## Nachtrag 28.11.2026 (Karte E51E8B8C): eine Betreiber-App, Installation je Nutzer
+
+Auslöser (Lino 28.11.): „Es soll nicht jeder gezwungen sein, eine GitHub-App anzulegen. Ich dachte, das mache ich als Betreiber?“
+Entscheidung 4 und 5 oben (eine Installation je Instanz, Zuordnung nur durch den Betreiber in der Umgebung) gelten nur noch als
+Übergang. Contracts: `deploy.yaml` 1.3.0, Handbuch 1.58.0; Anleitung: `docs/GITHUB-APP-EINRICHTUNG.md` (Betreiber / Nutzer).
+
+1. **Eine App „Any account“, Installation je Person.** Am Server stehen nur App-ID, privater Schlüssel (Docker-Secret), Slug,
+   Client-ID und Client-Secret (Docker-Secret). Nichts je Nutzer in Umgebung oder Settings. Neue Tabellen
+   `github_connections` (Person, Installations-ID, Konto, GitHub-Nutzer-ID und -Login), `github_connect_states` (nur Hash,
+   10 Minuten, einmalig, an die Person gebunden) und `github_project_repositories` (Projekt → Repository, Repository-ID,
+   zuordnende Person). Konto löschen räumt alles ab.
+2. **Verbinden gegen Fälschung.** `POST /v1/github/connect` gibt die GitHub-Adresse mit einmaligem `state`; der Rückweg
+   (`/github/setup`, `/github/callback`) ist nur mit Personen-Sitzung und passendem, ungebrauchtem `state` gültig (Sperre im
+   Datensatz: zwei gleichzeitige Rückrufe verbrauchen ihn nur einmal). Die Installations-ID aus der Adresse gilt **nur**, wenn
+   GitHub sie mit dem Nutzer-Token der App (`GET /user/installations`, Code gegen Token getauscht, danach verworfen) für genau
+   diese Person nennt (sonst 403 `github_installation_not_yours`). Es wird nur eine Installation **dieser App** akzeptiert.
+3. **Zuordnen nur mit `manage`, nur aus eigener Verbindung, nur wo das eigene GitHub-Konto schreiben darf** (Collaborator-
+   Berechtigung `admin`/`write`, gleiche GitHub-Nutzer-ID), nur private Repositorys, das Konto der Installation muss der Besitzer
+   des Repositorys sein. Wer am Projekt lesen darf, sieht Repository und zuordnende Person, nie die Verbindung. Agenten haben kein
+   Werkzeug dafür und sehen nur Codes.
+4. **Jede Nutzung prüft neu** (kein Webhook nötig, kein Zwischenspeicher): zuordnende Person nicht gesperrt und weiter `manage`
+   (`deploy_github_assignment_revoked`, ohne Aufruf an GitHub), Installation vorhanden und nicht ausgesetzt, Repository noch
+   ausgewählt, gleiche Repository-ID, Schreibrecht derselben GitHub-Nutzer-ID. Erst danach wird der Zielserver gelesen. Der Token
+   bleibt je Lauf auf das eine Repository und `contents`/`pull_requests: write` begrenzt; alle Schranken aus Entscheidung 3, 6 und
+   7 (nur `server/*`, keine Pipeline-Dateien, nur private Repositorys, keine Weitergabe von GitHub-Texten) gelten unverändert.
+5. **Übergang.** `GITHUB_APP_INSTALLATION_ID` und `GITHUB_APP_REPOSITORIES` werden weiter gelesen (allein oder neben den neuen
+   Variablen) und erscheinen als Quelle „operator“. Ein Repository, das beide Wege nennen, zählt einmal (Betreiber zuerst).
+   Mehrere Wege für ein Projekt: wie bisher `repository` angeben (`deploy_github_repository_required`).
+6. **Verworfen.** Ein Webhook für Deinstallation und Rechteänderungen (zusätzliche Angriffsfläche und Betrieb; die Prüfung beim
+   Zugriff genügt und ist nie veraltet); die Nutzer-Anmeldung über GitHub als Zugang zu Todolino (der Ablauf nutzt GitHub nur als
+   Nachweis, wem eine Installation gehört); ein eigener Zwischenspeicher der Repository-Listen.
+
+### Grenzen des Nachtrags
+
+- Der Betreiber besitzt den Schlüssel einer App, die auf Konten **aller** Nutzer installiert ist: technisch erreicht er jedes
+  freigegebene Repository (wie bei jeder GitHub-App). Gegenmaßnahmen siehe Anleitung, Abschnitt 5 (Betreiber).
+- Die Rechte hängen am GitHub-Konto der Person, die zugeordnet hat; verlässt sie eine Organisation, stoppt die Nutzung (und muss
+  neu zugeordnet werden).
+- Die Repository-Liste prüft höchstens 100 Repositorys einer Installation (`truncated`); Zuordnung per Namen ist trotzdem möglich.
+- Nur gegen nachgestellte GitHub-APIs geprüft (Python- und Swift-Double mit mehreren Nutzern, Installationen, Rechten): Antwortformen
+  von `/user/installations`, die Rückkehr mit `code` bei Installation und das Verhalten von GitHub bei Organisationen mit
+  Genehmigung sind erst mit der echten App belegt. Das App-Manifest der Anleitung ist ungeprüft.
+- Tests: `GitHubConnectTests` (14), E2E `scripts/github-e2e.sh api` (zwei Nutzer, echte SFTP-Server, echte Git-Repositorys) und
+  `pwa` (Browser, hell/dunkel, `web/e2e/github-connect.spec.ts`), `web/tests/github.test.ts`.
+
 ## Grenzen (Restrisiko)
 
 - `contents: write` erlaubt technisch jeden Branch; die Beschränkung liegt im Server. Rulesets im Repository sind die zweite
@@ -49,7 +94,7 @@ an und öffnet PRs“). Aufbauend auf ADR 0041 (Holen). Einrichtung: `docs/GITHU
 - Je Anfrage eine neue HTTPS-Verbindung, Zeitlimit je Anfrage, keines für den ganzen Lauf.
 - Nur gegen nachgestellte GitHub-APIs geprüft, nie gegen github.com; Antwortformen und das Verhalten ohne Recht *Workflows* sind erst
   mit der echten App belegt.
-- Eine Installation je Instanz.
+- Eine Installation je Instanz (gilt nur noch für die Variablen des Betreibers; siehe Nachtrag: Installation je Nutzer).
 
 ## Folgen
 

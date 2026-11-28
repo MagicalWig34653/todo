@@ -197,10 +197,16 @@ fresh
 S --set APNS_ENABLED=true >/dev/null 2>&1; rc=$?
 check "conflict: APNS_ENABLED=true without key ID and team ID is refused" eq "$rc" 3
 S --set GITHUB_APP_ENABLED=true >/dev/null 2>&1; rc=$?
-check "conflict: GITHUB_APP_ENABLED=true without app ID, installation ID and repositories is refused" eq "$rc" 3
-S --set GITHUB_APP_ENABLED=true --set GITHUB_APP_ID=424242 --set GITHUB_APP_INSTALLATION_ID=777 \
-  --set GITHUB_APP_REPOSITORIES=A53494A1-2866-449C-970D-B978BE4D5816=acme/site >/dev/null 2>&1; rc=$?
+check "conflict: GITHUB_APP_ENABLED=true without app ID, slug and client ID is refused" eq "$rc" 3
+S --set GITHUB_APP_ENABLED=true --set GITHUB_APP_ID=424242 --set GITHUB_APP_SLUG=todolino-deploy \
+  --set GITHUB_APP_CLIENT_ID=Iv23liTEST >/dev/null 2>&1; rc=$?
 check "github: the whole app set in one run is accepted" bash -c "[ $rc -eq 0 ] && grep -qx 'GITHUB_APP_ID=424242' '$ENVF'"
+S --set GITHUB_APP_INSTALLATION_ID=777 >/dev/null 2>&1; rc=$?
+check "github: the old installation id without repositories is refused (they belong together)" eq "$rc" 3
+S --set GITHUB_APP_INSTALLATION_ID=777 --set GITHUB_APP_REPOSITORIES=A53494A1-2866-449C-970D-B978BE4D5816=acme/site >/dev/null 2>&1; rc=$?
+check "github: the old pair together is accepted (transition)" eq "$rc" 0
+out="$(S --set GITHUB_APP_CLIENT_SECRET=CLIENTSECRETMATERIAL 2>&1)"; rc=$?
+check "github: the client secret is never written to the file; the hint names the secret" bash -c "[ $rc -eq 2 ] && ! grep -q CLIENTSECRETMATERIAL '$ENVF' && grep -q todo_github_app_client_secret <<< \"\$1\"" _ "$out"
 out="$(S --set GITHUB_APP_PRIVATE_KEY=KEYMATERIAL 2>&1)"; rc=$?
 check "github: the private key is never written to the file; the hint names the secret" bash -c "[ $rc -eq 2 ] && ! grep -q KEYMATERIAL '$ENVF' && grep -q todo_github_app_key <<< \"\$1\"" _ "$out"
 fresh

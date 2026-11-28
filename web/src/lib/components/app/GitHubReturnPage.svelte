@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { api } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
 	import { finishReturn, githubErrorText, parseGitHubReturn, type GitHubReturn } from '#lib/github.js';
@@ -14,7 +15,7 @@
 	onMount(() => {
 		const parsed = parseGitHubReturn(location.search);
 		// Code and state leave the address bar (and the history) at once.
-		history.replaceState(history.state, '', location.pathname);
+		replaceState(location.pathname, {});
 		if (parsed.kind === 'setup' || parsed.kind === 'callback') pending = parsed;
 		else phase = parsed.kind;
 	});
