@@ -8,7 +8,7 @@ import type { PipelineStepName, PlanDecisionInput, RetryInput, TaskPipeline } fr
 import type { PipelineSettings, SettingsPatch } from './pipelineSettings.js';
 import type { ContinueInput, StartInput } from './pipelineExecution.js';
 import type { UpdateWebhook, WebhookDelivery, WebhookSettings } from './webhook.js';
-import type { DeployCompareResult, DeployTarget, DeployTargetWrite, DeployTestResult, ManifestEntry } from './deploy.js';
+import type { DeployCompareResult, DeployPlan, DeployPlanResult, DeployTarget, DeployTargetWrite, DeployTestResult, ManifestEntry } from './deploy.js';
 import type {
 	GitHubAssignment,
 	GitHubConnectMode,
@@ -1555,7 +1555,14 @@ export function createApi(fetchFn: FetchLike = (i, init) => fetch(i, init), base
 		/** The server scans again and stores the key only when the fingerprint still matches (409 deploy_host_key_changed). */
 		confirmDeployHostKey: (id: string, fingerprint: string) => request<DeployTarget>('POST', `/deploy-targets/${encodeURIComponent(id)}/host-key`, { fingerprint }),
 		/** Read-only compare of a repo manifest with the server. */
-		compareDeployTarget: (id: string, files: ManifestEntry[]) => request<DeployCompareResult>('POST', `/deploy-targets/${encodeURIComponent(id)}/compare`, { files })
+		compareDeployTarget: (id: string, files: ManifestEntry[]) => request<DeployCompareResult>('POST', `/deploy-targets/${encodeURIComponent(id)}/compare`, { files }),
+		/** Upload plans and runs of a target (newest first). Only a person with manage approves; nothing else writes to a server. */
+		deployPlans: (targetID: string) => request<{ items: DeployPlan[] }>('GET', `/deploy-targets/${encodeURIComponent(targetID)}/plans`),
+		requestDeployPlan: (id: string) => request<DeployPlan>('POST', `/deploy-plans/${encodeURIComponent(id)}/request`, {}),
+		approveDeployPlan: (id: string, overrideDrift: boolean) => request<DeployPlan>('POST', `/deploy-plans/${encodeURIComponent(id)}/approve`, { overrideDrift }),
+		rejectDeployPlan: (id: string) => request<DeployPlan>('POST', `/deploy-plans/${encodeURIComponent(id)}/reject`, {}),
+		/** Plans the way back of the latest run; writes nothing until approved. */
+		rollbackDeployPlan: (id: string) => request<DeployPlanResult>('POST', `/deploy-plans/${encodeURIComponent(id)}/rollback`, {})
 	};
 }
 

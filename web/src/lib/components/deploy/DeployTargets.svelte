@@ -25,6 +25,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import DeployPlans from './DeployPlans.svelte';
 	import DeploySync from './DeploySync.svelte';
 	import GitHubRepositories from './GitHubRepositories.svelte';
 	import Server from '@lucide/svelte/icons/server';
@@ -185,6 +186,15 @@
 		viewing = null;
 	}
 
+	// ---- upload plans -------------------------------------------------------------------------------------------------
+	let uploading = $state<DeployTarget | null>(null);
+	function openPlans(target: DeployTarget) {
+		closeForm();
+		deleting = null;
+		message = '';
+		uploading = target;
+	}
+
 	const heading = 'text-muted-foreground text-xs font-semibold tracking-wide uppercase';
 	const fid = (name: string) => `deploy-f-${name}`;
 </script>
@@ -192,6 +202,8 @@
 <div class="flex min-w-0 flex-col gap-4" data-testid="deploy-targets">
 	{#if viewing}
 		<DeploySync target={viewing} onback={closeView} />
+	{:else if uploading}
+		<DeployPlans target={uploading} {canManage} onback={() => (uploading = null)} />
 	{:else if status === 'loading'}
 		<p class="text-muted-foreground min-h-16 text-sm" role="status">{t('deploy.loading')}</p>
 	{:else if status === 'failed'}
@@ -353,6 +365,7 @@
 							{#if canRun}
 								<Button size="sm" variant="outline" class="aria-disabled:opacity-60" aria-disabled={testing === target.id} data-testid="deploy-test" onclick={() => void test(target)}>{testing === target.id ? t('deploy.testing') : t('deploy.test')}</Button>
 								<Button size="sm" variant="outline" data-testid="deploy-sync" onclick={() => openView(target)}>{t('deploy.sync')}</Button>
+								<Button size="sm" variant="outline" data-testid="deploy-plans-open" onclick={() => openPlans(target)}>{t('deploy.plans.open')}</Button>
 							{/if}
 							{#if canManage}
 								<Button size="sm" variant="ghost" data-testid="deploy-edit" onclick={() => void openForm(target)}>{t('deploy.edit')}</Button>
@@ -399,5 +412,5 @@
 		{/if}
 		<GitHubRepositories {project} />
 	{/if}
-	<p role="status" aria-live="polite" class="text-success text-sm font-medium empty:hidden" data-testid="deploy-status">{viewing || editing ? '' : message}</p>
+	<p role="status" aria-live="polite" class="text-success text-sm font-medium empty:hidden" data-testid="deploy-status">{viewing || uploading || editing ? '' : message}</p>
 </div>

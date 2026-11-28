@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -316,6 +318,117 @@ test('real SFTP server: confirm the host key, test, and compare a local folder (
 		await theme('light');
 	}
 });
+
+/** The repo state as an agent sends it: manifest with content. */
+const manifestOf = (files: Record<string, string>) =>
+	Object.entries(files).map(([path, text]) => ({ path, size: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex'), content: Buffer.from(text).toString('base64') }));
+
+async function planUpload(targetID: string, files: Record<string, string>, note: string, request = true) {
+	const made = await page.request.post(`/v1/deploy-targets/${targetID}/plans`, { ...json, data: { files: manifestOf(files), note, ref: 'main@abc1234' } });
+	const body = (await made.json()) as { ok: boolean; plan: { id: string } };
+	expect(body.ok, JSON.stringify(body)).toBe(true);
+	if (request) expect((await page.request.post(`/v1/deploy-plans/${body.plan.id}/request`, { ...json, data: {} })).ok()).toBe(true);
+	return body.plan.id;
+}
+
+const onServer = (path: string) => execFileSync('docker', ['exec', 'todo-deploy-test-sftp', 'sh', '-c', `cat "/home/deploy/site/${path}" 2>/dev/null || echo FEHLT`]).toString();
+const plans = () => dialog().getByTestId('deploy-plans');
+const planCard = (id: string) => plans().locator(`[data-testid="deploy-plan"][data-plan-id="${id}"]`);
+
+async function openPlans(project: string) {
+	await openTargets(project);
+	await rows().first().getByTestId('deploy-plans-open').click();
+	await expect(plans()).toBeVisible();
+}
+
+test('real SFTP server: a person sees the request, overrides the lock, uploads, rejects and takes it back', async () => {
+	test.skip(!SFTP_PORT, 'needs scripts/deploy-pwa-e2e.sh (real SFTP container, DEPLOY_ALLOW_PRIVATE_HOSTS=1)');
+	test.setTimeout(240_000);
+	await page.setViewportSize({ width: 1280, height: 860 });
+	await openTargets('Kubus Echt');
+	const target = (await rows().first().getAttribute('data-target-id'))!;
+	await rows().first().getByTestId('deploy-plans-open').click();
+	await expect(plans().getByTestId('deploy-plans-empty')).toBeVisible();
+
+	const before = { about: onServer('about.php'), kontakt: onServer('kontakt.php') };
+	expect(before).toEqual({ about: 'alt\n', kontakt: 'FEHLT\n' });
+	const files = { 'index.php': 'hi\n', 'about.php': 'neu aus dem Repo\n', 'kontakt.php': '<?php echo 1;\n', '.env': 'SECRET=1\n' };
+	const id = await planUpload(target, files, 'Kontaktseite ist fertig');
+	await plans().getByTestId('deploy-plans-reload').click();
+	const card = planCard(id);
+	await expect(card.getByTestId('deploy-plan-state')).toHaveText('wartet auf Freigabe');
+	await expect(card.getByTestId('deploy-plan-note')).toHaveText('Kontaktseite ist fertig');
+	await expect(card.getByTestId('deploy-plan-counts')).toHaveText('2 hochladen, 0 löschen, 1 unverändert');
+	await expect(card.getByTestId('deploy-plan-file')).toHaveCount(2);
+	await expect(card.getByTestId('deploy-plan-file').filter({ hasText: 'about.php' })).toContainText('überschreibt Server-Änderung');
+	// The server file is not Todolino's: locked until the person says so.
+	await expect(card.getByTestId('deploy-plan-blocker')).toContainText('about.php');
+	await expect(card.getByTestId('deploy-plan-approve')).toBeDisabled();
+	expect(onServer('kontakt.php')).toBe('FEHLT\n');
+
+	if (SHOTS) await shotPlans('gesperrt', 'Kubus Echt', id);
+	await openPlans('Kubus Echt');
+	await planCard(id).getByTestId('deploy-plan-override').check();
+	await planCard(id).getByTestId('deploy-plan-approve').click();
+	await expect(planCard(id).getByTestId('deploy-plan-state')).toHaveText('ausgeführt', { timeout: 60_000 });
+	await expect(planCard(id).getByTestId('deploy-plan-result')).toHaveText('2 Dateien geschrieben.');
+	expect(onServer('about.php')).toBe('neu aus dem Repo\n');
+	expect(onServer('kontakt.php')).toBe('<?php echo 1;\n');
+
+	// A second request is rejected: nothing changes.
+	const second = await planUpload(target, { ...files, 'about.php': 'unerwünscht\n' }, 'Bitte nicht');
+	await plans().getByTestId('deploy-plans-reload').click();
+	await planCard(second).getByTestId('deploy-plan-reject').click();
+	await expect(planCard(second).getByTestId('deploy-plan-state')).toHaveText('abgelehnt');
+	await expect(planCard(second).getByTestId('deploy-plan-approve')).toHaveCount(0);
+	expect(onServer('about.php')).toBe('neu aus dem Repo\n');
+
+	// A change on the server after the request stops the run with a readable reason.
+	const third = await planUpload(target, { ...files, 'index.php': 'HI\n' }, 'Startseite');
+	execFileSync('docker', ['exec', 'todo-deploy-test-sftp', 'sh', '-c', 'echo dazwischen >> /home/deploy/site/index.php']);
+	await plans().getByTestId('deploy-plans-reload').click();
+	await planCard(third).getByTestId('deploy-plan-approve').click();
+	await expect(planCard(third).getByTestId('deploy-plan-result')).toContainText('veraltet', { timeout: 60_000 });
+	execFileSync('docker', ['exec', 'todo-deploy-test-sftp', 'sh', '-c', "printf 'hi\\n' > /home/deploy/site/index.php"]);
+
+	// The way back: planned first, written only after the approval.
+	await planCard(id).getByTestId('deploy-plan-rollback').click();
+	await expect(plans().getByTestId('deploy-plans-status')).toHaveText('Rückweg geplant. Prüfe ihn und gib ihn frei.', { timeout: 60_000 });
+	const back = plans().locator('[data-testid="deploy-plan"][data-kind="rollback"]');
+	await expect(back.getByTestId('deploy-plan-file')).toHaveCount(2);
+	await expect(planCard(id).getByTestId('deploy-plan-rollback')).toHaveCount(0);
+	expect(onServer('about.php')).toBe('neu aus dem Repo\n');
+	const backID = (await back.getAttribute('data-plan-id'))!;
+	if (SHOTS) await shotPlans('rueckweg', 'Kubus Echt', backID);
+	await openPlans('Kubus Echt');
+	await planCard(backID).getByTestId('deploy-plan-approve').click();
+	await expect(planCard(backID).getByTestId('deploy-plan-state')).toHaveText('ausgeführt', { timeout: 60_000 });
+	expect(onServer('about.php')).toBe('alt\n');
+	expect(onServer('kontakt.php')).toBe('FEHLT\n');
+});
+
+/** Light and dark, desktop and phone, scrolled to one plan; no horizontal overflow. */
+async function shotPlans(name: string, project: string, planID: string) {
+	mkdirSync(SHOTS!, { recursive: true });
+	for (const mode of ['light', 'dark'] as const) {
+		const suffix = mode === 'light' ? 'hell' : 'dunkel';
+		await theme(mode);
+		// The dialog is opened on the desktop layout (the phone layout has no project list), then resized.
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await openPlans(project);
+		for (const [size, width, height] of [['', 1280, 900], ['-mobil', 390, 844], ['-schmal', 320, 700]] as const) {
+			await page.setViewportSize({ width, height });
+			await expect(planCard(planID)).toBeVisible();
+			await planCard(planID).evaluate((e) => e.scrollIntoView({ block: 'start' }));
+			if (width > 320) await page.screenshot({ path: `${SHOTS}/uploads-${name}${size}-${suffix}.png` });
+			await noOverflow(`${name} ${width}px`);
+			const card = await planCard(planID).evaluate((e) => e.scrollWidth - e.clientWidth);
+			expect(card, `${name} ${width}px: plan card overflows`).toBeLessThanOrEqual(0);
+		}
+		await page.setViewportSize({ width: 1280, height: 860 });
+	}
+	await theme('light');
+}
 
 test.afterAll(() => {
 	for (const d of temps) rmSync(d, { recursive: true, force: true });

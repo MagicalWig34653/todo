@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { ApiError } from '../src/lib/api.js';
-import { buildManifest, buildTree, deployErrorText, emptyForm, endpointLabel, formOf, manifestPath, summaryOf, writeBody, type DeployTarget } from '../src/lib/deploy.js';
+import { describe, expect, it, vi } from 'vitest';
+import { ApiError, api } from '../src/lib/api.js';
+import { buildManifest, buildTree, deployErrorText, emptyForm, endpointLabel, formOf, manifestPath, summaryOf, writeBody, canApprove, hasOpenRollback, isOpenPlan, sortPlans, type DeployPlan, type DeployTarget } from '../src/lib/deploy.js';
 
 const target: DeployTarget = {
 	id: 't1',
@@ -111,5 +111,71 @@ describe('manifest and tree', () => {
 		expect(clash.children.map((c) => `${c.kind}:${c.path}`)).toEqual(['dir:a', 'file:a']);
 		expect(clash.total).toBe(2);
 		expect(summaryOf({ ok: true, files })).toEqual({ changed: 1, new: 1, serverOnly: 1, unverified: 0, same: 1 });
+	});
+});
+
+const plan = (over: Partial<DeployPlan> = {}): DeployPlan => ({
+	id: 'a',
+	targetID: 't1',
+	targetName: 'Kubus Test',
+	kind: 'upload',
+	state: 'requested',
+	createdAt: '2026-11-28T10:00:00Z',
+	expiresAt: '2026-11-29T10:00:00Z',
+	overrideDrift: false,
+	summary: { upload: 1, delete: 0, unchanged: 0, serverOnly: 0, blocked: 0, skipped: 0 },
+	files: [],
+	blockers: [],
+	findings: [],
+	blocked: false,
+	overridable: false,
+	written: [],
+	canRollback: false,
+	...over
+});
+
+describe('deploy upload plans', () => {
+	it('offers approval only for open plans whose locks can be overridden', () => {
+		expect(['planned', 'requested', 'rejected', 'expired', 'running', 'succeeded', 'failed'].filter((state) => isOpenPlan(plan({ state })))).toEqual(['planned', 'requested']);
+		expect(canApprove(plan())).toBe(true);
+		expect(canApprove(plan({ blocked: true, overridable: true }))).toBe(true);
+		expect(canApprove(plan({ blocked: true, overridable: false }))).toBe(false);
+		expect(canApprove(plan({ state: 'succeeded' }))).toBe(false);
+	});
+
+	it('shows waiting requests first and hides a second way back', () => {
+		const run = plan({ id: 'run', state: 'succeeded', canRollback: true });
+		const back = plan({ id: 'back', kind: 'rollback', state: 'planned', sourcePlanID: 'run' });
+		expect(sortPlans([run, back, plan({ id: 'ask' })]).map((p) => p.id)).toEqual(['ask', 'run', 'back']);
+		expect(hasOpenRollback([run, back], run)).toBe(true);
+		expect(hasOpenRollback([run, { ...back, state: 'rejected' }], run)).toBe(false);
+	});
+
+	it('has a text for every reason a person can meet when deciding', () => {
+		const codes = ['blocked', 'stale', 'expired', 'decided', 'not_requested', 'limit', 'too_large'].map((c) => `deploy_plan_${c}`);
+		codes.push('deploy_target_busy', 'deploy_stage_not_supported', 'deploy_rollback_not_latest', 'deploy_backup_missing', 'deploy_interrupted', 'deploy_verify_failed', 'deploy_symlink_in_path', 'deploy_content_unreadable', 'deploy_failed');
+		for (const code of codes) expect(deployErrorText(code), code).not.toBe(deployErrorText('something_else'));
+	});
+
+	it('approves with the explicit override flag and never sends file contents', async () => {
+		const calls: { url: string; method: string; body: unknown }[] = [];
+		vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+			calls.push({ url: String(url), method: init.method ?? 'GET', body: init.body ? JSON.parse(String(init.body)) : undefined });
+			return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		});
+		await api.deployPlans('t 1');
+		await api.requestDeployPlan('p1');
+		await api.approveDeployPlan('p1', true);
+		await api.rejectDeployPlan('p1');
+		await api.rollbackDeployPlan('p1');
+		vi.unstubAllGlobals();
+		expect(calls.map((c) => `${c.method} ${c.url.replace(/^.*\/v1/, '')}`)).toEqual([
+			'GET /deploy-targets/t%201/plans',
+			'POST /deploy-plans/p1/request',
+			'POST /deploy-plans/p1/approve',
+			'POST /deploy-plans/p1/reject',
+			'POST /deploy-plans/p1/rollback'
+		]);
+		expect(calls[2].body).toEqual({ overrideDrift: true });
 	});
 });

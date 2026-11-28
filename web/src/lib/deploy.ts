@@ -2,8 +2,8 @@
  * Deploy targets, phase 1b (card 354ADE12, contracts/deploy.yaml, ADR 0039): types of `/v1/.../deploy-targets` and the pure rules
  * of the PWA pages (form <-> request body, error texts, local folder -> manifest, compare result -> file tree). No DOM.
  *
- * Read only towards servers: the PWA creates and edits targets, confirms the SFTP host key, runs the connection test and the
- * compare. Nothing here uploads, downloads or deletes on a server. Passwords and keys are write-only: the API never returns them.
+ * The PWA creates and edits targets, confirms the SFTP host key, runs the connection test and the compare, and (phase 3, ADR 0044)
+ * shows upload plans: only a person's approval here writes to a server. Passwords and keys are write-only: never returned.
  */
 
 import { ApiError } from './api.js';
@@ -261,6 +261,78 @@ export function deployErrorText(e: unknown): string {
 	if (reason && key in de) return t(key);
 	if (e instanceof ApiError && e.status === 404) return t('deploy.error.notFound');
 	return t('deploy.error.generic');
+}
+
+// ---- upload plans (phase 3, ADR 0044) --------------------------------------------------------------------------------
+
+export interface DeployPlanFile {
+	path: string;
+	serverPath: string;
+	/** `upload` | `delete` */
+	action: string;
+	/** `new` | `changed` | `drift` | `restore` | `remove` */
+	reason: string;
+	oldSize?: number;
+	newSize?: number;
+}
+
+export interface DeployPlanBlocker {
+	path: string;
+	serverPath: string;
+	/** `unknown_server_state` | `server_changed` | `server_deleted` | `symlink` | `unverified` */
+	reason: string;
+	overridable: boolean;
+}
+
+export interface DeployPlan {
+	id: string;
+	targetID: string;
+	targetName: string;
+	/** `upload` | `rollback` */
+	kind: string;
+	/** For a way back: the run it undoes. */
+	sourcePlanID?: string;
+	/** `planned` | `requested` | `rejected` | `expired` | `running` | `succeeded` | `failed` */
+	state: string;
+	ref?: string;
+	note?: string;
+	createdAt: string;
+	createdBy?: string;
+	requestedAt?: string;
+	requestedBy?: string;
+	decidedAt?: string;
+	decidedBy?: string;
+	finishedAt?: string;
+	expiresAt: string;
+	overrideDrift: boolean;
+	summary: { upload: number; delete: number; unchanged: number; serverOnly: number; blocked: number; skipped: number };
+	files: DeployPlanFile[];
+	blockers: DeployPlanBlocker[];
+	findings: { path: string; serverPath: string; reason: string }[];
+	blocked: boolean;
+	overridable: boolean;
+	written: string[];
+	code?: string;
+	canRollback: boolean;
+}
+
+export interface DeployPlanResult {
+	ok: boolean;
+	code?: string;
+	plan?: DeployPlan;
+}
+
+export const isOpenPlan = (p: DeployPlan): boolean => p.state === 'planned' || p.state === 'requested';
+
+/** A person may approve: still open, and every lock (if any) can be overridden. */
+export const canApprove = (p: DeployPlan): boolean => isOpenPlan(p) && (!p.blocked || p.overridable);
+
+/** The way back of this run is already waiting for a decision. */
+export const hasOpenRollback = (plans: DeployPlan[], run: DeployPlan): boolean => plans.some((p) => p.kind === 'rollback' && p.sourcePlanID === run.id && isOpenPlan(p));
+
+/** Requests first (they wait for a person), then everything else newest first as the server sends it. */
+export function sortPlans(plans: DeployPlan[]): DeployPlan[] {
+	return [...plans.filter((p) => p.state === 'requested'), ...plans.filter((p) => p.state !== 'requested')];
 }
 
 // ---- manifest from a local folder ------------------------------------------------------------------------------------
