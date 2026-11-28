@@ -334,6 +334,64 @@ extension DeployTargetTests {
         }
     }
 
+    // MARK: Hardening (review of cac5e86)
+
+    func testPublishNeverWritesPipelineDefinitions() async throws {
+        try await publishFixture { f, github, id in
+            let pipelines = [".circleci/config.yml", ".forgejo/workflows/a.yml", ".gitea/workflows/a.yml", ".woodpecker/a.yml", ".woodpecker.yml",
+                             ".buildkite/pipeline.yml", ".semaphore/semaphore.yml", "Jenkinsfile", "sub/JENKINSFILE", "azure-pipelines.yml",
+                             "bitbucket-pipelines.yml", ".travis.yml", ".drone.yml", ".cirrus.yml", "appveyor.yml", "cloudbuild.yaml"]
+            f.transport.files = Dictionary(uniqueKeysWithValues: (pipelines + ["ok.txt"]).map { ($0, Data("steps: run\n".utf8)) })
+            let r = try await publish(f, id, ["files": [], "baseCommit": github.head("main")])
+            XCTAssertEqual(r.body["ok"] as? Bool, true, r.text)
+            XCTAssertEqual((r.body["files"] as? [Obj] ?? []).compactMap { $0["path"] as? String }, ["ok.txt"], r.text)
+            let blocked = (r.body["findings"] as? [Obj] ?? []).filter { $0["reason"] as? String == "blocked_path" }.compactMap { $0["path"] as? String }
+            XCTAssertEqual(Set(blocked), Set(pipelines), r.text)
+        }
+    }
+
+    func testPublishRefusesPublicRepositories() async throws {
+        try await publishFixture { f, github, id in
+            f.transport.files = ["about.php": Data("neu\n".utf8)]
+            github.isPrivate = false
+            let r = try await publish(f, id, ["files": [], "baseCommit": github.head("main")])
+            XCTAssertEqual(r.body["code"] as? String, "deploy_github_repository_public", r.text)
+            XCTAssertTrue(f.transport.connections.isEmpty)
+            XCTAssertEqual(github.refNames, ["main"])
+        }
+    }
+
+    func testPublishCapsFilesPerRun() async throws {
+        try await publishFixture { f, github, id in
+            f.transport.files = Dictionary(uniqueKeysWithValues: (0..<503).map { (String(format: "n/%03d.txt", $0), Data("x\($0)\n".utf8)) })
+            let r = try await publish(f, id, ["files": [], "baseCommit": github.head("main")])
+            XCTAssertEqual(r.body["ok"] as? Bool, true, String(r.text.prefix(300)))
+            XCTAssertEqual((r.body["files"] as? [Obj])?.count, 500)
+            XCTAssertEqual(r.body["remaining"] as? [String], ["n/500.txt", "n/501.txt", "n/502.txt"])
+            XCTAssertEqual(r.body["remainingTotal"] as? Int, 3)
+        }
+    }
+
+    /// Git compares path bytes; a server name in another Unicode form is another file and inherits nothing.
+    func testPublishMatchesRepositoryPathsByBytes() async throws {
+        try await publishFixture(["caf\u{e9}.sh": .init("alt\n", mode: "100755")]) { f, github, id in
+            f.transport.files = ["cafe\u{301}.sh": Data("neu\n".utf8), "fixes gh-12 and GH-7.txt": Data("x\n".utf8)]
+            let r = try await publish(f, id, ["files": [], "baseCommit": github.head("main")])
+            XCTAssertEqual(r.body["ok"] as? Bool, true, r.text)
+            let tree = try XCTUnwrap(github.requests.first { $0.method == "POST" && $0.url.hasSuffix("/git/trees") }?.json["tree"] as? [Obj])
+            let entry = try XCTUnwrap(tree.first { Array(($0["path"] as? String ?? "").utf8) == Array("cafe\u{301}.sh".utf8) })
+            XCTAssertEqual(entry["mode"] as? String, "100644")
+            // `GH-12` links and closes issues like `#12`.
+            let message = github.message(r.body["commit"] as? String ?? "")
+            for word in ["gh-12", "GH-7"] {
+                XCTAssertFalse(message.contains(word), message)
+                XCTAssertFalse(github.pulls.first?.body.contains(word) == true)
+            }
+            // The comparison asks for a page without file patches.
+            XCTAssertTrue(github.requests.contains { $0.url.contains("/compare/") && $0.url.hasSuffix("?per_page=1&page=2") })
+        }
+    }
+
     // MARK: Failures, secrets and rights
 
     func testPublishFailuresAreFixedCodesWithoutSecrets() async throws {
@@ -436,6 +494,8 @@ final class FakeGitHub: GitHubTransport, @unchecked Sendable {
     private var trees: [String: (files: [String: File], prefix: String)] = [:]
     private var _requests: [Request] = [], _pulls: [Pull] = [], _jwts: [String] = [], _claims: [[String: Any]] = []
     private var _failure: (String, Int)?
+    private var _isPrivate = true
+    var isPrivate: Bool { get { lock.withLock { _isPrivate } } set { lock.withLock { _isPrivate = newValue } } }
 
     var requests: [Request] { lock.withLock { _requests } }
     var pulls: [Pull] { lock.withLock { _pulls } }
@@ -552,7 +612,7 @@ final class FakeGitHub: GitHubTransport, @unchecked Sendable {
         guard url == repo || url.hasPrefix(repo + "/") else { return answer(404, ["message": "Not Found"]) }
         let path = String(url.dropFirst(repo.count))
         switch (method, path) {
-        case ("GET", ""): return answer(200, ["default_branch": "main"])
+        case ("GET", ""): return answer(200, ["default_branch": "main", "private": _isPrivate])
         case ("GET", _) where path.hasPrefix("/compare/"):
             let ends = path.dropFirst("/compare/".count).components(separatedBy: "...")
             guard ends.count == 2, commits[ends[0]] != nil, let head = refs[ends[1]] ?? (commits[ends[1]] != nil ? ends[1] : nil) else { return answer(404, ["message": "Not Found"]) }

@@ -76,7 +76,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.answer(422, {"message": str(e)[:200]})
 
     def route(self, method, rest, body):
-        if method == "GET" and rest == "": return self.answer(200, {"default_branch": "main"})
+        if method == "GET" and rest == "": return self.answer(200, {"default_branch": "main", "private": True})
         if method == "GET" and rest.startswith("/compare/"):
             base, head = rest[len("/compare/"):].split("...")
             if git("cat-file", "-e", base + "^{commit}", check=False).returncode != 0: return self.answer(404, {"message": "Not Found"})
