@@ -287,6 +287,43 @@ extension DeployTargetTests {
         }
     }
 
+    // MARK: Review findings (security-auditor, 28.11.2026)
+
+    /// The same installation connected again by another GitHub account: what was mapped under the old account must not carry over.
+    func testReconnectingAnInstallationWithAnotherGitHubAccountDropsItsMappings() async throws {
+        try await hubFixture { f, hub, alice, _ in
+            let c = try await connect(f, hub, alice, as: "alice", installation: 333)
+            let made = try await assign(f, alice, c, "acme/web")
+            XCTAssertEqual(made.status, .created, made.text)
+            let again = try await connect(f, hub, alice, as: "carol", installation: 333)
+            XCTAssertEqual(again, c)
+            let left = try await assigned(f, alice)
+            XCTAssertTrue(left.isEmpty, "\(left)")
+            let sameAgain = try await connect(f, hub, alice, as: "carol", installation: 333)
+            XCTAssertEqual(sameAgain, c)
+        }
+    }
+
+    /// Over the limit nothing is stored at all, and installations without an app id are not taken for this app.
+    func testConnectionLimitStoresNothingAndInstallationsWithoutAppIDAreIgnored() async throws {
+        try await hubFixture { f, hub, alice, _ in
+            hub.user("dora", id: 1004)
+            for i in 0..<21 { hub.install(500 + i, account: "dora", accountID: 1004, type: "User") }
+            let start = try await call(f, .POST, "/v1/github/connect", ["mode": "existing"], as: alice)
+            let done = try await call(f, .POST, "/v1/github/callback", ["state": Self.query(start.body["url"] as? String ?? "", "state"), "code": hub.code(for: "dora")], as: alice)
+            XCTAssertEqual(done.status, .badRequest, done.text)
+            XCTAssertEqual(done.body["reason"] as? String, "github_connection_limit")
+            let stored = try await connections(f, alice)
+            XCTAssertTrue(stored.isEmpty, "\(stored)")
+
+            hub.leaveOutAppID(true)
+            let second = try await call(f, .POST, "/v1/github/connect", ["mode": "existing"], as: alice)
+            let none = try await call(f, .POST, "/v1/github/callback", ["state": Self.query(second.body["url"] as? String ?? "", "state"), "code": hub.code(for: "alice")], as: alice)
+            XCTAssertEqual(none.status, .notFound, none.text)
+            XCTAssertEqual(none.body["reason"] as? String, "github_no_installation")
+        }
+    }
+
     func testConnectingInstallationsThatAlreadyExist() async throws {
         try await hubFixture { f, hub, alice, bob in
             // The app is installed already (GitHub then shows no setup redirect): authorize and take what GitHub lists for the person.
@@ -665,6 +702,7 @@ final class FakeGitHubHub: GitHubTransport, @unchecked Sendable {
     private var users: [String: Int] = [:], codes: [String: String] = [:], userTokens: [String: String] = [:]
     private var installations: [Int: Installation] = [:], repositories: [String: Repository] = [:], tokens: [String: Token] = [:]
     private var counter = 0
+    private var omitAppID = false
     private var _used: [Int] = [], _written: [String] = []
 
     init(publicKey: _RSA.Signing.PublicKey, appID: Int, clientID: String, clientSecret: String) {
@@ -674,6 +712,8 @@ final class FakeGitHubHub: GitHubTransport, @unchecked Sendable {
     // MARK: Setting up and changing GitHub
 
     func user(_ login: String, id: Int) { lock.withLock { users[login] = id } }
+    /// Some answers of GitHub name no app at all: the backend must not take those installations for its own.
+    func leaveOutAppID(_ value: Bool) { lock.withLock { omitAppID = value } }
     func install(_ id: Int, account: String, accountID: Int, type: String) {
         lock.withLock { installations[id] = Installation(account: account, accountID: accountID, type: type) }
     }
@@ -724,8 +764,10 @@ final class FakeGitHubHub: GitHubTransport, @unchecked Sendable {
     }
 
     private func installationBody(_ id: Int, _ i: Installation) -> [String: Any] {
-        ["id": id, "app_id": appID, "account": ["login": i.account, "id": i.accountID, "type": i.type],
-         "suspended_at": i.suspended ? "2026-11-28T00:00:00Z" : NSNull()]
+        var body: [String: Any] = ["id": id, "account": ["login": i.account, "id": i.accountID, "type": i.type],
+                                   "suspended_at": i.suspended ? "2026-11-28T00:00:00Z" : NSNull()]
+        if !omitAppID { body["app_id"] = appID }
+        return body
     }
 
     private enum Next { case done(GitHubHTTPResponse), repository(FakeGitHub, GitHubHTTPRequest) }
