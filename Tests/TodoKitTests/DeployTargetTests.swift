@@ -472,6 +472,36 @@ final class FakeDeployTransport: DeployTransport, @unchecked Sendable {
     var failure: String? { get { lock.withLock { _failure } } set { lock.withLock { _failure = newValue } } }
     var connections: [DeployConnection] { lock.withLock { _connections } }
     var reads: [[String]] { lock.withLock { _reads } }
+    // Phase 3: writing. `writes` holds one entry per upload or delete run, `links` the directories or files that are symlinks.
+    private var _writes: [[String]] = [], _links: Set<String> = [], _failAfter: Int?
+    private var _beforeWrite: (@Sendable () async -> Void)?
+    var writes: [[String]] { lock.withLock { _writes } }
+    var links: Set<String> { get { lock.withLock { _links } } set { lock.withLock { _links = newValue } } }
+    /// The upload breaks off with `deploy_unreachable` after this many files.
+    var failAfterWrites: Int? { get { lock.withLock { _failAfter } } set { lock.withLock { _failAfter = newValue } } }
+    var beforeWrite: (@Sendable () async -> Void)? { get { lock.withLock { _beforeWrite } } set { lock.withLock { _beforeWrite = newValue } } }
+
+    func linkedPaths(_ connection: DeployConnection, paths: [String]) async throws -> Set<String> {
+        let links = self.links
+        return Set(paths.filter { p in
+            let parts = p.split(separator: "/")
+            return parts.indices.contains { links.contains(parts[...$0].joined(separator: "/")) }
+        })
+    }
+    func upload(_ connection: DeployConnection, files: [DeployUploadFile]) async throws {
+        if let beforeWrite { await beforeWrite() }
+        if let failure { throw DeployTransportError(code: failure) }
+        lock.withLock { _writes.append(files.map(\.path)) }
+        for (index, file) in files.enumerated() {
+            if let failAfterWrites, index >= failAfterWrites { throw DeployTransportError(code: "deploy_unreachable") }
+            lock.withLock { _files[file.path] = file.data }
+        }
+    }
+    func delete(_ connection: DeployConnection, paths: [String]) async throws {
+        if let beforeWrite { await beforeWrite() }
+        if let failure { throw DeployTransportError(code: failure) }
+        lock.withLock { _writes.append(paths); for p in paths { _files[p] = nil } }
+    }
 
     func scanHostKey(host: String, port: Int) async throws -> DeployHostKey {
         lock.withLock { _scanned.append(host) }
