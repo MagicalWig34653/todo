@@ -158,6 +158,24 @@ final class AssignmentTests: XCTestCase {
         XCTAssertEqual(AssignmentFixture.reason(late), "question_not_open")
     }
 
+    /// Asking again for the same pending review must not lift the assignment that only the reviewer or a manager may change.
+    func testResubmittingAReviewKeepsTheNamedPerson() async throws {
+        let f = try await AssignmentFixture.make(); defer { Task { await f.t.shutdown() } }
+        let card = try await f.task()
+        let first = try await f.review(card, assignee: f.designer.id, by: f.editor)
+        XCTAssertEqual(first.status, .ok, "\(first.body ?? [:])")
+        let again = try await f.review(card, by: f.editor)
+        XCTAssertEqual(again.status, .ok, "\(again.body ?? [:])")
+        XCTAssertEqual((again.body?["assigneeID"] as? String)?.uppercased(), f.designer.id.uuidString)
+        let redirected = try await f.review(card, assignee: f.editor.id, by: f.editor)
+        XCTAssertEqual(redirected.status, .forbidden, "\(redirected.body ?? [:])")
+        XCTAssertEqual(AssignmentFixture.reason(redirected), "not_the_reviewer")
+        let ownerCard = try await f.task("by owner")
+        _ = try await f.review(ownerCard, assignee: f.designer.id)
+        let byManager = try await f.review(ownerCard, assignee: f.editor.id)
+        XCTAssertEqual((byManager.body?["assigneeID"] as? String)?.uppercased(), f.editor.id.uuidString, "\(byManager.body ?? [:])")
+    }
+
     func testForMeReturnsOnlyOpenItemsOfTheCaller() async throws {
         let f = try await AssignmentFixture.make(); defer { Task { await f.t.shutdown() } }
         let mine = try await f.task("Designer card"), done = try await f.task("Done card"), free = try await f.task("Unassigned")

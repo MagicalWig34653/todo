@@ -111,21 +111,31 @@ struct PushDelivery: Sendable {
     func resolve(_ event: PushEvent, user: User) async throws -> (task: TodoTask, detail: String?)? {
         guard let task = try? await ProjectAccess(user: user, db: db).task(event.taskID, role: Self.requiredRole(event.kind)),
               task.projectID == event.projectID || event.kind == "reminder" else { return nil }
+        // Responsibility may have changed since the row was queued (ADR 0043).
+        let resolver = ResponsibilityResolver(db: db)
+        let userID = try user.requireID()
+        func concerns(_ audience: Audience) async throws -> Bool {
+            try await resolver.concerns(audience, userID: userID, projectID: task.projectID)
+        }
         switch event.kind {
         case "reminder":
-            guard task.status != "done", let p = try await TaskPlanning.find(event.taskID, on: db),
+            guard task.status != "done", try await resolver.reminderRecipient(task) == userID,
+                  let p = try await TaskPlanning.find(event.taskID, on: db),
                   p.reminders.contains(where: { Int($0.timeIntervalSince1970.rounded(.down)) == event.at }) else { return nil }
             return (task, nil)
         case "question":
-            guard let id = event.subjectID, let q = try await TaskQuestion.find(id, on: db), q.state == "open" else { return nil }
+            guard let id = event.subjectID, let q = try await TaskQuestion.find(id, on: db), q.state == "open",
+                  try await concerns(resolver.audience(of: q, task: task)) else { return nil }
             return (task, q.prompt)
         case "review":
-            guard let id = event.subjectID, let r = try await TaskReview.find(id, on: db), r.state == "pending" else { return nil }
+            guard let id = event.subjectID, let r = try await TaskReview.find(id, on: db), r.state == "pending",
+                  try await concerns(resolver.audience(of: r, task: task)) else { return nil }
             return (task, r.summary)
         case "plan":
             // Decided, replaced by a newer version or switched off in the meantime: nothing to announce any more.
             guard let id = event.subjectID, let plan = try await TaskPlan.find(id, on: db), plan.taskID == task.id, plan.state == PlanState.proposed,
-                  plan.version == event.version, try await PipelineSettingsStore.values(task.projectID, on: db).announcesWaitingPlans else { return nil }
+                  plan.version == event.version, try await PipelineSettingsStore.values(task.projectID, on: db).announcesWaitingPlans,
+                  try await concerns(resolver.audience(of: plan, task: task)) else { return nil }
             return (task, nil)
         case "comment":
             return (task, nil)
@@ -139,7 +149,31 @@ struct PushDelivery: Sendable {
         guard let q = try? await service.questions(projectID: nil, taskID: nil, state: "open", limit: 100),
               let r = try? await service.reviews(projectID: nil, state: "pending", limit: 100) else { return nil }
         let c = (try? await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total) ?? 0
-        return q.count + r.count + c
+        let mine = (try? await concerning(user, questions: q.map(\.id), reviews: r.map(\.id))) ?? q.count + r.count
+        return mine + c
+    }
+
+    /// Of the listed open items, those that are not somebody else's responsibility.
+    private func concerning(_ user: User, questions: [UUID], reviews: [UUID]) async throws -> Int {
+        let resolver = ResponsibilityResolver(db: db)
+        let userID = try user.requireID()
+        var tasks: [UUID: TodoTask] = [:]
+        func task(_ id: UUID) async throws -> TodoTask? {
+            if let known = tasks[id] { return known }
+            let found = try await TodoTask.find(id, on: db)
+            tasks[id] = found
+            return found
+        }
+        var count = 0
+        for q in questions.isEmpty ? [] : try await TaskQuestion.query(on: db).filter(\.$id ~~ questions).all() {
+            guard let t = try await task(q.taskID) else { continue }
+            if try await resolver.concerns(resolver.audience(of: q, task: t), userID: userID, projectID: t.projectID) { count += 1 }
+        }
+        for r in reviews.isEmpty ? [] : try await TaskReview.query(on: db).filter(\.$id ~~ reviews).all() {
+            guard let t = try await task(r.taskID) else { continue }
+            if try await resolver.concerns(resolver.audience(of: r, task: t), userID: userID, projectID: t.projectID) { count += 1 }
+        }
+        return count
     }
 
     /// Fixed text, no content (ADR 0026): the request itself is read in the app after sign-in.

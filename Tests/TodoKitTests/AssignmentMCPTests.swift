@@ -163,6 +163,45 @@ final class AssignmentFollowUpTests: XCTestCase {
 
 /// Additive migration of the responsibility columns; runs on SQLite and, with TODO_TEST_MARIADB=1, on MariaDB.
 final class AssignmentMigrationTests: XCTestCase {
+    /// Upgrade of a database with data: the new migrations are taken back and applied again; every old row stays, the new
+    /// fields are empty and an old named reviewer keeps its place.
+    func testUpgradeKeepsExistingCardsQuestionsAndReviews() async throws {
+        let f = try await AssignmentFixture.make()
+        do {
+            let card = try await f.task("Existing")
+            let asked = try await f.ask(card)
+            XCTAssertEqual(asked.status, .created, "\(asked.body ?? [:])")
+            let requested = try await f.review(card, assignee: f.designer.id, key: "reviewerID")
+            XCTAssertEqual(requested.status, .ok, "\(requested.body ?? [:])")
+            let db = f.t.app.db
+            try await AddQuestionAndReviewAssignment().revert(on: db)
+            try await AddTaskAssignee().revert(on: db)
+            let sql = try XCTUnwrap(db as? any SQLDatabase)
+            do {
+                _ = try await sql.raw("SELECT assignee_id FROM tasks LIMIT 1").all()
+                XCTFail("revert must remove the column")
+            } catch {}
+            try await AddTaskAssignee().prepare(on: db)
+            try await AddQuestionAndReviewAssignment().prepare(on: db)
+
+            let tasks = try await TodoTask.query(on: db).all()
+            XCTAssertEqual(tasks.map(\.title), ["Existing"])
+            XCTAssertNil(tasks.first?.assigneeID)
+            let questions = try await TaskQuestion.query(on: db).all()
+            XCTAssertEqual(questions.map(\.prompt), ["Which colour?"])
+            XCTAssertNil(questions.first?.assigneeID); XCTAssertNil(questions.first?.assignedAt)
+            let reviews = try await TaskReview.query(on: db).all()
+            XCTAssertEqual(reviews.map(\.reviewerID), [f.designer.id])
+            XCTAssertNil(reviews.first?.assignedAt)
+            // The upgraded database takes assignments.
+            let set = try await f.assign(card, to: f.editor.id)
+            XCTAssertEqual(set.status, .ok, "\(set.body ?? [:])")
+            let mine = try await f.forMe(f.editor)
+            XCTAssertEqual(mine.tasks, [card])
+        } catch { await f.t.shutdown(); throw error }
+        await f.t.shutdown()
+    }
+
     func testMigratedSchemaHasTheColumnsAndIndexes() async throws {
         let t = try await TestApp.make()
         do {

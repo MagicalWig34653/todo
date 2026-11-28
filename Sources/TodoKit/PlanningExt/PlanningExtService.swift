@@ -213,6 +213,9 @@ struct PlanningService: Sendable {
                 }
                 // Columns belong to one project; cleared here, then placed by status below (stays "Ohne Spalte" if the target has no columns).
                 t.columnID = nil; t.boardPosition = 0
+                // The responsible person stays only if they can see the target project (ADR 0043).
+                if let assignee = t.assigneeID,
+                   !(try await ResponsibilityResolver(db: db).isAssignable(assignee, to: .task, projectID: project)) { t.assigneeID = nil }
             }
             t.projectID = project
         }
@@ -249,6 +252,7 @@ struct PlanningService: Sendable {
             return
         }
         let next = TodoTask(ownerID: source.ownerID, projectID: source.projectID, title: source.title, details: source.details)
+        next.assigneeID = source.assigneeID
         try await next.save(on: db)
         try await appendActivity(taskID: next.requireID(), actorType: .person, actorID: source.ownerID, kind: "task.created", subjectID: id, on: db)
         let p = TaskPlanning(taskID: try next.requireID())

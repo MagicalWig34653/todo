@@ -197,7 +197,8 @@ struct Candidate: Sendable {
     }
 }
 
-/// Finds trigger events and writes outbox rows. Rights are checked per recipient; the same check is repeated when sending.
+/// Finds trigger events and writes outbox rows. Rights and responsibility (ADR 0043) are checked per recipient; the same
+/// check is repeated when sending.
 struct PushTriggers: Sendable {
     let db: any Database
     let candidates: [Candidate]
@@ -205,6 +206,12 @@ struct PushTriggers: Sendable {
     let now: Date
 
     func enabled(_ category: PushCategory) -> [Candidate] { candidates.filter { $0.prefs.categories[category.rawValue] == true } }
+
+    /// An item announced again after it was handed to somebody gets its own key, so the new person hears about it even if
+    /// the account was told about the item before.
+    static func key(_ base: String, assignedAt: Date?) -> String {
+        assignedAt.map { "\(base):a\(Int($0.timeIntervalSince1970))" } ?? base
+    }
 
     func canRead(_ user: User, _ taskID: UUID, role: ProjectRole) async -> TodoTask? {
         try? await ProjectAccess(user: user, db: db).task(taskID, role: role)
@@ -241,11 +248,13 @@ struct PushTriggers: Sendable {
             WHERE t.status <> 'done' AND p.reminders IS NOT NULL AND p.reminders <> '[]' LIMIT 5000
             """).all().map { try $0.decode(column: "id", as: UUID.self) }
         var count = 0
+        let resolver = ResponsibilityResolver(db: db)
         for chunk in stride(from: 0, to: ids.count, by: 200).map({ Array(ids[$0..<min($0 + 200, ids.count)]) }) {
             for planning in try await TaskPlanning.query(on: db).filter(\.$id ~~ chunk).all() {
                 let due = planning.reminders.filter { $0 <= now && $0 > since }
-                guard !due.isEmpty, let taskID = planning.id, let task = try await TodoTask.find(taskID, on: db),
-                      let owner = who.first(where: { $0.id == task.ownerID }),
+                guard !due.isEmpty, let taskID = planning.id, let task = try await TodoTask.find(taskID, on: db) else { continue }
+                let recipient = try await resolver.reminderRecipient(task)
+                guard let owner = who.first(where: { $0.id == recipient }),
                       await canRead(owner.user, taskID, role: .read) != nil else { continue }
                 for at in due {
                     let secs = Int(at.timeIntervalSince1970.rounded(.down))
@@ -261,12 +270,17 @@ struct PushTriggers: Sendable {
         let who = enabled(.agentQuestions)
         guard !who.isEmpty else { return 0 }
         var count = 0
-        for q in try await TaskQuestion.query(on: db).filter(\.$state == "open").filter(\.$createdAt >= since).limit(200).all() {
+        let resolver = ResponsibilityResolver(db: db)
+        let recent = try await TaskQuestion.query(on: db).filter(\.$state == "open")
+            .group(.or) { $0.filter(\.$createdAt >= since).filter(\.$assignedAt >= since) }.limit(200).all()
+        for q in recent {
             guard let qid = q.id, let task = try await TodoTask.find(q.taskID, on: db), let taskID = task.id else { continue }
+            let audience = try await resolver.audience(of: q, task: task)
             for c in who where !(q.askedByType == .person && q.askedByID == c.id) {
-                guard await canRead(c.user, taskID, role: .comment) != nil else { continue }
+                guard await canRead(c.user, taskID, role: .comment) != nil,
+                      try await resolver.concerns(audience, userID: c.id, projectID: task.projectID) else { continue }
                 let event = PushEvent(kind: "question", taskID: taskID, projectID: task.projectID, subjectID: qid, at: nil)
-                if try await enqueue(c.id, .agentQuestions, event, key: "question:\(qid)") { count += 1 }
+                if try await enqueue(c.id, .agentQuestions, event, key: Self.key("question:\(qid)", assignedAt: q.assignedAt)) { count += 1 }
             }
         }
         return count
@@ -276,14 +290,19 @@ struct PushTriggers: Sendable {
         let who = enabled(.agentReviews)
         guard !who.isEmpty else { return 0 }
         var count = 0
-        for r in try await TaskReview.query(on: db).filter(\.$state == "pending").filter(\.$createdAt >= since).limit(200).all() {
+        let resolver = ResponsibilityResolver(db: db)
+        let recent = try await TaskReview.query(on: db).filter(\.$state == "pending")
+            .group(.or) { $0.filter(\.$createdAt >= since).filter(\.$assignedAt >= since) }.limit(200).all()
+        for r in recent {
             guard let rid = r.id, let task = try await TodoTask.find(r.taskID, on: db), let taskID = task.id else { continue }
-            // A named reviewer is the only recipient; otherwise everybody who may decide (edit rights).
-            for c in who where r.reviewerID == nil || r.reviewerID == c.id {
+            // The responsible person is the only recipient; otherwise everybody who may decide (edit rights).
+            let audience = try await resolver.audience(of: r, task: task)
+            for c in who {
                 if r.requestedByType == .person && r.requestedByID == c.id { continue }
-                guard await canRead(c.user, taskID, role: .edit) != nil else { continue }
+                guard await canRead(c.user, taskID, role: .edit) != nil,
+                      try await resolver.concerns(audience, userID: c.id, projectID: task.projectID) else { continue }
                 let event = PushEvent(kind: "review", taskID: taskID, projectID: task.projectID, subjectID: rid, at: nil)
-                if try await enqueue(c.id, .agentReviews, event, key: "review:\(rid)") { count += 1 }
+                if try await enqueue(c.id, .agentReviews, event, key: Self.key("review:\(rid)", assignedAt: r.assignedAt)) { count += 1 }
             }
         }
         return count
@@ -296,11 +315,14 @@ struct PushTriggers: Sendable {
         guard !who.isEmpty else { return 0 }
         var count = 0
         let waiting = try await TaskPlan.query(on: db).filter(\.$state == PlanState.proposed).filter(\.$writtenAt >= since).limit(200).all()
+        let resolver = ResponsibilityResolver(db: db)
         for p in waiting {
             guard let planID = p.id, let task = try await TodoTask.find(p.taskID, on: db), let taskID = task.id,
                   try await PipelineSettingsStore.values(task.projectID, on: db).announcesWaitingPlans else { continue }
+            let audience = try await resolver.audience(of: p, task: task)
             for c in who where !(p.authorType == .person && p.authorID == c.id) {
-                guard await canRead(c.user, taskID, role: .edit) != nil else { continue }
+                guard await canRead(c.user, taskID, role: .edit) != nil,
+                      try await resolver.concerns(audience, userID: c.id, projectID: task.projectID) else { continue }
                 let event = PushEvent(kind: "plan", taskID: taskID, projectID: task.projectID, subjectID: planID, at: nil, version: p.version)
                 if try await enqueue(c.id, .agentReviews, event, key: "plan:\(planID):\(p.version)") { count += 1 }
             }

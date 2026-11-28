@@ -1,0 +1,130 @@
+openapi: 3.1.0
+info:
+  title: Todolino – Zuständigkeit (Karten, Fragen, Reviews) und „Für mich“
+  version: 1.0.0
+  description: 'ADR 0043, Karte 8B4BAC2E Teil 1. Sitzung oder Bearer. Je Karte, offener Frage und offener Review höchstens eine zuständige
+    Person (assigneeID = Konto-ID; bei Reviews dasselbe Feld wie reviewerID). Zuweisbar sind nur Konten mit Zugriff auf das Projekt der
+    Karte: Karte read, Frage comment, Review edit. Unbekannte, gesperrte und fremde Konten ergeben dieselbe Antwort 400 invalid_assignee.
+    Zuweisen verlangt edit. Wirkung wird bei jedem Lesen und vor jedem Versand neu geprüft: eine Zuweisung an eine Person ohne Recht
+    wirkt nicht (Frage: Person der Karte, sonst alle; benannte Review ohne edit: Entscheidung und Mitteilung nur bei manage). Gilt
+    nichts Eigenes, folgen Fragen, Reviews und wartende Pläne der Person der Karte (nicht für eigene Fragen/Anfragen; Runner-Einträge
+    nie), Erinnerungen gehen an sie statt an den Ersteller. Ohne Zuständigkeit bleibt alles wie bisher. Beim Projektwechsel wird die
+    Person der Karte entfernt, wenn sie das Ziel nicht sieht; Wiederholungen übernehmen sie; Kontolöschung entfernt alle Zuweisungen.
+    Aktivität task.assigned, question.assigned, review.assigned. TaskDTO.assigneeID steht auch im Sync-Feed (Upsert der Aufgabe);
+    Fragen und Reviews haben keinen Sync-Feed. MCP (oauth-mcp.yaml 1.19.0): list_assignees, set_assignee (tasks:write), list_for_me
+    (tasks:read), assigneeID bei ask_question und request_review. Push: push.yaml 1.3.0. Die Abschnitte x-draft beschreiben geplante,
+    noch nicht gebaute Verträge.'
+security:
+- bearerAuth: []
+- sessionCookie: []
+paths:
+  /v1/for-me:
+    get:
+      operationId: getForMe
+      summary: Alles Offene, wofür das angemeldete Konto zuständig ist
+      description: 'Query: projectID (optional, sonst alle lesbaren Projekte), includeSubprojects (Standard true), limit (1–200, Standard
+        100, je Liste). tasks: nicht erledigte Karten mit assigneeID = eigenes Konto, zuletzt geändert zuerst (mit planning). questions:
+        offene Fragen, die benannt oder über die Karte beim Konto liegen, älteste zuerst. reviews: ausstehende Reviews ebenso. Nicht
+        zugewiesene Einträge fehlen bewusst (dafür /v1/questions und /v1/reviews). truncated=true, wenn eine Liste gekürzt wurde.'
+      responses:
+        '200': {description: 'Erfolgreich', content: {application/json: {schema: {$ref: '#/components/schemas/ForMe'}}}}
+        '400': {description: 'invalid_projectID, invalid_includeSubprojects, invalid_filter'}
+        '401': {description: Nicht angemeldet}
+        '404': {description: Projekt fehlt oder unsichtbar}
+  /v1/projects/{id}/assignees:
+    get:
+      operationId: listAssignees
+      summary: Zuweisbare Personen eines Projekts (edit)
+      description: 'Alle nicht gesperrten Konten mit Zugriff (Eigentum, Freigaben samt Vererbung, angenommene Teammitglieder). Bewusst nur
+        ID und Anzeigename; keine Anmeldenamen, E-Mail oder Rolle.'
+      responses:
+        '200': {description: Erfolgreich, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignee'}}}}}
+        '403': {description: Recht edit fehlt}
+        '404': {description: Projekt fehlt oder unsichtbar}
+  /v1/tasks/{id}/assignee:
+    put:
+      operationId: setTaskAssignee
+      summary: Zuständige Person der Karte setzen oder entfernen (edit)
+      description: 'Erhöht die Version der Karte; dieselbe Person erneut ändert nichts.'
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssigneeRequest'}}}}
+      responses:
+        '200': {description: 'TaskDTO (openapi.yaml Task)'}
+        '400': {description: 'assignee_required, invalid_assignee'}
+        '403': {description: Recht edit fehlt}
+        '404': {description: Aufgabe fehlt oder unsichtbar}
+  /v1/questions/{id}/assignee:
+    put:
+      operationId: setQuestionAssignee
+      summary: Offene Frage zuweisen oder die Zuweisung entfernen (edit)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssigneeRequest'}}}}
+      responses:
+        '200': {description: QuestionDTO}
+        '400': {description: 'assignee_required, invalid_assignee'}
+        '403': {description: Recht edit fehlt}
+        '404': {description: Frage fehlt oder unsichtbar}
+        '409': {description: 'question_not_open, runner_item'}
+  /v1/reviews/{id}/assignee:
+    put:
+      operationId: setReviewAssignee
+      summary: Ausstehende Review zuweisen oder die Zuweisung entfernen (edit)
+      description: 'Nennt die Review schon eine Person, darf nur diese oder wer manage hat sie umlenken oder entfernen.'
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssigneeRequest'}}}}
+      responses:
+        '200': {description: ReviewDTO}
+        '400': {description: 'assignee_required, invalid_assignee'}
+        '403': {description: 'not_the_reviewer oder Recht edit fehlt'}
+        '404': {description: Review fehlt oder unsichtbar}
+        '409': {description: 'no_pending_review, runner_item'}
+components:
+  schemas:
+    AssigneeRequest:
+      type: object
+      required: [assigneeID]
+      properties:
+        assigneeID: {type: [string, 'null'], format: uuid, description: 'null entfernt die Zuweisung; fehlt der Schlüssel, 400 assignee_required.'}
+    Assignee:
+      type: object
+      required: [userID, displayName, assignableTo, isMe]
+      properties:
+        userID: {type: string, format: uuid}
+        displayName: {type: string}
+        assignableTo: {type: array, items: {type: string, enum: [task, question, review]}}
+        isMe: {type: boolean}
+    ForMe:
+      type: object
+      required: [generatedAt, tasks, questions, reviews, truncated]
+      properties:
+        generatedAt: {type: string, format: date-time}
+        projectID: {type: string, format: uuid}
+        tasks: {type: array, items: {type: object, description: 'TaskDTO mit assigneeID und planning'}}
+        questions: {type: array, items: {type: object, description: 'QuestionDTO mit taskTitle, projectID, projectName'}}
+        reviews: {type: array, items: {type: object, description: 'ReviewDTO mit taskTitle, projectID, projectName, brainRecommended'}}
+        truncated: {type: boolean}
+x-draft:
+  status: 'Entwurf, nicht gebaut (Karte 8B4BAC2E). Änderungen daran sind noch kein Vertragsbruch.'
+  commentResponsibility:
+    summary: 'Nachrichten zu Karten: Erwähnung und Zuweisung'
+    request: 'POST /v1/tasks/{id}/comments und MCP add_comment bekommen optional mentionIDs (höchstens 10 Konto-IDs) und assigneeID
+      (höchstens eine Person, von der eine Antwort erwartet wird). Jede ID verlangt das Recht read (mentionIDs) bzw. comment
+      (assigneeID) am Projekt, sonst 400 invalid_mention bzw. invalid_assignee; der Text bleibt reines Markdown, @-Namen darin sind
+      ohne die Felder wirkungslos (keine Namensauflösung auf dem Server).'
+    response: 'CommentDTO trägt mentionIDs und assigneeID; answeredAt, sobald die zugewiesene Person im selben Thread schreibt.'
+    forMe: 'GET /v1/for-me bekommt comments: offene (unbeantwortete) Zuweisungen und ungelesene Erwähnungen.'
+    push: 'Mit assigneeID oder mentionIDs gehen Kommentar-Mitteilungen nur an diese Konten (eigene Kategorie assignments, heute ohne
+      Auslöser); ohne die Felder unverändert.'
+  assignmentNotification: 'Eigene Mitteilung beim Zuweisen einer Karte (Kategorie assignments, Standard aus) – noch ohne Auslöser.'
+  reviewConsequence:
+    summary: 'Review mit angekündigter Folge (Deploy-Konzept §8.9, Notiz 27.11.2026)'
+    field: 'ReviewDTO.consequence, nullable, gesetzt nur beim Anfragen (request_review, POST /v1/tasks/{id}/review):
+      {kind: deploy | testflight | merge | mail | other, summary (1–200 Zeichen, z. B. "Annehmen lädt auf Kubus Test hoch"),
+      targetID? (Deploy-Ziel desselben Projekts), planURL? (nur Pfad der eigenen Instanz), fileCount?, autoExecute: boolean}.'
+    rules: 'Die Folge steht sichtbar in der Review und im Push. Ausgeführt wird sie erst nach accept und nur durch Todolino oder den
+      beauftragten Agenten; request_changes, withdraw und das Erledigen der Karte lösen nichts aus. Das Rückgängigmachen einer Annahme
+      ist ausgeschlossen, sobald die Folge begonnen hat (409 not_undoable). Sammelfreigabe nimmt Reviews mit Folge nicht an (wie
+      variant_required, reason consequence_requires_single_decision). Eine Annahme mit Folge verlangt edit am Ziel; decide_review über
+      MCP bleibt an Brain-Vollmacht und Zitat gebunden, für Deploys auf Prod ist sie ausgeschlossen. Der Ausführungsstand
+      (pending | running | done | failed) steht in consequence.state.'
+    responsibility: 'Beim Anfragen setzt Todolino assigneeID aus den zuständigen Personen des Ziels, sonst der Person der Karte. §8.9
+      spricht von mehreren Zuständigen: offen, ob dafür eine Liste responsibleIDs am Ziel genügt (Push an alle, eine Annahme zählt)
+      oder Reviews mehrere Personen tragen; Teil 1 kennt genau eine.'
+    perTarget: 'Je Deploy-Ziel abschaltbar (ohne Review-Bestätigung), für Prod nicht.'

@@ -39,6 +39,10 @@ final class TaskQuestion: Model, @unchecked Sendable {
     @OptionalField(key: "agent_question_id") var agentQuestionID: UUID?
     @OptionalField(key: "idempotency_key") var idempotencyKey: String?
     @Field(key: "version") var version: Int
+    /// The one person the question is for (ADR 0043).
+    @OptionalField(key: "assignee_id") var assigneeID: UUID?
+    /// Set when the question was handed to somebody after it was asked.
+    @OptionalField(key: "assigned_at") var assignedAt: Date?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     init() {}
 }
@@ -52,7 +56,10 @@ final class TaskReview: Model, @unchecked Sendable {
     @Field(key: "requested_by_type") var requestedByType: ActivityActorType
     @Field(key: "requested_by_id") var requestedByID: UUID
     @OptionalField(key: "requested_by_label") var requestedByLabel: String?
+    /// The review's assignee (ADR 0043): while set (and able to decide), only this person or a manager decides.
     @OptionalField(key: "reviewer_id") var reviewerID: UUID?
+    /// Set when the review was handed to somebody after it was requested.
+    @OptionalField(key: "assigned_at") var assignedAt: Date?
     @Field(key: "summary") var summary: String
     @OptionalField(key: "decided_by") var decidedBy: UUID?
     @OptionalField(key: "decided_at") var decidedAt: Date?
@@ -302,7 +309,10 @@ struct QuestionDTO: Content {
     /// Set when the question belongs to a runner job (mirror of `agent_questions`).
     let agentQuestionID: UUID?
     let version: Int
+    /// The person the question is for (ADR 0043); omitted when nobody is named.
+    let assigneeID: UUID?
     init(_ q: TaskQuestion) throws {
+        assigneeID = q.assigneeID
         id = try q.requireID(); taskID = q.taskID; askedByType = q.askedByType; askedByID = q.askedByID
         askedByLabel = q.askedByLabel; prompt = q.prompt; options = q.options; blocking = q.blocking; state = q.state
         answer = q.answer; answeredBy = q.answeredBy; answeredVia = q.answeredVia; answeredAt = q.answeredAt
@@ -321,6 +331,8 @@ struct ReviewDTO: Content {
     let requestedByID: UUID
     let requestedByLabel: String?
     let reviewerID: UUID?
+    /// Same person as `reviewerID`, under the name all assignable objects share (ADR 0043).
+    let assigneeID: UUID?
     let summary: String
     let decidedBy: UUID?
     let decidedAt: Date?
@@ -339,7 +351,7 @@ struct ReviewDTO: Content {
     init(_ r: TaskReview) throws {
         variants = r.variants; chosenVariantID = r.chosenVariantID
         id = try r.requireID(); taskID = r.taskID; state = r.state; requestedByType = r.requestedByType
-        requestedByID = r.requestedByID; requestedByLabel = r.requestedByLabel; reviewerID = r.reviewerID
+        requestedByID = r.requestedByID; requestedByLabel = r.requestedByLabel; reviewerID = r.reviewerID; assigneeID = r.reviewerID
         summary = r.summary; decidedBy = r.decidedBy; decidedAt = r.decidedAt; decisionNote = r.decisionNote
         agentJobID = r.agentJobID; createdAt = r.createdAt; version = r.version
         if r.state != "pending", r.agentJobID == nil, r.undoStatus != nil || r.undoTaskVersion != nil, let at = r.decidedAt {
@@ -442,6 +454,8 @@ struct AskQuestionRequest: Content {
     let blocking: Bool?
     let agentName: String?
     let idempotencyKey: String?
+    /// The one person the question is for; must be able to answer in the project.
+    var assigneeID: UUID? = nil
 }
 /// `freeText: true` answers a question that has options with the person's own text (additive; omitted = one of the options).
 struct AnswerQuestionRequest: Content { let answer: String; let freeText: Bool? }
@@ -451,6 +465,8 @@ struct RequestReviewRequest: Content {
     let agentName: String?
     /// Optional 2-4 variants to choose from (card 1D9C8B0C).
     var variants: [ReviewVariantInput]? = nil
+    /// The one person who is to decide; same field as `reviewerID` (ADR 0043).
+    var assigneeID: UUID? = nil
 }
 struct ReviewDecisionRequest: Content {
     let decision: String

@@ -312,7 +312,9 @@ struct WorkflowService: Sendable {
                 guard saved.prompt == prompt else { throw Abort(.conflict, reason: "idempotency_conflict") }
                 return try QuestionDTO(saved)
             }
+            if let assignee = body.assigneeID { try await Self.requireAssignable(assignee, to: .question, projectID: task.projectID, on: tx) }
             let q = TaskQuestion()
+            q.assigneeID = body.assigneeID
             q.taskID = id; q.askedByType = actor.type; q.askedByID = actor.id; q.askedByLabel = label
             q.prompt = prompt; q.options = options; q.blocking = blocking; q.state = "open"; q.idempotencyKey = hash; q.version = 1
             try await q.save(on: tx)
@@ -413,26 +415,29 @@ struct WorkflowService: Sendable {
     func requestReview(_ taskID: UUID, _ body: RequestReviewRequest, actor: WorkflowActor) async throws -> ReviewDTO {
         let summary = try Self.text(body.summary, reason: "invalid_summary")
         let label = try Self.optionalLabel(body.agentName, reason: "invalid_agent_name") ?? actor.label
+        if let a = body.assigneeID, let b = body.reviewerID, a != b { throw Abort(.badRequest, reason: "conflicting_assignee") }
+        let reviewer = body.assigneeID ?? body.reviewerID
+        let reviewerError = body.assigneeID != nil ? "invalid_assignee" : "invalid_reviewer"
         let owner = user
         return try await mutate(taskID, role: .edit) { task, tx in
             let id = try task.requireID()
             guard task.status != "done" else { throw Abort(.conflict, reason: "task_done") }
             let variants = try await Self.validatedVariants(body.variants, taskID: id, on: tx)
-            if let reviewerID = body.reviewerID {
-                guard let reviewer = try await User.find(reviewerID, on: tx),
-                      (try? await ProjectAccess(user: reviewer, db: tx).project(task.projectID, role: .read)) != nil else {
-                    throw Abort(.badRequest, reason: "invalid_reviewer")
-                }
-            }
+            if let reviewer { try await Self.requireAssignable(reviewer, to: .review, projectID: task.projectID, reason: reviewerError, on: tx) }
             if let pending = try await TaskReview.query(on: tx).filter(\.$taskID == id).filter(\.$state == "pending").first() {
                 guard pending.agentJobID == nil, pending.requestedByID == actor.id else { throw Abort(.conflict, reason: "review_already_pending") }
-                pending.summary = summary; pending.reviewerID = body.reviewerID; pending.variants = variants; pending.version += 1
+                // Asking again without a person keeps the named one; changing it follows `assignReview` (ADR 0043).
+                if let reviewer, reviewer != pending.reviewerID {
+                    try await Self.requireReviewHandover(pending.reviewerID, projectID: task.projectID, user: owner, on: tx)
+                    pending.reviewerID = reviewer; pending.assignedAt = Date()
+                }
+                pending.summary = summary; pending.variants = variants; pending.version += 1
                 try await pending.save(on: tx)
                 return try ReviewDTO(pending)
             }
             let r = TaskReview()
             r.taskID = id; r.state = "pending"; r.requestedByType = actor.type; r.requestedByID = actor.id
-            r.requestedByLabel = label; r.reviewerID = body.reviewerID; r.summary = summary; r.variants = variants; r.version = 1
+            r.requestedByLabel = label; r.reviewerID = reviewer; r.summary = summary; r.variants = variants; r.version = 1
             try await r.save(on: tx)
             try await Self.applyStatus(task, "in_review", actor: actor, on: tx)
             try await Self.place(task, role: .review, on: tx)

@@ -129,6 +129,8 @@ final class TodoTask: Model, @unchecked Sendable {
     @OptionalField(key: "column_id") var columnID: UUID?
     /// 0-based position inside the column.
     @Field(key: "board_position") var boardPosition: Int
+    /// The one person responsible for the card (ADR 0043); has no effect while that person has no access.
+    @OptionalField(key: "assignee_id") var assigneeID: UUID?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?
     init() {}

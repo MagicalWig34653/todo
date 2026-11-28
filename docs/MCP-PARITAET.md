@@ -378,3 +378,13 @@ Es gibt kein MCP-Werkzeug zum Lesen, Setzen oder Aendern des Webhooks und keinen
 | `report_usage` | tasks:write | A | `rows` (1 bis 500, `contracts/usage.yaml` UsageRow); gleiche Regeln und Antwort wie `POST /v1/usage` |
 
 Bewusst ohne MCP: Zusammenfassung lesen (`GET /v1/usage/summary`) sowie Preise und Schwellen (`/v1/usage/settings`), beides nur mit Personen-Sitzung. `list_cost_findings` folgt in Phase 3.
+
+## Zuständigkeit (28.11.2026, Handbuch 1.56.0, ADR 0043, Karte 8B4BAC2E)
+
+| Werkzeug | Scope | Klasse | REST |
+| --- | --- | --- | --- |
+| `list_assignees` | tasks:write | A | `GET /v1/projects/{id}/assignees` |
+| `set_assignee` | tasks:write | A | `PUT /v1/{tasks,questions,reviews}/{id}/assignee` |
+| `list_for_me` | tasks:read | A | `GET /v1/for-me` |
+
+`ask_question` und `request_review` nehmen `assigneeID` wie REST. Gleiche Fachregeln; zusätzlich gilt die Projektliste der Verbindung.

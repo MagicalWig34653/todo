@@ -114,7 +114,7 @@ extension MCPController {
                           "prompt": Schema.string("The question, 1 to 4000 characters. State the situation briefly.", maxLength: 4000),
                           "options": Schema.stringArray("Optional answer options (up to 20, each up to 500 characters). If present the answer must be one of them.", maxItems: 20),
                           "blocking": Schema.boolean("True (default) if you cannot continue this task without the answer."),
-                          "agentName": agentNameField,
+                          "agentName": agentNameField, "assigneeID": assigneeField,
                           "idempotencyKey": Schema.string("Optional retry key; the same key with the same prompt returns the existing question.", maxLength: 200)],
              required: ["taskID", "prompt"]),
         Tool(name: "list_open_questions", scope: "tasks:read",
@@ -138,7 +138,8 @@ extension MCPController {
              description: "Ask a person to review finished work: sets the task to in_review, moves it to the 'Review' column and shows it as 'Review fällig' on the overview. Summarise what changed, how you verified it and what to look at. Attach build screenshots first. Only for a visible result, risk, rollout or decision; proven-finished work with nothing to check is closed with update_task status=done after a post_progress with the proof. For a choice between 2 to 4 alternatives pass variants (with a screenshot each via attachmentID); the person picks one, you read it as review.chosenVariantID in get_task_context.",
              properties: ["taskID": taskIDField,
                           "summary": Schema.string("Review summary, 1 to 4000 characters.", maxLength: 4000),
-                          "reviewerID": Schema.uuid("Optional user id of the person who must review (must be able to read the project)."),
+                          "assigneeID": assigneeField,
+                          "reviewerID": Schema.uuid("Older name of assigneeID (the person who must review; needs edit rights). Pass one of the two."),
                           "variants": reviewVariantsField,
                           "agentName": agentNameField],
              required: ["taskID", "summary"]),
@@ -315,7 +316,8 @@ extension MCPController {
                 options = try items.map { guard let s = $0.string else { throw Abort(.badRequest, reason: "invalid_option") }; return s }
             }
             let body = AskQuestionRequest(prompt: try requiredString(a, "prompt"), options: options, blocking: try optionalBool(a, "blocking"),
-                agentName: try optionalString(a, "agentName"), idempotencyKey: try optionalString(a, "idempotencyKey"))
+                agentName: try optionalString(a, "agentName"), idempotencyKey: try optionalString(a, "idempotencyKey"),
+                assigneeID: try optionalUUID(a, "assigneeID"))
             return try .encoded(try await service.ask(uuid(a["taskID"]), body, actor: actor))
         case "list_open_questions":
             let all = try optionalBool(a, "includeAnswered") ?? false
@@ -335,7 +337,8 @@ extension MCPController {
                 quote: optionalString(a, "quote"), actor: actor))
         case "request_review":
             let body = RequestReviewRequest(summary: try requiredString(a, "summary"), reviewerID: try optionalUUID(a, "reviewerID"),
-                agentName: try optionalString(a, "agentName"), variants: try reviewVariants(a["variants"]))
+                agentName: try optionalString(a, "agentName"), variants: try reviewVariants(a["variants"]),
+                assigneeID: try optionalUUID(a, "assigneeID"))
             return try .encoded(try await service.requestReview(uuid(a["taskID"]), body, actor: actor))
         case "list_pending_reviews":
             let context = try await MCPProjectContext.resolve(projectID: optionalUUID(a, "projectID"), scope: optionalString(a, "scope"),

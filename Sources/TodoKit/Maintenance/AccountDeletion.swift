@@ -114,6 +114,19 @@ struct AccountDeletion: Sendable {
                 }
                 report.teams += 1
             }
+            // Responsibilities end with the account (ADR 0043); through the models, so that clients see the change.
+            for task in try await TodoTask.query(on: db).filter(\.$assigneeID == userID).all() {
+                task.assigneeID = nil; task.version += 1
+                try await task.save(on: db)
+            }
+            for q in try await TaskQuestion.query(on: db).filter(\.$assigneeID == userID).all() {
+                q.assigneeID = nil; q.version += 1
+                try await q.save(on: db)
+            }
+            for r in try await TaskReview.query(on: db).filter(\.$reviewerID == userID).all() {
+                r.reviewerID = nil; r.version += 1
+                try await r.save(on: db)
+            }
             try await TaskComment.query(on: db).filter(\.$authorID == userID).delete()
             try await ProjectComment.query(on: db).filter(\.$authorID == userID).delete()
             let grants = try await ProjectGrant.query(on: db).filter(\.$principalType == "person")

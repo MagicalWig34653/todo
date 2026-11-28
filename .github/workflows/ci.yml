@@ -60,6 +60,11 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
           scripts/usage-e2e.sh "$RUNNER_TEMP/usage-e2e"
+      # Responsibility (card 8B4BAC2E, ADR 0043): an agent assigns over MCP, "for me" delivers it to that person only; real backend, OAuth token.
+      - name: Assignment E2E (responsibility, for me, MCP)
+        run: |
+          apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
+          scripts/assignment-e2e.sh "$RUNNER_TEMP/assignment-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)

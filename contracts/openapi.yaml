@@ -996,6 +996,10 @@ components:
             - in_progress
             - in_review
             - done
+        assigneeID:
+          type: string
+          format: uuid
+          description: Zuständige Person (ADR 0043, contracts/assignments.yaml); fehlt, wenn niemand benannt ist.
         version:
           type: integer
         createdAt:

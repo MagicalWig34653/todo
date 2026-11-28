@@ -66,6 +66,8 @@ struct TaskDTO: Content {
     /// Board column of the project (`null` = no column); position inside it.
     let columnID: UUID?
     let boardPosition: Int
+    /// Responsible person (ADR 0043); omitted when nobody is.
+    let assigneeID: UUID?
     /// Creation and last change of the task (the PWA and the app show them as "erstellt" / "zuletzt geändert").
     let createdAt: Date?
     let updatedAt: Date?
@@ -85,6 +87,7 @@ struct TaskDTO: Content {
         version = t.version
         columnID = t.columnID
         boardPosition = t.boardPosition
+        assigneeID = t.assigneeID
         createdAt = t.createdAt
         updatedAt = t.updatedAt
     }

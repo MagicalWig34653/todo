@@ -185,4 +185,5 @@ func configureCommandCenter(_ app: Application) {
     app.migrations.add(AddReviewUndo())
     app.migrations.add(AddReviewVariants())
     app.migrations.add(CreateTaskDecisions())
+    app.migrations.add(AddQuestionAndReviewAssignment())
 }

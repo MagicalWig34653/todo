@@ -38,6 +38,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: SyncController())
     try app.register(collection: ProjectStateController())
     try app.register(collection: CommandCenterController())
+    try app.register(collection: AssignmentController())
     try app.register(collection: ProjectSyncController())
     try app.register(collection: PushController())
     try app.register(collection: MailController())
