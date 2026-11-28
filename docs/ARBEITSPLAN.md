@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 28.11.2026 (05:30): Zuständigkeit Teil 1 (Karte `8B4BAC2E`)
+
+- Server, Verträge, MCP für Zuständigkeit an Karte, Frage, Review, „Für mich“ und gezielten Push (ADR 0043); rot `412b936`, grün `f312400`, Gegenlesen `ad9c69e`. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Nächster Schritt: Teil 2 Oberflächen (`docs/PLAN-ZUSTAENDIGKEIT-TEIL-2.md`, Karte `E9300901`), danach Kommentar-Zuweisung und Review mit Folge (Vertragsentwurf). Deploy (Lino).
+
 ## Checkpoint 28.11.2026 (03:20): Deploy-Ziele Phase 2b „Pull Request über GitHub-App“ (Karte `354ADE12`)
 
 - REST `pull-request` und MCP `open_server_changes_pr` (ADR 0042); rot `d77701d`, grün `cac5e86`, Gegenlesen rot `3422092`, grün `49ce8ee`, Anleitung und Verträge `348c748`, volle Suite grün auf `9d1332f`. Belege: `docs/STATUS.md` (oberster Nachtrag).
