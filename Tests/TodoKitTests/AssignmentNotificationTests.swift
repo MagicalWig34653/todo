@@ -189,6 +189,44 @@ final class AssignmentNotificationTests: XCTestCase {
         XCTAssertEqual(queued, 0)
     }
 
+    /// Cards stored directly, each with one newer `task.assigned` event by the owner (more than one page of events).
+    private func assignedCards(_ p: Push, count: Int, to assignee: UUID?, status: String? = nil) async throws {
+        let db = p.f.t.app.db
+        let project = try XCTUnwrap(UUID(uuidString: p.f.project))
+        for index in 0..<count {
+            let task = TodoTask(ownerID: p.f.owner.id, projectID: project, title: "Bulk \(index)", details: "")
+            task.assigneeID = assignee
+            if let status { task.status = status }
+            try await task.save(on: db)
+            try await appendActivity(taskID: try task.requireID(), actorType: .person, actorID: p.f.owner.id,
+                                     kind: "task.assigned", subjectID: nil, on: db)
+        }
+    }
+
+    func testNewerIrrelevantEventsDoNotCrowdOutAnAssignment() async throws {
+        let p = try await Push.make(); defer { Task { await p.f.t.shutdown() } }
+        try await p.prefs(p.f.editor, ["categories": ["assignments": false]])
+        let card = try await p.f.task()
+        try await assign(p, card, to: p.f.designer.id)
+        // Newer than the assignment above: nobody responsible, a person without the category, finished cards.
+        try await assignedCards(p, count: 70, to: nil)
+        try await assignedCards(p, count: 70, to: p.f.editor.id)
+        try await assignedCards(p, count: 70, to: p.f.designer.id, status: "done")
+        let queued = try await p.enqueue()
+        XCTAssertEqual(queued, 1)
+        _ = await p.worker.runIfDue()
+        XCTAssertEqual(try p.recipients(), ["Designer"])
+    }
+
+    func testMoreAssignmentsThanOnePageAreAllQueued() async throws {
+        let p = try await Push.make(); defer { Task { await p.f.t.shutdown() } }
+        try await assignedCards(p, count: 205, to: p.f.designer.id)
+        let queued = try await p.enqueue()
+        XCTAssertEqual(queued, 205)
+        let again = try await p.enqueue()
+        XCTAssertEqual(again, 0)
+    }
+
     /// An agent handing a card to the person of its own connection is not that person assigning themselves.
     func testAnAgentAssigningACardNotifiesThePerson() async throws {
         let p = try await Push.make(); defer { Task { await p.f.t.shutdown() } }
