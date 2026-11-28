@@ -276,6 +276,8 @@ test('a price for the unpriced model recalculates the costs; removing it restore
 	// A threshold changes the judgement text.
 	await view().getByLabel('Cache-Trefferquote gut ab (%)').fill('99');
 	await view().getByTestId('costs-save').click();
+	// Wait until this save is through: its answer resets the form and would otherwise undo the removal below.
+	await expect(view().getByTestId('costs-saved')).toContainText('Gespeichert');
 	await expect(view().locator('[data-metric="cacheHitRate"]')).not.toHaveAttribute('data-rating', 'good');
 
 	await row.getByRole('button', { name: `Eigenen Preis für ${CODEX} entfernen` }).click();

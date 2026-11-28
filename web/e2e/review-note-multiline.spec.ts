@@ -136,14 +136,12 @@ test('review note field: a refused note stays in the field and the reason stays 
 
 test('bulk review bar: one multi-line note for the selected reviews is saved', async () => {
 	const card = await reviewCard('Sammelnotiz');
-	// The overview lists only projects in the management view.
-	await page.goto(`/project/${projectID}`);
-	if (!(await page.getByTestId('project-tabs').isVisible())) {
-		await page.getByTestId('display-menu').click();
-		await page.getByTestId('mode-management').click();
-		await page.keyboard.press('Escape');
-	}
-	await expect(page.getByTestId('project-tabs')).toBeVisible();
+	// The overview lists only projects in the management view. Set through the API: switching in the menu right after the page
+	// load raced with that load in CI (the view stayed simple); the menu itself is covered by menus-and-modes.spec.ts.
+	const url = `/v1/me/project-prefs/${projectID}`;
+	const prefs = (await (await page.request.get(url)).json()) as { revision: number };
+	const switched = await page.request.patch(url, { data: { revision: prefs.revision, mode: 'management' } });
+	expect(switched.status(), await switched.text()).toBe(200);
 	await page.goto('/overview');
 	await page.getByTestId('cc-section-reviews').click();
 	const row = page.getByTestId('cc-reviews').getByTestId('review-row').filter({ hasText: 'Sammelnotiz' });
