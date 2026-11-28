@@ -99,7 +99,7 @@ struct RcloneDeployTransport: DeployTransport {
     }
 
     /// Writes the configuration of remote `t` and returns the extra global arguments.
-    private func configure(_ c: DeployConnection, rclone: String, dir: URL) async throws -> [String] {
+    private func configure(_ c: DeployConnection, rclone: String, dir: URL, followLinks: Bool = false) async throws -> [String] {
         guard let proto = DeployProtocol(rawValue: c.protocolName) else { throw DeployTransportError(code: "deploy_failed") }
         var lines = ["[t]", "type = \(proto == .sftp ? "sftp" : "ftp")", "host = \(c.host)", "port = \(c.port)", "user = \(c.username)"]
         var extra: [String] = []
@@ -111,7 +111,7 @@ struct RcloneDeployTransport: DeployTransport {
             FileManager.default.createFile(atPath: known.path, contents: Data(Self.knownHostsLine(host: c.host, port: c.port, key: key).utf8),
                                            attributes: [.posixPermissions: 0o600])
             lines += ["known_hosts_file = \(known.path)", "host_key_algorithms = \(Self.hostKeyAlgorithms(key.type))",
-                      "skip_links = true", "shell_type = none", "disable_hashcheck = true"]
+                      "skip_links = \(!followLinks)", "shell_type = none", "disable_hashcheck = true"]
             if let pem = c.privateKey {
                 lines.append(Self.keyPEMLine(pem))
                 if let pass = c.passphrase { lines.append("key_file_pass = \(try await obscure(pass, rclone: rclone, dir: dir))") }
@@ -126,7 +126,7 @@ struct RcloneDeployTransport: DeployTransport {
                 extra += ["--ca-cert", ca.path]
             }
         }
-        let config = dir.appendingPathComponent("rclone.conf")
+        let config = dir.appendingPathComponent(followLinks ? "rclone-follow.conf" : "rclone.conf")
         FileManager.default.createFile(atPath: config.path, contents: Data((lines.joined(separator: "\n") + "\n").utf8), attributes: [.posixPermissions: 0o600])
         return ["--config", config.path, "--cache-dir", dir.appendingPathComponent("cache").path, "--low-level-retries", "1", "--retries", "1",
                 "--contimeout", "15s", "--timeout", "60s", "--ask-password=false"] + extra
@@ -244,6 +244,16 @@ struct RcloneDeployTransport: DeployTransport {
             for i in 0..<parts.count { directories.insert(parts[0..<i].joined(separator: "/")) }
         }
         guard directories.count <= 5000 else { throw DeployTransportError(code: "deploy_failed") }
+        let links = try await ftpLinkNames(c, proto: proto, curl: curl, directories: directories, dir: dir)
+        return paths.filter { p in
+            let parts = p.split(separator: "/").map(String.init)
+            return !parts.indices.contains { links[parts[0..<$0].joined(separator: "/")]?.contains(parts[$0]) == true }
+        }
+    }
+
+    /// The symlink names of each directory (relative to the base path), from `curl` LIST runs.
+    private func ftpLinkNames(_ c: DeployConnection, proto: DeployProtocol, curl: String, directories: Set<String>, dir: URL) async throws
+        -> [String: Set<String>] {
         let conf = dir.appendingPathComponent("curl.conf")
         FileManager.default.createFile(atPath: conf.path, contents: Data("user = \"\(Self.curlConfigValue(c.username)):\(Self.curlConfigValue(c.password ?? ""))\"\n".utf8),
                                        attributes: [.posixPermissions: 0o600])
@@ -276,10 +286,7 @@ struct RcloneDeployTransport: DeployTransport {
                 links[d] = try Self.symlinkNames(inList: String(decoding: data, as: UTF8.self))
             }
         }
-        return paths.filter { p in
-            let parts = p.split(separator: "/").map(String.init)
-            return !parts.indices.contains { links[parts[0..<$0].joined(separator: "/")]?.contains(parts[$0]) == true }
-        }
+        return links
     }
 
     func read(_ c: DeployConnection, paths: [String]) async throws -> [String: Data] {
@@ -306,5 +313,124 @@ struct RcloneDeployTransport: DeployTransport {
             result[p] = data
         }
         return result
+    }
+
+    // MARK: Writing (ADR 0044)
+
+    static func join(_ remote: String, _ path: String) -> String {
+        path.isEmpty ? remote : (remote.hasSuffix(":") || remote.hasSuffix("/") ? remote + path : remote + "/" + path)
+    }
+
+    private static func writable(_ paths: [String]) throws {
+        guard paths.allSatisfy({ DeployPath.isSafeRelative($0, allowEmpty: false) }) else { throw DeployTransportError(code: "deploy_failed") }
+    }
+
+    private struct Name: Decodable { let Name: String; let IsDir: Bool }
+    private struct Level { var links = Set<String>(), files = Set<String>(), directories = Set<String>() }
+
+    private func names(_ rclone: String, _ arguments: [String], _ remote: String, dir: URL) async throws -> [Name] {
+        let out = try await Self.run(rclone, arguments + ["lsjson", "--no-mimetype", "--no-modtime", remote], dir: dir, timeout: timeout)
+        guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
+        guard let entries = try? JSONDecoder().decode([Name].self, from: out.stdout) else { throw DeployTransportError(code: "deploy_failed") }
+        return entries
+    }
+
+    /// Walks down the directories of every path. SFTP: what appears only when links are followed is a link. FTP: `curl` LIST.
+    func linkedPaths(_ c: DeployConnection, paths: [String]) async throws -> Set<String> {
+        try Self.writable(paths)
+        guard !paths.isEmpty, let proto = DeployProtocol(rawValue: c.protocolName) else { return [] }
+        let rclone = try rclone()
+        let dir = try makeRunDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let args = try await configure(c, rclone: rclone, dir: dir)
+        let follow = proto == .sftp ? try await configure(c, rclone: rclone, dir: dir, followLinks: true) : []
+        var levels: [String: Level] = [:]
+        func level(_ directory: String) async throws -> Level {
+            if let known = levels[directory] { return known }
+            guard levels.count < 2000 else { throw DeployTransportError(code: "deploy_failed") }
+            let target = Self.join(remote(c), directory)
+            var found = Level()
+            let plain = try await names(rclone, args, target, dir: dir)
+            for e in plain { if e.IsDir { found.directories.insert(e.Name) } else { found.files.insert(e.Name) } }
+            if proto == .sftp {
+                let seen = Set(plain.map(\.Name))
+                found.links = Set(try await names(rclone, follow, target, dir: dir).map(\.Name)).subtracting(seen)
+            } else {
+                guard let curl = Self.binary("DEPLOY_CURL_PATH", "curl") else { throw DeployTransportError(code: "deploy_transport_unavailable") }
+                found.links = try await ftpLinkNames(c, proto: proto, curl: curl, directories: [directory], dir: dir)[directory] ?? []
+            }
+            levels[directory] = found
+            return found
+        }
+        var refused = Set<String>()
+        for path in paths.sorted() {
+            let parts = path.split(separator: "/").map(String.init)
+            var directory = ""
+            for (index, part) in parts.enumerated() {
+                let here = try await level(directory)
+                if here.links.contains(part) { refused.insert(path); break }
+                if index == parts.count - 1 { if here.directories.contains(part) { refused.insert(path) }; break }
+                if here.files.contains(part) { refused.insert(path); break }
+                if !here.directories.contains(part) { break }   // does not exist yet: nothing below can be a link
+                directory = directory.isEmpty ? part : directory + "/" + part
+            }
+        }
+        return refused
+    }
+
+    /// All files go up under temporary names in one run, then each is renamed into place, so nobody sees half a file.
+    func upload(_ c: DeployConnection, files: [DeployUploadFile]) async throws {
+        try Self.writable(files.map(\.path))
+        guard !files.isEmpty else { return }
+        let rclone = try rclone()
+        let dir = try makeRunDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let args = try await configure(c, rclone: rclone, dir: dir)
+        let staging = dir.appendingPathComponent("up")
+        let tag = String(UUID().uuidString.prefix(8)).lowercased()
+        var pairs: [(temporary: String, final: String)] = []
+        for (index, file) in files.enumerated() {
+            let parts = file.path.split(separator: "/").map(String.init)
+            let temporary = (parts.dropLast() + [".todolino-\(tag)-\(index).tmp"]).joined(separator: "/")
+            let url = staging.appendingPathComponent(temporary)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard FileManager.default.createFile(atPath: url.path, contents: file.data) else { throw DeployTransportError(code: "deploy_failed") }
+            pairs.append((temporary, file.path))
+        }
+        let list = dir.appendingPathComponent("upload.txt")
+        FileManager.default.createFile(atPath: list.path, contents: Data((pairs.map(\.temporary).joined(separator: "\n") + "\n").utf8),
+                                       attributes: [.posixPermissions: 0o600])
+        var renamed = 0
+        do {
+            let copy = try await Self.run(rclone, args + ["copy", "--files-from-raw", list.path, "--no-traverse", staging.path, remote(c)],
+                                          dir: dir, timeout: timeout)
+            guard copy.status == 0 else { throw DeployTransportError(code: Self.classify(copy.stderr)) }
+            for pair in pairs {
+                // --ignore-times: never take "same size, same time" as a reason to drop the new file.
+                let move = try await Self.run(rclone, args + ["moveto", "--ignore-times", Self.join(remote(c), pair.temporary),
+                                                              Self.join(remote(c), pair.final)], dir: dir, timeout: timeout)
+                guard move.status == 0 else { throw DeployTransportError(code: Self.classify(move.stderr)) }
+                renamed += 1
+            }
+        } catch {
+            // Best effort: no temporary files stay behind.
+            for pair in pairs.dropFirst(renamed) {
+                _ = try? await Self.run(rclone, args + ["deletefile", Self.join(remote(c), pair.temporary)], dir: dir, timeout: 30)
+            }
+            throw error
+        }
+    }
+
+    func delete(_ c: DeployConnection, paths: [String]) async throws {
+        try Self.writable(paths)
+        guard !paths.isEmpty else { return }
+        let rclone = try rclone()
+        let dir = try makeRunDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let args = try await configure(c, rclone: rclone, dir: dir)
+        for path in paths {
+            let out = try await Self.run(rclone, args + ["deletefile", Self.join(remote(c), path)], dir: dir, timeout: timeout)
+            guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
+        }
     }
 }

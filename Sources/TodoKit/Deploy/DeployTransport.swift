@@ -2,7 +2,7 @@ import Crypto
 import Foundation
 import Vapor
 
-// ADR 0039: the transport behind deploy targets. Phase 1a only lists and reads; nothing is ever written to a server.
+// ADR 0039, 0044: the transport behind deploy targets. Only an approved run (phase 3) calls `upload` and `delete`.
 
 /// A pinned or offered SSH host key: key type (`ssh-ed25519`, `ecdsa-sha2-nistp256`, `ssh-rsa`) and the base64 key blob.
 struct DeployHostKey: Sendable, Equatable {
@@ -35,6 +35,9 @@ struct DeployRemoteFile: Sendable, Equatable {
     let size: Int
 }
 
+/// One file a run writes: path relative to the base path of the target and its exact bytes.
+struct DeployUploadFile: Sendable, Equatable { let path: String; let data: Data }
+
 /// A failed transport run as a fixed machine code (`deploy_auth_failed`, ...); never host, path or tool output.
 struct DeployTransportError: Error, Sendable, Equatable { let code: String }
 
@@ -45,6 +48,12 @@ protocol DeployTransport: Sendable {
     func list(_ connection: DeployConnection) async throws -> [DeployRemoteFile]
     /// The content of the given files (relative to the base path).
     func read(_ connection: DeployConnection, paths: [String]) async throws -> [String: Data]
+    /// Those of `paths` that must not be written: a symlink on the way (or as the file), or a file where a directory is needed.
+    func linkedPaths(_ connection: DeployConnection, paths: [String]) async throws -> Set<String>
+    /// Writes the files, each under a temporary name first and then renamed, creating directories as needed.
+    func upload(_ connection: DeployConnection, files: [DeployUploadFile]) async throws
+    /// Removes exactly these files.
+    func delete(_ connection: DeployConnection, paths: [String]) async throws
 }
 
 extension Application {

@@ -380,7 +380,12 @@ extension DeployTargetTests {
     func testAgentsPlanAndRequestOverMCPAndHaveNoWayToUpload() async throws {
         try await fixture { f in
             let t = try await target(f)
-            let token = try await f.mcpToken()
+            // Without projects:write the planning tools are not offered.
+            let reading = try await f.o.rpc("tools/list", [:], access: try await f.mcpToken())
+            let offered = ((reading.body?["result"] as? Obj)?["tools"] as? [Obj] ?? []).compactMap { $0["name"] as? String }
+            XCTAssertTrue(offered.contains("get_deploy"))
+            XCTAssertFalse(offered.contains("plan_deploy") || offered.contains("request_deploy"))
+            let token = try await f.o.tokens(scope: CommandCenterTests.scopes + " projects:write").access
             let listed = try await f.o.rpc("tools/list", [:], access: token)
             let names = ((listed.body?["result"] as? Obj)?["tools"] as? [Obj] ?? []).compactMap { $0["name"] as? String }
             for tool in ["plan_deploy", "request_deploy", "get_deploy", "plan_deploy_rollback"] { XCTAssertTrue(names.contains(tool), tool) }

@@ -65,6 +65,35 @@ extension MCPController {
                 "branch": Schema.string("Own branch name server/<a-z, 0-9, -> (default server/<ziel>-JJJJ-MM-TT).", maxLength: GitHubBranch.maxName),
                 "repository": Schema.string("owner/repo, only needed when several are allowed for the project.", maxLength: 140),
              ], required: ["targetID", "files", "baseCommit"]),
+        Tool(name: "plan_deploy", scope: "projects:write",
+             description: "Plan an upload of a repo state to a TEST deploy target (needs edit rights on the project; the server is only read). Send the manifest of the repo state (path, size, sha256 of every file); for the files to upload also content (base64). First call without content: answer {ok: false, code: deploy_plan_content_missing, missing: [repo paths]}; call again with content for those. Answer {ok, code?, missing?, plan?: {id, state: planned, files: [{path, serverPath, action, reason, oldSize?, newSize?}], blockers: [{path, serverPath, reason, overridable}], blocked, overridable, summary: {upload, delete, unchanged, serverOnly, blocked, skipped}, findings, expiresAt}}. A plan writes nothing. It is locked (blockers) when the server holds changes Todolino did not make: pull them first (pull_server_changes), merge, plan again. Only a person can override a lock. Excluded files and files named like secrets are never uploaded; nothing is deleted. At most 500 files, 8 MB per file, 16 MB per plan (MCP request body limit applies); production targets are refused (deploy_stage_not_supported). A plan expires after 24 hours.",
+             properties: [
+                "targetID": Schema.uuid("Deploy target id from list_deploy_targets."),
+                "files": .object(["type": .string("array"), "maxItems": .number(Double(DeployLimits.maxManifest)),
+                                  "description": .string("Manifest of the repo state to upload, every file as {path, size, sha256, content?}. Paths relative, '/'-separated, without '..'."),
+                                  "items": .object(["type": .string("object"), "additionalProperties": .bool(false), "required": .strings(["path", "size", "sha256"]),
+                                                    "properties": .object([
+                                                        "path": Schema.string("Repo-relative path.", maxLength: DeployLimits.maxRepoPath),
+                                                        "size": Schema.integer("Size in bytes.", min: 0),
+                                                        "sha256": Schema.string("SHA-256 of the file content, 64 hex characters.", maxLength: 64),
+                                                        "content": Schema.string("Base64 of the file; only for files the plan uploads.", maxLength: DeployUploadLimits.maxFile / 3 * 4 + 4),
+                                                    ])])]),
+                "ref": Schema.string("Which state this is, for example the commit id.", maxLength: DeployUploadLimits.maxRef),
+                "note": Schema.string("Short note for the person who decides.", maxLength: DeployUploadLimits.maxNote),
+                "taskIDs": .object(["type": .string("array"), "maxItems": .number(Double(DeployUploadLimits.maxTaskIDs)),
+                                    "description": .string("Cards of the target's project that this upload belongs to."),
+                                    "items": .object(["type": .string("string"), "maxLength": .number(36)])]),
+             ], required: ["targetID", "files"]),
+        Tool(name: "request_deploy", scope: "projects:write",
+             description: "Ask a person to approve a plan (needs edit rights). The request appears in the PWA at the deploy target; only a signed-in person with manage rights approves and starts it, there is no tool that uploads. Answer: the plan with state requested. Then ask_question or request_review on the card if the person should hear about it, and read the outcome with get_deploy.",
+             properties: ["planID": Schema.uuid("Plan id from plan_deploy."), "note": Schema.string("Short note for the person who decides.", maxLength: DeployUploadLimits.maxNote)],
+             required: ["planID"]),
+        Tool(name: "get_deploy", scope: "projects:read",
+             description: "One plan or run with its state (planned | requested | rejected | expired | running | succeeded | failed), files, blockers, written files, code and canRollback (pass planID), or the latest 50 of a target (pass targetID): {items: [...]}. Never host, user, path of the base directory or credentials.",
+             properties: ["planID": Schema.uuid("Plan id."), "targetID": Schema.uuid("Deploy target id, to list its plans.")]),
+        Tool(name: "plan_deploy_rollback", scope: "projects:write",
+             description: "Plan the way back of the latest run of a target (needs edit rights): files the run overwrote come back from the backup, files it created are removed. Like every plan it writes nothing; request it with request_deploy, a person approves. Answer {ok, code?, plan?}. Errors: deploy_rollback_not_latest, deploy_backup_missing (backups of the last 5 runs are kept), deploy_plan_stale (the target was changed), deploy_target_busy.",
+             properties: ["planID": Schema.uuid("The run to undo (canRollback true).")], required: ["planID"]),
     ]
 
     func callDeploy(_ name: String, _ a: JSONValue, user: User, grant: OAuthGrant, db: any Database, app: Application) async throws -> JSONValue {
@@ -95,9 +124,40 @@ extension MCPController {
         case "open_server_changes_pr":
             let t = try await deployTarget(a, service: service, user: user, grant: grant, db: db)
             return try .encoded(try await service.openPullRequest(try t.requireID(), request: try Self.deployRequest(DeployPublishRequest.self, a)))
+        case "plan_deploy":
+            let t = try await deployTarget(a, service: service, user: user, grant: grant, db: db)
+            let request = try Self.deployRequest(DeployPlanRequest.self, a)
+            return try .encoded(try await uploads(user: user, grant: grant, app: app).createPlan(targetID: try t.requireID(), request))
+        case "request_deploy":
+            let planID = try await deployPlan(a["planID"], role: .edit, user: user, grant: grant, db: db)
+            return try .encoded(try await uploads(user: user, grant: grant, app: app).request(planID: planID, note: a["note"].string))
+        case "get_deploy":
+            let service = try await uploads(user: user, grant: grant, app: app)
+            if !a["planID"].isNull {
+                return try .encoded(try await service.get(try await deployPlan(a["planID"], role: .read, user: user, grant: grant, db: db)))
+            }
+            let t = try await deployTarget(a, service: DeployService(app: app, user: user), user: user, grant: grant, db: db, role: .read)
+            return try .encoded(DeployPlansResponse(items: try await service.list(targetID: try t.requireID())))
+        case "plan_deploy_rollback":
+            let planID = try await deployPlan(a["planID"], role: .edit, user: user, grant: grant, db: db)
+            return try .encoded(try await uploads(user: user, grant: grant, app: app).rollback(planID: planID))
         default:
             throw Abort(.badRequest, reason: "invalid_arguments")
         }
+    }
+
+    /// The upload service with the name of this connection, so the person sees who planned and asked.
+    private func uploads(user: User, grant: OAuthGrant, app: Application) async throws -> DeployUploadService {
+        let client = try await OAuthClient.find(grant.clientID, on: app.db)?.name
+        return DeployUploadService(app: app, user: user, label: ConnectionNames.display(grant, clientName: client))
+    }
+
+    /// A plan is only reachable through a target whose project is in the grant.
+    private func deployPlan(_ value: JSONValue, role: ProjectRole, user: User, grant: OAuthGrant, db: any Database) async throws -> UUID {
+        let id = try uuid(value)
+        guard let plan = try await DeployPlan.find(id, on: db), let t = try await DeployTarget.find(plan.targetID, on: db) else { throw Abort(.notFound) }
+        _ = try await project(t.projectID, user: user, grant: grant, db: db, role: role)
+        return id
     }
 
     /// The arguments without `targetID` as the request body of the REST route.
@@ -110,9 +170,10 @@ extension MCPController {
     }
 
     /// The target's project must be in the grant and the person needs edit rights there; otherwise 404 like everywhere.
-    private func deployTarget(_ a: JSONValue, service: DeployService, user: User, grant: OAuthGrant, db: any Database) async throws -> DeployTarget {
+    private func deployTarget(_ a: JSONValue, service: DeployService, user: User, grant: OAuthGrant, db: any Database,
+                              role: ProjectRole = .edit) async throws -> DeployTarget {
         guard let t = try await DeployTarget.find(try uuid(a["targetID"]), on: db) else { throw Abort(.notFound) }
-        _ = try await project(t.projectID, user: user, grant: grant, db: db, role: .edit)
+        _ = try await project(t.projectID, user: user, grant: grant, db: db, role: role)
         return t
     }
 }

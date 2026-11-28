@@ -48,6 +48,7 @@ public func routes(_ app: Application) throws {
     try app.register(collection: BrainMandateController())
     try app.register(collection: WebhookController())
     try app.register(collection: DeployController())
+    try app.register(collection: DeployUploadController())
     try app.register(collection: GitHubConnectController())
     try app.register(collection: AccountLockController())
     try app.register(collection: ProjectTransferController())
