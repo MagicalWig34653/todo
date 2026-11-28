@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
-  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a bis 2b (Zielserver nur lesen)
-  version: 1.3.0
+  title: Todolino Deploy-Ziele (SFTP, FTP, FTPS) – Phase 1a bis 3 (Schreiben nur auf Test-Ziele, nur nach Freigabe)
+  version: 1.4.0
   description: |
     Karte 354ADE12, ADR 0039, Konzept im Orchestrator docs/konzept-deploy-sftp.md (Abschnitt 8 vor 1–7).
 
@@ -103,9 +103,94 @@ info:
     Fehlercodes der Verbindung: deploy_host_key_unconfirmed, deploy_host_key_mismatch, deploy_tls_untrusted, deploy_auth_failed,
     deploy_base_path_missing, deploy_unreachable, deploy_target_blocked, deploy_transport_unavailable (rclone fehlt),
     deploy_secret_unreadable (Schlüssel rotiert), deploy_failed. Antworten und Logs enthalten nie Zugangsdaten oder Ausgaben von rclone.
+
+    Upload auf Test-Ziele (1.4.0, Phase 3, ADR 0044): Plan -> Antrag -> Freigabe durch eine Person (manage) -> Lauf mit Sicherung;
+    der Rückweg ist ein eigener Plan. Nur stage test (sonst 400 deploy_stage_not_supported). Planen, beantragen, ablehnen und den
+    Rückweg planen: edit; lesen: read; freigeben: manage. REST nur Personen (OAuth-Zugriffstoken = 401). MCP plan_deploy,
+    request_deploy, get_deploy, plan_deploy_rollback; es gibt kein MCP-Werkzeug zum Freigeben. Planen schreibt nichts auf den Server.
+    Fehlende Inhalte nennt ok=false deploy_plan_content_missing (missing = Repo-Pfade). Ausgeschlossenes, Namen und Inhalte wie
+    Geheimnisse, .git/.github und *.todolino.tmp stehen nur in findings. blockers sperren: unknown_server_state, server_changed,
+    server_deleted sind mit overrideDrift=true übergehbar, symlink und unverified nicht. Uploads löschen nie. Der Lauf liest den
+    Server erneut (jede Abweichung: deploy_plan_stale), sichert vor dem Schreiben und liest danach nach. Grenzen: 500 Dateien, 8 MB je
+    Datei, 16 MB Inhalt, 64 MB Sicherung, 10 wartende Pläne je Ziel, 2 Planungen gleichzeitig (409 deploy_target_busy), 24 Stunden
+    Gültigkeit, Sicherungen der letzten 5 Läufe. Pfade, in denen Unicode ein "/" mit dem Nachbarzeichen verbindet, sind ungültig
+    (deploy_manifest_invalid, auch bei Abgleich, Holen und Pull Request). FTP-Links werden mit LIST -a geprüft.
 servers:
   - url: http://localhost:28080
 paths:
+  /v1/deploy-targets/{targetID}/plans:
+    parameters: [{name: targetID, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      summary: Pläne und Läufe des Ziels, neueste zuerst, höchstens 50 (Person, read)
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/DeployPlan'}}}}}}}
+        '404': {description: Ziel unbekannt oder nicht sichtbar}
+    post:
+      summary: Upload planen (Person, edit; Body bis 32 MB). Liest den Server nur.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  maxItems: 50000
+                  description: Manifest des Repo-Stands; content nur für Dateien, die hochgeladen werden
+                  items: {type: object, required: [path, size, sha256], properties: {path: {type: string, maxLength: 1024}, size: {type: integer, minimum: 0}, sha256: {type: string}, content: {type: string, format: byte}}}
+                ref: {type: string, maxLength: 200}
+                note: {type: string, maxLength: 2000}
+                taskIDs: {type: array, maxItems: 50, items: {type: string, format: uuid}, description: Karten des Projekts}
+      responses:
+        '200': {description: 'Ergebnis; ok=false mit code (deploy_plan_content_missing, deploy_host_key_unconfirmed oder Fehlercode der Verbindung)', content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlanResult'}}}}
+        '400': {description: 'deploy_manifest_invalid, deploy_plan_invalid, deploy_plan_content_invalid, deploy_plan_too_large, deploy_task_invalid, deploy_stage_not_supported'}
+        '401': {description: Keine Personen-Sitzung}
+        '403': {description: Nur lesen am Projekt}
+        '404': {description: Ziel unbekannt oder nicht sichtbar}
+        '409': {description: 'deploy_plan_limit, deploy_target_busy'}
+  /v1/deploy-plans/{planID}:
+    parameters: [{name: planID, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      summary: Ein Plan oder Lauf (Person, read)
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlan'}}}}
+        '404': {description: Unbekannt oder nicht sichtbar}
+  /v1/deploy-plans/{planID}/request:
+    parameters: [{name: planID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Freigabe beantragen (Person, edit)
+      requestBody: {required: false, content: {application/json: {schema: {type: object, properties: {note: {type: string, maxLength: 2000}}}}}}
+      responses:
+        '200': {description: Beantragt (auch wenn schon beantragt), content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlan'}}}}
+        '409': {description: deploy_plan_decided}
+        '410': {description: deploy_plan_expired}
+  /v1/deploy-plans/{planID}/approve:
+    parameters: [{name: planID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Freigeben und ausführen (Person, manage). Die Antwort kommt nach dem Lauf.
+      requestBody: {required: false, content: {application/json: {schema: {type: object, properties: {overrideDrift: {type: boolean, default: false, description: übergehbare Sperren bewusst überschreiben}}}}}}
+      responses:
+        '200': {description: 'Lauf beendet; state succeeded oder failed mit code (deploy_plan_stale, deploy_symlink_in_path, deploy_verify_failed, deploy_content_unreadable, deploy_interrupted, deploy_failed oder Fehlercode der Verbindung)', content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlan'}}}}
+        '403': {description: Kein manage}
+        '409': {description: 'deploy_plan_not_requested, deploy_plan_decided, deploy_plan_blocked, deploy_plan_stale, deploy_target_busy'}
+        '410': {description: deploy_plan_expired}
+  /v1/deploy-plans/{planID}/reject:
+    parameters: [{name: planID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Ablehnen (Person, edit)
+      responses:
+        '200': {description: Abgelehnt, content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlan'}}}}
+        '409': {description: deploy_plan_decided}
+  /v1/deploy-plans/{planID}/rollback:
+    parameters: [{name: planID, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      summary: Rückweg des letzten schreibenden Laufs planen (Person, edit); schreibt nichts
+      responses:
+        '200': {description: 'Ergebnis; ok=false mit Fehlercode der Verbindung', content: {application/json: {schema: {$ref: '#/components/schemas/DeployPlanResult'}}}}
+        '400': {description: deploy_stage_not_supported}
+        '409': {description: 'deploy_rollback_not_latest, deploy_backup_missing, deploy_plan_stale, deploy_plan_limit, deploy_target_busy'}
   /v1/projects/{id}/deploy-targets:
     parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
     get:
@@ -285,6 +370,45 @@ paths:
         '404': {description: Unbekannt}
 components:
   schemas:
+    DeployPlanResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+        code: {type: string}
+        missing: {type: array, items: {type: string}}
+        plan: {$ref: '#/components/schemas/DeployPlan'}
+    DeployPlan:
+      type: object
+      required: [id, targetID, targetName, kind, state, taskIDs, createdAt, expiresAt, overrideDrift, summary, files, blockers, findings, blocked, overridable, written, canRollback]
+      properties:
+        id: {type: string, format: uuid}
+        targetID: {type: string, format: uuid}
+        targetName: {type: string}
+        kind: {type: string, enum: [upload, rollback]}
+        state: {type: string, enum: [planned, requested, rejected, expired, running, succeeded, failed]}
+        ref: {type: string}
+        note: {type: string}
+        sourcePlanID: {type: string, format: uuid, description: beim Rückweg der Lauf, den er zurücknimmt}
+        taskIDs: {type: array, items: {type: string, format: uuid}}
+        createdAt: {type: string, format: date-time}
+        createdBy: {type: string, description: Name der Person oder Verbindung}
+        requestedAt: {type: string, format: date-time}
+        requestedBy: {type: string}
+        decidedAt: {type: string, format: date-time}
+        decidedBy: {type: string}
+        finishedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        overrideDrift: {type: boolean}
+        summary: {type: object, properties: {upload: {type: integer}, delete: {type: integer}, unchanged: {type: integer}, serverOnly: {type: integer}, blocked: {type: integer}, skipped: {type: integer}}}
+        files: {type: array, maxItems: 500, items: {type: object, required: [path, serverPath, action, reason], properties: {path: {type: string}, serverPath: {type: string}, action: {type: string, enum: [upload, delete]}, reason: {type: string, enum: [new, changed, drift, restore, remove]}, oldSize: {type: integer}, newSize: {type: integer}}}}
+        blockers: {type: array, items: {type: object, required: [path, serverPath, reason, overridable], properties: {path: {type: string}, serverPath: {type: string}, reason: {type: string, enum: [unknown_server_state, server_changed, server_deleted, symlink, unverified]}, overridable: {type: boolean}}}}
+        findings: {type: array, items: {type: object, required: [path, serverPath, reason], properties: {path: {type: string}, serverPath: {type: string}, reason: {type: string, enum: [secret_name, blocked_path, secret_content, excluded]}}}}
+        blocked: {type: boolean}
+        overridable: {type: boolean, description: gesperrt, aber jede Sperre ist übergehbar}
+        written: {type: array, items: {type: string}, description: Serverpfade, die nach dem Lauf nachweislich so dastehen wie geplant}
+        code: {type: string}
+        canRollback: {type: boolean}
     GitHubUrl: {type: object, required: [url], properties: {url: {type: string}}}
     GitHubConnections: {type: object, required: [connections], properties: {connections: {type: array, items: {$ref: '#/components/schemas/GitHubConnection'}}}}
     GitHubConnection:

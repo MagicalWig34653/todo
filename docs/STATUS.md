@@ -1,5 +1,29 @@
 # Status
 
+## Nachtrag 28.11.2026 (Nachmittag): Deploy-Ziele Phase 3 „Upload Test“ (Karte `354ADE12`, ADR 0044) und Absturz beim Beenden (Karte `395200D3`); Erwartung f-5866c672; kein Deploy, kein echter Server
+
+- **Upload (nur Test-Ziele):** Plan → Antrag → Freigabe durch eine Person mit `manage` → Lauf mit verschlüsselter Sicherung und Nachprüfung; Rückweg als eigener Plan. Drift-Sperre gegen den letzten bekannten Stand. MCP `plan_deploy`, `request_deploy`, `get_deploy`, `plan_deploy_rollback` (kein Freigabe-Werkzeug). PWA: je Ziel „Uploads“ (Antrag, Dateien, Sperre mit ausdrücklichem Überschreiben, Ablehnen, Zurücknehmen). Vertrag `deploy.yaml` 1.4.0, `oauth-mcp.yaml` 1.20.0, Handbuch 1.59.0. Migrationen `CreateDeployPlans`, `CreateDeployBlobs` (nur neue Tabellen).
+- **Absturz beim Beenden (`395200D3`):** Offene Long-Polls und die HTTP-Verbindungen werden vor den Datenbanken beendet (`DrainRequestsOnShutdown`). Rot `58c4cf8` (zweimal mit der Meldung aus der Karte), grün `57b4f8b`; `scripts/shutdown-e2e.sh` alt 9 ok / 9 Fehler, neu 18/0, in CI.
+- **Lücken aus `354ADE12` (GitHub-App):** bestanden beide noch; `settings.sh --secret-file` (und Menü) legt Schlüssel und Client-Secret als Swarm-Secret an, `setup.sh` behält alle `GITHUB_APP_*`-Werte (`d1bc8f9`, `scripts/test-settings.sh` 258/0).
+- **Commits Upload:** rot `15a236c`, grün `45b3c33`, E2E und Transport `1a65a8c` (macOS zerlegte Umlaute in rclone-Argumenten: Dateilisten statt Argumente), PWA `90a5f62`.
+- **Sicherheits-Gegenlesen** (eigener Prüf-Agent, nur lesend, Diff `d1bc8f9..1a65a8c`): 1 hoch, 5 mittel, 7 niedrig; Fixes `753a987`.
+
+  | Befund | Stand |
+  | --- | --- |
+  | H1 hoch: „..“ in Unicode-Graphemen versteckt, Schreiben außerhalb des Zwischenordners (nur neuer, nie veröffentlichter Code) | behoben: Segmente nach Bytes, verschmolzene „/“ abgelehnt, zweite Prüfung beim Ablegen |
+  | M1 Frist ohne Nachprüfung, zwei Läufe möglich | behoben: Herzschlag, Prüfung unter Sperre vor dem Schreiben, bedingter Abschluss |
+  | M2 Inhalte nicht auf Geheimnisse geprüft | behoben: `secret_content`, wird nicht hochgeladen |
+  | M3 Rückweg konnte fremde Datei löschen | behoben: löscht nur nachweislich Angelegtes, sonst Sperre |
+  | M4 Speicher/DB unbegrenzt | behoben: Limit unter Sperre, 2 Planungen gleichzeitig, 20 alte Pläne |
+  | M5 versteckte FTP-Links | behoben: `LIST -a`, fremdes Format sperrt Schreiben. Betraf auch das Lesen aus Phase 2 auf `main` (am echten Server rot belegt) |
+  | niedrig: Ablauf ohne Sperre, Reste temporärer Dateien, verwaiste Inhalte, Unicode-Vergleich der Links | behoben |
+  | niedrig: gleicher Hash wird bekannter Stand; Fenster zwischen Prüfen und Schreiben; keine Sperre über zwei Ziele mit gleichem Pfad | bewusst offen, ADR 0044 „Entscheidung 4“ und „Restrisiko“ |
+
+- **Tests:** Swift-Suite SQLite 1226 Tests, 33 übersprungen, 0 Fehler (588 s); MariaDB 12.3 (eigener Container, Filter `Deploy|ShutdownDrain`, mit echten SFTP-/FTPS-Containern) 83 Tests, 0 Fehler; `scripts/deploy-upload-e2e.sh` 94/0 (echte SFTP-/FTPS-Container, REST und MCP), `scripts/deploy-e2e.sh` 108/0; PWA vitest 906/906, `npm run check` 0 Fehler, `scripts/deploy-pwa-e2e.sh` 4/4. Sicherheits-Fixes rot belegt (9 Tests mit 30 Fehlschlägen, FTPS-Servertest 5), PWA rot (vitest 4, Browser-E2E 1).
+- **Bilder** hell/dunkel, Desktop/Handy, angesehen: `docs/screenshots/deploy-ziele/uploads-*`.
+- **Grenzen:** Nur gegen eigene SFTP-/FTPS-Container, nie gegen einen echten Server. Produktion wird abgelehnt (Phase 4). Planen aus der PWA gibt es nicht (Agent oder REST). Kein „Review mit Folge“, kein Auto-Modus, kein Push beim Antrag. Restrisiken in ADR 0044.
+- **Nächster Schritt:** Probelauf mit einem echten Test-Server (Lino richtet Ziel ein, nach Deploy durch Lino); danach Antrag als Review mit Folge, dann Phase 4.
+
 ## Nachtrag 28.11.2026 (Mittag): GitHub-Anbindung für alle Nutzer – eine Betreiber-App, Installation pro Person (Karte `E51E8B8C`, ADR 0042 Nachtrag; kein Deploy, keine echte App angelegt)
 
 - **Was:** Der Betreiber legt einmal die App „Any account“ an (App-ID, Client-ID/-Secret, privater Schlüssel als Docker-Secret). Jede Person verbindet in der PWA (Einstellungen › GitHub) ihre eigene Installation und ordnet je Projekt ein Repository zu (Deploy-Ziele). Rückweg `/github/setup` und `/github/callback` mit einmaligem `state` (Hash, 10 min, an die Person gebunden, Einmalverbrauch) und Nutzer-OAuth der App: die Installations-ID aus der Adresse gilt nur, wenn GitHub sie für genau diese Person nennt; Nutzer-Token werden nicht gespeichert.

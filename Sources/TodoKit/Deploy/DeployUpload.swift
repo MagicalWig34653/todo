@@ -3,7 +3,7 @@ import Fluent
 import Foundation
 import Vapor
 
-// ADR 0044, contracts/deploy.yaml 1.3.0: upload to a test target. Plan -> request -> approval by a person -> run with backup;
+// ADR 0044, contracts/deploy.yaml 1.4.0: upload to a test target. Plan -> request -> approval by a person -> run with backup;
 // the way back is a plan of its own. Agents plan and ask; only a person session with the manage role starts a run.
 
 // MARK: - DTOs (no field ever carries host, user, path of the base directory or a credential)

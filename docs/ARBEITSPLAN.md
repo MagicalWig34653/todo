@@ -1,5 +1,10 @@
 # Arbeitsplan
 
+## Checkpoint 28.11.2026 (Nachmittag): Deploy Phase 3 „Upload Test“ (Karte `354ADE12`) und `395200D3`
+
+- Upload auf Test-Ziele mit Antrag, Drift-Sperre, Sicherung, Rückweg (Server, MCP, PWA), Gegenlesen behoben (`753a987`); Absturz beim Beenden behoben (`57b4f8b`); GitHub-Secrets per `settings.sh` (`d1bc8f9`). Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Nächster Schritt: Deploy und Probelauf mit echtem Test-Server (Lino). Danach „Review mit Folge“ für den Antrag, Planen aus der PWA, Phase 4 Produktion.
+
 ## Checkpoint 28.11.2026 (Mittag): GitHub-Anbindung für alle Nutzer (Karte `E51E8B8C`)
 
 - Betreiber-App „Any account“ plus Installation pro Person, Zuordnung Projekt→Repo in der PWA, Rechteprüfung bei jeder Nutzung, Übergang für die alte Env-Konfiguration; Anleitung in Betreiber/Nutzer. Rot `9ed0d4d`/`af29ccc`/`bd5ed01`, grün `6278f6e`/`33ecd57`/`31395ef`; Gegenlesen rot `a5b4e93`, grün `9e1e792`. Belege: `docs/STATUS.md` (oberster Nachtrag).

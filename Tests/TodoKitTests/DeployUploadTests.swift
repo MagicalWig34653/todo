@@ -4,7 +4,7 @@ import SQLKit
 import XCTVapor
 @testable import TodoKit
 
-/// Deploy targets, phase 3 "upload to test" (card 354ADE12, ADR 0044, contracts/deploy.yaml 1.3.0): a plan, a request, the
+/// Deploy targets, phase 3 "upload to test" (card 354ADE12, ADR 0044, contracts/deploy.yaml 1.4.0): a plan, a request, the
 /// approval by a person, the drift lock, the backup and the way back. The transport is the recording double; the real SFTP and
 /// FTPS servers are exercised in `scripts/deploy-upload-e2e.sh`.
 extension DeployTargetTests {

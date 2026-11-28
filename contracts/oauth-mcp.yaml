@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino OAuth und MCP
-  version: 1.19.0
+  version: 1.20.0
   description: >-
     OAuth-Consent als JSON-API. Keine Browser-Consent-Seite vorhanden.
     MCP Streamable HTTP mit Initialize-Profil bis 2025-11-25; keine vollständige
@@ -61,6 +61,9 @@ info:
     set_assignee (tasks:write; Bearbeiten-Rechte) und list_for_me (tasks:read); ask_question und request_review nehmen assigneeID.
     Von Personen sehen Verbindungen dabei nur ID, Anzeigename, zuweisbare Arten und isMe, nie Anmeldenamen, E-Mail oder Rolle. Ziel ist
     immer ein Projekt der Verbindung (sonst not_found). Keine neuen Scopes.
+    1.20.0 (Karte 354ADE12, ADR 0044, additiv, Handbuch 1.59.0, contracts/deploy.yaml 1.4.0): neue Werkzeuge plan_deploy, request_deploy,
+    plan_deploy_rollback (projects:write, Bearbeiten-Rechte) und get_deploy (projects:read, Lesen) für Test-Ziele. Freigeben und
+    Hochladen kann nur eine Person in der PWA; dafür gibt es kein Werkzeug. Keine neuen Scopes.
 servers:
   - url: http://localhost:28080
 paths:
@@ -350,6 +353,10 @@ x-mcp-tools:
   compare_deploy_target: {scope: 'projects:read', required: [targetID, files], notes: 'Siehe contracts/deploy.yaml. files = Repo-Manifest [{path, size, sha256}]; Ergebnis DeployCompareResult (same, new, changed, serverOnly, unverified). Nur lesen.'}
   pull_server_changes: {scope: 'projects:read', required: [targetID, files], notes: 'Siehe contracts/deploy.yaml. files = Repo-Manifest [{path, size, sha256, eol?}], optional paths, maxBytes (Vorgabe 262144), eol. Ergebnis DeployPullResult; Geheimnisse und Ausschlüsse nur als findings. Branch und Commit legt der Agent selbst an. Nur lesen.'}
   open_server_changes_pr: {scope: 'projects:write', required: [targetID, files, baseCommit], notes: 'Siehe contracts/deploy.yaml. Argumente und Antwort wie POST /v1/deploy-targets/{targetID}/pull-request (DeployPublishResult). Nur neue Branches server/*, nie main; Schlüssel und Token der GitHub-App nie in der Antwort.'}
+  plan_deploy: {scope: 'projects:write', required: [targetID, files], notes: 'Siehe contracts/deploy.yaml. Argumente und Antwort wie POST /v1/deploy-targets/{targetID}/plans (DeployPlanResult). Nur Test-Ziele; schreibt nichts auf den Server.'}
+  request_deploy: {scope: 'projects:write', required: [planID], notes: 'Siehe contracts/deploy.yaml. Optional note. Ergebnis DeployPlan mit state requested; freigeben kann nur eine Person.'}
+  get_deploy: {scope: 'projects:read', required: [], notes: 'Siehe contracts/deploy.yaml. planID (ein DeployPlan) oder targetID ({items}).'}
+  plan_deploy_rollback: {scope: 'projects:write', required: [planID], notes: 'Siehe contracts/deploy.yaml. Plant den Rückweg des letzten Laufs; schreibt nichts.'}
   report_usage: {scope: 'tasks:write', required: [rows], notes: 'Siehe contracts/usage.yaml. Argument rows (1 bis 500 UsageRow); idempotent je Tag, Sitzung und Modell; Ergebnis UsageReportResult. REST POST /v1/usage.'}
   get_task_live: {scope: 'tasks:read', required: [taskID], notes: 'Siehe docs/MCP-PARITAET.md, Live-Ansicht. REST GET /v1/tasks/{id}/live.'}
   get_task_pipeline: {scope: 'tasks:read', required: [taskID], notes: 'Siehe contracts/pipeline.yaml. REST GET /v1/tasks/{id}/pipeline.'}

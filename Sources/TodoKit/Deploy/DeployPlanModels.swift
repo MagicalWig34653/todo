@@ -4,7 +4,7 @@ import Foundation
 import SQLKit
 import Vapor
 
-// ADR 0044, contracts/deploy.yaml 1.3.0: upload to a test target (phase 3). Tables, limits and the sealed file contents.
+// ADR 0044, contracts/deploy.yaml 1.4.0: upload to a test target (phase 3). Tables, limits and the sealed file contents.
 
 enum DeployUploadLimits {
     /// Files one plan may write or delete.
