@@ -24,11 +24,11 @@ struct DeployPlanOutcome {
 }
 
 enum DeployPlanner {
+    /// Name ending of a file while it is being uploaded.
+    static let temporarySuffix = ".todolino.tmp"
+
     /// Leftovers of an interrupted upload; never part of a repo state and never shown as server files.
-    static func isTemporary(_ path: String) -> Bool {
-        let name = path.split(separator: "/").last.map(String.init) ?? path
-        return name.hasPrefix(".todolino-") && name.hasSuffix(".tmp")
-    }
+    static func isTemporary(_ path: String) -> Bool { path.hasSuffix(temporarySuffix) }
 
     /// Repo files that may go to the server (server path -> repo file); the rest is named as finding.
     static func wanted(repo: [String: DeployManifestEntry], rules: DeployRules)

@@ -6,7 +6,7 @@ import XCTVapor
 
 /// Deploy targets, phase 3 "upload to test" (card 354ADE12, ADR 0044, contracts/deploy.yaml 1.3.0): a plan, a request, the
 /// approval by a person, the drift lock, the backup and the way back. The transport is the recording double; the real SFTP and
-/// FTPS servers are exercised in `DeployUploadServerTests` and `scripts/deploy-upload-e2e.sh`.
+/// FTPS servers are exercised in `scripts/deploy-upload-e2e.sh`.
 extension DeployTargetTests {
     static func upload(_ path: String, _ text: String) -> Obj {
         var e = entry(path, text); e["content"] = Data(text.utf8).base64EncodedString(); return e
@@ -289,7 +289,7 @@ extension DeployTargetTests {
             let t = try await target(f, ["rules": ["excludes": ["*.log"]]])
             let made = try await plan(f, t, [Self.upload("a.txt", "a\n"), Self.upload("debug.log", "x\n"), Self.upload(".env", "PASSWORD=1\n"),
                                              Self.upload(".github/workflows/x.yml", "on: push\n"), Self.upload("keys/id_rsa", "k\n"),
-                                             Self.upload(".todolino-abc-1.tmp", "t\n")])
+                                             Self.upload("a.txt.1a2b3c4d.todolino.tmp", "t\n")])
             XCTAssertEqual(Array(reasons(made).keys), ["a.txt"], "\(made)")
 
             _ = try await call(f, .POST, "/v1/deploy-plans/\(id(made))/request", [:])

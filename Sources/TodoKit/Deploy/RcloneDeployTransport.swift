@@ -21,17 +21,32 @@ struct RcloneDeployTransport: DeployTransport {
     struct Output { let status: Int32; let stdout: Data; let stderr: String }
 
     /// Runs a binary with fixed arguments, stdin from `input`, output into files of `dir`; kills it after `timeout`.
-    static func run(_ executable: String, _ arguments: [String], input: Data? = nil, dir: URL, timeout: TimeInterval) async throws -> Output {
+    static func run(_ executable: String, _ arguments: [String], input: Data? = nil, dir: URL, timeout: TimeInterval,
+                    remoteDirectory: String? = nil) async throws -> Output {
         let id = UUID().uuidString
         let outURL = dir.appendingPathComponent("out-\(id)"), errURL = dir.appendingPathComponent("err-\(id)")
         FileManager.default.createFile(atPath: outURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
         FileManager.default.createFile(atPath: errURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
         defer { try? FileManager.default.removeItem(at: outURL); try? FileManager.default.removeItem(at: errURL) }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
         // A clean environment: no inherited RCLONE_* settings, no user configuration, no proxies.
-        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": dir.path, "LANG": "C", "LC_ALL": "C"]
+        var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": dir.path, "LANG": "C", "LC_ALL": "C"]
+        if let remoteDirectory {
+            // The directory is the `alias` remote `d:`. Foundation on macOS rewrites arguments and environment values to decomposed
+            // Unicode (another directory name), so it travels as the bytes of a file: the shell reads one line into the variable and
+            // never evaluates it.
+            guard !remoteDirectory.contains(where: \.isNewline) else { throw DeployTransportError(code: "deploy_failed") }
+            let file = dir.appendingPathComponent("remote-\(id)")
+            FileManager.default.createFile(atPath: file.path, contents: Data((remoteDirectory + "\n").utf8), attributes: [.posixPermissions: 0o600])
+            environment["RCLONE_CONFIG_D_TYPE"] = "alias"
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", "IFS= read -r RCLONE_CONFIG_D_REMOTE < \"$1\" || exit 90; export RCLONE_CONFIG_D_REMOTE; shift; exec \"$@\"",
+                                 "sh", file.path, executable] + arguments
+        } else {
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+        }
+        process.environment = environment
         process.currentDirectoryURL = dir
         let outHandle = try FileHandle(forWritingTo: outURL), errHandle = try FileHandle(forWritingTo: errURL)
         process.standardOutput = outHandle
@@ -132,7 +147,13 @@ struct RcloneDeployTransport: DeployTransport {
                 "--contimeout", "15s", "--timeout", "60s", "--ask-password=false"] + extra
     }
 
-    private func remote(_ c: DeployConnection) -> String { Self.remote(basePath: c.basePath) }
+    /// The remote argument of a directory below the base path. The directory goes through the environment as an `alias` remote:
+    /// Foundation on macOS rewrites command line arguments to decomposed Unicode, which would name another directory.
+    static let directoryRemote = "d:"
+    static func directory(_ c: DeployConnection, _ path: String = "") -> String {
+        let base = remote(basePath: c.basePath)
+        return path.isEmpty ? base : (base.hasSuffix(":") || base.hasSuffix("/") ? base + path : base + "/" + path)
+    }
     static func remote(basePath: String) -> String {
         basePath.hasPrefix("/") ? "t:/" + DeployPath.trimmed(String(basePath.dropFirst())) : "t:" + DeployPath.trimmed(basePath)
     }
@@ -166,7 +187,8 @@ struct RcloneDeployTransport: DeployTransport {
         let dir = try makeRunDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let args = try await configure(c, rclone: rclone, dir: dir)
-        let out = try await Self.run(rclone, args + ["lsjson", "-R", "--files-only", "--no-mimetype", "--no-modtime", remote(c)], dir: dir, timeout: timeout)
+        let out = try await Self.run(rclone, args + ["lsjson", "-R", "--files-only", "--no-mimetype", "--no-modtime", Self.directoryRemote], dir: dir,
+                                     timeout: timeout, remoteDirectory: Self.directory(c))
         guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
         guard let entries = try? JSONDecoder().decode([Entry].self, from: out.stdout) else { throw DeployTransportError(code: "deploy_failed") }
         return entries.filter { !$0.IsDir && $0.Size >= 0 && DeployPath.isSafeRelative($0.Path, allowEmpty: false) }
@@ -302,7 +324,8 @@ struct RcloneDeployTransport: DeployTransport {
         FileManager.default.createFile(atPath: list.path, contents: Data((safe.joined(separator: "\n") + "\n").utf8), attributes: [.posixPermissions: 0o600])
         try FileManager.default.createDirectory(at: copy, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let out = try await Self.run(rclone, args + ["copy", "--files-from-raw", list.path,
-                                                     "--no-update-modtime", remote(c), copy.path], dir: dir, timeout: timeout)
+                                                     "--no-update-modtime", Self.directoryRemote, copy.path], dir: dir, timeout: timeout,
+                                     remoteDirectory: Self.directory(c))
         guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
         var result: [String: Data] = [:]
         for p in safe {
@@ -317,10 +340,6 @@ struct RcloneDeployTransport: DeployTransport {
 
     // MARK: Writing (ADR 0044)
 
-    static func join(_ remote: String, _ path: String) -> String {
-        path.isEmpty ? remote : (remote.hasSuffix(":") || remote.hasSuffix("/") ? remote + path : remote + "/" + path)
-    }
-
     private static func writable(_ paths: [String]) throws {
         guard paths.allSatisfy({ DeployPath.isSafeRelative($0, allowEmpty: false) }) else { throw DeployTransportError(code: "deploy_failed") }
     }
@@ -328,8 +347,9 @@ struct RcloneDeployTransport: DeployTransport {
     private struct Name: Decodable { let Name: String; let IsDir: Bool }
     private struct Level { var links = Set<String>(), files = Set<String>(), directories = Set<String>() }
 
-    private func names(_ rclone: String, _ arguments: [String], _ remote: String, dir: URL) async throws -> [Name] {
-        let out = try await Self.run(rclone, arguments + ["lsjson", "--no-mimetype", "--no-modtime", remote], dir: dir, timeout: timeout)
+    private func names(_ rclone: String, _ arguments: [String], _ directory: String, dir: URL) async throws -> [Name] {
+        let out = try await Self.run(rclone, arguments + ["lsjson", "--no-mimetype", "--no-modtime", Self.directoryRemote], dir: dir,
+                                     timeout: timeout, remoteDirectory: directory)
         guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
         guard let entries = try? JSONDecoder().decode([Name].self, from: out.stdout) else { throw DeployTransportError(code: "deploy_failed") }
         return entries
@@ -348,7 +368,7 @@ struct RcloneDeployTransport: DeployTransport {
         func level(_ directory: String) async throws -> Level {
             if let known = levels[directory] { return known }
             guard levels.count < 2000 else { throw DeployTransportError(code: "deploy_failed") }
-            let target = Self.join(remote(c), directory)
+            let target = Self.directory(c, directory)
             var found = Level()
             let plain = try await names(rclone, args, target, dir: dir)
             for e in plain { if e.IsDir { found.directories.insert(e.Name) } else { found.files.insert(e.Name) } }
@@ -378,7 +398,16 @@ struct RcloneDeployTransport: DeployTransport {
         return refused
     }
 
-    /// All files go up under temporary names in one run, then each is renamed into place, so nobody sees half a file.
+    /// A file list for rclone. File names go this way and never on the command line: Foundation on macOS rewrites arguments to
+    /// decomposed Unicode, which would create or remove a different name.
+    private static func fileList(_ paths: [String], dir: URL) -> URL {
+        let list = dir.appendingPathComponent("write.txt")
+        FileManager.default.createFile(atPath: list.path, contents: Data((paths.joined(separator: "\n") + "\n").utf8),
+                                       attributes: [.posixPermissions: 0o600])
+        return list
+    }
+
+    /// rclone uploads each file as `<name>.<random>.todolino.tmp` and renames it when complete, so nobody sees half a file.
     func upload(_ c: DeployConnection, files: [DeployUploadFile]) async throws {
         try Self.writable(files.map(\.path))
         guard !files.isEmpty else { return }
@@ -387,38 +416,17 @@ struct RcloneDeployTransport: DeployTransport {
         defer { try? FileManager.default.removeItem(at: dir) }
         let args = try await configure(c, rclone: rclone, dir: dir)
         let staging = dir.appendingPathComponent("up")
-        let tag = String(UUID().uuidString.prefix(8)).lowercased()
-        var pairs: [(temporary: String, final: String)] = []
-        for (index, file) in files.enumerated() {
-            let parts = file.path.split(separator: "/").map(String.init)
-            let temporary = (parts.dropLast() + [".todolino-\(tag)-\(index).tmp"]).joined(separator: "/")
-            let url = staging.appendingPathComponent(temporary)
+        for file in files {
+            let url = staging.appendingPathComponent(file.path)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             guard FileManager.default.createFile(atPath: url.path, contents: file.data) else { throw DeployTransportError(code: "deploy_failed") }
-            pairs.append((temporary, file.path))
         }
-        let list = dir.appendingPathComponent("upload.txt")
-        FileManager.default.createFile(atPath: list.path, contents: Data((pairs.map(\.temporary).joined(separator: "\n") + "\n").utf8),
-                                       attributes: [.posixPermissions: 0o600])
-        var renamed = 0
-        do {
-            let copy = try await Self.run(rclone, args + ["copy", "--files-from-raw", list.path, "--no-traverse", staging.path, remote(c)],
-                                          dir: dir, timeout: timeout)
-            guard copy.status == 0 else { throw DeployTransportError(code: Self.classify(copy.stderr)) }
-            for pair in pairs {
-                // --ignore-times: never take "same size, same time" as a reason to drop the new file.
-                let move = try await Self.run(rclone, args + ["moveto", "--ignore-times", Self.join(remote(c), pair.temporary),
-                                                              Self.join(remote(c), pair.final)], dir: dir, timeout: timeout)
-                guard move.status == 0 else { throw DeployTransportError(code: Self.classify(move.stderr)) }
-                renamed += 1
-            }
-        } catch {
-            // Best effort: no temporary files stay behind.
-            for pair in pairs.dropFirst(renamed) {
-                _ = try? await Self.run(rclone, args + ["deletefile", Self.join(remote(c), pair.temporary)], dir: dir, timeout: 30)
-            }
-            throw error
-        }
+        let list = Self.fileList(files.map(\.path), dir: dir)
+        // --ignore-times: never take "same size, same time" as a reason to keep the old file.
+        let out = try await Self.run(rclone, args + ["copy", "--files-from-raw", list.path, "--no-traverse", "--ignore-times",
+                                                     "--partial-suffix", DeployPlanner.temporarySuffix, staging.path, Self.directoryRemote],
+                                     dir: dir, timeout: timeout, remoteDirectory: Self.directory(c))
+        guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
     }
 
     func delete(_ c: DeployConnection, paths: [String]) async throws {
@@ -428,9 +436,9 @@ struct RcloneDeployTransport: DeployTransport {
         let dir = try makeRunDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let args = try await configure(c, rclone: rclone, dir: dir)
-        for path in paths {
-            let out = try await Self.run(rclone, args + ["deletefile", Self.join(remote(c), path)], dir: dir, timeout: timeout)
-            guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
-        }
+        let list = Self.fileList(paths, dir: dir)
+        let out = try await Self.run(rclone, args + ["delete", "--files-from-raw", list.path, Self.directoryRemote], dir: dir, timeout: timeout,
+                                     remoteDirectory: Self.directory(c))
+        guard out.status == 0 else { throw DeployTransportError(code: Self.classify(out.stderr)) }
     }
 }
