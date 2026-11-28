@@ -143,8 +143,8 @@
 							/>
 							<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
 								{task.title}
+								<AssigneeChip {task} />
 							</span>
-							<AssigneeChip {task} />
 							<Select
 								class="w-32 [&_select]:h-8 [&_select]:text-xs"
 								aria-label={t('tasks.status')}

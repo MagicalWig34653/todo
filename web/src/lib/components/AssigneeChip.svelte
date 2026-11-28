@@ -19,7 +19,7 @@
 </script>
 
 {#if task.assigneeID}
-	<span class="inline-flex shrink-0 items-center" role="img" aria-label={label} title={label} data-testid="assignee-chip">
+	<span class="ml-0.5 inline-flex shrink-0 items-center align-middle" role="img" aria-label={label} title={label} data-testid="assignee-chip">
 		{#if name}
 			<Avatar {name} size="sm" class="size-5 ring-0" />
 		{:else}

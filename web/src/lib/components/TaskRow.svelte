@@ -50,8 +50,7 @@
 <li class="bg-card rounded-xl border p-3 shadow-card" data-testid={testid}>
 	<div class="flex flex-wrap items-center gap-2">
 		<Checkbox class="size-5" checked={done} disabled={busy} aria-label={done ? t('tasks.reopen') : t('tasks.done')} onchange={toggle} />
-		<span class={['min-w-0 flex-1 basis-40 text-sm font-medium break-words', done && 'text-muted-foreground line-through']}>{task.title}</span>
-		<AssigneeChip {task} />
+		<span class={['min-w-0 flex-1 basis-40 text-sm font-medium break-words', done && 'text-muted-foreground line-through']}>{task.title} <AssigneeChip {task} /></span>
 		{#if chips}<TaskChips pt={chips} status={task.status} />{/if}
 		{#if project}
 			<a

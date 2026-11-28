@@ -193,12 +193,13 @@ test('a review named for Anna: Ben sees who decides, no decision and no handover
 	await expect(review.getByTestId('review-changes')).toHaveCount(0);
 	await expect(review.getByRole('button', { name: 'Weitergeben' })).toHaveCount(0);
 
+	// "Für dich": the feed never offers a review named for somebody else, neither under "Für mich" nor under "Alle".
 	await ben.goto('/for-you');
+	await expect(forMeCard(ben, 'Review von Ben').first()).toBeVisible();
+	await expect(forMe(ben)).not.toContainText('Review von Anna');
 	await ben.getByTestId('for-you-all').click();
-	const need = ben.getByTestId('needs-card').filter({ hasText: 'Review von Anna' });
-	await expect(need).toContainText(`Entscheidet: ${ANNA}`);
-	await expect(need.getByRole('button', { name: 'Annehmen', exact: true })).toHaveCount(0);
-	await expect(need.getByRole('button', { name: 'Weitergeben' })).toHaveCount(0);
+	await expect(ben.getByTestId('needs-card').filter({ hasText: 'Review von Ben' }).first()).toBeVisible();
+	await expect(ben.getByTestId('needs-card').filter({ hasText: 'Review von Anna' })).toHaveCount(0);
 
 	// Overview, including the bulk selection.
 	await ben.goto(`/project/${projectID}`);
