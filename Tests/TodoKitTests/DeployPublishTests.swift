@@ -509,8 +509,12 @@ final class FakeGitHub: GitHubTransport, @unchecked Sendable {
     func message(_ sha: String) -> String { lock.withLock { commits[sha]?.message ?? "" } }
     func files(_ branch: String) -> [String: File] { lock.withLock { refs[branch].flatMap { commits[$0]?.files } ?? [:] } }
 
-    init(publicKey: _RSA.Signing.PublicKey, files: [String: File]) {
+    /// `owner/name` this double answers for.
+    private let repository: String
+
+    init(publicKey: _RSA.Signing.PublicKey, files: [String: File], repository: String = "acme/site") {
         self.publicKey = publicKey
+        self.repository = repository
         _ = commit(on: "main", files: files)
     }
 
@@ -608,7 +612,7 @@ final class FakeGitHub: GitHubTransport, @unchecked Sendable {
             return answer(201, ["token": Self.token])
         }
         guard authorization == "Bearer \(Self.token)" else { return answer(401, ["message": "bad token"]) }
-        let repo = "\(api)/repos/acme/site"
+        let repo = "\(api)/repos/\(repository)"
         guard url == repo || url.hasPrefix(repo + "/") else { return answer(404, ["message": "Not Found"]) }
         let path = String(url.dropFirst(repo.count))
         switch (method, path) {
@@ -651,7 +655,7 @@ final class FakeGitHub: GitHubTransport, @unchecked Sendable {
             guard let head = json["head"] as? String, let base = json["base"] as? String, let title = json["title"] as? String, let body = json["body"] as? String,
                   refs[head] != nil else { return answer(422, [:]) }
             _pulls.append(Pull(head: head, base: base, title: title, body: body))
-            return answer(201, ["number": _pulls.count, "html_url": "https://github.example/acme/site/pull/\(_pulls.count)"])
+            return answer(201, ["number": _pulls.count, "html_url": "https://github.example/\(repository)/pull/\(_pulls.count)"])
         default: return answer(404, ["message": "Not Found"])
         }
     }
