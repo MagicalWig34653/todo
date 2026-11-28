@@ -2,7 +2,7 @@
 
 ## Checkpoint 28.11.2026 (Mittag): GitHub-Anbindung für alle Nutzer (Karte `E51E8B8C`)
 
-- Betreiber-App „Any account“ plus Installation pro Person, Zuordnung Projekt→Repo in der PWA, Rechteprüfung bei jeder Nutzung, Übergang für die alte Env-Konfiguration; Anleitung in Betreiber/Nutzer. Rot `9ed0d4d`/`af29ccc`/`bd5ed01`, grün `6278f6e`/`33ecd57`/`31395ef`. Belege: `docs/STATUS.md` (oberster Nachtrag).
+- Betreiber-App „Any account“ plus Installation pro Person, Zuordnung Projekt→Repo in der PWA, Rechteprüfung bei jeder Nutzung, Übergang für die alte Env-Konfiguration; Anleitung in Betreiber/Nutzer. Rot `9ed0d4d`/`af29ccc`/`bd5ed01`, grün `6278f6e`/`33ecd57`/`31395ef`; Gegenlesen rot `a5b4e93`, grün `9e1e792`. Belege: `docs/STATUS.md` (oberster Nachtrag).
 - Nächster Schritt: echte App anlegen und Secrets einspielen (Lino/Brain, kein Deploy durch den Agenten); Probelauf mit zwei echten Konten.
 
 ## Checkpoint 28.11.2026 (Vormittag): Zuständigkeit Teil 2, PWA und Server (Karte `E9300901`)
