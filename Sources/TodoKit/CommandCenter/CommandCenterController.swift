@@ -42,6 +42,8 @@ struct CommandCenterController: RouteCollection {
         WorkflowService(user: try await req.requireUser(), db: req.db, attachments: { [settings = req.application.settings] in CommandCenterAttachments.service(settings: settings) })
     }
     private func actor(_ req: Request) async throws -> WorkflowActor { try .person(try await req.requireUser()) }
+    /// Display names of the responsible people for the answers a person's client reads (card E9300901).
+    private func names(_ req: Request) -> AssigneeNames { AssigneeNames(db: req.db) }
     private func uuidQuery(_ req: Request, _ name: String) throws -> UUID? {
         guard let raw = req.query[String.self, at: name] else { return nil }
         guard let id = UUID(uuidString: raw) else { throw Abort(.badRequest, reason: "invalid_\(name)") }
@@ -107,19 +109,25 @@ struct CommandCenterController: RouteCollection {
 
     @Sendable func listQuestions(_ req: Request) async throws -> [QuestionDTO] {
         let limit = req.query[Int.self, at: "limit"] ?? 100
-        return try await service(req).questions(projectID: uuidQuery(req, "projectID"), taskID: uuidQuery(req, "taskID"),
+        let rows = try await service(req).questions(projectID: uuidQuery(req, "projectID"), taskID: uuidQuery(req, "taskID"),
             state: req.query[String.self, at: "state"] ?? "open",
             includeSubprojects: try boolQuery(req, "includeSubprojects") ?? true, limit: limit)
+        return try await names(req).fill(rows)
     }
-    @Sendable func getQuestion(_ req: Request) async throws -> QuestionDTO { try await service(req).question(id(req)) }
+    @Sendable func getQuestion(_ req: Request) async throws -> QuestionDTO {
+        let question = try await service(req).question(id(req))
+        return try await names(req).fill(question)
+    }
     @Sendable func answerQuestion(_ req: Request) async throws -> QuestionDTO {
         let body = try req.content.decode(AnswerQuestionRequest.self)
-        return try await service(req).answer(id(req), value: body.answer, actor: actor(req), freeText: body.freeText ?? false)
+        let question = try await service(req).answer(id(req), value: body.answer, actor: actor(req), freeText: body.freeText ?? false)
+        return try await names(req).fill(question)
     }
     @Sendable func listReviews(_ req: Request) async throws -> [ReviewDTO] {
-        try await service(req).reviews(projectID: uuidQuery(req, "projectID"), state: req.query[String.self, at: "state"] ?? "pending",
+        let rows = try await service(req).reviews(projectID: uuidQuery(req, "projectID"), state: req.query[String.self, at: "state"] ?? "pending",
             includeSubprojects: try boolQuery(req, "includeSubprojects") ?? true, limit: req.query[Int.self, at: "limit"] ?? 100,
             brainRecommended: try boolQuery(req, "brainRecommended"))
+        return try await names(req).fill(rows)
     }
     @Sendable func decideBatch(_ req: Request) async throws -> ReviewBatchResponse {
         let user = try await req.requireUser()
@@ -131,15 +139,25 @@ struct CommandCenterController: RouteCollection {
             throw Abort(.tooManyRequests, headers: headers, reason: "review_batch_rate_limited")
         }
         let body = try req.content.decode(ReviewBatchRequest.self)
-        return try await service(req).decideReviews(body.decisions.map(\.reviewID), decision: body.decision, note: body.note, actor: actor(req))
+        var response = try await service(req).decideReviews(body.decisions.map(\.reviewID), decision: body.decision, note: body.note, actor: actor(req))
+        let names = names(req)
+        for index in response.results.indices {
+            if let review = response.results[index].review { response.results[index].review = try await names.fill(review) }
+        }
+        return response
     }
-    @Sendable func context(_ req: Request) async throws -> TaskContextDTO { try await service(req).context(id(req)) }
+    @Sendable func context(_ req: Request) async throws -> TaskContextDTO {
+        let context = try await service(req).context(id(req))
+        return try await names(req).fill(context)
+    }
     @Sendable func claim(_ req: Request) async throws -> TaskContextDTO {
         let body = try? req.content.decode(ClaimTaskRequest.self)
-        return try await service(req).claim(id(req), agentName: body?.agentName, takeOver: body?.takeOver ?? false, actor: actor(req))
+        let context = try await service(req).claim(id(req), agentName: body?.agentName, takeOver: body?.takeOver ?? false, actor: actor(req))
+        return try await names(req).fill(context)
     }
     @Sendable func release(_ req: Request) async throws -> TaskContextDTO {
-        try await service(req).release(id(req), force: try boolQuery(req, "force") ?? false, actor: actor(req))
+        let context = try await service(req).release(id(req), force: try boolQuery(req, "force") ?? false, actor: actor(req))
+        return try await names(req).fill(context)
     }
     @Sendable func listNotes(_ req: Request) async throws -> [ProgressNoteDTO] {
         let taskID = try id(req)
@@ -153,21 +171,25 @@ struct CommandCenterController: RouteCollection {
         return try await dto.encodeResponse(status: .created, for: req)
     }
     @Sendable func taskQuestions(_ req: Request) async throws -> [QuestionDTO] {
-        try await service(req).questions(projectID: nil, taskID: id(req), state: req.query[String.self, at: "state"] ?? "all")
+        let rows = try await service(req).questions(projectID: nil, taskID: id(req), state: req.query[String.self, at: "state"] ?? "all")
+        return try await names(req).fill(rows)
     }
     @Sendable func ask(_ req: Request) async throws -> Response {
         let dto = try await service(req).ask(id(req), req.content.decode(AskQuestionRequest.self), actor: actor(req))
-        return try await dto.encodeResponse(status: .created, for: req)
+        return try await names(req).fill(dto).encodeResponse(status: .created, for: req)
     }
     @Sendable func requestReview(_ req: Request) async throws -> ReviewDTO {
-        try await service(req).requestReview(id(req), req.content.decode(RequestReviewRequest.self), actor: actor(req))
+        let review = try await service(req).requestReview(id(req), req.content.decode(RequestReviewRequest.self), actor: actor(req))
+        return try await names(req).fill(review)
     }
     @Sendable func decide(_ req: Request) async throws -> ReviewDTO {
         let body = try req.content.decode(ReviewDecisionRequest.self)
-        return try await service(req).decideReview(id(req), decision: body.decision, note: body.note, variantID: body.variantID, actor: actor(req))
+        let review = try await service(req).decideReview(id(req), decision: body.decision, note: body.note, variantID: body.variantID, actor: actor(req))
+        return try await names(req).fill(review)
     }
     @Sendable func undoDecision(_ req: Request) async throws -> ReviewDTO {
-        try await service(req).undoReviewDecision(id(req), actor: actor(req))
+        let review = try await service(req).undoReviewDecision(id(req), actor: actor(req))
+        return try await names(req).fill(review)
     }
     @Sendable func setStructure(_ req: Request) async throws -> WorkflowDTO {
         try await service(req).setStructure(id(req), req.content.decode(StructureRequest.self), actor: actor(req))

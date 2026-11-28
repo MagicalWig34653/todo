@@ -68,6 +68,8 @@ struct TaskDTO: Content {
     let boardPosition: Int
     /// Responsible person (ADR 0043); omitted when nobody is.
     let assigneeID: UUID?
+    /// Display name of `assigneeID`, only in the answers of the views of responsibility (see `AssigneeNames`).
+    var assigneeName: String? = nil
     /// Creation and last change of the task (the PWA and the app show them as "erstellt" / "zuletzt geändert").
     let createdAt: Date?
     let updatedAt: Date?

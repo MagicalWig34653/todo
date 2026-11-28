@@ -46,6 +46,9 @@ struct QuestionBrief: Content {
     let askedByType: ActivityActorType
     let askedByLabel: String?
     let createdAt: Date?
+    /// The person named on the question (ADR 0043); the name only while that account sees the project.
+    let assigneeID: UUID?
+    let assigneeName: String?
 }
 
 struct ReviewBrief: Content {
@@ -58,6 +61,9 @@ struct ReviewBrief: Content {
     let createdAt: Date?
     /// Offered variants of a review with a choice (absent otherwise).
     var variants: [ReviewVariantDTO]? = nil
+    /// Same person as `reviewerID`.
+    var assigneeID: UUID? = nil
+    var assigneeName: String? = nil
 }
 
 struct CardTask: Content {
@@ -165,6 +171,11 @@ struct SummaryDTO: Content {
     var orphanedClaims: Int = 0
     /// Plans waiting for approval in the scope (pipeline stage 2; same rule as `CommandCard.planWaiting`).
     var plansWaiting: Int = 0
+    /// Of `openQuestions`, `pendingReviews` and `plansWaiting`: those that concern the account (named for it or for
+    /// nobody), the same rule as the push badge.
+    var concerningQuestions: Int = 0
+    var concerningReviews: Int = 0
+    var concerningPlans: Int = 0
 }
 
 struct UpdateItem: Content {
@@ -354,7 +365,8 @@ struct CommandCenterService: Sendable {
 
         let questions = try await batched(allTaskIDs, { try await TaskQuestion.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "open").sort(\.$createdAt).all() })
         let reviews = try await batched(allTaskIDs, { try await TaskReview.query(on: db).filter(\.$taskID ~~ $0).filter(\.$state == "pending").sort(\.$createdAt).all() })
-        let planWaitingIDs = Set(try await PipelineSettingsStore.waitingPlans(taskIDs: allTaskIDs, projectOf: taskProject, on: db).map(\.taskID))
+        let waitingPlans = try await PipelineSettingsStore.waitingPlans(taskIDs: allTaskIDs, projectOf: taskProject, on: db)
+        let planWaitingIDs = Set(waitingPlans.map(\.taskID))
         let noteCutoff = now.addingTimeInterval(-30 * 86_400)
         // Only the newest note per task is shown, so only that row is read (agents post many notes; `perf_notes_task` serves the subquery).
         let notes = try await batched(allTaskIDs, { try await TaskProgressNote.query(on: db).filter(\.$taskID ~~ $0).filter(\.$createdAt >= noteCutoff)
@@ -427,6 +439,28 @@ struct CommandCenterService: Sendable {
             if let best = candidates.min(by: { (Self.urgency[$0] ?? 9) < (Self.urgency[$1] ?? 9) }) { return best }
             return own == "backlog" ? (kids.allSatisfy { $0.status == "done" } ? "ready" : "backlog") : own
         }
+        // Responsibility (ADR 0043): one resolver for the whole answer, so rights and names are read once per person and project.
+        let resolver = ResponsibilityResolver(db: db)
+        let me = try user.requireID()
+        let tasksByID = Dictionary((loaded + childTasks).map { ($0.id!, $0) }, uniquingKeysWith: { first, _ in first })
+        var questionNames: [UUID: String] = [:]
+        var reviewNames: [UUID: String] = [:]
+        var concerningQuestions = 0, concerningReviews = 0
+        var concerningPlanTasks = Set<UUID>()
+        for q in questions {
+            guard let task = tasksByID[q.taskID] else { continue }
+            questionNames[try q.requireID()] = try await resolver.visibleName(of: q.assigneeID, projectID: task.projectID)
+            if try await resolver.concerns(resolver.audience(of: q, task: task), userID: me, projectID: task.projectID) { concerningQuestions += 1 }
+        }
+        for r in reviews {
+            guard let task = tasksByID[r.taskID] else { continue }
+            reviewNames[try r.requireID()] = try await resolver.visibleName(of: r.reviewerID, projectID: task.projectID)
+            if try await resolver.concerns(resolver.audience(of: r, task: task), userID: me, projectID: task.projectID) { concerningReviews += 1 }
+        }
+        for p in waitingPlans {
+            guard let task = tasksByID[p.taskID] else { continue }
+            if try await resolver.concerns(resolver.audience(of: p, task: task), userID: me, projectID: task.projectID) { concerningPlanTasks.insert(p.taskID) }
+        }
         func card(_ task: TodoTask, lane: String) throws -> CommandCard? {
             let id = task.id!
             guard let s = states[id], let project = scope.projects[task.projectID] else { return nil }
@@ -465,9 +499,11 @@ struct CommandCenterService: Sendable {
                 kind: kind, isFeature: kind == "feature", parentTaskID: s.wf?.parentTaskID, lane: lane, progress: progress(task), agent: agent,
                 openQuestionCount: allQuestions.count,
                 questions: try allQuestions.prefix(3).map { QuestionBrief(id: try $0.requireID(), prompt: $0.prompt, options: $0.options,
-                    blocking: $0.blocking, askedByType: $0.askedByType, askedByLabel: $0.askedByLabel, createdAt: $0.createdAt) },
+                    blocking: $0.blocking, askedByType: $0.askedByType, askedByLabel: $0.askedByLabel, createdAt: $0.createdAt,
+                    assigneeID: $0.assigneeID, assigneeName: questionNames[try $0.requireID()]) },
                 pendingReview: try review.map { ReviewBrief(id: try $0.requireID(), summary: $0.summary, requestedByType: $0.requestedByType,
-                    requestedByLabel: $0.requestedByLabel, reviewerID: $0.reviewerID, agentJobID: $0.agentJobID, createdAt: $0.createdAt, variants: $0.variants) },
+                    requestedByLabel: $0.requestedByLabel, reviewerID: $0.reviewerID, agentJobID: $0.agentJobID, createdAt: $0.createdAt, variants: $0.variants,
+                    assigneeID: $0.reviewerID, assigneeName: reviewNames[try $0.requireID()]) },
                 blockedReason: s.wf?.blockedReason, blockedBy: s.blockedBy, latestUpdate: update,
                 builds: Array(sortedBuilds.prefix(3)), buildCount: sortedBuilds.count,
                 dueDate: due, nextDue: ((task.status == "done" ? [] : [due].compactMap { $0 }) + kidDue).min(), priority: planning[id]?.priority ?? 0,
@@ -501,7 +537,8 @@ struct CommandCenterService: Sendable {
             activeAgents: activeAgents.count, staleProjects: syncEntries.filter { $0.sync.bound && $0.sync.state != "fresh" }.count,
             pendingConfirmations: q.projectID == nil && allowedProjects == nil ? try await ActionRequestService.pending(of: user.requireID(), limit: 1, on: db).total : 0,
             pendingAccessRequests: q.projectID == nil && allowedProjects == nil ? try await ConnectionService.openRequests(user: user, scopeProjects: scope.projects, db: db).count : 0,
-            orphanedClaims: orphanedIDs.count, plansWaiting: planWaitingIDs.count)
+            orphanedClaims: orphanedIDs.count, plansWaiting: planWaitingIDs.count, concerningQuestions: concerningQuestions,
+            concerningReviews: concerningReviews, concerningPlans: concerningPlanTasks.count)
 
         let updates = q.updatesLimit == 0 ? [] : try await self.updates(scope: scope, limit: q.updatesLimit)
         let buildGroups = Self.groups(builds, limit: 10)

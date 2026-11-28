@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Todolino – Zuständigkeit (Karten, Fragen, Reviews) und „Für mich“
-  version: 1.0.0
+  version: 1.1.0
   description: 'ADR 0043, Karte 8B4BAC2E Teil 1. Sitzung oder Bearer. Je Karte, offener Frage und offener Review höchstens eine zuständige
     Person (assigneeID = Konto-ID; bei Reviews dasselbe Feld wie reviewerID). Zuweisbar sind nur Konten mit Zugriff auf das Projekt der
     Karte: Karte read, Frage comment, Review edit. Unbekannte, gesperrte und fremde Konten ergeben dieselbe Antwort 400 invalid_assignee.
@@ -11,8 +11,16 @@ info:
     nie), Erinnerungen gehen an sie statt an den Ersteller. Ohne Zuständigkeit bleibt alles wie bisher. Beim Projektwechsel wird die
     Person der Karte entfernt, wenn sie das Ziel nicht sieht; Wiederholungen übernehmen sie; Kontolöschung entfernt alle Zuweisungen.
     Aktivität task.assigned, question.assigned, review.assigned. TaskDTO.assigneeID steht auch im Sync-Feed (Upsert der Aufgabe);
-    Fragen und Reviews haben keinen Sync-Feed. MCP (oauth-mcp.yaml 1.19.0): list_assignees, set_assignee (tasks:write), list_for_me
-    (tasks:read), assigneeID bei ask_question und request_review. Push: push.yaml 1.3.0. Die Abschnitte x-draft beschreiben geplante,
+    Fragen und Reviews haben keinen Sync-Feed.
+    1.1.0 (Karte E9300901, additiv): assigneeName (optional, Anzeigename der an Karte, Frage oder Review gespeicherten Person; bei Reviews
+    zu assigneeID/reviewerID) für alle mit Leserecht, nur solange das Konto Zugriff auf das Projekt hat und nicht gesperrt ist, sonst fehlt
+    das Feld; nie Anmeldename oder E-Mail. Nur in REST-Antworten: GET /v1/tasks/{id}/context (task, subtasks, questions, review; auch claim
+    und release), GET /v1/for-me, GET /v1/questions, /v1/questions/{id}, /v1/tasks/{id}/questions, GET /v1/reviews, GET /v1/feed, die Frage-
+    und Review-Kurzfassungen der Steuerzentrale und die Antworten von Fragen, Antworten, Review anfordern, entscheiden (auch Sammelfreigabe),
+    zurücknehmen und der drei assignee-Routen. Nicht im Sync-Feed, in Aufgabenlisten oder über MCP. Karte zuweisen kann jetzt benachrichtigen
+    (push.yaml 1.4.0).
+    MCP (oauth-mcp.yaml 1.19.0): list_assignees, set_assignee (tasks:write), list_for_me
+    (tasks:read), assigneeID bei ask_question und request_review. Push: push.yaml 1.4.0. Die Abschnitte x-draft beschreiben geplante,
     noch nicht gebaute Verträge.'
 security:
 - bearerAuth: []
@@ -45,7 +53,8 @@ paths:
     put:
       operationId: setTaskAssignee
       summary: Zuständige Person der Karte setzen oder entfernen (edit)
-      description: 'Erhöht die Version der Karte; dieselbe Person erneut ändert nichts.'
+      description: 'Erhöht die Version der Karte; dieselbe Person erneut ändert nichts. Wer jemand anderen benennt, löst die Mitteilung
+        der Kategorie assignments aus (push.yaml).'
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssigneeRequest'}}}}
       responses:
         '200': {description: 'TaskDTO (openapi.yaml Task)'}
@@ -98,9 +107,9 @@ components:
       properties:
         generatedAt: {type: string, format: date-time}
         projectID: {type: string, format: uuid}
-        tasks: {type: array, items: {type: object, description: 'TaskDTO mit assigneeID und planning'}}
-        questions: {type: array, items: {type: object, description: 'QuestionDTO mit taskTitle, projectID, projectName'}}
-        reviews: {type: array, items: {type: object, description: 'ReviewDTO mit taskTitle, projectID, projectName, brainRecommended'}}
+        tasks: {type: array, items: {type: object, description: 'TaskDTO mit assigneeID, assigneeName und planning'}}
+        questions: {type: array, items: {type: object, description: 'QuestionDTO mit taskTitle, projectID, projectName, assigneeName'}}
+        reviews: {type: array, items: {type: object, description: 'ReviewDTO mit taskTitle, projectID, projectName, brainRecommended, assigneeName'}}
         truncated: {type: boolean}
 x-draft:
   status: 'Entwurf, nicht gebaut (Karte 8B4BAC2E). Änderungen daran sind noch kein Vertragsbruch.'
@@ -112,9 +121,8 @@ x-draft:
       ohne die Felder wirkungslos (keine Namensauflösung auf dem Server).'
     response: 'CommentDTO trägt mentionIDs und assigneeID; answeredAt, sobald die zugewiesene Person im selben Thread schreibt.'
     forMe: 'GET /v1/for-me bekommt comments: offene (unbeantwortete) Zuweisungen und ungelesene Erwähnungen.'
-    push: 'Mit assigneeID oder mentionIDs gehen Kommentar-Mitteilungen nur an diese Konten (eigene Kategorie assignments, heute ohne
-      Auslöser); ohne die Felder unverändert.'
-  assignmentNotification: 'Eigene Mitteilung beim Zuweisen einer Karte (Kategorie assignments, Standard aus) – noch ohne Auslöser.'
+    push: 'Mit assigneeID oder mentionIDs gehen Kommentar-Mitteilungen nur an diese Konten (Kategorie assignments, heute nur beim
+      Zuweisen einer Karte ausgelöst); ohne die Felder unverändert.'
   reviewConsequence:
     summary: 'Review mit angekündigter Folge (Deploy-Konzept §8.9, Notiz 27.11.2026)'
     field: 'ReviewDTO.consequence, nullable, gesetzt nur beim Anfragen (request_review, POST /v1/tasks/{id}/review):

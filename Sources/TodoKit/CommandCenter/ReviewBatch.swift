@@ -16,7 +16,7 @@ struct ReviewBatchSummaryDTO: Content {
 
 struct ReviewBatchResponse: Content {
     let decision: String
-    let results: [ReviewBatchItemDTO]
+    var results: [ReviewBatchItemDTO]
     let summary: ReviewBatchSummaryDTO
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end check of responsibility (card 8B4BAC2E, ADR 0043) against a running backend and a real database.
+"""End-to-end check of responsibility (cards 8B4BAC2E and E9300901, ADR 0043) against a running backend and a real database.
 
 Real HTTP and a real OAuth token for /mcp, SQLite or MariaDB (accounts are seeded with SQL, everything else goes through the API).
 Usage: assignment-e2e.py BASE_URL sqlite|mariadb   (environment as set by assignment-e2e.sh)
@@ -67,6 +67,7 @@ owner, owner_s = account("Owner E2E")
 designer, designer_s = account("Designer E2E")
 other, other_s = account("Other E2E")
 stranger, stranger_s = account("Stranger E2E")
+reader, reader_s = account("Reader E2E")
 
 st, p = http("POST", "/v1/projects", {"name": "Assignment E2E"}, owner_s); project = p["id"]
 st, p = http("POST", "/v1/projects", {"name": "Outside grant"}, owner_s); outside = p["id"]
@@ -74,6 +75,10 @@ grants = {}
 for who in (designer, other):
     st, g = http("PUT", f"/v1/projects/{project}/grants", {"principalType": "person", "principalID": who, "role": "edit"}, owner_s)
     check("grant", st == 200, g); grants[who] = g["id"]
+st, g = http("PUT", f"/v1/projects/{project}/grants", {"principalType": "person", "principalID": reader, "role": "read"}, owner_s)
+check("read grant", st == 200, g)
+st, b = http("PATCH", f"/v1/projects/{project}/pipeline-settings", {"revision": 0, "notifyOnWaitingApproval": True}, owner_s)
+check("waiting plans are announced", st == 200, b)
 
 
 def card(title):
@@ -114,7 +119,7 @@ check("new tools are listed", {"list_assignees", "set_assignee", "list_for_me"} 
 
 err, text, data = tool(agent, "list_assignees", {"projectID": project})
 people = {p["userID"]: p for p in (data or {}).get("items", [])}
-check("agent sees the three people of the project", not err and set(people) == {owner, designer, other}, text)
+check("agent sees the four people of the project", not err and set(people) == {owner, designer, other, reader}, text)
 check("only name, id, kinds and isMe", all(set(p) == {"userID", "displayName", "assignableTo", "isMe"} for p in people.values()), text)
 check("isMe is the person of the connection", people.get(owner, {}).get("isMe") is True and people.get(designer, {}).get("isMe") is False, text)
 
@@ -167,9 +172,72 @@ st, b = http("GET", f"/v1/questions?projectID={project}", token=other_s)
 check("unassigned question is listed for everybody with access", st == 200 and free["id"] in {q["id"] for q in b}, b)
 check("unassigned question is in nobody's for-me", all(free["id"] not in for_me(s)[1] for s in (owner_s, designer_s, other_s)))
 
+# Card E9300901: names for readers, "does it concern me".
+st, b = http("PUT", f"/v1/tasks/{design_card}/plan", {"body": "Plan"}, owner_s)
+check("plan written", st == 200, b)
+
+
+def context(card_id, session):
+    st, b = http("GET", f"/v1/tasks/{card_id}/context", token=session)
+    check("context 200", st == 200, b)
+    return b
+
+
+c = context(open_card, reader_s)
+named_q = [q for q in c["questions"] if q["id"] == question["id"]][0]
+check("reader sees the name on question and review",
+      named_q.get("assigneeName") == "Designer E2E" and c["review"].get("assigneeName") == "Designer E2E", c)
+check("reader sees the name on the card", context(design_card, reader_s)["task"].get("assigneeName") == "Designer E2E")
+for path in ("/v1/questions", "/v1/reviews"):
+    st, b = http("GET", f"{path}?projectID={project}", token=reader_s)
+    check(f"reader sees the name in {path}", st == 200 and "Designer E2E" in [x.get("assigneeName") for x in b], b)
+
+
+def center(session):
+    st, b = http("GET", f"/v1/command-center?projectID={project}", token=session)
+    check("command center 200", st == 200, b)
+    return b
+
+
+def counts(session):
+    s = center(session)["summary"]
+    return tuple(s.get(k) for k in ("openQuestions", "pendingReviews", "plansWaiting", "concerningQuestions", "concerningReviews",
+                                    "concerningPlans"))
+
+
+for label, session, expected in (("designer", designer_s, (2, 1, 1, 2, 1, 1)), ("other editor", other_s, (2, 1, 1, 1, 0, 0)),
+                                 ("reader", reader_s, (2, 1, 1, 1, 0, 0))):
+    got = counts(session)
+    check(f"{label} counts", got == expected, got)
+cards = [c for lane in center(reader_s)["lanes"] for c in lane["cards"] if c["task"]["id"] == open_card]
+check("command center cards name the person for the reader",
+      bool(cards) and cards[0]["pendingReview"].get("assigneeName") == "Designer E2E"
+      and "Designer E2E" in [q.get("assigneeName") for q in cards[0]["questions"]], cards)
+
+
+def needs(session):
+    st, b = http("GET", f"/v1/feed?projectID={project}", token=session)
+    check("feed 200", st == 200, b)
+    return {(n["kind"], n.get("questionID") or n.get("reviewID") or n["taskID"]): n for n in b["needsYou"]}
+
+
+n = needs(other_s)
+check("somebody else's question does not concern the other editor",
+      n[("question", question["id"])]["concernsMe"] is False and n[("question", question["id"])].get("assigneeName") == "Designer E2E"
+      and n[("question", question["id"])].get("assigneeID") == designer, n)
+check("the unassigned question concerns everybody", n[("question", free["id"])]["concernsMe"] is True, n)
+check("the plan on the designer's card concerns only the designer",
+      n[("plan", design_card)]["concernsMe"] is False and needs(designer_s)[("plan", design_card)]["concernsMe"] is True, n)
+check("the named review stays with the designer",
+      ("review", review["id"]) not in n and needs(designer_s)[("review", review["id"])]["concernsMe"] is True, n)
+st, b = http("GET", "/v1/me/push-prefs", token=designer_s)
+check("assignment notifications are off by default", st == 200 and b["categories"]["assignments"] is False, b)
+
 st, b = http("DELETE", f"/v1/projects/{project}/grants/{grants[designer]}", token=owner_s)
 check("grant revoked", st == 204, b)
 check("revoked designer sees nothing", for_me(designer_s) == (set(), set(), set()))
+c = context(design_card, reader_s)["task"]
+check("a revoked person keeps the id but loses the name", c.get("assigneeID") == designer and "assigneeName" not in c, c)
 err, text, _ = tool(agent, "set_assignee", {"questionID": question["id"], "assigneeID": designer})
 check("revoked person cannot be assigned again", err and text == "invalid_assignee", text)
 err, text, data = tool(designer_agent, "list_for_me", {})

@@ -86,6 +86,12 @@ struct FeedNeedsYouDTO: Content {
     let actor: FeedActorDTO?
     let createdAt: Date?
     let actions: [FeedActionDTO]
+    /// False for a question, review or plan that is somebody else's responsibility (ADR 0043, the rule of the push badge).
+    var concernsMe: Bool = true
+    /// Person stored on a question or review (not the one inherited from the card), with the name while the account sees
+    /// the project.
+    var assigneeID: UUID? = nil
+    var assigneeName: String? = nil
 }
 
 /// Open confirmation request of an agent (ADR 0026). Separate from `needsYou`, whose items are task-bound.

@@ -228,6 +228,8 @@ struct PushTriggers: Sendable {
         if let known = try await PushOutbox.query(on: db).filter(\.$userID == userID).filter(\.$dedupeKey == key).first() {
             guard revive, known.state == "skipped", known.lastError == "no_longer_relevant" else { return false }
             known.state = "pending"; known.attempts = 0; known.lastError = nil; known.nextAttemptAt = now; known.dueAt = now
+            // The item may have moved to another project in between.
+            known.payload = payload
             try await known.save(on: db)
             return true
         }
@@ -244,7 +246,7 @@ struct PushTriggers: Sendable {
     }
 
     func run() async throws -> Int {
-        try await reminders() + questions() + reviews() + plans() + comments() + confirmations() + dailyBriefs()
+        try await reminders() + assignments() + questions() + reviews() + plans() + comments() + confirmations() + dailyBriefs()
     }
 
     private func reminders() async throws -> Int {
@@ -269,6 +271,28 @@ struct PushTriggers: Sendable {
                     if try await enqueue(owner.id, .reminders, event, key: "reminder:\(taskID):\(secs)") { count += 1 }
                 }
             }
+        }
+        return count
+    }
+
+    /// Being made responsible for a card (category `assignments`, default off): only the new person, never for taking the
+    /// card oneself, at most once per person and card. The newest `task.assigned` event of a card tells who set the
+    /// current person; a connection is not that person, so an agent handing work to its owner is announced.
+    private func assignments() async throws -> Int {
+        let who = enabled(.assignments)
+        guard !who.isEmpty else { return 0 }
+        var count = 0
+        let resolver = ResponsibilityResolver(db: db)
+        let recent = try await ActivityEvent.query(on: db).filter(\.$kind == "task.assigned").filter(\.$createdAt >= since)
+            .sort(\.$createdAt, .descending).sort(\.$id, .descending).limit(200).all()
+        var seen = Set<UUID>()
+        for e in recent where seen.insert(e.taskID).inserted {
+            guard let task = try await TodoTask.find(e.taskID, on: db), let taskID = task.id, task.status != "done",
+                  let assignee = task.assigneeID, !(e.actorType == .person && e.actorID == assignee),
+                  let c = who.first(where: { $0.id == assignee }),
+                  try await resolver.isAssignable(assignee, to: .task, projectID: task.projectID) else { continue }
+            let event = PushEvent(kind: "assignment", taskID: taskID, projectID: task.projectID, subjectID: nil, at: nil)
+            if try await enqueue(c.id, .assignments, event, key: "assignment:\(taskID):to:\(assignee)", revive: true) { count += 1 }
         }
         return count
     }

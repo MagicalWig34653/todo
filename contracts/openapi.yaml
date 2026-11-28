@@ -1000,6 +1000,9 @@ components:
           type: string
           format: uuid
           description: Zuständige Person (ADR 0043, contracts/assignments.yaml); fehlt, wenn niemand benannt ist.
+        assigneeName:
+          type: string
+          description: Anzeigename dazu, nur in den in assignments.yaml 1.1.0 genannten Antworten und nur solange das Konto Zugriff hat.
         version:
           type: integer
         createdAt:

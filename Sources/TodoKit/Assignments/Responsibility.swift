@@ -29,7 +29,7 @@ enum Audience: Equatable, Sendable {
 actor ResponsibilityResolver {
     private let db: any Database
     private var roles: [String: ProjectRole?] = [:]
-    private var cards: [UUID: UUID?] = [:]
+    private var names: [UUID: String] = [:]
 
     init(db: any Database) { self.db = db }
 
@@ -39,10 +39,18 @@ actor ResponsibilityResolver {
         if let cached = roles[key] { return cached }
         var result: ProjectRole?
         if let user = try await User.find(userID, on: db), !user.isLocked, let project = try await Project.find(projectID, on: db) {
+            names[userID] = user.displayName
             result = try await SharingAccess(user: user, db: db).visibility(project).role
         }
         roles[key] = .some(result)
         return result
+    }
+
+    /// Display name of a stored assignee for whoever may read the item; nil once the account lost access to the project or
+    /// is locked. Never a login name.
+    func visibleName(of userID: UUID?, projectID: UUID) async throws -> String? {
+        guard let userID, try await role(of: userID, projectID: projectID) != nil else { return nil }
+        return names[userID]
     }
 
     func isAssignable(_ userID: UUID, to kind: AssignmentKind, projectID: UUID) async throws -> Bool {

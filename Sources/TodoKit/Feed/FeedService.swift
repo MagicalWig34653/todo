@@ -62,9 +62,9 @@ struct FeedService: Sendable {
             }
         }
         if cursor == nil {
-            let all = try await needsYou(scope: scope, classic: mode == "classic", now: now)
+            let (all, sources) = try await needsYou(scope: scope, classic: mode == "classic", now: now)
             total = all.count
-            needs = Array(all.prefix(Self.maxNeedsYou))
+            needs = try await responsibility(Array(all.prefix(Self.maxNeedsYou)), sources: sources)
         }
         let (posts, next) = try await posts(scope: scope, kinds: mode == "classic" ? Self.classicKinds : Self.managementKinds, cursor: cursor, limit: limit)
         return FeedResponse(generatedAt: now, mode: mode, projectID: projectID, needsYou: needs, needsYouTotal: total, confirmations: confirmations, accessRequests: accessRequests, posts: posts, nextCursor: next)
@@ -84,9 +84,42 @@ struct FeedService: Sendable {
         stride(from: 0, to: values.count, by: size).map { Array(values[$0..<min($0 + size, values.count)]) }
     }
 
-    private func needsYou(scope: CommandCenterScope, classic: Bool, now: Date) async throws -> [FeedNeedsYouDTO] {
+    /// What a "needs you" item was made from, for the items that can be somebody's responsibility.
+    private enum NeedSource {
+        case question(TaskQuestion, TodoTask)
+        case review(TaskReview, TodoTask)
+        case plan(TaskPlan, TodoTask)
+    }
+
+    /// Adds who the shown items are for (ADR 0043). Only the shown ones are resolved; one resolver per answer.
+    private func responsibility(_ items: [FeedNeedsYouDTO], sources: [String: NeedSource]) async throws -> [FeedNeedsYouDTO] {
+        let resolver = ResponsibilityResolver(db: db)
+        let userID = try user.requireID()
+        var result = items
+        for index in result.indices {
+            guard let source = sources[result[index].id] else { continue }
+            let audience: Audience
+            let projectID = result[index].projectID
+            switch source {
+            case .question(let q, let task):
+                audience = try await resolver.audience(of: q, task: task)
+                result[index].assigneeID = q.assigneeID
+            case .review(let r, let task):
+                audience = try await resolver.audience(of: r, task: task)
+                result[index].assigneeID = r.reviewerID
+            case .plan(let p, let task):
+                audience = try await resolver.audience(of: p, task: task)
+            }
+            result[index].concernsMe = try await resolver.concerns(audience, userID: userID, projectID: projectID)
+            result[index].assigneeName = try await resolver.visibleName(of: result[index].assigneeID, projectID: projectID)
+        }
+        return result
+    }
+
+    private func needsYou(scope: CommandCenterScope, classic: Bool, now: Date) async throws -> ([FeedNeedsYouDTO], [String: NeedSource]) {
         let ids = scope.projectIDs
-        guard !ids.isEmpty else { return [] }
+        guard !ids.isEmpty else { return ([], [:]) }
+        var sources: [String: NeedSource] = [:]
         let roles = try await roles(scope)
         let userID = try user.requireID()
         func name(_ id: UUID) -> String { scope.projects[id]?.name ?? "" }
@@ -105,6 +138,7 @@ struct FeedService: Sendable {
                     let actions: [FeedActionDTO] = q.options.isEmpty
                         ? [FeedActionDTO(key: "answer", label: "Antworten", method: "POST", path: "/v1/questions/\(qid)/answer", body: nil, requiresInput: true, inputField: "answer")]
                         : q.options.map { FeedActionDTO(key: "answer", label: $0, method: "POST", path: "/v1/questions/\(qid)/answer", body: FeedActionBody(answer: $0), requiresInput: false, inputField: nil) }
+                    sources["question:\(qid)"] = .question(q, task)
                     ranked.append((q.blocking ? 0 : 1, q.createdAt ?? now, FeedNeedsYouDTO(
                         id: "question:\(qid)", kind: "question", projectID: task.projectID, projectName: name(task.projectID), taskID: try task.requireID(),
                         taskTitle: task.title, taskVersion: task.version, title: q.prompt, detail: nil, options: q.options, blocking: q.blocking,
@@ -121,6 +155,7 @@ struct FeedService: Sendable {
                         r.reviewerID == nil || r.reviewerID == userID else { continue }
                     let rid = try r.requireID(), tid = try task.requireID()
                     let path = "/v1/tasks/\(tid)/review/decision"
+                    sources["review:\(rid)"] = .review(r, task)
                     ranked.append((2, r.createdAt ?? now, FeedNeedsYouDTO(
                         id: "review:\(rid)", kind: "review", projectID: task.projectID, projectName: name(task.projectID), taskID: tid,
                         taskTitle: task.title, taskVersion: task.version, title: r.summary, detail: nil, options: [], blocking: false,
@@ -144,6 +179,7 @@ struct FeedService: Sendable {
                         let tid = try task.requireID()
                         let path = "/v1/tasks/\(tid)/plan/decision"
                         let first = p.body.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
+                        sources["plan:\(tid):\(p.version)"] = .plan(p, task)
                         ranked.append((2, p.writtenAt, FeedNeedsYouDTO(
                             id: "plan:\(tid):\(p.version)", kind: "plan", projectID: task.projectID, projectName: name(task.projectID), taskID: tid,
                             taskTitle: task.title, taskVersion: task.version, title: "\(task.title) – Plan v\(p.version) wartet auf Freigabe",
@@ -193,7 +229,7 @@ struct FeedService: Sendable {
                         body: FeedActionBody(status: "done", version: task.version), requiresInput: false, inputField: nil)] : [])))
             }
         }
-        return ranked.sorted { ($0.rank, $0.sort, $0.item.id) < ($1.rank, $1.sort, $1.item.id) }.map(\.item)
+        return (ranked.sorted { ($0.rank, $0.sort, $0.item.id) < ($1.rank, $1.sort, $1.item.id) }.map(\.item), sources)
     }
 
     // MARK: Posts

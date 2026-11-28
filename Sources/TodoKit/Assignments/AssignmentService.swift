@@ -238,19 +238,27 @@ struct AssignmentController: RouteCollection {
         }
         var limit = WorkflowService.forMeDefaultLimit
         if let raw = req.query[String.self, at: "limit"] { guard let v = Int(raw) else { throw Abort(.badRequest, reason: "invalid_filter") }; limit = v }
-        return try await service.forMe(projectID: projectID, includeSubprojects: include, limit: limit)
+        var response = try await service.forMe(projectID: projectID, includeSubprojects: include, limit: limit)
+        let names = AssigneeNames(db: req.db)
+        response.tasks = try await names.fill(response.tasks)
+        response.questions = try await names.fill(response.questions)
+        response.reviews = try await names.fill(response.reviews)
+        return response
     }
     @Sendable func assignees(_ req: Request) async throws -> [AssigneeDTO] { try await service(req).assignees(id(req)) }
     @Sendable func assignTask(_ req: Request) async throws -> TaskDTO {
         let service = try await service(req)
-        return try await service.assignTask(id(req), to: req.content.decode(AssigneeRequest.self).assigneeID, actor: actor(req))
+        let result = try await service.assignTask(id(req), to: req.content.decode(AssigneeRequest.self).assigneeID, actor: actor(req))
+        return try await AssigneeNames(db: req.db).fill(result)
     }
     @Sendable func assignQuestion(_ req: Request) async throws -> QuestionDTO {
         let service = try await service(req)
-        return try await service.assignQuestion(id(req), to: req.content.decode(AssigneeRequest.self).assigneeID, actor: actor(req))
+        let result = try await service.assignQuestion(id(req), to: req.content.decode(AssigneeRequest.self).assigneeID, actor: actor(req))
+        return try await AssigneeNames(db: req.db).fill(result)
     }
     @Sendable func assignReview(_ req: Request) async throws -> ReviewDTO {
         let service = try await service(req)
-        return try await service.assignReview(id(req), to: req.content.decode(AssigneeRequest.self).assigneeID, actor: actor(req))
+        let result = try await service.assignReview(id(req), to: req.content.decode(AssigneeRequest.self).assigneeID, actor: actor(req))
+        return try await AssigneeNames(db: req.db).fill(result)
     }
 }

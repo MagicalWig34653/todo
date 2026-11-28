@@ -109,7 +109,10 @@ final class AssignmentViewDataTests: XCTestCase {
         let batch = try await f.t.json(.POST, "/v1/reviews/decisions", ["decisions": [["reviewID": rid]], "decision": "accept"], token: f.owner.token)
         let first = (batch.body?["results"] as? [[String: Any]])?.first?["review"] as? [String: Any]
         XCTAssertEqual(first?["assigneeName"] as? String, "Editor", "\(batch.body ?? [:])")
-        let claimed = try await f.t.json(.POST, "/v1/tasks/\(card)/claim", [:], token: f.owner.token)
+        // The accepted card is done; claiming needs an open one.
+        let open = try await f.task("Open")
+        try await f.assign(open, to: f.designer.id)
+        let claimed = try await f.t.json(.POST, "/v1/tasks/\(open)/claim", [:], token: f.owner.token)
         XCTAssertEqual((claimed.body?["task"] as? [String: Any])?["assigneeName"] as? String, "Designer", "\(claimed.body ?? [:])")
     }
 

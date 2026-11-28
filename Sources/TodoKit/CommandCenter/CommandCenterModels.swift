@@ -311,6 +311,8 @@ struct QuestionDTO: Content {
     let version: Int
     /// The person the question is for (ADR 0043); omitted when nobody is named.
     let assigneeID: UUID?
+    /// Display name of `assigneeID` while that account sees the project; set for the REST answers (see `AssigneeNames`).
+    var assigneeName: String? = nil
     init(_ q: TaskQuestion) throws {
         assigneeID = q.assigneeID
         id = try q.requireID(); taskID = q.taskID; askedByType = q.askedByType; askedByID = q.askedByID
@@ -333,6 +335,7 @@ struct ReviewDTO: Content {
     let reviewerID: UUID?
     /// Same person as `reviewerID`, under the name all assignable objects share (ADR 0043).
     let assigneeID: UUID?
+    var assigneeName: String? = nil
     let summary: String
     let decidedBy: UUID?
     let decidedAt: Date?
@@ -431,16 +434,16 @@ struct WorkflowDTO: Content {
 }
 
 struct TaskContextDTO: Content {
-    let task: TaskDTO
+    var task: TaskDTO
     let projectID: UUID
     let workflow: WorkflowDTO
     let progress: ProgressDTO
     let progressNotes: [ProgressNoteDTO]
     let criteria: [CriterionDTO]
-    let subtasks: [TaskDTO]
+    var subtasks: [TaskDTO]
     let comments: [CommentDTO]
-    let questions: [QuestionDTO]
-    let review: ReviewDTO?
+    var questions: [QuestionDTO]
+    var review: ReviewDTO?
     let builds: [BuildArtifactDTO]
 }
 

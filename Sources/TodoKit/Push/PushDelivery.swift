@@ -52,6 +52,12 @@ enum PushContent {
             (cat, priority, ttl) = ("TODO_QUESTION", 10, 24 * 3600)
             title = showContent ? (de ? "Rückfrage: " : "Question: ") + name : (de ? "Rückfrage vom Agenten" : "Question from the agent")
             body = showContent ? clip(detail ?? "", 160) : (de ? "Eine Aufgabe wartet auf deine Antwort." : "A task is waiting for your answer.")
+        case "assignment":
+            // Fixed text; with the content opt-in the card title, never anything else of the card.
+            (cat, priority, ttl) = ("TODO_ASSIGNMENT", 10, 24 * 3600)
+            title = showContent ? name : (de ? "Neue Zuständigkeit" : "New assignment")
+            body = showContent ? (de ? "Dir zugewiesen" : "Assigned to you")
+                : (de ? "Dir wurde eine Karte zugewiesen." : "A card was assigned to you.")
         case "plan":
             // Never the text of the plan: it may be long and sensitive. With the content opt-in the card title is shown.
             (cat, priority, ttl) = ("TODO_PLAN", 10, 24 * 3600)
@@ -118,6 +124,10 @@ struct PushDelivery: Sendable {
             try await resolver.concerns(audience, userID: userID, projectID: task.projectID)
         }
         switch event.kind {
+        case "assignment":
+            guard task.status != "done", task.assigneeID == userID,
+                  try await resolver.isAssignable(userID, to: .task, projectID: task.projectID) else { return nil }
+            return (task, nil)
         case "reminder":
             guard task.status != "done", try await resolver.reminderRecipient(task) == userID,
                   let p = try await TaskPlanning.find(event.taskID, on: db),

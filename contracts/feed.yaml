@@ -1,11 +1,16 @@
 openapi: 3.0.3
 info:
   title: Todolino Feed "Für dich"
-  version: 1.2.0
+  version: 1.3.0
   description: 'ADR 0023. Kontoweite Startansicht: oben needsYou (was dich braucht, höchstens 10, mit direkt ausführbaren Aktionen auf bestehenden
     Endpunkten), darunter posts (chronologisch, neueste zuerst). Reine Lesesicht über bestehende Tabellen (activity_events, task_progress_notes,
     task_questions, task_reviews, build_artifacts, attachments, comments, task_workflow, task_planning); keine Migration. Rechte wie überall:
-    nur sichtbare Projekte (inkl. Teilprojekte), unsichtbares projectID = 404, Bilder nur lesbarer Aufgaben. Fähigkeit: GET /v1/capabilities.feed=true.'
+    nur sichtbare Projekte (inkl. Teilprojekte), unsichtbares projectID = 404, Bilder nur lesbarer Aufgaben. Fähigkeit: GET /v1/capabilities.feed=true.
+    Seit 1.3.0 (Karte E9300901, additiv): jeder needsYou-Eintrag trägt concernsMe (boolean). Bei question, review und plan false, wenn jemand
+    anderes zuständig ist (an Frage oder Review benannt, sonst über die Karte; dieselbe Regel wie das Push-Abzeichen, assignments.yaml);
+    alle anderen Arten true. Welche Einträge erscheinen und needsYouTotal sind unverändert. question und review tragen zusätzlich optional
+    assigneeID (nur die an Frage oder Review gespeicherte Person, nicht die geerbte) und assigneeName (nur solange dieses Konto Zugriff auf
+    das Projekt hat und nicht gesperrt ist).'
 security:
 - bearerAuth: []
 - sessionCookie: []
