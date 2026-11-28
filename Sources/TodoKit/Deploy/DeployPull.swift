@@ -2,8 +2,8 @@ import Foundation
 import Vapor
 
 // ADR 0041, contracts/deploy.yaml 1.1.0: pulling server changes. Read only on the server; the answer carries the files, the
-// branch name and a commit message. Branch and commit are made by the person or the agent in their own checkout
-// (scripts/deploy-pull-apply.py): the server has no write access to GitHub and no credentials for it.
+// branch name and a commit message. With this route branch and commit are made by the person or the agent in their own checkout
+// (scripts/deploy-pull-apply.py); the pull request through the GitHub App is DeployPublish.swift (ADR 0042).
 
 enum DeployPullLimits {
     /// Per file delivered in one answer; larger files are named as findings (`too_large`).

@@ -245,6 +245,12 @@ struct CreateDeployTargets: AsyncMigration {
 
 func configureDeploy(_ app: Application) {
     app.migrations.add(CreateDeployTargets())
+    // GitHub App for pull requests (ADR 0042, environment or Docker secret only). A wrong configuration switches the write path
+    // off and is named here without values; the server starts anyway.
+    app.githubApp = GitHubAppSetup.fromEnvironment { Environment.get($0) }
+    if case .invalid(let names) = app.githubApp {
+        app.logger.warning("deploy github app configuration invalid, pull requests are switched off", metadata: ["variables": .string(names.joined(separator: ", "))])
+    }
 }
 
 /// Plain secret of a target (decoded JSON inside the ciphertext).

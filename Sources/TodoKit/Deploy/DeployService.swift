@@ -489,6 +489,8 @@ struct DeployController: RouteCollection {
         t.on(.POST, "compare", body: .collect(maxSize: "16mb"), use: compare)
         // Pull (phase 2a, ADR 0041): same manifest, the answer carries file contents (up to 16 MB).
         t.on(.POST, "pull", body: .collect(maxSize: "16mb"), use: pull)
+        // Pull request through the GitHub App (phase 2b, ADR 0042): same manifest.
+        t.on(.POST, "pull-request", body: .collect(maxSize: "16mb"), use: pullRequest)
     }
 
     // `requireUser` accepts person sessions only: OAuth access tokens (MCP connections) are 401 here.
