@@ -102,14 +102,14 @@
 	{/if}
 
 	{#each card.questions as q (q.id)}
-		<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel ?? who(null)} onanswered={onchanged} />
+		<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel ?? who(null)} projectID={card.project.id} assigneeID={q.assigneeID} assigneeName={q.assigneeName} runner={!!q.agentQuestionID || q.askedByType === 'Run'} onanswered={onchanged} />
 	{/each}
 	{#if hiddenQuestions > 0}
 		<button type="button" class="text-ui-accent-ink text-left text-xs underline underline-offset-2" onclick={() => onopen(card)}>{t('cc.card.moreQuestions', { count: hiddenQuestions })}</button>
 	{/if}
 
 	{#if card.pendingReview}
-		<ReviewDecision createdAt={card.pendingReview.createdAt} taskID={card.task.id} summary={card.pendingReview.summary} requestedBy={card.pendingReview.requestedByLabel ?? who(null)} variants={card.pendingReview.variants} ondecided={onchanged} />
+		<ReviewDecision createdAt={card.pendingReview.createdAt} taskID={card.task.id} summary={card.pendingReview.summary} requestedBy={card.pendingReview.requestedByLabel ?? who(null)} variants={card.pendingReview.variants} reviewID={card.pendingReview.id} projectID={card.project.id} reviewerID={card.pendingReview.reviewerID} assigneeName={card.pendingReview.assigneeName} runner={!!card.pendingReview.agentJobID} ondecided={onchanged} />
 	{/if}
 
 	{#if card.subtasks.length > 0}

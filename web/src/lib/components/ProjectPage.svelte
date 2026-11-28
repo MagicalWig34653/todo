@@ -16,6 +16,8 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
+	import { mineOnly } from '#lib/assignment.js';
+	import { auth } from '#lib/auth.svelte.js';
 	import Dialog from './app/Dialog.svelte';
 	import MenuItem from './app/MenuItem.svelte';
 	import Popover from './app/Popover.svelte';
@@ -124,7 +126,12 @@
 		labelsByTask = {};
 		detail = null;
 		editingTitle = false;
+		onlyMine = false;
 	});
+	/** Filter "Meine" (this page only, not stored): offered as soon as a card of the project has a responsible person. */
+	let onlyMine = $state(false);
+	const mineOffered = $derived(onlyMine || tasks.some((x) => !!x.assigneeID));
+	const listTasks = $derived(onlyMine ? mineOnly(tasks, auth.user?.id) : tasks);
 
 	// ---- display (per project and account, server-side via /v1/me/project-prefs) --------------------------------
 	const display = $derived<Display>(workspace.displayOf(project.id));
@@ -266,6 +273,7 @@
 			{#snippet trigger()}
 				{#if graphOpen}<Workflow class="size-3.5" aria-hidden="true" />{:else if display.view === 'board'}<Columns3 class="size-3.5" aria-hidden="true" />{:else}<List class="size-3.5" aria-hidden="true" />{/if}
 				<span class="hidden sm:inline">{t('display.title')}</span>
+				{#if onlyMine && !graphOpen}<span class="bg-ui-accent-soft text-ui-accent-ink rounded-full px-1.5 text-xs" data-testid="filter-mine-on">{t('assign.mine')}</span>{/if}
 			{/snippet}
 			{#snippet children()}
 				<div class="flex flex-col gap-3 p-1.5 text-sm">
@@ -318,6 +326,12 @@
 								<option value="priority">{t('display.group.priority')}</option>
 								<option value="due">{t('display.group.due')}</option>
 							</Select>
+						</label>
+					{/if}
+					{#if mineOffered && !graphOpen}
+						<label class="flex items-center gap-2">
+							<Checkbox checked={onlyMine} onchange={(e) => { onlyMine = e.currentTarget.checked; tab = 'tasks'; }} data-testid="filter-mine" />
+							{t('assign.mine')}
 						</label>
 					{/if}
 					<label class="flex items-center gap-2">
@@ -425,10 +439,10 @@
 		<TaskGraph {project} />
 	{:else if display.view === 'board'}
 		{#if board}
-			<ProjectBoard {project} {board} {tasks} {labelsByTask} showDone={display.showDone} {reload} onopen={(task, siblings) => cardDetail.open({ type: 'task', id: task.id }, (siblings ?? [task]).map((x) => ({ type: 'task' as const, id: x.id })))} />
+			<ProjectBoard {project} {board} {tasks} {onlyMine} {labelsByTask} showDone={display.showDone} {reload} onopen={(task, siblings) => cardDetail.open({ type: 'task', id: task.id }, (siblings ?? [task]).map((x) => ({ type: 'task' as const, id: x.id })))} />
 		{/if}
 	{:else}
-		<TaskPanel {project} {tasks} {board} {display} {loaded} {reload} />
+		<TaskPanel {project} tasks={listTasks} {board} {display} {loaded} {reload} emptyTitle={onlyMine ? t('assign.emptyMine') : undefined} />
 	{/if}
 </div>
 

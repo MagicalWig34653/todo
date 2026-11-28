@@ -64,6 +64,10 @@ export interface ForYouNeed {
 	actor?: ForYouActor | null;
 	createdAt?: string | null;
 	actions: ForYouAction[];
+	/** Responsibility (feed contract, additive): absent on older servers. */
+	concernsMe?: boolean;
+	assigneeID?: string | null;
+	assigneeName?: string | null;
 }
 /** Confirmation request of an agent (backend ADR 0026, contracts/action-requests.yaml). */
 export interface ActionImpact {

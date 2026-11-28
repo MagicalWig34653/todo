@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { api, ApiError, type BoardColumn } from '#lib/api.js';
+	import { directory } from '#lib/assignees.svelte.js';
+	import { candidatesFor } from '#lib/assignment.js';
 	import { attachFile } from '#lib/attachFile.js';
 	import { checkFile, formatSize } from '#lib/attachments.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
@@ -33,7 +35,8 @@
 	const initialProject = untrack(
 		() => currentProjectID ?? workspace.projects.find((p) => p.name === 'Eingang')?.id ?? workspace.projects[0]?.id ?? ''
 	);
-	let draft = $state<CardDraft>({ title: '', description: '', projectID: initialProject, columnID: null, priority: 0, due: '', labelIDs: [], files: [] });
+	let draft = $state<CardDraft>({ title: '', description: '', projectID: initialProject, columnID: null, priority: 0, due: '', labelIDs: [], files: [], assigneeID: '' });
+	const people = $derived(candidatesFor(directory.people(draft.projectID), 'task'));
 	let preview = $state(false);
 	let busy = $state(false);
 	let error = $state('');
@@ -46,7 +49,10 @@
 		const projectID = draft.projectID;
 		columns = [];
 		draft.columnID = null;
+		// The list of people belongs to the project: a chosen person does not carry over.
+		draft.assigneeID = '';
 		if (!projectID) return;
+		untrack(() => void directory.load(projectID, true));
 		let stale = false;
 		api.projectBoard(projectID).then(
 			(board) => {
@@ -179,6 +185,14 @@
 					{#each options as o (o.project.id)}<option value={o.project.id}>{'  '.repeat(o.depth)}{o.project.name}</option>{/each}
 				</Select>
 			</SideSection>
+			{#if directory.mayAssign(draft.projectID)}
+				<SideSection title={t('assign.field')} testid="side-assignee">
+					<Select class="w-full" bind:value={draft.assigneeID} aria-label={t('assign.field')}>
+						<option value="">{t('assign.nobody')}</option>
+						{#each people as p (p.userID)}<option value={p.userID}>{p.displayName}</option>{/each}
+					</Select>
+				</SideSection>
+			{/if}
 			{#if columns.length}
 				<SideSection title={t('draft.column')}>
 					<Select class="w-full" bind:value={draft.columnID} aria-label={t('draft.column')}>

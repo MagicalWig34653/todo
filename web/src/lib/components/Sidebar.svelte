@@ -177,7 +177,7 @@ export type View =
 			{#if count > 0 && badge}
 				<span class="bg-ui-accent text-ui-accent-foreground ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold" data-tabular data-testid="nav-badge-{v}" title={t('sidebar.teamsBadge', { count })}>{count}</span>
 			{:else if count > 0}
-				<span class="text-muted-foreground ml-auto text-xs font-normal" data-tabular>{count}</span>
+				<span class="text-muted-foreground ml-auto text-xs font-normal" data-tabular data-testid="nav-count-{v}">{count}</span>
 			{/if}
 		</button>
 	</li>

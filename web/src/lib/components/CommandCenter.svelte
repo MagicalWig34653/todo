@@ -473,6 +473,10 @@
 						askedBy={q.askedByLabel ?? q.askedByName}
 						context={t('cc.question.in', { task: q.taskTitle ?? '', project: q.projectName ?? '' })}
 						onopen={() => openTask(q.taskID, q.taskTitle ?? '')}
+						projectID={q.projectID}
+						assigneeID={q.assigneeID}
+						assigneeName={q.assigneeName}
+						runner={!!q.agentQuestionID}
 						onanswered={refresh}
 					/>
 				</li>

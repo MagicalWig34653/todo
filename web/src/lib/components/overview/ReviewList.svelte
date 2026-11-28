@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { api, type Review } from '#lib/api.js';
+	import { roleOf } from '#lib/access.js';
+	import { mayDecideReview } from '#lib/assignment.js';
+	import { auth } from '#lib/auth.svelte.js';
+	import { workspace } from '#lib/workspace.svelte.js';
 	import { decisionNeedsNote } from '#lib/commandCenter.js';
 	import { t, type MessageKey } from '#lib/i18n/index.js';
 	import { attempt } from '#lib/notice.svelte.js';
@@ -48,7 +52,13 @@
 	const brainCount = $derived(reviews.filter((r) => r.brainRecommended).length);
 	const listed = $derived(filter === 'brain' ? reviews.filter((r) => r.brainRecommended) : reviews);
 	// Reviews with variants need a deliberate choice: they are listed but never part of the selection (card 1D9C8B0C).
-	const listedIDs = $derived(selectableReviews(listed).map((r) => r.id));
+	/** Reviews somebody else decides (named, ADR 0043) are listed but never part of the selection. */
+	const decidable = (r: Review) => {
+		const project = workspace.projects.find((p) => p.id === r.projectID);
+		return mayDecideReview(r.reviewerID, auth.user?.id, project ? roleOf(project) : 'read');
+	};
+	const listedIDs = $derived(selectableReviews(listed.filter(decidable)).map((r) => r.id));
+	const othersListed = $derived(!listed.every(decidable));
 	const blockedCount = $derived(variantBlockedCount(listed));
 	const selState = $derived(selectionState(selected, listedIDs));
 	const capped = $derived(listedIDs.length > BATCH_MAX);
@@ -145,7 +155,7 @@
 					onchange={toggleAll}
 					data-testid="review-select-all"
 				/>
-				{blockedCount > 0 ? t('cc.review.bulk.selectAllSelectable') : t('cc.review.bulk.selectAll')}
+				{blockedCount > 0 || othersListed ? t('cc.review.bulk.selectAllSelectable') : t('cc.review.bulk.selectAll')}
 			</label>
 			<div class="flex flex-wrap gap-1.5" role="group" aria-label={t('cc.review.filter.label')}>
 				<Button
@@ -214,8 +224,8 @@
 				<label class="flex min-h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center">
 					<Checkbox
 						checked={selected.has(r.id)}
-						disabled={busy || !bulkSelectable(r) || (!selected.has(r.id) && selected.size >= BATCH_MAX)}
-						aria-label={bulkSelectable(r) ? t('cc.review.bulk.select', { title: r.taskTitle ?? '' }) : t('cc.review.bulk.selectBlocked', { title: r.taskTitle ?? '' })}
+						disabled={busy || !decidable(r) || !bulkSelectable(r) || (!selected.has(r.id) && selected.size >= BATCH_MAX)}
+						aria-label={t(!decidable(r) ? 'cc.review.bulk.selectOthers' : bulkSelectable(r) ? 'cc.review.bulk.select' : 'cc.review.bulk.selectBlocked', { title: r.taskTitle ?? '' })}
 						aria-describedby={bulkSelectable(r) ? undefined : 'review-variants-hint'}
 						onchange={() => toggle(r.id)}
 						data-testid="review-select"
@@ -230,6 +240,11 @@
 						requestedBy={r.requestedByLabel}
 						brainRecommended={r.brainRecommended}
 						variants={r.variants}
+						reviewID={r.id}
+						projectID={r.projectID}
+						reviewerID={r.reviewerID}
+						assigneeName={r.assigneeName}
+						runner={!!r.agentJobID}
 						context={t('cc.question.in', { task: r.taskTitle ?? '', project: r.projectName ?? '' })}
 						onopen={() => onopen(r.taskID, r.taskTitle ?? '')}
 						ondecided={onrefresh}

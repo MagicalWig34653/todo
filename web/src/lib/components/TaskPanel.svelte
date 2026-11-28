@@ -14,6 +14,7 @@
 	import Maximize2 from '@lucide/svelte/icons/maximize-2';
 	import TaskDetail from './TaskDetail.svelte';
 	import TaskChips from './TaskChips.svelte';
+	import AssigneeChip from './AssigneeChip.svelte';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -30,8 +31,10 @@
 		display: Display;
 		loaded: boolean;
 		reload: () => Promise<void>;
+		/** Replaces the empty-list message while a filter is active (shown with own columns too). */
+		emptyTitle?: string;
 	}
-	let { project, tasks, board, display, loaded, reload }: Props = $props();
+	let { project, tasks, board, display, loaded, reload, emptyTitle }: Props = $props();
 
 	const STATUSES: TaskStatus[] = ['open', 'in_progress', 'in_review', 'done'];
 
@@ -113,8 +116,8 @@
 {/snippet}
 
 <section class="flex flex-col gap-4">
-	{#if loaded && tasks.length === 0 && !realColumns}
-		<EmptyState title={t('tasks.empty')} icon={ListTodo} />
+	{#if loaded && tasks.length === 0 && (!realColumns || emptyTitle)}
+		<EmptyState title={emptyTitle ?? t('tasks.empty')} icon={ListTodo} />
 	{/if}
 
 	{#each groups as group (group.key)}
@@ -140,6 +143,7 @@
 							/>
 							<span class={['min-w-0 flex-1 basis-40 text-sm break-words', task.status === 'done' && 'text-muted-foreground line-through']}>
 								{task.title}
+								<AssigneeChip {task} />
 							</span>
 							<Select
 								class="w-32 [&_select]:h-8 [&_select]:text-xs"

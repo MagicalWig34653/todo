@@ -7,6 +7,7 @@
 	import ChatField from '../card/ChatField.svelte';
 	import Markdown from '../card/Markdown.svelte';
 	import OptionButtons from './OptionButtons.svelte';
+	import Responsibility from '../Responsibility.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import CircleHelp from '@lucide/svelte/icons/circle-help';
@@ -28,9 +29,14 @@
 		onopen?: () => void;
 		/** Only the answer controls (options and own-answer field): the host card already shows the prompt. */
 		bare?: boolean;
+		projectID?: string | null;
+		assigneeID?: string | null;
+		assigneeName?: string | null;
+		/** A question of a local runner job: it cannot be handed over. */
+		runner?: boolean;
 		onanswered: () => void | Promise<void>;
 	}
-	let { createdAt, answeredAt, id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, bare = false, onanswered }: Props = $props();
+	let { createdAt, answeredAt, id, prompt, options, blocking = false, askedBy, context, size = 'sm', onopen, bare = false, projectID, assigneeID, assigneeName, runner = false, onanswered }: Props = $props();
 
 	let text = $state('');
 	let busy = $state(false);
@@ -61,6 +67,7 @@
 		</div>
 	</div>
 	{/if}
+	<Responsibility kind="question" {id} {projectID} {assigneeID} {assigneeName} {runner} onchanged={onanswered} />
 	{#if options.length > 0}
 		<OptionButtons {size} items={options.map((o) => ({ key: o, label: o }))} onpick={(o) => send(o)} disabled={busy} label={t('cc.question.pick')} testid="question-option" />
 	{/if}

@@ -1,5 +1,6 @@
 // German UI strings. Components must only reference keys, never literal text.
 import { deNotify } from './de-notify.js';
+import { deAssign } from './de-assign.js';
 import { deSettings } from './de-settings.js';
 import { deAdminSettings } from './de-admin-settings.js';
 import { deAutoStart } from './de-autostart.js';
@@ -15,6 +16,7 @@ import { deUsage } from './de-usage.js';
 export const de = {
 	...deVoicePrivacy,
 	...deNotify,
+	...deAssign,
 	...deSettings,
 	...deAdminSettings,
 	...deAutoStart,
@@ -624,7 +626,7 @@ export const de = {
 	'draft.removeFile': '{name} entfernen',
 	'draft.create': 'Anlegen',
 	'draft.creating': 'Wird angelegt …',
-	'draft.partial': 'Aufgabe angelegt, aber Fälligkeit, Priorität, Etiketten oder Anhänge fehlen teilweise. Bitte hier in der Karte prüfen.',
+	'draft.partial': 'Aufgabe angelegt, aber Fälligkeit, Priorität, Zuständigkeit, Etiketten oder Anhänge fehlen teilweise. Bitte hier in der Karte prüfen.',
 	'draft.failed': 'Nicht angelegt (keine Verbindung?). Deine Eingaben bleiben erhalten, versuche es erneut.',
 	'quickAdd.title': 'Aufgabe hinzufügen',
 	'quickAdd.submit': 'Aufgabe hinzufügen',

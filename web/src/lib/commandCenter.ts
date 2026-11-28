@@ -44,9 +44,19 @@ export function orderedLanes(lanes: CommandLane[] | null | undefined, titles: (k
 	return LANE_ORDER.map((key) => byKey.get(key) ?? { key, title: titles(key), count: 0, truncated: false, cards: [] });
 }
 
-/** Number that deserves attention in the sidebar: open questions plus reviews waiting for a decision. */
-export function attentionCount(s: Pick<CommandSummary, 'openQuestions' | 'pendingReviews'> & { pendingConfirmations?: number; pendingAccessRequests?: number; plansWaiting?: number } | null | undefined): number {
-	return (s?.openQuestions ?? 0) + (s?.pendingReviews ?? 0) + (s?.pendingConfirmations ?? 0) + (s?.pendingAccessRequests ?? 0) + (s?.plansWaiting ?? 0);
+/**
+ * Number that deserves attention in the sidebar: questions, reviews and plans that concern this account (own or not
+ * assigned, ADR 0043; older servers only know the totals), plus confirmations and access requests.
+ */
+export function attentionCount(s: Pick<CommandSummary, 'openQuestions' | 'pendingReviews'> & Partial<Pick<CommandSummary, 'pendingConfirmations' | 'pendingAccessRequests' | 'plansWaiting' | 'concerningQuestions' | 'concerningReviews' | 'concerningPlans'>> | null | undefined): number {
+	if (!s) return 0;
+	return (
+		(s.concerningQuestions ?? s.openQuestions) +
+		(s.concerningReviews ?? s.pendingReviews) +
+		(s.concerningPlans ?? s.plansWaiting ?? 0) +
+		(s.pendingConfirmations ?? 0) +
+		(s.pendingAccessRequests ?? 0)
+	);
 }
 
 /** Open questions of all cards, newest first, de-duplicated by id (feature cards repeat subtask questions). */

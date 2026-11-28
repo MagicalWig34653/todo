@@ -1,9 +1,12 @@
 <script lang="ts">
 	import Timestamp from './Timestamp.svelte';
 	import { onDestroy, onMount, tick } from 'svelte';
-	import { api, ApiError } from '#lib/api.js';
+	import { api, ApiError, type ForMe, type Question, type Review } from '#lib/api.js';
+	import { roleOf } from '#lib/access.js';
+	import { defaultSegment, mayDecideReview, type Segment } from '#lib/assignment.js';
+	import { auth } from '#lib/auth.svelte.js';
 	import { cardDetail } from '#lib/cardDetail.svelte.js';
-	import { cardOfConfirmation, cardOfNeed, cardOfPost, cardTabOfNeed, cardTabOfPost, uniqueCards } from '#lib/cardRef.js';
+	import { cardOfConfirmation, cardOfNeed, cardOfPost, cardTabOfNeed, cardTabOfPost, uniqueCards, type CardRef } from '#lib/cardRef.js';
 	import { actionRequest, appendPosts, mergeFirstPage, needDetailText, needInputKind, previewParts, needKindKey, postTitleKey, type ActionRequest, type ForYouAccessRequest, type ForYouAction, type ForYouConfirmation, type ForYouImage, type ForYouNeed, type ForYouPage, type ForYouPost } from '#lib/forYou.js';
 	import { type MessageKey, t } from '#lib/i18n/index.js';
 	import { attempt, attemptLoad } from '#lib/notice.svelte.js';
@@ -21,6 +24,8 @@
 	import AccessRequestCard from './overview/AccessRequestCard.svelte';
 	import Dialog from './app/Dialog.svelte';
 	import BuildStatusBadge from './BuildStatusBadge.svelte';
+	import Responsibility from './Responsibility.svelte';
+	import ReviewDecision from './overview/ReviewDecision.svelte';
 	import { buildEventHead, buildStatusOf } from '#lib/now.js';
 	import NowEntry from './NowEntry.svelte';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -38,8 +43,28 @@
 	]);
 	let accessRequests = $state<ForYouAccessRequest[]>([]);
 	let posts = $state<ForYouPost[]>([]);
+	/** "Für mich" (`GET /v1/for-me`); null on servers without it, then only "Alle" exists. */
+	let mine = $state<ForMe | null>(null);
+	const mineCount = $derived(mine ? mine.questions.length + mine.reviews.length + mine.tasks.length : 0);
+	/** Chosen once the first answer is there and only changed by the person afterwards. */
+	let chosen = $state<Segment | null>(null);
+	const segment = $derived<Segment>(mine ? (chosen ?? 'all') : 'all');
+	/** The open questions and pending reviews behind the cards of "Alle": who they are for and who may decide. */
+	let questions = $state<Question[]>([]);
+	let reviews = $state<Review[]>([]);
+	const mineCards = $derived<CardRef[]>(
+		mine ? [...mine.questions.map((q) => ({ type: 'question' as const, id: q.id })), ...mine.reviews.map((r) => ({ type: 'review' as const, id: r.taskID })), ...mine.tasks.map((x) => ({ type: 'task' as const, id: x.id }))] : []
+	);
 	/** The cards in display order: what the window's up/down arrows step through. */
-	const orderedCards = $derived(uniqueCards([...confirmationCards.map((c) => cardOfConfirmation(c.item)), ...needs.map(cardOfNeed), ...posts.map(cardOfPost)]));
+	const orderedCards = $derived(uniqueCards([...confirmationCards.map((c) => cardOfConfirmation(c.item)), ...(segment === 'mine' ? mineCards : needs.map(cardOfNeed)), ...posts.map(cardOfPost)]));
+	const roleIn = (projectID: string) => {
+		const project = workspace.projects.find((p) => p.id === projectID);
+		return project ? roleOf(project) : 'read';
+	};
+	const reviewOfNeed = (n: ForYouNeed) => (n.kind === 'review' ? reviews.find((r) => r.id === n.reviewID) : undefined);
+	const questionOfNeed = (n: ForYouNeed) => (n.kind === 'question' ? questions.find((q) => q.id === n.questionID) : undefined);
+	const contextOf = (x: { taskTitle?: string | null; projectName?: string | null }) => t('cc.question.in', { task: x.taskTitle ?? '', project: x.projectName ?? '' });
+	const projectName = (id: string) => workspace.projects.find((p) => p.id === id)?.name ?? '';
 	let next = $state<string | null>(null);
 	let loaded = $state(false);
 	let unsupported = $state(false);
@@ -63,18 +88,40 @@
 		if (!merged.keepCursor) next = page.nextCursor ?? null;
 		loaded = true;
 	}
+	let seq = 0;
+	/** The newest call wins, so a reload after an action is never swallowed by a running live refresh. */
 	async function load() {
-		if (loading) return;
-		loading = true;
+		const my = ++seq;
 		try {
-			adopt(await api.forYou({ limit: 30 }));
+			const [page, own] = await Promise.all([
+				api.forYou({ limit: 30 }),
+				api.forMe().catch((e) => {
+					if (e instanceof ApiError && e.status === 404) return null;
+					throw e;
+				})
+			]);
+			const needsKind = (kind: string) => page.needsYou.some((n) => n.kind === kind);
+			// Loaded before the cards are shown, so a decision somebody else has to take never flashes up.
+			const [qs, rs] = await Promise.all([
+				needsKind('question') ? api.listQuestions({ state: 'open' }).catch(() => questions) : [],
+				needsKind('review') ? api.listReviews({ state: 'pending' }).catch(() => reviews) : []
+			]);
+			if (my !== seq) return;
+			if (!sameList(questions, qs)) questions = qs;
+			if (!sameList(reviews, rs)) reviews = rs;
+			if (JSON.stringify(own && { ...own, generatedAt: '' }) !== JSON.stringify(mine && { ...mine, generatedAt: '' })) mine = own;
+			if (own) chosen ??= defaultSegment(own.questions.length + own.reviews.length + own.tasks.length);
+			adopt(page);
 			unsupported = false;
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 404) unsupported = true;
 			else throw e;
-		} finally {
-			loading = false;
 		}
+	}
+	/** After an answer, a decision or a handover: reload both segments and the counter. */
+	async function changed() {
+		await attemptLoad(load);
+		void attemptLoad(() => workspace.refreshLive());
 	}
 	async function more() {
 		if (!next || loading) return;
@@ -176,25 +223,69 @@
 
 	{#if unsupported}
 		<EmptyState title={t('forYou.unsupported')} icon={Sparkles} />
-	{:else if loaded && needs.length === 0 && posts.length === 0 && confirmationCards.length === 0 && accessRequests.length === 0}
+	{:else if loaded && needs.length === 0 && mineCount === 0 && posts.length === 0 && confirmationCards.length === 0 && accessRequests.length === 0}
 		<EmptyState title={t('forYou.empty')} icon={Sparkles}><p>{t('forYou.emptyHint')}</p></EmptyState>
 	{:else if loaded}
-		{#if needs.length > 0 || confirmationCards.length > 0 || accessRequests.length > 0}
+		{#if needs.length > 0 || mineCount > 0 || confirmationCards.length > 0 || accessRequests.length > 0}
 			<div class="flex flex-col gap-2" data-testid="needs-you">
-				<h3 class="text-muted-foreground flex items-baseline gap-2 text-xs font-semibold tracking-wide uppercase">
-					{t('forYou.needsYou')}
-					{#if needsTotal > needs.length}<span class="font-normal normal-case">{t('forYou.needsYouMore', { count: needsTotal - needs.length })}</span>{/if}
-				</h3>
+				<div class="flex min-h-9 flex-wrap items-center justify-between gap-2">
+					<h3 class="text-muted-foreground flex items-baseline gap-2 text-xs font-semibold tracking-wide uppercase">
+						{t('forYou.needsYou')}
+						{#if segment === 'all' && needsTotal > needs.length}<span class="font-normal normal-case">{t('forYou.needsYouMore', { count: needsTotal - needs.length })}</span>{/if}
+					</h3>
+					{#if mine}
+						<div class="bg-muted flex gap-0.5 rounded-lg p-0.5" role="group" aria-label={t('forYou.segment')}>
+							{#each ['mine', 'all'] as const as id (id)}
+								<button
+									type="button"
+									class={['hit-area relative min-h-8 rounded-md px-3 text-xs font-medium', segment === id ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground']}
+									aria-pressed={segment === id}
+									data-testid="for-you-{id}"
+									onclick={() => (chosen = id)}>{t(`forYou.segment.${id}`)}</button
+								>
+							{/each}
+						</div>
+					{/if}
+				</div>
 				{#each confirmationCards as c (c.item.id)}
 					<ConfirmationCard item={c.item} outcome={c.result} ondecided={onDecided} onopen={() => cardDetail.open(cardOfConfirmation(c.item), orderedCards)} />
 				{/each}
 				{#each accessRequests as a (a.id)}
 					<AccessRequestCard item={a} ondone={onAccessDone} />
 				{/each}
-				{#each needs as item (item.id)}
+				{#if segment === 'mine' && mine}
+					<div class="flex flex-col gap-2" data-testid="for-me">
+						{#if mineCount === 0 && confirmationCards.length === 0 && accessRequests.length === 0}
+							<p class="text-muted-foreground bg-card rounded-xl border p-4 text-center text-sm">{t('forYou.mineEmpty')}</p>
+						{/if}
+						{#each mine.questions as q (q.id)}
+							<div class="min-w-0" data-testid="for-me-card" data-kind="question">
+								<QuestionAnswer createdAt={q.createdAt} id={q.id} prompt={q.prompt} options={q.options} blocking={q.blocking} askedBy={q.askedByLabel ?? q.askedByName} context={contextOf(q)} projectID={q.projectID} assigneeID={q.assigneeID} assigneeName={q.assigneeName} runner={!!q.agentQuestionID} onopen={() => cardDetail.open({ type: 'question', id: q.id }, orderedCards)} onanswered={changed} />
+							</div>
+						{/each}
+						{#each mine.reviews as r (r.id)}
+							<div class="min-w-0" data-testid="for-me-card" data-kind="review">
+								<ReviewDecision createdAt={r.createdAt} taskID={r.taskID} summary={r.summary} requestedBy={r.requestedByLabel} brainRecommended={r.brainRecommended} variants={r.variants} reviewID={r.id} projectID={r.projectID} reviewerID={r.reviewerID} assigneeName={r.assigneeName} runner={!!r.agentJobID} context={contextOf(r)} onopen={() => cardDetail.open({ type: 'review', id: r.taskID }, orderedCards)} ondecided={changed} />
+							</div>
+						{/each}
+						{#each mine.tasks as task (task.id)}
+							<article class="bg-card flex min-w-0 flex-col rounded-xl border p-3" data-testid="for-me-card" data-kind="task">
+								<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" onclick={() => cardDetail.open({ type: 'task', id: task.id }, orderedCards)}>
+									<span class="text-ui-accent text-xs font-semibold">{t('forYou.kind.task')}</span>
+									<span class="line-clamp-2 text-sm font-semibold">{task.title}</span>
+									<span class="text-muted-foreground text-xs">{[projectName(task.projectID), t(`status.${task.status}`), task.planning?.dueAt ? formatWhen(task.planning.dueAt) : ''].filter(Boolean).join(' · ')}</span>
+								</button>
+							</article>
+						{/each}
+						{#if mine.truncated}<p class="text-muted-foreground text-xs">{t('forYou.mineTruncated')}</p>{/if}
+					</div>
+				{/if}
+				{#each segment === 'all' ? needs : [] as item (item.id)}
 					<!-- Agents write Markdown: a short plain preview here (headline + clamped rest), the card window renders the original. -->
 					{@const preview = previewParts(item.title)}
 					{@const detail = item.detail ? previewText(needDetailText(item)) : ''}
+					{@const review = reviewOfNeed(item)}
+					{@const question = questionOfNeed(item)}
 					<article class="bg-card flex min-w-0 flex-col gap-2 rounded-xl border p-3" data-testid="needs-card" data-kind={item.kind}>
 						<button type="button" class="flex w-full min-w-0 flex-col items-start gap-0.5 text-left [overflow-wrap:anywhere]" aria-labelledby="need-t-{item.id}" aria-describedby="need-r-{item.id} need-d-{item.id}" onclick={() => cardDetail.open(cardOfNeed(item), orderedCards, cardTabOfNeed(item))}>
 							<span class={['text-xs font-semibold', item.kind === 'overdue' || item.kind === 'blocked' ? 'text-destructive' : 'text-ui-accent']}>{t(needKindKey(item.kind))}</span>
@@ -205,7 +296,12 @@
 							</span>
 							<span class="text-muted-foreground h-4 w-full truncate text-xs" data-tabular><Timestamp value={item.createdAt} label={item.kind === 'question' ? 'time.asked' : item.kind === 'review' ? 'time.requested' : 'time.created'} /></span>
 						</button>
-						{#if item.actions.length > 0}
+						{#if review}
+							<Responsibility kind="review" id={review.id} projectID={item.projectID} assigneeID={review.reviewerID} assigneeName={review.assigneeName ?? item.assigneeName} runner={!!review.agentJobID} onchanged={changed} />
+						{:else if question}
+							<Responsibility kind="question" id={question.id} projectID={item.projectID} assigneeID={question.assigneeID} assigneeName={question.assigneeName ?? item.assigneeName} runner={!!question.agentQuestionID} onchanged={changed} />
+						{/if}
+						{#if item.actions.length > 0 && (!review || mayDecideReview(review.reviewerID, auth.user?.id, roleIn(item.projectID)))}
 							{@const free = item.actions.length === 1 && item.actions[0].requiresInput && item.actions[0].inputField === 'answer'}
 							{#if item.kind === 'question' && item.questionID && item.options.length > 0}
 								<QuestionAnswer bare id={item.questionID} prompt={item.title} options={item.options} onanswered={() => answered(item)} />

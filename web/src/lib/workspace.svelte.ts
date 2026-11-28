@@ -1,4 +1,5 @@
 import { api, type ProjectMode, type ProjectPrefsChange, type CommandSummary, type Label, type Project, type ProjectPrefs, type SavedFilter, type Task, type Team, type TeamMembership } from './api.js';
+import { directory } from './assignees.svelte.js';
 import { attentionCount } from './commandCenter.js';
 import { inboxTasks, openCounts, todayTasks } from './counts.js';
 import type { Display } from './listLogic.js';
@@ -42,6 +43,7 @@ class Workspace {
 	/** Forgets everything of the previous account (sign-out, account switch) and invalidates requests still in flight. */
 	reset() {
 		this.#gen++;
+		directory.reset();
 		this.projects = [];
 		this.tasks = [];
 		this.teams = [];
