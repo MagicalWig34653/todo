@@ -6,6 +6,8 @@ import Vapor
 // written through the GitHub App (GitHubApp.swift). The server of the target is only read.
 
 enum DeployPublishLimits {
+    /// Files in one commit; bounds the tree reads and the work of one run.
+    static let maxFiles = 500
     /// Binary files need one API call each (GitHub limits creating requests); the rest waits for the next run.
     static let maxBinaries = 50
     static let maxBranchSuffix = 20
@@ -46,11 +48,26 @@ struct DeployPublishResult: Content {
     var remainingTotal: Int?
 }
 
+/// Files that tell a build system what to run. The pushed branch may start a pipeline before anybody looked at it, so the write
+/// path never carries such a file (`.github` and `.gitlab*` are already refused by the pull). Build scripts of the project itself
+/// cannot be told apart: CI on `server/**` must not get secrets (docs/GITHUB-APP-EINRICHTUNG.md).
+enum DeployPipelinePath {
+    private static let directories: Set<String> = [".circleci", ".forgejo", ".gitea", ".woodpecker", ".buildkite", ".semaphore"]
+    private static let names: Set<String> = ["jenkinsfile", ".woodpecker.yml", ".woodpecker.yaml", "azure-pipelines.yml", "azure-pipelines.yaml",
+                                             "bitbucket-pipelines.yml", ".travis.yml", ".drone.yml", ".cirrus.yml", "appveyor.yml", ".appveyor.yml",
+                                             "cloudbuild.yml", "cloudbuild.yaml"]
+    static func matches(_ path: String) -> Bool {
+        let parts = path.lowercased().split(separator: "/").map(String.init)
+        return parts.contains { directories.contains($0) } || names.contains(parts.last ?? "")
+    }
+}
+
 extension DeployService {
-    /// `@name` would notify people and `#1` would link or close issues: a zero width space takes that away. File names come from the
-    /// server of the target and are not trusted.
+    /// `@name` would notify people, `#1` and `GH-1` would link or close issues: a zero width space takes that away. File names come
+    /// from the server of the target and are not trusted.
     private static func quiet(_ text: String) -> String {
         text.replacingOccurrences(of: "@", with: "@\u{200B}").replacingOccurrences(of: "#", with: "#\u{200B}")
+            .replacingOccurrences(of: "(?i)gh-(?=[0-9])", with: "$0\u{200B}", options: .regularExpression)
     }
 
     /// The commit message as an indented code block, so that nothing in a file name is read as Markdown.
@@ -70,12 +87,13 @@ extension DeployService {
     }
 
     /// Splits the delivered files into tree changes against the base commit. Left out: files that are already like that in the base
-    /// (nothing to commit) and paths where the repository has a symlink, a submodule or a directory/file clash (`blocked_path`).
+    /// (nothing to commit), pipeline definitions and paths where the repository has a symlink, a submodule or a directory/file
+    /// clash (`blocked_path`). Repository names are matched byte by byte, as git does (Swift strings treat NFC and NFD as equal).
     private static func changes(_ outcome: inout DeployPullOutcome, root: String, client: GitHubRepoClient) async throws -> [GitHubTreeChange] {
-        var cache: [String: [String: GitHubTreeEntry]] = [:]
-        func entries(_ sha: String) async throws -> [String: GitHubTreeEntry] {
+        var cache: [String: [Data: GitHubTreeEntry]] = [:]
+        func entries(_ sha: String) async throws -> [Data: GitHubTreeEntry] {
             if let known = cache[sha] { return known }
-            let list = Dictionary(try await client.entries(ofTree: sha).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+            let list = Dictionary(try await client.entries(ofTree: sha).map { (Data($0.path.utf8), $0) }, uniquingKeysWith: { a, _ in a })
             cache[sha] = list
             return list
         }
@@ -87,11 +105,12 @@ extension DeployService {
             }
             // Second line of defence in front of the write: the pull already refuses these.
             guard DeployPath.isSafeRelative(file.path, allowEmpty: false), DeploySecretGuard.pathReason(file.path) == nil,
+                  !DeployPipelinePath.matches(file.path),
                   let data = file.encoding == "base64" ? Data(base64Encoded: file.content) : Data(file.content.utf8) else { blocked(); continue }
             var tree = root, existing: GitHubTreeEntry?
             let parts = file.path.split(separator: "/").map(String.init)
             for (index, part) in parts.enumerated() {
-                guard let entry = try await entries(tree)[part] else { break }
+                guard let entry = try await entries(tree)[Data(part.utf8)] else { break }
                 if index < parts.count - 1 {
                     guard entry.type == "tree" else { blocked(); continue files }
                     tree = entry.sha
@@ -101,6 +120,7 @@ extension DeployService {
                 }
             }
             if existing?.sha == gitBlobID(data) { continue }
+            if kept.count == DeployPublishLimits.maxFiles { overflow.append(file.path); continue }
             var change = GitHubTreeChange(path: file.path, mode: existing?.mode ?? "100644")
             if file.encoding == "utf-8" {
                 change.content = file.content
@@ -151,7 +171,10 @@ extension DeployService {
         var result = DeployPublishResult(repository: repository)
         do {
             let client = try await GitHubRepoClient.open(config: config, repository: repository, transport: app.githubTransport)
-            let baseBranch = try await client.defaultBranch()
+            let remote = try await client.info()
+            // In a public repository whatever the secret heuristic misses would be published at once.
+            guard remote.isPrivate else { return refused("deploy_github_repository_public") }
+            let baseBranch = remote.defaultBranch
             guard try await client.branch(baseBranch, contains: base) else { return refused("deploy_github_base_unknown") }
             let rootTree = try await client.tree(ofCommit: base)
 

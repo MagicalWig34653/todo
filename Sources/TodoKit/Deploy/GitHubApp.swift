@@ -194,9 +194,11 @@ struct GitHubRepoClient: Sendable {
         (s.utf8.count == 40 || s.utf8.count == 64) && s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
     }
 
-    func defaultBranch() async throws -> String {
-        struct Repository: Decodable { let default_branch: String }
-        return try await request(.GET, "", operation: "repository", as: Repository.self).default_branch
+    /// A repository that does not say it is private counts as public.
+    func info() async throws -> (defaultBranch: String, isPrivate: Bool) {
+        struct Repository: Decodable { let default_branch: String; let `private`: Bool? }
+        let r = try await request(.GET, "", operation: "repository", as: Repository.self)
+        return (r.default_branch, r.private == true)
     }
 
     /// True when `commit` is on `branch` (the branch is ahead of it or at it).
@@ -204,7 +206,8 @@ struct GitHubRepoClient: Sendable {
         struct Comparison: Decodable { let status: String }
         guard let head = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return false }
         do {
-            let c = try await request(.GET, "/compare/\(commit)...\(head)?per_page=1", operation: "compare", as: Comparison.self)
+            // Page 2: GitHub puts the changed files with their patches on the first page only.
+            let c = try await request(.GET, "/compare/\(commit)...\(head)?per_page=1&page=2", operation: "compare", as: Comparison.self)
             return c.status == "ahead" || c.status == "identical"
         } catch let e as GitHubError where e.status == 404 { return false }
     }
