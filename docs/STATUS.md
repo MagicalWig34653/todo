@@ -9,6 +9,9 @@
 - **Nicht enthalten:** Zuständigkeit (Karte `8B4BAC2E` gibt es in der PWA noch nicht), iOS (eigener Folgeschritt), Neuanlegen von Etiketten im Entwurf (geht danach in der Karte).
 - Tests: E2E `web/e2e/card-draft.spec.ts` (6 Tests: Entwurf hell/dunkel mit Speichern und API-Prüfung, Abbrechen hell/dunkel ohne Rest, Telefon-„+“, Schnell-Anlegen per Enter und `q`). Rot gegen Backend-Image `sha-da4983b` (Knopf öffnet kein Kartenfenster), Schnell-Anlegen-Test schon vorher grün; danach 6/6 grün.
 - Bilder hell/dunkel (angesehen): `docs/screenshots/karte-anlegen/` (1 vor Klick, 2 Entwurf offen, 3 nach Anlegen, 4 nach Abbrechen).
+- Commits: rot `a3c8c24` (nur der Test; ohne Umsetzung 1 rot, 5 nicht gelaufen), grün `46ede20`. Lokal grün außerdem: `svelte-check` 0 Fehler, vitest 868/868, E2E readability, menus-and-modes, now-redesign, ui-lists, passkey-flow (21).
+- GitHub auf `46ede20` grün: CI 46088459386, Docker publish 46088459388, Pages 46088459323, E2E 46088599398 (99 Läufe, `card-draft` 6/6).
+- Hinweis: `card-detail.spec.ts` „title and description edit inline“ scheitert lokal am Mac auch auf unverändertem `main` (Strg+Enter speichert dort nicht); auf Linux (CI) grün. Nicht Teil dieser Karte.
 
 ## Nachtrag 27.11.2026 (23:40): Deploy-Ziele Phase 2a – Holen von Server-Änderungen (Karte `354ADE12`, Erwartung f-a9d3e135; kein Deploy)
 
