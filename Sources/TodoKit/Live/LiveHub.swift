@@ -98,7 +98,7 @@ actor LiveHub {
         do {
             let now = try await LiveToken.current(on: app.db).token
             for (id, w) in waiters where w.since != now { resume(id, .changed(now)) }
-            if polls % 400 == 0 { try? await LiveToken.trim(on: app.db) }
+            if !closed, polls % 400 == 0 { try? await LiveToken.trim(on: app.db) }
         } catch {
             // Never fail waiters because of a transient database error; they fall back to their deadline.
             app.logger.warning("live hub: token check failed")
@@ -114,12 +114,14 @@ actor LiveHub {
     }
 }
 
-final class LiveHubLifecycle: LifecycleHandler, @unchecked Sendable {
-    let hub: LiveHub
-    init(_ hub: LiveHub) { self.hub = hub }
-    func shutdown(_ application: Application) {
-        let hub = self.hub
-        Task { await hub.shutdown() }
+/// Card 395200D3: Vapor stops the HTTP server only after the lifecycle handlers, so Fluent's handler closed the databases while
+/// requests were still running; the next `req.db` hit its force unwrap and killed the process. This handler is registered after
+/// Fluent's (handlers run in reverse order): open long polls are answered, then the server stops accepting and waits for the
+/// running requests (Vapor's shutdown timeout, 10 s), and only then the databases close.
+struct DrainRequestsOnShutdown: LifecycleHandler {
+    func shutdownAsync(_ application: Application) async {
+        await application.liveHub.shutdown()
+        await application.server.shutdown()
     }
 }
 
@@ -136,7 +138,13 @@ extension Application {
         if let hub = storage[LiveHubKey.self] { return hub }
         let hub = LiveHub(app: self)
         storage[LiveHubKey.self] = hub
-        lifecycle.use(LiveHubLifecycle(hub))
         return hub
+    }
+
+    /// Call once while configuring, after the databases: creates the hub before the first request (no two hubs from two
+    /// concurrent first waits) and drains requests before anything they need is shut down.
+    func installShutdownDrain() {
+        _ = liveHub
+        lifecycle.use(DrainRequestsOnShutdown())
     }
 }

@@ -18,6 +18,8 @@ public func routes(_ app: Application) throws {
     // (umlauts 2 bytes, emoji 4 bytes; bug DA09D11A: a valid long comment failed with 413). 256 kB covers the worst case
     // including JSON escapes; uploads and MCP (8 MB) set their own limits.
     app.routes.defaultMaxBodySize = "256kb"
+    // Registered after the databases (configureDatabase runs first): on shutdown, requests end before the databases close.
+    app.installShutdownDrain()
     app.middleware.use(SessionCookieRenewalMiddleware())
     try app.register(collection: OAuthController())
     try app.register(collection: AuthController())

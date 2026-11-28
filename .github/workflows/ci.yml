@@ -71,6 +71,11 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq sqlite3 python3 curl openssl uuid-runtime
           scripts/assignment-e2e.sh "$RUNNER_TEMP/assignment-e2e"
+      # Card 395200D3: SIGTERM with open long polls (swarm update): the waits are answered, the process ends with status 0.
+      - name: Shutdown E2E (SIGTERM with open long polls)
+        run: |
+          apt-get update -qq && apt-get install -y -qq python3
+          scripts/shutdown-e2e.sh "$RUNNER_TEMP/shutdown-e2e"
 
   deploy-scripts:
     name: Deploy scripts (settings.sh, offline)
