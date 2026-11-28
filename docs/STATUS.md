@@ -12,6 +12,7 @@
 - **E2E gegen echten Server** `scripts/assignment-e2e.sh` (in CI): Agent weist per MCP mit echtem OAuth-Token zu, `/v1/for-me` und `list_for_me` liefern es nur dieser Person, Entzug leert es; SQLite 38/38, MariaDB 38/38.
 - **Upgrade-Probe MariaDB:** Datenbank mit Image `edge` (`43a96bf`) migriert und befüllt, dann neues Binary: Daten erhalten, neue Spalten leer, alter `reviewer_id` bleibt, 3 Indizes, zweites `migrate` „No new migrations“.
 - **Grenzen:** Die benannte Review bindet nur das Entscheiden; Erledigen, Verschieben in ein eigenes Projekt und Zurückziehen/Neuanfragen umgehen sie wie schon vorher (ADR 0043 „Grenzen“). Push gegen echtes APNs nicht geprüft (Testdouble). Karte zuweisen löst keine eigene Mitteilung aus.
+- GitHub auf `8b58f1b` grün: CI 46107631275 (inkl. Schritt „Assignment E2E“), Docker publish 46107631279, Pages 46107631307, E2E 46108536807.
 - **Teil 2** (PWA/iOS): `docs/PLAN-ZUSTAENDIGKEIT-TEIL-2.md`, Karte `E9300901`.
 - **Lehre:** Gegenlesen fand zwei echte Lücken (Agent hebt Bindung ohne Vollmacht auf, Push-Flut), die eigene Tests nicht abdeckten; den ersten vollen Lauf deshalb abgebrochen, statt ihn doppelt laufen zu lassen. Der MariaDB-Gesamtlauf dauert ~28 Minuten: früh starten.
 
